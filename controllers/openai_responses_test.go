@@ -231,3 +231,72 @@ func assertInOrder(t *testing.T, text string, needles ...string) {
 		pos += next + len(needle)
 	}
 }
+
+// A provider is free to end its stream without [DONE], and Hanzo's does. When
+// that happened the response never closed: every delta arrived, none of the
+// terminal events did, and a client reading the Responses stream to spec waited
+// for response.completed, retried, and reported the stream as truncated.
+//
+// The usage chunk still has to land in it, which is why finishing on
+// finish_reason alone was wrong — whichever signal arrives second finishes.
+func TestResponsesStreamCompletesWithoutDone(t *testing.T) {
+	req := &OpenAIResponsesRequest{Model: "enso-auto", Stream: true}
+	out := &bytes.Buffer{}
+	bridge := newResponsesBridge(out, req, nil)
+
+	upstream := strings.Join([]string{
+		`data: {"id":"chat_1","model":"enso","choices":[{"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}`,
+		`data: {"id":"chat_1","model":"enso","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: {"id":"chat_1","model":"enso","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`,
+		"",
+	}, "\n\n")
+	if _, err := bridge.Write([]byte(upstream)); err != nil {
+		t.Fatal(err)
+	}
+	wire := out.String()
+
+	// Before Close, because a client must not have to wait for the connection
+	// to drop to learn the answer is complete.
+	assertInOrder(
+		t, wire,
+		`event: response.created`,
+		`"delta":"hi"`,
+		`event: response.output_text.done`,
+		`event: response.content_part.done`,
+		`event: response.output_item.done`,
+		`event: response.completed`,
+	)
+	if !strings.Contains(wire, `"total_tokens":4`) {
+		t.Fatalf("usage from the post-finish_reason chunk was lost:\n%s", wire)
+	}
+	if err := bridge.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(out.String(), `event: response.completed`); got != 1 {
+		t.Fatalf("response.completed count = %d, want exactly one; Close must not repeat it", got)
+	}
+}
+
+// The usage chunk may also arrive first. Whichever signal is second finishes.
+func TestResponsesStreamCompletesWhenUsagePrecedesFinishReason(t *testing.T) {
+	req := &OpenAIResponsesRequest{Model: "enso-auto", Stream: true}
+	out := &bytes.Buffer{}
+	bridge := newResponsesBridge(out, req, nil)
+
+	upstream := strings.Join([]string{
+		`data: {"id":"c","model":"enso","choices":[{"delta":{"role":"assistant","content":"yo"},"finish_reason":null}]}`,
+		`data: {"id":"c","model":"enso","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		`data: {"id":"c","model":"enso","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		"",
+	}, "\n\n")
+	if _, err := bridge.Write([]byte(upstream)); err != nil {
+		t.Fatal(err)
+	}
+	wire := out.String()
+	if !strings.Contains(wire, `event: response.completed`) {
+		t.Fatalf("no response.completed when usage preceded finish_reason:\n%s", wire)
+	}
+	if !strings.Contains(wire, `"total_tokens":2`) {
+		t.Fatalf("usage missing:\n%s", wire)
+	}
+}
