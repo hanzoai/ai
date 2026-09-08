@@ -112,6 +112,20 @@ func scopeExp(owner, userId, kind string) dbx.HashExp {
 	return exp
 }
 
+// store is the memory table's handle, or an error naming its absence.
+//
+// The adapter is nil before the DB is initialised — during boot, in the
+// standalone runtime with no driverName, and in every unit test — so reading
+// through it turns a missing dependency into a SIGSEGV at whatever call site
+// asked first. Every accessor below asks here, so that call site is this one
+// rather than whichever read happened to run.
+func store() (*dbx.DB, error) {
+	if adapter == nil || adapter.db == nil {
+		return nil, fmt.Errorf("memory store is not initialised")
+	}
+	return adapter.db, nil
+}
+
 // listMemoriesScoped returns the caller's memories, newest first, optionally
 // filtered by kind.
 func listMemoriesScoped(owner, userId, kind string) ([]*Memory, error) {
@@ -119,7 +133,11 @@ func listMemoriesScoped(owner, userId, kind string) ([]*Memory, error) {
 	if owner == "" || userId == "" {
 		return memories, nil
 	}
-	err := findAll(adapter.db, "memory", &memories, scopeExp(owner, userId, kind), "created_time DESC")
+	handle, err := store()
+	if err != nil {
+		return memories, err
+	}
+	err = findAll(handle, "memory", &memories, scopeExp(owner, userId, kind), "created_time DESC")
 	if err != nil {
 		return memories, err
 	}
@@ -157,7 +175,11 @@ func CountMemories(owner, userId string) (int64, error) {
 	if owner == "" || userId == "" {
 		return 0, nil
 	}
-	return countWhere(adapter.db, "memory", scopeExp(owner, userId, ""))
+	handle, err := store()
+	if err != nil {
+		return 0, err
+	}
+	return countWhere(handle, "memory", scopeExp(owner, userId, ""))
 }
 
 // getMemoryByName fetches a single row by primary key (owner, name) WITHOUT a
@@ -165,7 +187,11 @@ func CountMemories(owner, userId string) (int64, error) {
 // request-driven access.
 func getMemoryByName(owner, name string) (*Memory, error) {
 	memory := Memory{Owner: owner, Name: name}
-	existed, err := getOne(adapter.db, "memory", &memory, pk2(owner, name))
+	handle, err := store()
+	if err != nil {
+		return nil, err
+	}
+	existed, err := getOne(handle, "memory", &memory, pk2(owner, name))
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +247,11 @@ func AddMemory(memory *Memory) (bool, error) {
 	}
 	memory.Kind = NormalizeMemoryKind(memory.Kind)
 	memory.Dimension = len(memory.Embedding)
-	err := insertRow(adapter.db, memory)
+	handle, err := store()
+	if err != nil {
+		return false, err
+	}
+	err = insertRow(handle, memory)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +285,11 @@ func UpdateMemoryScoped(owner, userId, name string, patch *Memory, lang string) 
 	}
 	existing.UpdatedTime = util.GetCurrentTime()
 	// Owner+Name is the PK; existing was already user-verified above.
-	err = adapter.db.Model(existing).Update()
+	handle, err := store()
+	if err != nil {
+		return false, err
+	}
+	err = handle.Model(existing).Update()
 	if err != nil {
 		return false, err
 	}
@@ -268,7 +302,11 @@ func DeleteMemoryScoped(owner, userId, name string) (bool, error) {
 	if owner == "" || userId == "" || name == "" {
 		return false, nil
 	}
-	affected, err := deleteWhere(adapter.db, "memory",
+	handle, err := store()
+	if err != nil {
+		return false, err
+	}
+	affected, err := deleteWhere(handle, "memory",
 		dbx.HashExp{"owner": owner, "name": name, "user_id": userId})
 	if err != nil {
 		return false, err

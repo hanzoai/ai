@@ -285,15 +285,6 @@ func (c *ApiController) GetMessageAnswer() {
 			return
 		}
 
-		fmt.Printf("Question: [%s]\n", question)
-		fmt.Printf("Knowledge: [\n")
-		for i, k := range knowledge {
-			fmt.Printf("Knowledge %d: [%s]\n", i, k.Text)
-		}
-		fmt.Printf("]\n")
-		// fmt.Printf("Refined Question: [%s]\n", realQuestion)
-		fmt.Printf("Answer: [")
-
 		prompt := store.Prompt
 		if modelProvider.Type != "Dummy" && !isReasonModel(modelProvider.SubType) {
 			if modelProvider.Type == "Alibaba Cloud" && webSearchEnabled {
@@ -357,10 +348,7 @@ func (c *ApiController) GetMessageAnswer() {
 			}
 
 			_ = writer.Writer.Flush()
-			fmt.Print(cleanedData)
 		}
-
-		fmt.Printf("]\n")
 
 		event := fmt.Sprintf("event: end\ndata: %s\n\n", "end")
 		_, err = w.Write([]byte(event))

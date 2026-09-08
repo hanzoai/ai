@@ -18,6 +18,7 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 )
@@ -105,7 +106,7 @@ func contains(slice []string, item string) bool {
 
 func (p *NucleiScanProvider) ParseResult(rawResult string) (string, error) {
 	// Parse the JSONL output into structured data
-	fmt.Printf("%s [Nuclei] Parsing scan results\n", getHostnamePrefix())
+	slog.Info("parsing scan results", "host", hostname(), "scanner", "nuclei")
 
 	if rawResult == "" || rawResult == "Scan completed with no vulnerabilities found" {
 		emptyResult := &NucleiScanResult{
@@ -132,11 +133,7 @@ func (p *NucleiScanProvider) ParseResult(rawResult string) (string, error) {
 	}
 
 	vulnCount := len(parsedResult.Vulnerabilities)
-	vulnWord := "vulnerabilities"
-	if vulnCount == 1 {
-		vulnWord = "vulnerability"
-	}
-	fmt.Printf("%s [Nuclei] Successfully parsed %d %s\n", getHostnamePrefix(), vulnCount, vulnWord)
+	slog.Info("scan results parsed", "host", hostname(), "scanner", "nuclei", "findings", vulnCount)
 
 	return string(jsonBytes), nil
 }
@@ -261,7 +258,7 @@ func (p *NucleiScanProvider) GetResultSummary(result string) string {
 	err := json.Unmarshal([]byte(result), &scanResult)
 	if err != nil {
 		// Log the error but return empty string instead of failing
-		fmt.Printf("%s [Nuclei] Unable to parse scan results for summary: %v\n", getHostnamePrefix(), err)
+		slog.Warn("scan results not parsed for summary", "host", hostname(), "scanner", "nuclei", "err", err)
 		return ""
 	}
 
