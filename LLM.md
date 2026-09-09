@@ -488,9 +488,9 @@ for most of them.
 
 **Billing gate** (`routers/filter_balance.go` + `openai_api.go`): non-premium
 models need balance > 0; premium models need balance > starter credit. Balance
-comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. Users in
-`BALANCE_EXEMPT_USERS` (e.g. `hanzo/z`) bypass ALL gates — use the
-`z@hanzo.ai` token to verify premium/zen without a credited org.
+comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. No
+principal bypasses it: the gate always consults the balance, and a lookup that
+fails returns 500 rather than free access. To verify premium/zen, credit the org.
 
 ## AI Login Manager — universal metering + connected accounts + 1% BYO fee
 
@@ -692,19 +692,22 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   so the charge grows with the request: 400k tokens refused for being too long
   billed a dollar.
 
-- **BALANCE_EXEMPT_USERS** — matched by the ONE shared `object.BalanceExemptSet`
-  (gate + controller): an `owner/name` entry exempts only that exact subject; a
-  bare `owner` exempts the whole org. `hanzo/z` does NOT exempt all of org hanzo.
+- **Exemption is by ROUTE, never by identity.** `BALANCE_EXEMPT_USERS` is read
+  by nothing; `TestEnforceBalanceGate_NoExemptBypass` and
+  `TestCheckBalanceNoExemption` set it and require the formerly-listed subjects
+  to fail closed. What is exempt is a set of paths — `isBalanceExempt` in
+  `routers/filter_balance.go` — plus `balanceExemptNames`, three usage reads
+  named as POLICY rather than URL so a $0 org can still see the panel telling it
+  to add credit, and so moving the route cannot silently re-gate them. Exempt
+  from balance is not exempt from auth.
 
-- **Global admin** — `util.IsGlobalAdmin` = `IsAdmin && owner ∈ globalAdminOrgs`.
-  Canonical default `defaultGlobalAdminOrgs = {admin, built-in}` (matches IAM
-  AdminOrg + console2). The live `globalAdminOrgs` env override is authoritative;
-  it is currently `admin,hanzo` (grants the hanzo TENANT org platform power) —
-  FLAGGED for alignment to `admin,built-in` once the hanzo-org provider-config
-  workflow is confirmed to run via the `admin` org.
+- **SuperAdmin** — `util.IsSuperAdmin` = `owner == util.AdminOrg`, the constant
+  `"admin"`. Membership in that one reserved IAM org is the whole definition:
+  no list, no env override, and `isAdmin` is not part of it — an org admin
+  (`hanzo/z`) administers `hanzo` and holds no platform power.
 
 - **Authz gate** (`routers/authz_filter.go`) — platform-sensitive endpoints
-  (`globalAdminEndpoints`) are gated FIRST (before preview-mode + exempt reads).
+  (`superAdminEndpoints`) are gated FIRST (before preview-mode + exempt reads).
   There is deliberately NO `adminDomain` Host bypass (a removed full-authz-bypass
   primitive). No principal → 401; wrong principal → 403.
 
