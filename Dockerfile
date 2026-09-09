@@ -64,7 +64,7 @@ ENV RUNNING_IN_DOCKER=true
 ENTRYPOINT ["/server"]
 
 
-FROM public.ecr.aws/docker/library/debian:latest AS db
+FROM public.ecr.aws/docker/library/debian:13 AS db
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         mariadb-server \
