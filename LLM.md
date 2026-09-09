@@ -383,6 +383,40 @@ route must emit a policy key, no path may contain a verb, and an action whose
 handler reads no id must sit on the collection (a member action's route could never
 match).
 
+## An OpenAI-COMPATIBLE vendor is upstream `Local`, never `OpenAI`
+
+`Provider.Type` IS the dialect declaration, and the two OpenAI-shaped upstreams are
+not interchangeable:
+
+| type | client | dialect | price from |
+|---|---|---|---|
+| `OpenAI` | `NewOpenAiModelProvider` | **`/v1/responses`** — OpenAI's own surface | `CalculateOpenAIModelPrice`, a table of what OpenAI RETAILS |
+| `Local` | `NewLocalModelProvider` | **`/v1/chat/completions`** (`local.go`, `CreateChatCompletionStream`) | the provider ROW (`inputPricePerThousandTokens`), plus `compatibleProvider` for the API it speaks |
+
+`DigitalOcean` already resolves to the `Local` client; so should every vendor that
+merely SPEAKS OpenAI. Typing one `OpenAI` sends it to the Responses API, and every
+compatible vendor shims that differently.
+
+**Measured, one provider (the Hugging Face router), one credential, one URL —
+typed `OpenAI`:** `meta-llama/Llama-3.3-70B-Instruct` answered, while
+`zai-org/GLM-5.2`, `deepseek-ai/DeepSeek-V4-Flash-0731` and `moonshotai/Kimi-K3`
+returned an EMPTY message with a 200 and zero usage. All four answer directly, in
+both dialects. **Retyped `Local`, all four answer through the plane**, reasoning
+models included, with no `<think>` leaking into content — and no code change.
+The reasoning streams carry `response.reasoning_text.delta`, which the Responses
+loop does not case on (it handles only `response.reasoning_summary_text.delta`).
+
+So the rule is a ROW, not a patch: an OpenAI-compatible vendor is `Local` with its
+own URL and its own price. Reasoning stays a FIELD the dialect carries, never
+something sniffed out of the content stream.
+
+**Three things still dispatch on substrings of the model NAME**, and a model in
+none of the lists gets wrong behaviour rather than an error — `getOpenAiModelType`
+(which dialect), `InlinesReasoning` (`strings.Contains(name, "deepseek")`, directly
+under a comment saying which SKU inlines is "a property of the catalog (HIP-0039)
+… never a list here"), and the retail price table. Each is a place a new model
+silently misbehaves; the `Local` row above is what they were compensating for.
+
 ## LLM serving path (OpenAI-compatible /v1) — READ THIS
 
 The `ai` module is mounted by `hanzoai/cloud` (HIP-0106). In prod it runs as
@@ -618,6 +652,45 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   of the clamped ceiling and the QueryText pipeline's fixed completion cap
   (`reserveCompletionTokens` / `reserveCompletionFloor=4096`, mirrored in
   `model/openai_util.go`), so actual spend can never exceed the hold on any path.
+
+- **A tier is read through `object.TierReader`, and the host owes a reader that
+  answers** — there are two consumers and they must ask in the same order:
+  `controllers.commerceFamilyTier` (the per-SKU gate) and
+  `routers.TierCache.commerceTierLookup` (the rate limiter). Both read the
+  installed reader FIRST; the HTTP route is what a STANDALONE ai has instead of
+  one, not a second way to ask. `InitTierCache` builds the cache when EITHER
+  exists, not when the endpoint alone is set.
+
+  The reader is NOT necessarily in-process. Every cloud app is its own child
+  PROCESS, so a Go func var cannot cross that boundary: what cloud installs is
+  `metering.Client.Tier`, which is an HTTP call to
+  `GET /v1/billing/tier` carrying `COMMERCE_SERVICE_TOKEN` and `X-Org-Id`. That
+  call has no user session, so it only succeeds where the handler resolves its
+  tenant with billing's `readerOrg` (session OR trusted service naming an org)
+  rather than `principal.OrgFrom` alone. `balance` had that rule; the typed ops
+  behind `tier` did not, and answered `401 sign in to view finance` to a token the
+  same request proved good on `/v1/billing/balance`. Fixed in cloud
+  `apps/billing/typed.go` (`payer` falls through to `readerOrg`), guarded by
+  `apps/billing/tier_s2s_test.go`.
+
+  **The failure is silent in both directions**, which is why it lasted: the rate
+  limiter maps a failed read to `TierZenFree` (every paying org shaped as free)
+  and the SKU gate maps one to unknown and ALLOWS (it stops gating). Neither logs
+  an error anyone watches, so assert the tier a caller actually gets rather than
+  that the lookup "worked".
+
+- **A failed call bills only what a vendor actually ran** — `recordUsage` bills a
+  failure because by then the vendor has run the request and invoiced us. That
+  premise does not hold for a refusal it can decide from the request alone (400,
+  401, 402, 403, 404, 413, 422, 429) or for an error carrying no status at all
+  (nothing was dialled). `controllers.ran(err)` answers that, and it is NOT
+  `faultOf`: faultOf asks where the request goes NEXT, and the two come apart both
+  ways — a 401 fails over having run nothing, a partial write stops the cascade
+  having run plenty. `spent()` consults `ran` only when nothing came back, so a
+  meter the vendor reported and any text that reached the caller still settle it
+  first. Without this the quantity billed is the prompt measured on the way out,
+  so the charge grows with the request: 400k tokens refused for being too long
+  billed a dollar.
 
 - **BALANCE_EXEMPT_USERS** — matched by the ONE shared `object.BalanceExemptSet`
   (gate + controller): an `owner/name` entry exempts only that exact subject; a
