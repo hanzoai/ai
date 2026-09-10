@@ -86,9 +86,9 @@ jobs:
           # drops them and publishes a module that compiles nowhere.
           git -C "$mirror" add -Af
 
-          git -C "$mirror" -c user.name=Hanzo -c user.email=dev@hanzo.ai \
-            commit --quiet --allow-empty -m "$v — one commit carrying the release tree"
-          git -C "$mirror" -c user.name=Hanzo -c user.email=dev@hanzo.ai \
+          git -C "$mirror" -c user.name="Zach Kelling" -c user.email=z@zeekay.io \
+            commit --quiet --allow-empty --trailer "Co-authored-by: Hanzo Dev <dev@hanzo.ai>" -m "$v — one commit carrying the release tree"
+          git -C "$mirror" -c user.name="Zach Kelling" -c user.email=z@zeekay.io \
             tag -a "$v" -m "$v"
           git -C "$mirror" push --quiet origin HEAD:main
           git -C "$mirror" push --quiet origin "$v"
