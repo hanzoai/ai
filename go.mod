@@ -52,7 +52,7 @@ require (
 	github.com/hanzoai/search-go v0.36.0
 	github.com/hanzoai/sqlite v0.5.5
 	github.com/hanzoai/tasks v1.52.9
-	github.com/hanzoai/voice v0.1.1-0.20260815163030-0c26e48ac43f
+	github.com/hanzoai/voice v0.1.1-0.20260815163030-30c22bcbd91a
 	github.com/hanzos3/go v1.0.0
 	github.com/henomis/lingoose v0.1.0
 	github.com/hupe1980/go-huggingface v0.0.15
