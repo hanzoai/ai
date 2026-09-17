@@ -21,7 +21,7 @@ import "testing"
 // used to fail the request AFTER the call had already succeeded upstream.
 func TestUnknownModelIsUnpricedNotAnError(t *testing.T) {
 	for _, m := range []string{
-		"default",                          // the local engine's own id
+		"default",                           // the local engine's own id
 		"meta-llama/Llama-3.3-70B-Instruct", // a Hugging Face route
 		"z-ai/glm-5.2:free",                 // an OpenRouter free SKU
 	} {

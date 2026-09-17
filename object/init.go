@@ -16,11 +16,12 @@ package object
 
 import (
 	"fmt"
-	"github.com/hanzoai/dbx"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/hanzoai/dbx"
 
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/util"

@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
-	"github.com/hanzoai/ai/agent/builtin_tool/time"
+	timetools "github.com/hanzoai/ai/agent/builtin_tool/time"
 	webtools "github.com/hanzoai/ai/agent/builtin_tool/web"
 )
 

@@ -15,10 +15,11 @@
 package routers
 
 import (
-	"github.com/zap-proto/zip"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/zap-proto/zip"
 )
 
 // A resource that does not say what it holds publishes an untyped bag.

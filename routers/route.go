@@ -16,6 +16,7 @@ package routers
 
 import (
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 
@@ -33,18 +34,20 @@ import (
 // verb is bound to a handler; splitting it into per-verb calls would be the same
 // table written twice, in two orders, for someone to reconcile later.
 
-// verbs is the registrar for each verb a mapping may name. "*" is any verb, which
-// is what a method-aware handler asks for: /v1/ai/router/policy splits GET from PUT
-// itself and answers 405 for a verb it does not own.
-func verbs(app *zip.App) map[string]func(string, ...zip.Handler) zip.Router {
-	return map[string]func(string, ...zip.Handler) zip.Router{
-		"GET":    app.Get,
-		"POST":   app.Post,
-		"PUT":    app.Put,
-		"PATCH":  app.Patch,
-		"DELETE": app.Delete,
-		"*":      app.All,
-	}
+// verbs is the method each verb a mapping may name registers under. "*" is any
+// verb, which is what a method-aware handler asks for: /v1/ai/router/policy
+// splits GET from PUT itself and answers 405 for a verb it does not own.
+//
+// Every one of these is a raw registration — the handler is resolved by
+// reflection from a controller method name and takes the context itself — so the
+// method is a value here rather than a registrar to call.
+var verbs = map[string]string{
+	"GET":    http.MethodGet,
+	"POST":   http.MethodPost,
+	"PUT":    http.MethodPut,
+	"PATCH":  http.MethodPatch,
+	"DELETE": http.MethodDelete,
+	"*":      zip.MethodAll,
 }
 
 // route binds one path's verbs to controller methods.
@@ -55,18 +58,17 @@ func verbs(app *zip.App) map[string]func(string, ...zip.Handler) zip.Router {
 // mean a 500 the first time a customer called that address, discovered in
 // production by the customer. Now the binary refuses to start.
 func route(app *zip.App, path, mapping string) {
-	add := verbs(app)
 	for pair := range strings.SplitSeq(mapping, ";") {
 		verb, name, ok := strings.Cut(pair, ":")
 		if !ok {
 			panic(fmt.Sprintf("routers: %s: mapping %q is not VERB:Method", path, pair))
 		}
 		verb = strings.ToUpper(strings.TrimSpace(verb))
-		register, known := add[verb]
+		method, known := verbs[verb]
 		if !known {
 			panic(fmt.Sprintf("routers: %s: unknown verb %q", path, verb))
 		}
-		register(path, serve(strings.TrimSpace(name)))
+		app.Raw(method, path, serve(strings.TrimSpace(name)))
 	}
 }
 

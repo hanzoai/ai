@@ -41,7 +41,7 @@ import (
 // DB/adapter/filter stack (the production handle is the same type).
 func healthHandler() http.Handler {
 	app := zip.New(zip.Config{DisableStartupMessage: true})
-	app.Get("/v1/health", func(c *zip.Ctx) error {
+	app.Raw(http.MethodGet, "/v1/health", func(c *zip.Ctx) error {
 		(&ApiController{Ctx: c}).Health()
 		return nil
 	})

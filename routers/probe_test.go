@@ -96,7 +96,7 @@ func (p probe) through(f zip.Handler) probe {
 	// the request ends, so a Ctx read afterwards is a recycled object with none of
 	// this request on it. Read it with left().
 	var reached context.Context
-	app.All("/*", func(c *zip.Ctx) error {
+	app.Raw(zip.MethodAll, "/*", func(c *zip.Ctx) error {
 		reached = c.Context()
 		return nil
 	})

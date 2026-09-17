@@ -58,9 +58,9 @@ func voiceMux() http.Handler {
 func voiceApp() *zip.App {
 	app := zip.New(zip.Config{})
 	talk := zip.AdaptNetHTTP(voiceMux())
-	app.Post("/v1/voice/session", talk)
-	app.Get("/v1/voice", talk)
-	app.Get("/v1/voice/health", talk)
+	app.Raw(http.MethodPost, "/v1/voice/session", talk)
+	app.Raw(http.MethodGet, "/v1/voice", talk)
+	app.Raw(http.MethodGet, "/v1/voice/health", talk)
 	return app
 }
 

@@ -25,6 +25,8 @@
 package routers
 
 import (
+	"net/http"
+
 	"github.com/hanzoai/ai/controllers"
 	"github.com/zap-proto/zip"
 )
@@ -187,9 +189,9 @@ func registerAPI(app *zip.App) {
 	// any page on the internet opening a microphone as whoever is signed in.
 	if h := controllers.VoiceHandler(); h != nil {
 		talk := zip.AdaptNetHTTP(h)
-		app.Post("/v1/voice/session", talk)
-		app.Get("/v1/voice", talk)
-		app.Get("/v1/voice/health", talk)
+		app.Raw(http.MethodPost, "/v1/voice/session", talk)
+		app.Raw(http.MethodGet, "/v1/voice", talk)
+		app.Raw(http.MethodGet, "/v1/voice/health", talk)
 	}
 
 	// The router-config surface — per-org settings (/v1/ai/org/settings + /list), routing

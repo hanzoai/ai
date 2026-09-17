@@ -137,8 +137,8 @@ func TestAnEmptyWriteDoesNotClaimTheStream(t *testing.T) {
 	var dst sink
 	won, err := Race(context.Background(), &dst,
 		func(ctx context.Context, w io.Writer) error {
-			_, _ = w.Write(nil)         // a flush with nothing in it
-			_, _ = w.Write([]byte(""))  // and again
+			_, _ = w.Write(nil)        // a flush with nothing in it
+			_, _ = w.Write([]byte("")) // and again
 			select {
 			case <-time.After(80 * time.Millisecond):
 			case <-ctx.Done():

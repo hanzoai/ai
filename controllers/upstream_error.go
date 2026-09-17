@@ -16,8 +16,9 @@ package controllers
 
 import (
 	"errors"
-	"github.com/hanzoai/ai/object"
 	"net/http"
+
+	"github.com/hanzoai/ai/object"
 
 	openai "github.com/hanzoai/go-openai"
 )

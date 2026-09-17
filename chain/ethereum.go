@@ -27,7 +27,7 @@ import (
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/util"
 	"github.com/luxfi/crypto"
-	"github.com/luxfi/geth"
+	ethereum "github.com/luxfi/geth"
 	"github.com/luxfi/geth/accounts/abi"
 	"github.com/luxfi/geth/accounts/abi/bind"
 	"github.com/luxfi/geth/common"
