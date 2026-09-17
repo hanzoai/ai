@@ -196,7 +196,7 @@ func (p *AlibabacloudTextToSpeechProvider) QueryAudioStream(text string, ctx con
 			base64Data := base64.StdEncoding.EncodeToString(outputResult.Data)
 
 			// Create event data JSON
-			event := map[string]interface{}{
+			event := map[string]any{
 				"type": "audio",
 				"data": base64Data,
 			}

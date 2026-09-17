@@ -51,8 +51,8 @@ func InlinesReasoning(upstreamModel string) bool {
 // returning the clean answer. Content with no </think> is returned unchanged —
 // a no-op on already-clean (e.g. GLM) output.
 func StripLeadingReasoning(content string) string {
-	if i := strings.Index(content, thinkClose); i >= 0 {
-		return strings.TrimLeft(content[i+len(thinkClose):], " \n")
+	if _, after, ok := strings.Cut(content, thinkClose); ok {
+		return strings.TrimLeft(after, " \n")
 	}
 	return content
 }
@@ -76,10 +76,10 @@ func (s *ReasoningStripper) Feed(delta string) string {
 	}
 	s.buf.WriteString(delta)
 	b := s.buf.String()
-	if i := strings.Index(b, thinkClose); i >= 0 {
+	if _, after, ok := strings.Cut(b, thinkClose); ok {
 		s.done = true
 		s.buf.Reset()
-		return strings.TrimLeft(b[i+len(thinkClose):], " \n")
+		return strings.TrimLeft(after, " \n")
 	}
 	if s.buf.Len() >= reasoningCap {
 		s.done = true

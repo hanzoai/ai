@@ -141,7 +141,7 @@ func TestStreamCaptureUsageStripsReasoning(t *testing.T) {
 
 	// The client sees CLEAN content — no reasoning, no </think>.
 	var forwarded strings.Builder
-	for _, line := range strings.Split(out.String(), "\n") {
+	for line := range strings.SplitSeq(out.String(), "\n") {
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}

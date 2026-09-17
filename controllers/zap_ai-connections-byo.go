@@ -93,8 +93,8 @@ func zapConnectionOrg(auth string) (string, error) {
 		return "", err
 	}
 	owner := id
-	if i := strings.IndexByte(id, '/'); i >= 0 {
-		owner = id[:i]
+	if before, _, ok := strings.Cut(id, "/"); ok {
+		owner = before
 	}
 	if strings.TrimSpace(owner) == "" {
 		return "", fmt.Errorf("authentication required")
@@ -110,7 +110,7 @@ func zapConnectionOrg(auth string) (string, error) {
 
 type connOutcome struct {
 	status  int
-	payload interface{}
+	payload any
 	errMsg  string
 }
 

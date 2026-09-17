@@ -563,8 +563,8 @@ func singularNoun(r resource) string {
 	if r.key != "" {
 		return r.key
 	}
-	if strings.HasSuffix(r.path, "ies") {
-		return strings.TrimSuffix(r.path, "ies") + "y"
+	if before, ok := strings.CutSuffix(r.path, "ies"); ok {
+		return before + "y"
 	}
 	return strings.TrimSuffix(r.path, "s")
 }

@@ -75,9 +75,9 @@ func TestUsageMargin(t *testing.T) {
 			// billed 1000·10000 + 500·30000 = 25,000,000 ; cost 1000·2000 + 500·6000 = 5,000,000.
 			name:       "served, price>cost ⇒ margin>0",
 			rec:        usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500},
-			wantCost:   nano(5_000_000),
+			wantCost:   new(int64(5_000_000)),
 			wantBilled: 25_000_000,
-			wantMargin: nano(20_000_000),
+			wantMargin: new(int64(20_000_000)),
 		},
 		{
 			// No COGS configured, so nothing here knows what the call cost. Reading the
@@ -94,18 +94,18 @@ func TestUsageMargin(t *testing.T) {
 			// customer paid the upstream), so the whole fee is margin.
 			name:       "BYO, fee path unchanged ⇒ margin == fee",
 			rec:        usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500, BYO: true},
-			wantCost:   nano(0),
+			wantCost:   new(int64(0)),
 			wantBilled: 250_000,
-			wantMargin: nano(250_000),
+			wantMargin: new(int64(250_000)),
 		},
 		{
 			// BYO margin is the fee regardless of whether a COGS is configured: the
 			// customer paid the upstream, so our cost is a known zero, not an unknown.
 			name:       "BYO, no COGS configured ⇒ margin == fee",
 			rec:        usageRecord{Model: "zeromargin", PromptTokens: 1000, CompletionTokens: 500, BYO: true},
-			wantCost:   nano(0),
+			wantCost:   new(int64(0)),
 			wantBilled: 250_000,
-			wantMargin: nano(250_000),
+			wantMargin: new(int64(250_000)),
 		},
 		{
 			// Cache COGS is not separately configured: cache-read defaults to 10% of the
@@ -114,9 +114,9 @@ func TestUsageMargin(t *testing.T) {
 			// cost   5,000,000  + 2000·200  + 100·2000  = 5,600,000.
 			name:       "served, cache tokens ⇒ COGS cache defaulting",
 			rec:        usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500, CacheReadTokens: 2000, CacheWriteTokens: 100},
-			wantCost:   nano(5_600_000),
+			wantCost:   new(int64(5_600_000)),
 			wantBilled: 28_000_000,
-			wantMargin: nano(22_400_000),
+			wantMargin: new(int64(22_400_000)),
 		},
 	}
 

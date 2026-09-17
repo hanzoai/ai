@@ -19,7 +19,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"io/ioutil"
+	"os"
+
 	"net"
 )
 
@@ -54,7 +55,7 @@ func FindByUint(ip uint32) *LocationInfo {
 
 // New locator with dataFile
 func NewLocator(dataFile string) (loc *Locator, err error) {
-	data, err := ioutil.ReadFile(dataFile)
+	data, err := os.ReadFile(dataFile)
 	if err != nil {
 		return
 	}
@@ -131,7 +132,7 @@ func (loc *Locator) init(data []byte) {
 	loc.textData = data[textoff-1024:]
 
 	loc.index = make([]int, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		off := 4 + i*4
 		loc.index[i] = int(binary.LittleEndian.Uint32(data[off : off+4]))
 	}
@@ -142,7 +143,7 @@ func (loc *Locator) init(data []byte) {
 	loc.indexData2 = make([]int, nidx)
 	loc.indexData3 = make([]int, nidx)
 
-	for i := 0; i < nidx; i++ {
+	for i := range nidx {
 		off := 4 + 1024 + i*8
 		loc.indexData1[i] = binary.BigEndian.Uint32(data[off : off+4])
 		loc.indexData2[i] = int(uint32(data[off+4]) | uint32(data[off+5])<<8 | uint32(data[off+6])<<16)

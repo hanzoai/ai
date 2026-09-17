@@ -97,9 +97,9 @@ func DeleteTemplate(template *Template) (bool, error) {
 }
 
 // Render the template with the given data.
-func (t *Template) Render(data map[string]interface{}) (string, error) {
+func (t *Template) Render(data map[string]any) (string, error) {
 	if data == nil {
-		data = map[string]interface{}{}
+		data = map[string]any{}
 	}
 	textTmpl := template.New("manifest")
 	tpl, err := textTmpl.Parse(t.Manifest)

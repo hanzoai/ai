@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
@@ -95,10 +96,8 @@ func trustedJWTIssuers() []string {
 		if v == "" {
 			return
 		}
-		for _, e := range out {
-			if e == v {
-				return
-			}
+		if slices.Contains(out, v) {
+			return
 		}
 		out = append(out, v)
 	}
@@ -201,13 +200,7 @@ func splitBrandApp(aud string) (brand, app string, ok bool) {
 // primitive: GATEWAY_ALLOWED_AUDIENCES widened by IAM_AUDIENCE/AUTH_AUDIENCE.
 func appendUniqueCSV(out []string, raw string) []string {
 	for _, a := range splitCSV(raw) {
-		seen := false
-		for _, e := range out {
-			if e == a {
-				seen = true
-				break
-			}
-		}
+		seen := slices.Contains(out, a)
 		if !seen {
 			out = append(out, a)
 		}
@@ -220,7 +213,7 @@ func splitCSV(raw string) []string {
 		return nil
 	}
 	var out []string
-	for _, a := range strings.Split(raw, ",") {
+	for a := range strings.SplitSeq(raw, ",") {
 		if a = strings.TrimSpace(a); a != "" {
 			out = append(out, a)
 		}
@@ -291,10 +284,8 @@ func checkIssAud(iss string, auds []string, expectedIss []string, allowedAud []s
 	}
 	if len(allowedAud) > 0 {
 		for _, a := range auds {
-			for _, allow := range allowedAud {
-				if a == allow {
-					return nil
-				}
+			if slices.Contains(allowedAud, a) {
+				return nil
 			}
 		}
 		return ErrJWTBadAudience

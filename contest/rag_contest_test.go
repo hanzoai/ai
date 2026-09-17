@@ -42,7 +42,7 @@ func TestProcessPapers(t *testing.T) {
 	proxy.InitHttpClient()
 	filesProcessed := 0
 	processedQuestions := make(map[string]bool)
-	var questionsData []map[string]interface{}
+	var questionsData []map[string]any
 
 	questionsBytes, err := os.ReadFile(readQuestionsFile)
 	if err != nil {
@@ -159,6 +159,6 @@ func createStore(paperId string) (*object.Store, error) {
 	return store, err
 }
 
-func generateQuestionKey(question map[string]interface{}) string {
+func generateQuestionKey(question map[string]any) string {
 	return question["paper_id"].(string) + ":" + question["question"].(string)
 }

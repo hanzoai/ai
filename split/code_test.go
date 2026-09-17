@@ -52,13 +52,6 @@ func TestCodeSplitKeepsDeclarationsWhole(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // TestCodeSplitUnknownLanguageFallsBack proves an unmapped language does not crash and
 // still splits on block boundaries (generic separators), never returning zero chunks
 // for non-empty input.

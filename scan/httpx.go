@@ -153,8 +153,8 @@ func (p *HttpxScanProvider) parseHttpxOutput(output string) *HttpxScanResult {
 		},
 	}
 
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(output, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

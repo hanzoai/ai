@@ -25,7 +25,7 @@ import (
 
 // reference reproduces the controller layer/logs.formatLog verbatim. format must agree with
 // it on every input so the migrated call sites render identically.
-func reference(f interface{}, v ...interface{}) string {
+func reference(f any, v ...any) string {
 	var msg string
 	switch f.(type) {
 	case string:
@@ -51,22 +51,22 @@ func reference(f interface{}, v ...interface{}) string {
 func TestFormatMatchesUpstream(t *testing.T) {
 	err := errors.New("boom")
 	cases := []struct {
-		f interface{}
-		v []interface{}
+		f any
+		v []any
 	}{
 		{"plain message no args", nil},
-		{"format with verb: %v", []interface{}{err}},
-		{"format with verb: %d and %s", []interface{}{42, "x"}},
-		{"no verb but has args", []interface{}{err}},
-		{"no verb two args", []interface{}{"a", 2}},
-		{"literal percent %% only", []interface{}{err}},
-		{"mixed %% and %v", []interface{}{err}},
-		{"CLOUD_API_REPLICAS=%d refusing", []interface{}{3}},
-		{"", []interface{}{err}},
+		{"format with verb: %v", []any{err}},
+		{"format with verb: %d and %s", []any{42, "x"}},
+		{"no verb but has args", []any{err}},
+		{"no verb two args", []any{"a", 2}},
+		{"literal percent %% only", []any{err}},
+		{"mixed %% and %v", []any{err}},
+		{"CLOUD_API_REPLICAS=%d refusing", []any{3}},
+		{"", []any{err}},
 		{"", nil},
 		{errors.New("error as leading value"), nil},
-		{errors.New("error leading with args"), []interface{}{1, 2}},
-		{123, []interface{}{"tail"}},
+		{errors.New("error leading with args"), []any{1, 2}},
+		{123, []any{"tail"}},
 		{"percent at end %", nil},
 	}
 	for _, c := range cases {
@@ -109,7 +109,7 @@ func TestSetLoggerLevelAndReset(t *testing.T) {
 // numeric {"level":7} configures debug instead of silently no-opping.
 func TestParseLevel(t *testing.T) {
 	cases := []struct {
-		v    interface{}
+		v    any
 		want luxlog.Level
 		ok   bool
 	}{

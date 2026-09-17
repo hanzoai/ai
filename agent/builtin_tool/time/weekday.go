@@ -33,19 +33,19 @@ func (t *WeekdayTool) GetDescription() string {
 	return "A tool for calculating the weekday of a given date by year, month and day."
 }
 
-func (t *WeekdayTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *WeekdayTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"year": map[string]interface{}{
+		"properties": map[string]any{
+			"year": map[string]any{
 				"type":        "number",
 				"description": "Year (e.g., 2024)",
 			},
-			"month": map[string]interface{}{
+			"month": map[string]any{
 				"type":        "number",
 				"description": "Month (1-12)",
 			},
-			"day": map[string]interface{}{
+			"day": map[string]any{
 				"type":        "number",
 				"description": "Day of month (1-31)",
 			},
@@ -54,7 +54,7 @@ func (t *WeekdayTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *WeekdayTool) Execute(ctx context.Context, arguments map[string]interface{}) (*protocol.CallToolResult, error) {
+func (t *WeekdayTool) Execute(ctx context.Context, arguments map[string]any) (*protocol.CallToolResult, error) {
 	var year int
 	switch v := arguments["year"].(type) {
 	case float64:

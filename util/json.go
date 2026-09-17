@@ -17,7 +17,7 @@ package util
 
 import "encoding/json"
 
-func StructToJson(v interface{}) string {
+func StructToJson(v any) string {
 	data, err := json.MarshalIndent(v, "", "  ")
 	// data, err := json.Marshal(v)
 	if err != nil {
@@ -27,7 +27,7 @@ func StructToJson(v interface{}) string {
 	return string(data)
 }
 
-func StructToJsonNoIndent(v interface{}) string {
+func StructToJsonNoIndent(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
@@ -36,7 +36,7 @@ func StructToJsonNoIndent(v interface{}) string {
 	return string(data)
 }
 
-func JsonToStruct(data string, v interface{}) error {
+func JsonToStruct(data string, v any) error {
 	return json.Unmarshal([]byte(data), v)
 }
 
@@ -45,7 +45,7 @@ func GetFieldFromJsonString(jsonStr string, fieldName string) (string, error) {
 		return "", nil
 	}
 
-	var data map[string]interface{}
+	var data map[string]any
 	err := json.Unmarshal([]byte(jsonStr), &data)
 	if err != nil {
 		return "", err

@@ -295,8 +295,8 @@ func ProviderKeyPresent(provider *Provider) bool {
 		return false
 	}
 	secret := provider.ClientSecret
-	if strings.HasPrefix(secret, "kms://") {
-		secretName := strings.TrimPrefix(secret, "kms://")
+	if after, ok := strings.CutPrefix(secret, "kms://"); ok {
+		secretName := after
 		if secretName == "" {
 			return false
 		}

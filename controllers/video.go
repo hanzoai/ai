@@ -219,7 +219,7 @@ func (c *ApiController) AddVideo() { stored(c, c.RequireSignedIn, object.AddVide
 func (c *ApiController) DeleteVideo() { stored(c, c.RequireSignedIn, object.DeleteVideo) }
 
 func updateVideoCoverUrl(id string, videoId string) error {
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		coverUrl := video.GetVideoCoverUrl(videoId)
 		if coverUrl != "" {
 			v, err := object.GetVideo(id)

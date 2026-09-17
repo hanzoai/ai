@@ -209,8 +209,8 @@ func sealPastedKey(id string, incoming *object.Provider) error {
 	name := ""
 	if id != "" {
 		if existing, err := object.GetProvider(id); err == nil && existing != nil {
-			if strings.HasPrefix(existing.ClientSecret, "kms://") {
-				name = strings.TrimPrefix(existing.ClientSecret, "kms://")
+			if after, ok := strings.CutPrefix(existing.ClientSecret, "kms://"); ok {
+				name = after
 			}
 			if incoming.Owner == "" {
 				incoming.Owner = existing.Owner

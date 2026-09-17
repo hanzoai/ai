@@ -109,7 +109,7 @@ func TestZapVideoJobResponseParity(t *testing.T) {
 		createdAt: time.Now(), status: "failed", failureReason: "upstream boom",
 	}
 
-	var got map[string]interface{}
+	var got map[string]any
 	raw, _ := json.Marshal(videoJobResponse(completed))
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("marshal completed: %v", err)
@@ -125,14 +125,14 @@ func TestZapVideoJobResponseParity(t *testing.T) {
 	}
 
 	raw, _ = json.Marshal(videoJobResponse(failed))
-	got = map[string]interface{}{}
+	got = map[string]any{}
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
 	if got["status"] != "failed" {
 		t.Fatalf("failed status wrong: %v", got)
 	}
-	errObj, ok := got["error"].(map[string]interface{})
+	errObj, ok := got["error"].(map[string]any)
 	if !ok || errObj["message"] != "upstream boom" {
 		t.Fatalf("failed error projection wrong: %v", got["error"])
 	}

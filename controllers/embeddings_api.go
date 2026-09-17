@@ -332,7 +332,7 @@ func (c *ApiController) rejectPublishableKey() {
 }
 
 // jsonResponse writes v as a 200 JSON body and disables the router's auto-render.
-func (c *ApiController) jsonResponse(v interface{}) {
+func (c *ApiController) jsonResponse(v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		c.ResponseError(fmt.Sprintf("Failed to encode response: %s", err.Error()))
@@ -494,7 +494,7 @@ func isNativeRerankProvider(providerType string) bool {
 // embedTexts calls the provider's /embeddings endpoint once for all texts and
 // returns the vectors ordered by their input index.
 func embedTexts(provider *object.Provider, upstreamModel string, texts []string) ([][]float64, error) {
-	reqBody, err := json.Marshal(map[string]interface{}{
+	reqBody, err := json.Marshal(map[string]any{
 		"model": upstreamModel,
 		"input": texts,
 	})

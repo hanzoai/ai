@@ -209,10 +209,7 @@ func zapPaginated(p zapKnowledgeParams) (bool, int, int) {
 		return false, 0, 0
 	}
 	limit := util.ParseInt(p.PageSize)
-	page := util.ParseInt(p.P)
-	if page < 1 {
-		page = 1
-	}
+	page := max(util.ParseInt(p.P), 1)
 	return true, (page - 1) * limit, limit
 }
 
@@ -220,8 +217,8 @@ func zapPaginated(p zapKnowledgeParams) (bool, int, int) {
 // prefix ("data:...;base64,") then base64-decodes.
 func zapDecodeBase64File(fileBase64 string) ([]byte, error) {
 	payload := fileBase64
-	if i := strings.Index(fileBase64, ","); i != -1 {
-		payload = fileBase64[i+1:]
+	if _, after, ok := strings.Cut(fileBase64, ","); ok {
+		payload = after
 	}
 	return base64.StdEncoding.DecodeString(payload)
 }

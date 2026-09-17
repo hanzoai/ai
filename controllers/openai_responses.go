@@ -225,15 +225,15 @@ func responsesToChatRequest(request *OpenAIResponsesRequest) (*openai.ChatComple
 		params := any(json.RawMessage(tool.Parameters))
 		if len(tool.Parameters) == 0 || string(tool.Parameters) == "null" {
 			if kind == "custom" {
-				params = map[string]interface{}{
+				params = map[string]any{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"input": map[string]interface{}{"type": "string"},
+					"properties": map[string]any{
+						"input": map[string]any{"type": "string"},
 					},
 					"required": []string{"input"},
 				}
 			} else {
-				params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+				params = map[string]any{"type": "object", "properties": map[string]any{}}
 			}
 		}
 		tools = append(tools, openai.Tool{
@@ -407,7 +407,7 @@ func responsesOutputText(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func responsesToolChoiceToChat(raw json.RawMessage) interface{} {
+func responsesToolChoiceToChat(raw json.RawMessage) any {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}
@@ -420,7 +420,7 @@ func responsesToolChoiceToChat(raw json.RawMessage) interface{} {
 		Name string `json:"name"`
 	}
 	if json.Unmarshal(raw, &choiceObj) == nil && choiceObj.Name != "" {
-		return map[string]interface{}{
+		return map[string]any{
 			"type": "function", "function": map[string]string{"name": choiceObj.Name},
 		}
 	}
@@ -524,7 +524,7 @@ func (w *responsesBridge) Close() error {
 	return w.translator.finish()
 }
 
-func (w *responsesBridge) emitLocked(event string, data interface{}) error {
+func (w *responsesBridge) emitLocked(event string, data any) error {
 	b, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -548,7 +548,7 @@ type responsesToolCallState struct {
 }
 
 type responsesStreamTranslator struct {
-	emit             func(string, interface{}) error
+	emit             func(string, any) error
 	request          *OpenAIResponsesRequest
 	toolKinds        map[string]string
 	responseID       string
@@ -570,7 +570,7 @@ type responsesStreamTranslator struct {
 	sawUsage         bool
 }
 
-func newResponsesStreamTranslator(emit func(string, interface{}) error, request *OpenAIResponsesRequest, toolKinds map[string]string) *responsesStreamTranslator {
+func newResponsesStreamTranslator(emit func(string, any) error, request *OpenAIResponsesRequest, toolKinds map[string]string) *responsesStreamTranslator {
 	return &responsesStreamTranslator{
 		emit: emit, request: request, toolKinds: toolKinds,
 		responseID: "resp_" + uuid.NewString(), messageID: "msg_" + uuid.NewString(),
@@ -585,9 +585,9 @@ func (t *responsesStreamTranslator) start() error {
 		return nil
 	}
 	t.started = true
-	return t.emit("response.created", map[string]interface{}{
+	return t.emit("response.created", map[string]any{
 		"type": "response.created", "sequence_number": t.next(),
-		"response": t.resource("in_progress", []interface{}{}),
+		"response": t.resource("in_progress", []any{}),
 	})
 }
 
@@ -620,21 +620,21 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 				outputIndex := t.nextOutput
 				t.textOutputIndex = outputIndex
 				t.nextOutput++
-				if err := t.emit("response.output_item.added", map[string]interface{}{
+				if err := t.emit("response.output_item.added", map[string]any{
 					"type": "response.output_item.added", "sequence_number": t.next(), "output_index": outputIndex,
-					"item": map[string]interface{}{"id": t.messageID, "type": "message", "role": "assistant", "status": "in_progress", "content": []interface{}{}},
+					"item": map[string]any{"id": t.messageID, "type": "message", "role": "assistant", "status": "in_progress", "content": []any{}},
 				}); err != nil {
 					return err
 				}
-				if err := t.emit("response.content_part.added", map[string]interface{}{
+				if err := t.emit("response.content_part.added", map[string]any{
 					"type": "response.content_part.added", "sequence_number": t.next(), "output_index": outputIndex, "content_index": 0,
-					"part": map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}},
+					"part": map[string]any{"type": "output_text", "text": "", "annotations": []any{}},
 				}); err != nil {
 					return err
 				}
 			}
 			t.text.WriteString(choice.Delta.Content)
-			if err := t.emit("response.output_text.delta", map[string]interface{}{
+			if err := t.emit("response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "sequence_number": t.next(), "item_id": t.messageID,
 				"output_index": t.textOutputIndex, "content_index": 0, "delta": choice.Delta.Content,
 			}); err != nil {
@@ -672,7 +672,7 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 				if call.CallID == "" {
 					call.CallID = call.ID
 				}
-				if err := t.emit("response.output_item.added", map[string]interface{}{
+				if err := t.emit("response.output_item.added", map[string]any{
 					"type": "response.output_item.added", "sequence_number": t.next(), "output_index": call.OutputIndex,
 					"item": call.item("in_progress", ""),
 				}); err != nil {
@@ -685,7 +685,7 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 				if call.Kind == "custom" {
 					event = "response.custom_tool_call_input.delta"
 				}
-				if err := t.emit(event, map[string]interface{}{
+				if err := t.emit(event, map[string]any{
 					"type": event, "sequence_number": t.next(), "item_id": call.ID,
 					"output_index": call.OutputIndex, "delta": tc.Function.Arguments,
 				}); err != nil {
@@ -734,14 +734,14 @@ func (c *responsesToolCallState) finalArguments() string {
 	return args
 }
 
-func (c *responsesToolCallState) item(status, arguments string) map[string]interface{} {
+func (c *responsesToolCallState) item(status, arguments string) map[string]any {
 	if c.Kind == "custom" {
-		return map[string]interface{}{
+		return map[string]any{
 			"id": c.ID, "type": "custom_tool_call", "call_id": c.CallID,
 			"name": c.Name, "input": arguments, "status": status,
 		}
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"id": c.ID, "type": "function_call", "call_id": c.CallID,
 		"name": c.Name, "arguments": arguments, "status": status,
 	}
@@ -755,26 +755,26 @@ func (t *responsesStreamTranslator) finish() error {
 		return err
 	}
 	t.finished = true
-	outputs := make([]interface{}, 0, 1+len(t.calls))
+	outputs := make([]any, 0, 1+len(t.calls))
 	if t.textStarted {
 		text := t.text.String()
-		message := map[string]interface{}{
+		message := map[string]any{
 			"id": t.messageID, "type": "message", "role": "assistant", "status": "completed",
-			"content": []interface{}{map[string]interface{}{"type": "output_text", "text": text, "annotations": []interface{}{}}},
+			"content": []any{map[string]any{"type": "output_text", "text": text, "annotations": []any{}}},
 		}
-		if err := t.emit("response.output_text.done", map[string]interface{}{
+		if err := t.emit("response.output_text.done", map[string]any{
 			"type": "response.output_text.done", "sequence_number": t.next(), "item_id": t.messageID,
 			"output_index": t.textOutputIndex, "content_index": 0, "text": text,
 		}); err != nil {
 			return err
 		}
-		if err := t.emit("response.content_part.done", map[string]interface{}{
+		if err := t.emit("response.content_part.done", map[string]any{
 			"type": "response.content_part.done", "sequence_number": t.next(), "output_index": t.textOutputIndex, "content_index": 0,
-			"part": message["content"].([]interface{})[0],
+			"part": message["content"].([]any)[0],
 		}); err != nil {
 			return err
 		}
-		if err := t.emit("response.output_item.done", map[string]interface{}{
+		if err := t.emit("response.output_item.done", map[string]any{
 			"type": "response.output_item.done", "sequence_number": t.next(), "output_index": t.textOutputIndex, "item": message,
 		}); err != nil {
 			return err
@@ -794,7 +794,7 @@ func (t *responsesStreamTranslator) finish() error {
 			}
 		}
 		if call.Kind != "custom" {
-			if err := t.emit("response.function_call_arguments.done", map[string]interface{}{
+			if err := t.emit("response.function_call_arguments.done", map[string]any{
 				"type": "response.function_call_arguments.done", "sequence_number": t.next(), "item_id": call.ID,
 				"output_index": call.OutputIndex, "arguments": args,
 			}); err != nil {
@@ -802,20 +802,20 @@ func (t *responsesStreamTranslator) finish() error {
 			}
 		}
 		item := call.item("completed", args)
-		if err := t.emit("response.output_item.done", map[string]interface{}{
+		if err := t.emit("response.output_item.done", map[string]any{
 			"type": "response.output_item.done", "sequence_number": t.next(), "output_index": call.OutputIndex, "item": item,
 		}); err != nil {
 			return err
 		}
 		outputs = append(outputs, item)
 	}
-	return t.emit("response.completed", map[string]interface{}{
+	return t.emit("response.completed", map[string]any{
 		"type": "response.completed", "sequence_number": t.next(),
 		"response": t.resource("completed", outputs),
 	})
 }
 
-func (t *responsesStreamTranslator) resource(status string, output []interface{}) responsesResource {
+func (t *responsesStreamTranslator) resource(status string, output []any) responsesResource {
 	total := t.totalTokens
 	if total == 0 {
 		total = t.promptTokens + t.completionTokens
@@ -856,19 +856,19 @@ type responsesResource struct {
 	CreatedAt          int64             `json:"created_at"`
 	Status             string            `json:"status"`
 	Model              string            `json:"model"`
-	Output             []interface{}     `json:"output"`
-	Error              interface{}       `json:"error"`
-	IncompleteDetails  interface{}       `json:"incomplete_details"`
+	Output             []any             `json:"output"`
+	Error              any               `json:"error"`
+	IncompleteDetails  any               `json:"incomplete_details"`
 	Instructions       string            `json:"instructions"`
 	MaxOutputTokens    int               `json:"max_output_tokens"`
 	Metadata           map[string]string `json:"metadata"`
 	ParallelToolCalls  *bool             `json:"parallel_tool_calls"`
-	PreviousResponseID interface{}       `json:"previous_response_id"`
-	Reasoning          interface{}       `json:"reasoning"`
+	PreviousResponseID any               `json:"previous_response_id"`
+	Reasoning          any               `json:"reasoning"`
 	Store              bool              `json:"store"`
 	Temperature        *float32          `json:"temperature"`
-	Text               interface{}       `json:"text"`
-	ToolChoice         interface{}       `json:"tool_choice"`
+	Text               any               `json:"text"`
+	ToolChoice         any               `json:"tool_choice"`
 	Tools              []responsesTool   `json:"tools"`
 	TopP               *float32          `json:"top_p"`
 	Usage              responsesUsage    `json:"usage"`
@@ -891,11 +891,11 @@ type responsesOutputDetails struct {
 	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
-func jsonOrNil(raw json.RawMessage) interface{} {
+func jsonOrNil(raw json.RawMessage) any {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}
-	var value interface{}
+	var value any
 	if json.Unmarshal(raw, &value) != nil {
 		return nil
 	}
@@ -922,17 +922,17 @@ func openAIChatResponseToResponses(body []byte, request *OpenAIResponsesRequest,
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("invalid upstream chat response: %w", err)
 	}
-	translator := newResponsesStreamTranslator(func(string, interface{}) error { return nil }, request, toolKinds)
+	translator := newResponsesStreamTranslator(func(string, any) error { return nil }, request, toolKinds)
 	translator.promptTokens = response.Usage.PromptTokens
 	translator.completionTokens = response.Usage.CompletionTokens
 	translator.totalTokens = response.Usage.TotalTokens
-	outputs := []interface{}{}
+	outputs := []any{}
 	if len(response.Choices) > 0 {
 		message := response.Choices[0].Message
 		if message.Content != "" {
-			outputs = append(outputs, map[string]interface{}{
+			outputs = append(outputs, map[string]any{
 				"id": translator.messageID, "type": "message", "role": "assistant", "status": "completed",
-				"content": []interface{}{map[string]interface{}{"type": "output_text", "text": message.Content, "annotations": []interface{}{}}},
+				"content": []any{map[string]any{"type": "output_text", "text": message.Content, "annotations": []any{}}},
 			})
 		}
 		for _, tc := range message.ToolCalls {

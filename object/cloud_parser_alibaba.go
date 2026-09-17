@@ -17,6 +17,7 @@ package object
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	ecs20140526 "github.com/alibabacloud-go/ecs-20140526/v4/client"
@@ -44,9 +45,9 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 		// Add region filter if specified
 		if provider.Region != "" {
 			filter = append(filter, &resourcecenter20221201.SearchResourcesRequestFilter{
-				Key:       tea.String("RegionId"),
-				MatchType: tea.String("Equals"),
-				Value:     []*string{tea.String(provider.Region)},
+				Key:       new("RegionId"),
+				MatchType: new("Equals"),
+				Value:     []*string{new(provider.Region)},
 			})
 		}
 		request := &resourcecenter20221201.SearchResourcesRequest{
@@ -116,9 +117,9 @@ func (p *AlibabaCloudParser) ScanAssets(owner string, provider *Provider) ([]*As
 // createClient creates an Alibaba Cloud Resource Center client
 func (p *AlibabaCloudParser) createClient(provider *Provider) (*resourcecenter20221201.Client, error) {
 	config := &openapi.Config{
-		AccessKeyId:     tea.String(provider.ClientId),
-		AccessKeySecret: tea.String(provider.ClientSecret),
-		Endpoint:        tea.String("resourcecenter.aliyuncs.com"),
+		AccessKeyId:     new(provider.ClientId),
+		AccessKeySecret: new(provider.ClientSecret),
+		Endpoint:        new("resourcecenter.aliyuncs.com"),
 	}
 	return resourcecenter20221201.NewClient(config)
 }
@@ -140,7 +141,7 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 		}
 	}
 	// Build properties map with available information
-	properties := map[string]interface{}{
+	properties := map[string]any{
 		"resourceType": resourceType,
 	}
 	if publicIp != "" {
@@ -170,10 +171,10 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 		propertiesJson = []byte("{}")
 	}
 	// Extract tags
-	tag := ""
+	var tag strings.Builder
 	if resource.Tags != nil {
 		for _, t := range resource.Tags {
-			tag += fmt.Sprintf("%s=%s,", tea.StringValue(t.Key), tea.StringValue(t.Value))
+			tag.WriteString(fmt.Sprintf("%s=%s,", tea.StringValue(t.Key), tea.StringValue(t.Value)))
 		}
 	}
 	// Convert resource type to display name
@@ -190,7 +191,7 @@ func (p *AlibabaCloudParser) convertResourceToAsset(owner string, provider *Prov
 		Region:      tea.StringValue(resource.RegionId),
 		Zone:        tea.StringValue(resource.ZoneId),
 		State:       "", // State is not available in SearchResources API
-		Tag:         tag,
+		Tag:         tag.String(),
 		Properties:  string(propertiesJson),
 	}
 	return asset

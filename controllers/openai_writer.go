@@ -264,12 +264,12 @@ func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) er
 		// This chunk's choices array is always empty; emitting it unconditionally
 		// crashes clients that read choices[0] on every chunk.
 		if w.IncludeUsage {
-			usageChunk := map[string]interface{}{
+			usageChunk := map[string]any{
 				"id":      "chatcmpl-" + w.RequestID,
 				"object":  "chat.completion.chunk",
 				"created": util.GetCurrentUnixTime(),
 				"model":   w.Model,
-				"choices": []interface{}{},
+				"choices": []any{},
 				"usage": openai.Usage{
 					PromptTokens:     promptTokens,
 					CompletionTokens: completionTokens,

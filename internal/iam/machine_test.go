@@ -84,8 +84,8 @@ func TestMachineTokenIsTyped(t *testing.T) {
 // answers differently because of it.
 func TestMachineTokenReachesThePredicate(t *testing.T) {
 	app := Claims{
-		User:             User{Owner: "hanzo", Name: "hanzo-cloud"},
-		RegisteredClaims: jwt.RegisteredClaims{Audience: jwt.ClaimStrings{"hanzo-cloud"}},
+		Owner: "hanzo", Name: "hanzo-cloud",
+		Audience: jwt.ClaimStrings{"hanzo-cloud"},
 	}
 	if account.IsMachine(app.User.Type) {
 		t.Fatal("precondition: an untyped claim must read as a person, which was the bug")

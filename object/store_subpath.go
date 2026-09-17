@@ -44,8 +44,8 @@ func (w *SubpathStorageProvider) ListObjects(prefix string) ([]*storage.Object, 
 	// If there's a subpath, remove it from the returned object keys
 	if w.subpath != "" {
 		for _, obj := range objects {
-			if strings.HasPrefix(obj.Key, w.subpath+"/") {
-				obj.Key = strings.TrimPrefix(obj.Key, w.subpath+"/")
+			if after, ok := strings.CutPrefix(obj.Key, w.subpath+"/"); ok {
+				obj.Key = after
 			}
 		}
 	}

@@ -22,9 +22,9 @@ func streamer(buf *bytes.Buffer, stream bool) *AnthropicWriter {
 // events returns the SSE event names, in order, that reached the client.
 func events(buf *bytes.Buffer) []string {
 	var out []string
-	for _, line := range strings.Split(buf.String(), "\n") {
-		if strings.HasPrefix(line, "event: ") {
-			out = append(out, strings.TrimPrefix(line, "event: "))
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if after, ok := strings.CutPrefix(line, "event: "); ok {
+			out = append(out, after)
 		}
 	}
 	return out

@@ -16,6 +16,8 @@
 package txt
 
 import (
+	"strings"
+
 	"github.com/tealeg/xlsx"
 )
 
@@ -24,7 +26,7 @@ func getTextFromXlsx(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var result string
+	var result strings.Builder
 	for _, sheet := range xlFile.Sheets {
 		for _, row := range sheet.Rows {
 			for _, cell := range row.Cells {
@@ -32,10 +34,10 @@ func getTextFromXlsx(path string) (string, error) {
 				if err != nil {
 					return "", err
 				}
-				result += text + " "
+				result.WriteString(text + " ")
 			}
-			result += "\n"
+			result.WriteString("\n")
 		}
 	}
-	return result, nil
+	return result.String(), nil
 }

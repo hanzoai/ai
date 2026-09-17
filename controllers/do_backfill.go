@@ -646,7 +646,7 @@ func RunDOBackfill(ctx context.Context, opts DOBackfillOptions) (DOBackfillPlan,
 func doTSLit(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05") }
 
 // doDayString coerces a datastore Date/DateTime/string cell to a YYYY-MM-DD string.
-func doDayString(v interface{}) string {
+func doDayString(v any) string {
 	switch d := v.(type) {
 	case string:
 		return strings.TrimSpace(d)

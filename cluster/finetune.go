@@ -73,16 +73,16 @@ func ensureHfTokenSecret(ctx context.Context, c K8sClient, namespace, token stri
 	if token == "" {
 		return "", nil
 	}
-	secret := map[string]interface{}{
+	secret := map[string]any{
 		"apiVersion": "v1",
 		"kind":       "Secret",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"name":      hfTokenSecretName,
 			"namespace": namespace,
-			"labels":    map[string]interface{}{"managed-by": "hanzo-cloud"},
+			"labels":    map[string]any{"managed-by": "hanzo-cloud"},
 		},
 		"type": "Opaque",
-		"stringData": map[string]interface{}{
+		"stringData": map[string]any{
 			"HF_TOKEN":               token,
 			"HUGGING_FACE_HUB_TOKEN": token,
 			"HUGGINGFACE_HUB_TOKEN":  token,
@@ -98,15 +98,15 @@ func ensureHfTokenSecret(ctx context.Context, c K8sClient, namespace, token stri
 // env vars. This is the universal config channel the Hanzo runtimes read (works
 // for the generic transformers+PEFT runtime and the optimized per-family runtimes
 // alike), so it is robust to a runtime's exact entrypoint.
-func trainerEnv(job *object.FinetuneJob, hp object.Hyperparams, hasToken bool) []interface{} {
+func trainerEnv(job *object.FinetuneJob, hp object.Hyperparams, hasToken bool) []any {
 	outputDir := job.OutputUri
 	if outputDir == "" {
 		outputDir = "/workspace/output"
 	}
-	kv := func(name, value string) map[string]interface{} {
-		return map[string]interface{}{"name": name, "value": value}
+	kv := func(name, value string) map[string]any {
+		return map[string]any{"name": name, "value": value}
 	}
-	env := []interface{}{
+	env := []any{
 		kv("BASE_MODEL", job.BaseModel),
 		kv("METHOD", job.Method),
 		kv("TASK", job.Task),
@@ -127,10 +127,10 @@ func trainerEnv(job *object.FinetuneJob, hp object.Hyperparams, hasToken bool) [
 		kv("WEIGHT_DECAY", strconv.FormatFloat(hp.WeightDecay, 'g', -1, 64)),
 	}
 	if hasToken {
-		env = append(env, map[string]interface{}{
+		env = append(env, map[string]any{
 			"name": "HF_TOKEN",
-			"valueFrom": map[string]interface{}{
-				"secretKeyRef": map[string]interface{}{"name": hfTokenSecretName, "key": "HF_TOKEN"},
+			"valueFrom": map[string]any{
+				"secretKeyRef": map[string]any{"name": hfTokenSecretName, "key": "HF_TOKEN"},
 			},
 		})
 	}
@@ -142,50 +142,47 @@ func trainerEnv(job *object.FinetuneJob, hp object.Hyperparams, hasToken bool) [
 // initializers (with secretRef for private repos), and sets the trainer accelerator
 // resources + hyperparameter env. limits carries the accelerator request the CLUSTER
 // can satisfy (see accelerator.go) — this renderer never names a vendor.
-func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretName string, limits map[string]interface{}) map[string]interface{} {
+func buildTrainJobObject(job *object.FinetuneJob, hp object.Hyperparams, secretName string, limits map[string]any) map[string]any {
 	modelUri := normalizeStorageUri(job.BaseModel)
 	datasetUri := normalizeStorageUri(job.Dataset)
 
-	modelInit := map[string]interface{}{"storageUri": modelUri}
-	datasetInit := map[string]interface{}{"storageUri": datasetUri}
+	modelInit := map[string]any{"storageUri": modelUri}
+	datasetInit := map[string]any{"storageUri": datasetUri}
 	if secretName != "" {
-		ref := map[string]interface{}{"name": secretName}
+		ref := map[string]any{"name": secretName}
 		modelInit["secretRef"] = ref
 		datasetInit["secretRef"] = ref
 	}
 
-	numNodes := job.NumNodes
-	if numNodes < 1 {
-		numNodes = 1
-	}
+	numNodes := max(job.NumNodes, 1)
 
-	trainer := map[string]interface{}{
+	trainer := map[string]any{
 		"numNodes": numNodes,
-		"resourcesPerNode": map[string]interface{}{
+		"resourcesPerNode": map[string]any{
 			"limits": limits,
 		},
 		"env": trainerEnv(job, hp, secretName != ""),
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"apiVersion": "trainer.kubeflow.org/v1alpha1",
 		"kind":       "TrainJob",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"name":      job.CrName,
 			"namespace": job.Namespace,
-			"labels": map[string]interface{}{
+			"labels": map[string]any{
 				"managed-by":            "hanzo-cloud",
 				"hanzo.ai/finetune-job": job.Name,
 				"hanzo.ai/org":          strings.ToLower(strings.NewReplacer("/", "-").Replace(job.Owner)),
 			},
 		},
-		"spec": map[string]interface{}{
-			"runtimeRef": map[string]interface{}{
+		"spec": map[string]any{
+			"runtimeRef": map[string]any{
 				"name":     job.Runtime,
 				"apiGroup": "trainer.kubeflow.org",
 				"kind":     "ClusterTrainingRuntime",
 			},
-			"initializer": map[string]interface{}{
+			"initializer": map[string]any{
 				"dataset": datasetInit,
 				"model":   modelInit,
 			},
@@ -205,10 +202,7 @@ func SubmitTrainJob(job *object.FinetuneJob, hp object.Hyperparams, token, lang 
 	ctx := context.TODO()
 	// Ask for accelerators the CLUSTER advertises, and refuse before creating a
 	// namespace or a secret when it advertises none.
-	gpuCount := job.GpuCount
-	if gpuCount < 1 {
-		gpuCount = 1
-	}
+	gpuCount := max(job.GpuCount, 1)
 	limits, err := acceleratorRequest(ctx, c, gpuCount)
 	if err != nil {
 		return fmt.Errorf("cannot train %s: %w", job.Name, err)
@@ -263,7 +257,7 @@ func interpretTrainJob(u *unstructured.Unstructured) *TrainJob {
 
 	condTrue := func(name string) (bool, string, string) {
 		for _, c := range conditions {
-			m, ok := c.(map[string]interface{})
+			m, ok := c.(map[string]any)
 			if !ok {
 				continue
 			}

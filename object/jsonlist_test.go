@@ -103,7 +103,7 @@ func TestJSONListNullEmpty(t *testing.T) {
 		t.Fatalf("nil JSONList: want (\"[]\", nil), got (%q, %v)", v, err)
 	}
 
-	for _, src := range []interface{}{nil, "", []byte(""), "[]", []byte("[]")} {
+	for _, src := range []any{nil, "", []byte(""), "[]", []byte("[]")} {
 		var out JSONList[model.SearchResult]
 		if err := out.Scan(src); err != nil {
 			t.Fatalf("Scan(%#v) error: %v", src, err)

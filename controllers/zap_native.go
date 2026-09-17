@@ -141,7 +141,7 @@ func gateway(router http.Handler) zap.Handler {
 		case path == "/v1/models":
 			// R-04: require auth for model listing
 			if auth == "" {
-				errBody, _ := json.Marshal(map[string]interface{}{
+				errBody, _ := json.Marshal(map[string]any{
 					"error": map[string]string{
 						"message": "Authentication required. Provide a Bearer token.",
 						"type":    "authentication_error",
@@ -383,7 +383,7 @@ func zapBalanceHandler(auth string, body []byte) (*zap.Message, error) {
 		return object.BuildCloudResponse(500, nil, "balance query failed: "+err.Error())
 	}
 
-	data, _ := json.Marshal(map[string]interface{}{
+	data, _ := json.Marshal(map[string]any{
 		"user":      subject,
 		"balance":   balance,
 		"currency":  "usd",

@@ -258,8 +258,8 @@ func commerceFamilyTier(subject string) string {
 // account (the bare slug), or the "<org>/" prefix for a person/project subject — the
 // same org-from-key rule account.PayerOf uses.
 func tierNamespace(subject string) string {
-	if i := strings.IndexByte(subject, '/'); i >= 0 {
-		return subject[:i]
+	if before, _, ok := strings.Cut(subject, "/"); ok {
+		return before
 	}
 	return subject
 }

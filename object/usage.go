@@ -60,7 +60,7 @@ func GetUsages(days int, org string, user string, storeName string) ([]*Usage, e
 	usages := make([]*Usage, days)
 	userSet := make(map[string]int)
 	chatSet := make(map[string]int)
-	for i := 0; i < days; i++ {
+	for i := range days {
 		usages[i] = &Usage{
 			Date: startDateTime.AddDate(0, 0, i).Format("2006-01-02"),
 		}

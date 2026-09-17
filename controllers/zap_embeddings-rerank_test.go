@@ -120,7 +120,7 @@ func TestZapProxyJSONHappyPath(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawAuth = r.Header.Get("Authorization")
 		// Assert the model rewrite / passthrough reached us as JSON.
-		var got map[string]interface{}
+		var got map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Errorf("upstream decode: %v", err)
 		}
@@ -147,7 +147,7 @@ func TestZapProxyJSONHappyPath(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("got status %d want 200 (err=%q)", status, errText)
 	}
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("response not JSON: %v", err)
 	}

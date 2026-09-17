@@ -34,14 +34,14 @@ import (
 )
 
 type Response struct {
-	Status string      `json:"status"`
-	Msg    string      `json:"msg"`
-	Code   string      `json:"code,omitempty"` // machine name of the failure; clients switch on this, never on Msg
-	Data   interface{} `json:"data"`
-	Data2  interface{} `json:"data2"`
+	Status string `json:"status"`
+	Msg    string `json:"msg"`
+	Code   string `json:"code,omitempty"` // machine name of the failure; clients switch on this, never on Msg
+	Data   any    `json:"data"`
+	Data2  any    `json:"data2"`
 }
 
-func (c *ApiController) ResponseOk(data ...interface{}) {
+func (c *ApiController) ResponseOk(data ...any) {
 	resp := Response{Status: "ok"}
 	switch len(data) {
 	case 2:
@@ -56,7 +56,7 @@ func (c *ApiController) ResponseOk(data ...interface{}) {
 // ResponseError writes the envelope with HTTP 200: the admin contract, where the
 // envelope's own Status field carries the failure and the transport says nothing.
 // The React admin reads that field, so this is the shape it expects.
-func (c *ApiController) ResponseError(error string, data ...interface{}) {
+func (c *ApiController) ResponseError(error string, data ...any) {
 	c.ResponseErrorWithStatus(http.StatusOK, error, data...)
 }
 
@@ -69,7 +69,7 @@ func (c *ApiController) ResponseError(error string, data ...interface{}) {
 // the status too, so the second one silently replaced the first with 200 and every
 // refusal in the service answered OK. A denial that arrives as a success is worse
 // than an outage: the client reads 200 and believes it.
-func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...interface{}) {
+func (c *ApiController) ResponseErrorWithStatus(status int, error string, data ...any) {
 	resp := Response{Status: "error", Msg: error}
 	switch len(data) {
 	case 2:
@@ -113,11 +113,11 @@ type apiError struct {
 
 func (e *apiError) Error() string { return e.msg }
 
-func authError(format string, a ...interface{}) error {
+func authError(format string, a ...any) error {
 	return &apiError{status: http.StatusUnauthorized, msg: fmt.Sprintf(format, a...)}
 }
 
-func billingError(format string, a ...interface{}) error {
+func billingError(format string, a ...any) error {
 	return &apiError{status: http.StatusPaymentRequired, msg: fmt.Sprintf(format, a...), code: object.CodeInsufficientBalance}
 }
 
@@ -139,7 +139,7 @@ const codeSupply = "supply_unavailable"
 // half of this being wrong. Not 500 either: nothing is broken, the condition
 // clears on its own or when somebody tops an account up, and 503 is the status
 // that says "try again" rather than "file a bug".
-func supplyError(format string, a ...interface{}) error {
+func supplyError(format string, a ...any) error {
 	return &apiError{status: http.StatusServiceUnavailable, msg: fmt.Sprintf(format, a...), code: codeSupply}
 }
 
@@ -149,15 +149,15 @@ func supplyError(format string, a ...interface{}) error {
 // unauthorized org selection with either of those tells the caller something
 // untrue about their own credential. Unauthorized and nonexistent orgs share
 // this one status so the ask cannot enumerate orgs.
-func forbiddenError(format string, a ...interface{}) error {
+func forbiddenError(format string, a ...any) error {
 	return &apiError{status: http.StatusForbidden, msg: fmt.Sprintf(format, a...)}
 }
 
-func modelError(format string, a ...interface{}) error {
+func modelError(format string, a ...any) error {
 	return &apiError{status: http.StatusBadRequest, msg: fmt.Sprintf(format, a...)}
 }
 
-func serverError(format string, a ...interface{}) error {
+func serverError(format string, a ...any) error {
 	return &apiError{status: http.StatusInternalServerError, msg: fmt.Sprintf(format, a...)}
 }
 
@@ -167,15 +167,14 @@ func serverError(format string, a ...interface{}) error {
 // because nothing is broken — the condition is transient and, for a caller at its
 // own share, one the caller itself can clear. The message names which of those
 // two it is (speech_admission.go).
-func busyError(format string, a ...interface{}) error {
+func busyError(format string, a ...any) error {
 	return &apiError{status: http.StatusTooManyRequests, msg: fmt.Sprintf(format, a...)}
 }
 
 // statusOf returns the HTTP status carried by an apiError, or 401 for an untyped
 // error reaching an auth-gated handler (fail-secure: deny, never grant).
 func statusOf(err error) int {
-	var ae *apiError
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*apiError](err); ok {
 		return ae.status
 	}
 	return http.StatusUnauthorized
@@ -183,8 +182,7 @@ func statusOf(err error) int {
 
 // codeOf returns the machine name a failure carries, or "" for one that has none.
 func codeOf(err error) string {
-	var ae *apiError
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*apiError](err); ok {
 		return ae.code
 	}
 	return ""
@@ -198,8 +196,7 @@ func wrapAuth(err error) error {
 	if err == nil {
 		return nil
 	}
-	var ae *apiError
-	if errors.As(err, &ae) {
+	if _, ok := errors.AsType[*apiError](err); ok {
 		return err
 	}
 	return &apiError{status: http.StatusUnauthorized, msg: err.Error()}
@@ -223,13 +220,13 @@ func (c *ApiController) ResponseFailure(err error) {
 
 // ResponseUnauthorized renders an authentication denial (no/invalid session or
 // credential) as a real HTTP 401 — never The router's default 200. Same body shape.
-func (c *ApiController) ResponseUnauthorized(error string, data ...interface{}) {
+func (c *ApiController) ResponseUnauthorized(error string, data ...any) {
 	c.ResponseErrorWithStatus(http.StatusUnauthorized, error, data...)
 }
 
 // ResponseForbidden renders an authorization denial (authenticated but not
 // permitted) as a real HTTP 403 — never The router's default 200. Same body shape.
-func (c *ApiController) ResponseForbidden(error string, data ...interface{}) {
+func (c *ApiController) ResponseForbidden(error string, data ...any) {
 	c.ResponseErrorWithStatus(http.StatusForbidden, error, data...)
 }
 
@@ -363,7 +360,7 @@ func DenyRequest(ctx *zip.Ctx) {
 // used to arrive by being set on the response and read back here — which works, and
 // is the same side channel that made every refusal in this file answer 200 when a
 // write that carries its own status came along. Say it at the call.
-func responseError(ctx *zip.Ctx, status int, error string, data ...interface{}) {
+func responseError(ctx *zip.Ctx, status int, error string, data ...any) {
 	// Get language from Accept-Language header
 	language := ctx.Header("Accept-Language")
 	if len(language) > 2 {

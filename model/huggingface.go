@@ -70,10 +70,10 @@ func (p *HuggingFaceModelProvider) QueryText(question string, writer io.Writer, 
 	resp, err := client.TextGeneration(ctx, &huggingface.TextGenerationRequest{
 		Inputs: question,
 		Parameters: huggingface.TextGenerationParameters{
-			Temperature: huggingface.PTR(float64(p.temperature)),
+			Temperature: new(float64(p.temperature)),
 		},
 		Options: huggingface.Options{
-			WaitForModel: huggingface.PTR(true),
+			WaitForModel: new(true),
 		},
 		Model: p.subType,
 	})
@@ -81,7 +81,7 @@ func (p *HuggingFaceModelProvider) QueryText(question string, writer io.Writer, 
 		return nil, err
 	}
 
-	respText := strings.Split(resp[0].GeneratedText, "\n")[0]
+	respText, _, _ := strings.Cut(resp[0].GeneratedText, "\n")
 
 	_, err = fmt.Fprint(writer, respText)
 	if err != nil {

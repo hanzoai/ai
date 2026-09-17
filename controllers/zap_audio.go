@@ -473,11 +473,11 @@ func zapRecordZenMediaUsage(mdl string, authUser *iam.User, isPremium bool, reqI
 // body. Over ZAP there is no http.Request to parse the Content-Type from, so the
 // body states its own boundary and audio.transcribe reads it here.
 func multipartBoundary(body []byte) string {
-	nl := bytes.IndexByte(body, '\n')
-	if nl < 0 {
+	before, _, ok := bytes.Cut(body, []byte{'\n'})
+	if !ok {
 		return ""
 	}
-	first := strings.TrimRight(string(body[:nl]), "\r")
+	first := strings.TrimRight(string(before), "\r")
 	if !strings.HasPrefix(first, "--") {
 		return ""
 	}

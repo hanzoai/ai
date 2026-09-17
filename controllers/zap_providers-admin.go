@@ -159,10 +159,7 @@ func zapGetProvidersHandler(_ context.Context, auth string, body []byte) (*zap.M
 		return zapError(200, err.Error())
 	}
 	page := util.ParseInt(req.Page)
-	offset := (page - 1) * limit
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max((page-1)*limit, 0)
 	providers, err := object.GetPaginationProviders(owner, storeName, offset, limit, req.Field, req.Value, req.SortField, req.SortOrder)
 	if err != nil {
 		return zapError(200, err.Error())

@@ -33,19 +33,19 @@ func (t *TimezoneConversionTool) GetDescription() string {
 	return "A tool for converting time between different timezones"
 }
 
-func (t *TimezoneConversionTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *TimezoneConversionTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"datetime": map[string]interface{}{
+		"properties": map[string]any{
+			"datetime": map[string]any{
 				"type":        "string",
 				"description": "Datetime string (e.g., '2024-01-01 12:00:00')",
 			},
-			"from_timezone": map[string]interface{}{
+			"from_timezone": map[string]any{
 				"type":        "string",
 				"description": "Source timezone (e.g., 'America/New_York')",
 			},
-			"to_timezone": map[string]interface{}{
+			"to_timezone": map[string]any{
 				"type":        "string",
 				"description": "Target timezone (e.g., 'Asia/Shanghai')",
 			},
@@ -54,7 +54,7 @@ func (t *TimezoneConversionTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *TimezoneConversionTool) Execute(ctx context.Context, arguments map[string]interface{}) (*protocol.CallToolResult, error) {
+func (t *TimezoneConversionTool) Execute(ctx context.Context, arguments map[string]any) (*protocol.CallToolResult, error) {
 	datetimeStr, ok := arguments["datetime"].(string)
 	if !ok || datetimeStr == "" {
 		return &protocol.CallToolResult{

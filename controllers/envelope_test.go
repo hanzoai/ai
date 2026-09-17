@@ -141,7 +141,7 @@ func discloses(t *testing.T, what string, out []byte) {
 func chunks(t *testing.T, sse string) []map[string]json.RawMessage {
 	t.Helper()
 	var out []map[string]json.RawMessage
-	for _, line := range strings.Split(sse, "\n") {
+	for line := range strings.SplitSeq(sse, "\n") {
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}

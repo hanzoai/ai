@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"mime/multipart"
 	"net/http"
@@ -59,7 +58,7 @@ func (c *Conn) postMulti(uri, filename string, content []byte, params url.Values
 		return nil, err
 	}
 
-	return ioutil.ReadAll(res.Body)
+	return io.ReadAll(res.Body)
 }
 
 func (c *Conn) httpDo(url string, body []byte, params url.Values, headers map[string]string) ([]byte, error) {
@@ -81,7 +80,7 @@ func (c *Conn) httpDo(url string, body []byte, params url.Values, headers map[st
 	}
 	defer resp.Body.Close()
 
-	return ioutil.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func (c *Conn) getSizeAndSiceNum(filename string) (filesize, num int64, err error) {

@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/hanzoai/ai/txt"
@@ -44,10 +45,8 @@ func isKnownType(filename string) bool {
 	if ext == "" {
 		return false
 	}
-	for _, t := range txt.GetSupportedFileTypes() {
-		if t == ext {
-			return true
-		}
+	if slices.Contains(txt.GetSupportedFileTypes(), ext) {
+		return true
 	}
 	// Source-code / plaintext-ish files are parsed as plain text.
 	return true
@@ -56,7 +55,7 @@ func isKnownType(filename string) bool {
 // ragCompatError emits the failure shape ({status:false,...}) hanzo.chat's
 // uploadVectors() reads, so it surfaces a clean "File embedding failed".
 func (c *ApiController) ragCompatError(msg, fileID string) {
-	c.JSON(http.StatusOK, map[string]interface{}{
+	c.JSON(http.StatusOK, map[string]any{
 		"status": false, "known_type": true, "file_id": fileID, "detail": msg,
 	})
 }

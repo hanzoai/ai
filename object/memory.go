@@ -49,7 +49,7 @@ const (
 // MemoryMetadata is a free-form string map persisted as JSON in a TEXT column.
 type MemoryMetadata map[string]string
 
-func (m *MemoryMetadata) Scan(src interface{}) error  { return JSONScan(m, src) }
+func (m *MemoryMetadata) Scan(src any) error          { return JSONScan(m, src) }
 func (m MemoryMetadata) Value() (driver.Value, error) { return JSONValue(m) }
 
 // MemoryEmbedding is []float32 persisted as JSON in a TEXT column. database/sql
@@ -57,7 +57,7 @@ func (m MemoryMetadata) Value() (driver.Value, error) { return JSONValue(m) }
 // Scanner/Valuer so it round-trips on every driver (SQLite, Postgres, MySQL).
 type MemoryEmbedding []float32
 
-func (e *MemoryEmbedding) Scan(src interface{}) error { return JSONScan(e, src) }
+func (e *MemoryEmbedding) Scan(src any) error { return JSONScan(e, src) }
 func (e MemoryEmbedding) Value() (driver.Value, error) {
 	if e == nil {
 		return "[]", nil

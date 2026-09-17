@@ -80,7 +80,7 @@ func TestCloudUsageDelta(t *testing.T) {
 func TestBuildCloudUsageSeries_GapFill(t *testing.T) {
 	start := mustTime(t, "2026-06-29T00:00:00Z")
 	end := mustTime(t, "2026-06-29T03:00:00Z")
-	rows := []map[string]interface{}{
+	rows := []map[string]any{
 		{"bucket": "2026-06-29 00:00:00", "tokens": float64(100), "cost_cents": float64(10), "requests": float64(2), "models": float64(1)},
 		{"bucket": "2026-06-29 02:00:00", "tokens": "300", "cost_cents": float64(30), "requests": float64(4), "models": float64(2)},
 	}
@@ -104,7 +104,7 @@ func TestBuildCloudUsageSeries_GapFill(t *testing.T) {
 func TestBuildCloudUsageSeries_Daily(t *testing.T) {
 	start := mustTime(t, "2026-06-27T00:00:00Z")
 	end := mustTime(t, "2026-06-30T00:00:00Z")
-	rows := []map[string]interface{}{
+	rows := []map[string]any{
 		{"bucket": "2026-06-28 00:00:00", "tokens": float64(500), "cost_cents": float64(50), "requests": float64(9), "models": float64(3)},
 	}
 	got := buildCloudUsageSeries(start, end, "day", rows)
@@ -121,7 +121,7 @@ func TestBuildCloudUsageSeries_Daily(t *testing.T) {
 
 func TestFoldCloudUsageModels_TopNAndOther(t *testing.T) {
 	// Eight models, spend descending after sort. total = 1000 cents.
-	rows := []map[string]interface{}{
+	rows := []map[string]any{
 		{"model": "m3", "provider": "do-ai", "cost_cents": float64(120), "tokens": float64(1200), "requests": float64(12)},
 		{"model": "m1", "provider": "do-ai", "cost_cents": float64(500), "tokens": float64(5000), "requests": float64(50)},
 		{"model": "m2", "provider": "fireworks", "cost_cents": float64(200), "tokens": float64(2000), "requests": float64(20)},
@@ -155,7 +155,7 @@ func TestFoldCloudUsageModels_TopNAndOther(t *testing.T) {
 }
 
 func TestFoldCloudUsageModels_NoOtherWhenFew(t *testing.T) {
-	rows := []map[string]interface{}{
+	rows := []map[string]any{
 		{"model": "a", "provider": "do-ai", "cost_cents": float64(60), "tokens": float64(1), "requests": float64(1)},
 		{"model": "b", "provider": "do-ai", "cost_cents": float64(40), "tokens": float64(1), "requests": float64(1)},
 	}
@@ -180,22 +180,22 @@ func TestBuildCloudUsageOverview_EndToEnd(t *testing.T) {
 		ActivityType:  "all",
 		ActivityLimit: 20,
 	}
-	totalsRow := map[string]interface{}{
+	totalsRow := map[string]any{
 		"requests": float64(10), "tokens": float64(1000), "prompt_tokens": float64(600),
 		"completion_tokens": float64(400), "cost_cents": float64(250), "models": float64(3), "providers": float64(2),
 	}
-	priorRow := map[string]interface{}{
+	priorRow := map[string]any{
 		"requests": float64(5), "tokens": float64(800), "cost_cents": float64(200), "models": float64(2),
 	}
-	seriesRows := []map[string]interface{}{
+	seriesRows := []map[string]any{
 		{"bucket": "2026-06-29 00:00:00", "tokens": float64(400), "cost_cents": float64(100), "requests": float64(4), "models": float64(2)},
 		{"bucket": "2026-06-29 02:00:00", "tokens": float64(600), "cost_cents": float64(150), "requests": float64(6), "models": float64(3)},
 	}
-	modelRows := []map[string]interface{}{
+	modelRows := []map[string]any{
 		{"model": "zen-omni", "provider": "do-ai", "cost_cents": float64(150), "tokens": float64(600), "requests": float64(6)},
 		{"model": "gpt-x", "provider": "openai-direct", "cost_cents": float64(100), "tokens": float64(400), "requests": float64(4)},
 	}
-	activityRows := []map[string]interface{}{
+	activityRows := []map[string]any{
 		{
 			"timestamp": "2026-06-29 02:30:00", "model": "zen-omni", "provider": "do-ai", "status": "success",
 			"total_tokens": float64(120), "prompt_tokens": float64(80), "completion_tokens": float64(40),
@@ -278,7 +278,7 @@ func TestBuildCloudUsageOverview_AllOrgsScopeBlanksOrg(t *testing.T) {
 		RangeLabel: "7d", Start: mustTime(t, "2026-06-22T00:00:00Z"), End: mustTime(t, "2026-06-29T00:00:00Z"),
 		Interval: "day", Org: "ignored-when-all", AllOrgs: true, TopModels: 6, ActivityType: "",
 	}
-	ov := buildCloudUsageOverview(p, map[string]interface{}{}, map[string]interface{}{}, nil, nil, nil, 0)
+	ov := buildCloudUsageOverview(p, map[string]any{}, map[string]any{}, nil, nil, nil, 0)
 	if !ov.Scope.AllOrgs || ov.Scope.Org != "" {
 		t.Errorf("all-orgs scope = %+v, want allOrgs=true org=''", ov.Scope)
 	}

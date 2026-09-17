@@ -81,8 +81,8 @@ type Quota struct {
 	stopCh chan struct{}
 
 	// Metrics counters — accessed atomically.
-	totalAllowed uint64
-	totalDenied  uint64
+	totalAllowed atomic.Uint64
+	totalDenied  atomic.Uint64
 }
 
 // NewQuota creates a Quota that evicts keys untouched for a full month every
@@ -133,7 +133,7 @@ func (q *Quota) Spend(key string, now time.Time) (ok bool, refused string, until
 			continue // no ceiling in this period
 		}
 		if s.n[i] >= limits[i] {
-			atomic.AddUint64(&q.totalDenied, 1)
+			q.totalDenied.Add(1)
 			return false, p.name, end
 		}
 	}
@@ -142,13 +142,13 @@ func (q *Quota) Spend(key string, now time.Time) (ok bool, refused string, until
 		s.since[i] = starts[i]
 		s.n[i]++
 	}
-	atomic.AddUint64(&q.totalAllowed, 1)
+	q.totalAllowed.Add(1)
 	return true, "", time.Time{}
 }
 
 // Metrics reports the running allowed and denied counts.
 func (q *Quota) Metrics() (allowed, denied uint64) {
-	return atomic.LoadUint64(&q.totalAllowed), atomic.LoadUint64(&q.totalDenied)
+	return q.totalAllowed.Load(), q.totalDenied.Load()
 }
 
 // quotaInstance is the singleton armed by InitRateLimiter.

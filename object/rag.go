@@ -328,7 +328,7 @@ func fetchFileChunksFromSearch(indexName, fileID string) ([]DocSearchResult, err
 	}
 	out := make([]DocSearchResult, 0, len(resp.Results))
 	for _, hit := range resp.Results {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		if decErr := hit.DecodeInto(&m); decErr != nil {
 			continue
 		}

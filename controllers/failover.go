@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	metric "github.com/luxfi/metric"
@@ -279,14 +280,14 @@ func announce(model string, a attempt) {
 
 // reasons renders the refusals so far for one log line.
 func reasons(tried []attempt) string {
-	out := ""
+	var out strings.Builder
 	for i, a := range tried {
 		if i > 0 {
-			out += "; "
+			out.WriteString("; ")
 		}
-		out += fmt.Sprintf("%s status=%d", a.provider, a.status)
+		out.WriteString(fmt.Sprintf("%s status=%d", a.provider, a.status))
 	}
-	return out
+	return out.String()
 }
 
 // callProvider asks one provider row for a completion and reports the row that

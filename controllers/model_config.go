@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -666,9 +667,7 @@ func (mc *ModelConfig) ConfRouterPolicy() (map[string][]string, float64) {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	out := make(map[string][]string, len(mc.router.Prefer))
-	for k, v := range mc.router.Prefer {
-		out[k] = v
-	}
+	maps.Copy(out, mc.router.Prefer)
 	return out, mc.router.CostCeiling
 }
 

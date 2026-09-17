@@ -32,7 +32,7 @@ func collect(t *testing.T, frames ...string) (content, reasoning string) {
 			t.Fatalf("write %q: %v", f, err)
 		}
 	}
-	for _, line := range strings.Split(out.String(), "\n") {
+	for line := range strings.SplitSeq(out.String(), "\n") {
 		raw, ok := strings.CutPrefix(line, "data: ")
 		if !ok || strings.TrimSpace(raw) == "[DONE]" {
 			continue

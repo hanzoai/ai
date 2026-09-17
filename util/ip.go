@@ -29,8 +29,7 @@ var isLocalIpDb bool
 // tryInitLocalDb tries to initialize the local IP database from different paths
 func tryInitLocalDb() error {
 	err := Init("data/17monipdb.dat")
-	var pathError *os.PathError
-	if errors.As(err, &pathError) {
+	if _, ok := errors.AsType[*os.PathError](err); ok {
 		err = Init("../data/17monipdb.dat")
 	}
 	return err
@@ -99,17 +98,17 @@ func GetIPInfo(clientIP string) string {
 	}
 
 	ips := strings.Split(clientIP, ",")
-	res := ""
+	var res strings.Builder
 	for i := range ips {
 		ip := strings.TrimSpace(ips[i])
 		// desc := GetDescFromIP(ip)
 		ipstr := fmt.Sprintf("%s: %s", ip, "")
 		if i != len(ips)-1 {
-			res += ipstr + " -> "
+			res.WriteString(ipstr + " -> ")
 		} else {
-			res += ipstr
+			res.WriteString(ipstr)
 		}
 	}
 
-	return res
+	return res.String()
 }

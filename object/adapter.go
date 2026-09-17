@@ -180,7 +180,7 @@ func (a *Adapter) createTable() {
 	// idempotent — CREATE TABLE IF NOT EXISTS for new tables and ALTER TABLE ADD
 	// COLUMN for fields added since the table was created — so this is safe on
 	// both a fresh embedded SQLite store and an existing DB. No external SQL.
-	models := []interface{}{
+	models := []any{
 		&Application{}, &Article{}, &Asset{}, &Chat{}, &Connection{},
 		&File{}, &Form{}, &Graph{}, &Message{}, &ModelRoute{}, &Node{},
 		&Provider{}, &Record{}, &Scale{}, &Scan{}, &Session{}, &Store{},
@@ -233,7 +233,7 @@ func (a *Adapter) RawDB() *sql.DB {
 // tests — so no test hand-rolls adapter wiring. SQLite is the canonical embedded
 // store (the same driver prod uses), so this exercises the real query path, not a
 // fake. Never call it from non-test code: it swaps the process-wide adapter.
-func UseMemoryDB(dsn string, models ...interface{}) (restore func(), err error) {
+func UseMemoryDB(dsn string, models ...any) (restore func(), err error) {
 	db, err := dbx.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

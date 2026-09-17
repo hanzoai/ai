@@ -62,10 +62,10 @@ type VpcDetail struct {
 // createEcsClient creates an Alibaba Cloud ECS client
 func (p *AlibabaCloudParser) createEcsClient(provider *Provider) (*ecs20140526.Client, error) {
 	config := &openapi.Config{
-		AccessKeyId:     tea.String(provider.ClientId),
-		AccessKeySecret: tea.String(provider.ClientSecret),
-		RegionId:        tea.String(provider.Region),
-		Endpoint:        tea.String("ecs." + provider.Region + ".aliyuncs.com"),
+		AccessKeyId:     new(provider.ClientId),
+		AccessKeySecret: new(provider.ClientSecret),
+		RegionId:        new(provider.Region),
+		Endpoint:        new("ecs." + provider.Region + ".aliyuncs.com"),
 	}
 	return ecs20140526.NewClient(config)
 }
@@ -94,8 +94,8 @@ func (p *AlibabaCloudParser) getEcsInstances(client *ecs20140526.Client, assets 
 		}
 		// Call DescribeInstances API to get detailed information
 		request := &ecs20140526.DescribeInstancesRequest{
-			RegionId:    tea.String(region),
-			InstanceIds: tea.String(string(instanceIdsJson)),
+			RegionId:    new(region),
+			InstanceIds: new(string(instanceIdsJson)),
 			PageSize:    tea.Int32(100),
 		}
 		response, err := client.DescribeInstances(request)
@@ -159,8 +159,8 @@ func (p *AlibabaCloudParser) getDisks(client *ecs20140526.Client, assets []*Asse
 		}
 		// Call DescribeDisks API to get detailed information
 		request := &ecs20140526.DescribeDisksRequest{
-			RegionId: tea.String(region),
-			DiskIds:  tea.String(string(diskIdsJson)),
+			RegionId: new(region),
+			DiskIds:  new(string(diskIdsJson)),
 			PageSize: tea.Int32(100),
 		}
 		response, err := client.DescribeDisks(request)
@@ -196,8 +196,8 @@ func (p *AlibabaCloudParser) getVpcs(client *ecs20140526.Client, assets []*Asset
 			continue
 		}
 		request := &ecs20140526.DescribeVpcsRequest{
-			VpcId:    tea.String(asset.Id),
-			RegionId: tea.String(asset.Region),
+			VpcId:    new(asset.Id),
+			RegionId: new(asset.Region),
 			PageSize: tea.Int32(50),
 		}
 		response, err := client.DescribeVpcs(request)
@@ -232,11 +232,11 @@ func (p *AlibabaCloudParser) mergeEcsDetails(assets []*Asset, details map[string
 			continue
 		}
 		// Parse existing properties
-		properties := make(map[string]interface{})
+		properties := make(map[string]any)
 		if asset.Properties != "" {
 			if err := json.Unmarshal([]byte(asset.Properties), &properties); err != nil {
 				// If existing properties are invalid, start with empty map
-				properties = make(map[string]interface{})
+				properties = make(map[string]any)
 			}
 		}
 		// Add detailed ECS information
@@ -275,11 +275,11 @@ func (p *AlibabaCloudParser) mergeDiskDetails(assets []*Asset, details map[strin
 			continue
 		}
 		// Parse existing properties
-		properties := make(map[string]interface{})
+		properties := make(map[string]any)
 		if asset.Properties != "" {
 			if err := json.Unmarshal([]byte(asset.Properties), &properties); err != nil {
 				// If existing properties are invalid, start with empty map
-				properties = make(map[string]interface{})
+				properties = make(map[string]any)
 			}
 		}
 		// Add detailed disk information
@@ -313,11 +313,11 @@ func (p *AlibabaCloudParser) mergeVpcDetails(assets []*Asset, details map[string
 			continue
 		}
 		// Parse existing properties
-		properties := make(map[string]interface{})
+		properties := make(map[string]any)
 		if asset.Properties != "" {
 			if err := json.Unmarshal([]byte(asset.Properties), &properties); err != nil {
 				// If existing properties are invalid, start with empty map
-				properties = make(map[string]interface{})
+				properties = make(map[string]any)
 			}
 		}
 		// Add detailed VPC information

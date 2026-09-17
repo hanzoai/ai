@@ -43,7 +43,7 @@ func TestCodexCLIResponsesWire(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			emit := func(event string, data interface{}) error {
+			emit := func(event string, data any) error {
 				payload, err := json.Marshal(data)
 				if err != nil {
 					return err

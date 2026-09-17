@@ -45,9 +45,7 @@ func TestTheHeldCatalogueIsSafeToReadConcurrently(t *testing.T) {
 	//
 	// It waits on its own group, because it runs until the readers are done and so
 	// can never be waited on alongside them.
-	writer.Add(1)
-	go func() {
-		defer writer.Done()
+	writer.Go(func() {
 		for {
 			select {
 			case <-stop:
@@ -62,9 +60,9 @@ func TestTheHeldCatalogueIsSafeToReadConcurrently(t *testing.T) {
 				time.Sleep(time.Millisecond)
 			}
 		}
-	}()
+	})
 
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		readers.Add(1)
 		// Each reader is a different signed-in caller, because a listing is
 		// annotated with the READER's own standing — which is the write that a
@@ -72,7 +70,7 @@ func TestTheHeldCatalogueIsSafeToReadConcurrently(t *testing.T) {
 		caller := &iam.User{Owner: "hanzo", Name: fmt.Sprintf("caller-%d", i)}
 		go func() {
 			defer readers.Done()
-			for n := 0; n < 200; n++ {
+			for range 200 {
 				models := listAvailableModels()
 				if len(models) == 0 {
 					t.Error("listAvailableModels returned nothing")

@@ -40,12 +40,12 @@ func fail(format string, a ...any) *protocol.CallToolResult {
 	}
 }
 
-func stringArg(args map[string]interface{}, key string) string {
+func stringArg(args map[string]any, key string) string {
 	s, _ := args[key].(string)
 	return strings.TrimSpace(s)
 }
 
-func intArg(args map[string]interface{}, key string, def, max int) int {
+func intArg(args map[string]any, key string, def, max int) int {
 	var n int
 	switch v := args[key].(type) {
 	case float64:
@@ -76,15 +76,15 @@ func (t *SearchTool) GetDescription() string {
 		"otherwise answer from memory. Follow up with fetch_url to read a result in full."
 }
 
-func (t *SearchTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *SearchTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
+		"properties": map[string]any{
+			"query": map[string]any{
 				"type":        "string",
 				"description": "What to search for.",
 			},
-			"limit": map[string]interface{}{
+			"limit": map[string]any{
 				"type":        "number",
 				"description": fmt.Sprintf("How many results (1-%d, default %d).", maxResults, defaultResult),
 			},
@@ -93,7 +93,7 @@ func (t *SearchTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *SearchTool) Execute(ctx context.Context, args map[string]interface{}) (*protocol.CallToolResult, error) {
+func (t *SearchTool) Execute(ctx context.Context, args map[string]any) (*protocol.CallToolResult, error) {
 	q := stringArg(args, "query")
 	if q == "" {
 		return fail("web_search needs a non-empty query"), nil
@@ -128,13 +128,13 @@ func (t *FetchTool) GetDescription() string {
 		"Use it to read a search result properly instead of relying on its snippet."
 }
 
-func (t *FetchTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *FetchTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"urls": map[string]interface{}{
+		"properties": map[string]any{
+			"urls": map[string]any{
 				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
+				"items":       map[string]any{"type": "string"},
 				"description": fmt.Sprintf("Absolute http(s) URLs to fetch (max %d).", maxURLs),
 			},
 		},
@@ -142,13 +142,13 @@ func (t *FetchTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *FetchTool) Execute(ctx context.Context, args map[string]interface{}) (*protocol.CallToolResult, error) {
-	raw, ok := args["urls"].([]interface{})
+func (t *FetchTool) Execute(ctx context.Context, args map[string]any) (*protocol.CallToolResult, error) {
+	raw, ok := args["urls"].([]any)
 	if !ok || len(raw) == 0 {
 		// A single string is the mistake a model makes most often here; accept it
 		// rather than fail on a shape that is unambiguous.
 		if one := stringArg(args, "urls"); one != "" {
-			raw = []interface{}{one}
+			raw = []any{one}
 		} else {
 			return fail("fetch_url needs a non-empty list of urls"), nil
 		}
@@ -218,11 +218,11 @@ func (t *ResearchTool) GetDescription() string {
 		"synthesis across sources, not for a single fact."
 }
 
-func (t *ResearchTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *ResearchTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"question": map[string]interface{}{
+		"properties": map[string]any{
+			"question": map[string]any{
 				"type":        "string",
 				"description": "The question to investigate.",
 			},
@@ -231,7 +231,7 @@ func (t *ResearchTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *ResearchTool) Execute(ctx context.Context, args map[string]interface{}) (*protocol.CallToolResult, error) {
+func (t *ResearchTool) Execute(ctx context.Context, args map[string]any) (*protocol.CallToolResult, error) {
 	q := stringArg(args, "question")
 	if q == "" {
 		return fail("deep_research needs a non-empty question"), nil

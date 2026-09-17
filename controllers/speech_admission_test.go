@@ -24,6 +24,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -112,7 +113,7 @@ func TestSpeechShareDividesTheCeiling(t *testing.T) {
 func TestALoneOrgHoldsTheWholeCeiling(t *testing.T) {
 	speechIdle(t)
 
-	for i := 0; i < speechCeiling; i++ {
+	for range speechCeiling {
 		defer take(t, "acme")()
 	}
 	code, msg := refuse(t, "acme")
@@ -137,7 +138,7 @@ func TestOneOrgCannotStarveAnother(t *testing.T) {
 
 	// Loud fills the idle ceiling — legitimately, since nobody else was asking.
 	loud := make([]func(), 0, speechCeiling)
-	for i := 0; i < speechCeiling; i++ {
+	for range speechCeiling {
 		loud = append(loud, take(t, "loud"))
 	}
 
@@ -248,7 +249,7 @@ func TestGreedDoesNotPay(t *testing.T) {
 	}
 
 	const rounds = 2000
-	for i := 0; i < rounds; i++ {
+	for range rounds {
 		for ask("greedy") {
 		}
 		ask("quiet")
@@ -287,7 +288,7 @@ func TestRefusalNamesWhichCeiling(t *testing.T) {
 
 	// One org alone, over its (whole-ceiling) share.
 	held := make([]func(), 0, speechCeiling)
-	for i := 0; i < speechCeiling; i++ {
+	for range speechCeiling {
 		held = append(held, take(t, "acme"))
 	}
 	mine, mineMsg := refuse(t, "acme")
@@ -327,10 +328,10 @@ func TestRefusalTakesNothing(t *testing.T) {
 	speechIdle(t)
 
 	held := make([]func(), 0, speechCeiling)
-	for i := 0; i < speechCeiling; i++ {
+	for range speechCeiling {
 		held = append(held, take(t, "acme"))
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		refuse(t, "flood")
 	}
 
@@ -393,7 +394,7 @@ func TestAdmissionNeverBlocks(t *testing.T) {
 	speechIdle(t)
 
 	held := make([]func(), 0, speechCeiling)
-	for i := 0; i < speechCeiling; i++ {
+	for range speechCeiling {
 		held = append(held, take(t, "acme"))
 	}
 	defer func() {
@@ -432,7 +433,7 @@ func TestCeilingHoldsUnderConcurrency(t *testing.T) {
 	inFlight, peak := 0, 0
 
 	orgs := []string{"acme", "globex", "initech", "umbrella", "soylent"}
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -483,7 +484,7 @@ func TestNamingAnotherOrgSpendsYourOwn(t *testing.T) {
 	c := orgController("Bearer sk-abc", "victim")
 
 	held := make([]func(), 0, speechCeiling)
-	for i := 0; i < speechCeiling; i++ {
+	for range speechCeiling {
 		held = append(held, take(t, c.billingOrg(user)))
 	}
 	defer func() {
@@ -494,9 +495,7 @@ func TestNamingAnotherOrgSpendsYourOwn(t *testing.T) {
 
 	speechMu.Lock()
 	spent := map[string]int{}
-	for org, n := range speechHeld {
-		spent[org] = n
-	}
+	maps.Copy(spent, speechHeld)
 	speechMu.Unlock()
 
 	if n := spent["victim"]; n != 0 {
@@ -519,7 +518,7 @@ func TestWhoIsAtTheirCeilingIsVisible(t *testing.T) {
 	speechIdle(t)
 
 	held := make([]func(), 0, speechCeiling)
-	for i := 0; i < speechCeiling; i++ {
+	for range speechCeiling {
 		held = append(held, take(t, "loudorg"))
 	}
 	refuse(t, "loudorg")  // at its OWN limit
@@ -554,7 +553,7 @@ func TestWhoIsAtTheirCeilingIsVisible(t *testing.T) {
 // speechLines keeps a failure message to the speech metrics.
 func speechLines(scrape string) string {
 	var out []string
-	for _, line := range strings.Split(scrape, "\n") {
+	for line := range strings.SplitSeq(scrape, "\n") {
 		if strings.HasPrefix(line, "cloud_speech") {
 			out = append(out, line)
 		}

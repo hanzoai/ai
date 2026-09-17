@@ -199,9 +199,9 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	}
 	returnDocs := raw.ReturnDocuments != nil && *raw.ReturnDocuments
 
-	out := make([]map[string]interface{}, 0, topN)
+	out := make([]map[string]any, 0, topN)
 	for _, r := range results[:topN] {
-		entry := map[string]interface{}{
+		entry := map[string]any{
 			"index":           r.Index,
 			"relevance_score": r.Score,
 		}
@@ -234,7 +234,7 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 		}()
 	}
 
-	data, _ := json.Marshal(map[string]interface{}{
+	data, _ := json.Marshal(map[string]any{
 		"object":  "list",
 		"model":   raw.Model,
 		"results": out,

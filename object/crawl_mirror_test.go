@@ -519,7 +519,7 @@ func TestVectorPruneFailureLeavesKeywordIntact(t *testing.T) {
 // a race that passes once has not been fixed.
 func TestCrawlReturnsEveryPageItFetched(t *testing.T) {
 	s := serve(t, "/a", "/b")
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		results, errs, cut := crawlWithGoScraper(&ScrapeRequest{URL: s.srv.URL})
 		if len(errs) != 0 {
 			t.Fatalf("run %d: unexpected errors %v", i, errs)
@@ -764,7 +764,7 @@ func TestRootRelativeLinksResolveInBothEngines(t *testing.T) {
 	sr := Crawl4AIResultToScrapeResult(Crawl4AIResult{
 		URL:     "https://docs.example.com/guide/install",
 		Success: true,
-		Links: map[string][]map[string]interface{}{
+		Links: map[string][]map[string]any{
 			"internal": {{"href": "/guide/config"}, {"href": "../reference"}, {"href": "#anchor"}},
 		},
 	})
@@ -809,7 +809,7 @@ func TestBackstopHoldsWhenEverySignalSaysComplete(t *testing.T) {
 	f := fakeStores(t)
 	m := &Mirror{Tag: "docs", Root: "https://h/docs"}
 	live := []DocIndex{{ID: "keep", PageID: "keep", Tag: "docs", URL: "https://h/docs/keep"}}
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		id := fmt.Sprintf("stored-%d", i)
 		f.keyword[id] = DocIndex{ID: id, PageID: id, Tag: "docs", URL: "https://h/docs/" + id}
 	}
@@ -960,13 +960,13 @@ func startFakeCrawl(t *testing.T, reply func([]string) []Crawl4AIResult) *fakeCr
 }
 
 func ok4ai(u string, hrefs ...string) Crawl4AIResult {
-	links := make([]map[string]interface{}, 0, len(hrefs))
+	links := make([]map[string]any, 0, len(hrefs))
 	for _, h := range hrefs {
-		links = append(links, map[string]interface{}{"href": h})
+		links = append(links, map[string]any{"href": h})
 	}
 	return Crawl4AIResult{
 		URL: u, Success: true, Markdown: "# T\n\nbody",
-		Links: map[string][]map[string]interface{}{"internal": links},
+		Links: map[string][]map[string]any{"internal": links},
 	}
 }
 
@@ -1150,7 +1150,7 @@ type drainSite struct {
 func newDrainSite(t *testing.T, n int) *drainSite {
 	t.Helper()
 	d := &drainSite{visible: map[string]bool{}}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		p := fmt.Sprintf("/docs/p%02d", i)
 		d.all = append(d.all, p)
 		d.visible[p] = true
@@ -1322,7 +1322,7 @@ func TestPeakRisesWithGrowthAndClearsOnReplace(t *testing.T) {
 	m := &Mirror{Tag: "docs", Root: "https://h/docs"}
 	seed := func(n int) []DocIndex {
 		var out []DocIndex
-		for i := 0; i < n; i++ {
+		for i := range n {
 			id := fmt.Sprintf("p%d", i)
 			out = append(out, DocIndex{ID: id, PageID: id, Tag: "docs", URL: "https://h/docs/" + id})
 		}
@@ -1371,7 +1371,7 @@ func corpusUnder(f *stores, tag, root string) int {
 // pagesAt builds one document per page for the first n pages under a prefix.
 func pagesAt(prefix string, n int) []DocIndex {
 	var out []DocIndex
-	for i := 0; i < n; i++ {
+	for i := range n {
 		u := fmt.Sprintf("%s/p%02d", prefix, i)
 		out = append(out, DocIndex{ID: hashID(u), PageID: hashID(u), Tag: "docs", URL: u, Content: "b"})
 	}
@@ -1437,7 +1437,7 @@ func TestSameRootIsRefusedAfterOneStep(t *testing.T) {
 	all := pagesAt("https://h/docs/en/v2/guide/api", 32)
 	mirrorPass(t, f, root, all)
 	live := 32
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		live /= 2
 		mirrorPass(t, f, root, all[:live])
 	}
@@ -1628,7 +1628,7 @@ func TestUploadsNeverEnterACeiling(t *testing.T) {
 	f := fakeStores(t)
 	docs := pagesAt("https://h/docs", 20)
 	uploads := make([]DocIndex, 0, 100)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		id := fmt.Sprintf("u%03d", i)
 		uploads = append(uploads, DocIndex{ID: id, PageID: id, Tag: "docs", FileID: "f1", Content: "x"})
 	}

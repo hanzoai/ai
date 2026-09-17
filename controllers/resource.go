@@ -47,13 +47,13 @@ func (c *ApiController) UploadFile() {
 		return
 	}
 
-	index := strings.Index(fileBase64, ",")
-	if index == -1 {
+	_, after, ok := strings.Cut(fileBase64, ",")
+	if !ok {
 		c.ResponseError(c.T("resource:Invalid file data format"))
 		return
 	}
 
-	fileBytes, err := base64.StdEncoding.DecodeString(fileBase64[index+1:])
+	fileBytes, err := base64.StdEncoding.DecodeString(after)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

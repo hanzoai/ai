@@ -18,6 +18,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -227,23 +228,23 @@ func (c *ApiController) AddMessage() {
 		}
 		var lastAIMessage *object.Message
 		var lastUserMessage *object.Message
-		for i := len(messages) - 1; i >= 0; i-- {
-			if messages[i].Author == "AI" && messages[i].ErrorText != "" {
-				lastAIMessage = messages[i]
+		for _, message := range slices.Backward(messages) {
+			if message.Author == "AI" && message.ErrorText != "" {
+				lastAIMessage = message
 				break
 			}
 		}
 		if lastAIMessage == nil {
-			for i := len(messages) - 1; i >= 0; i-- {
-				if messages[i].Author == "AI" {
-					lastAIMessage = messages[i]
+			for _, message := range slices.Backward(messages) {
+				if message.Author == "AI" {
+					lastAIMessage = message
 					break
 				}
 			}
 		}
-		for i := len(messages) - 1; i >= 0; i-- {
-			if messages[i].Author != "AI" {
-				lastUserMessage = messages[i]
+		for _, message := range slices.Backward(messages) {
+			if message.Author != "AI" {
+				lastUserMessage = message
 				break
 			}
 		}

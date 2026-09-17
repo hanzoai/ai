@@ -17,6 +17,7 @@ package controllers
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -113,10 +114,5 @@ func TestModelProviders_JSONShapeAndSecretFree(t *testing.T) {
 }
 
 func hasName(hay []string, needle string) bool {
-	for _, s := range hay {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(hay, needle)
 }

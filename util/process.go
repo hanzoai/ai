@@ -48,8 +48,8 @@ func getPidByPort(port int) (int, error) {
 		}
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(output), "\n")
+	for line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) > 0 {
 			if runtime.GOOS == "windows" {

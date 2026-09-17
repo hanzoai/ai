@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/hanzoai/ai/i18n"
@@ -193,8 +194,8 @@ func buildMessages(question string, history []*RawMessage, prompt string, knowle
 		})
 	}
 
-	for i := len(history) - 1; i >= 0; i-- {
-		historyMessage := history[i]
+	for _, historyMessage := range slices.Backward(history) {
+
 		content := &qwen.TextContent{Text: historyMessage.Text}
 		role := "user"
 		if historyMessage.Author == "AI" {

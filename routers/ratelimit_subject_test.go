@@ -381,9 +381,9 @@ func TestExemptPathsAreStillExempt(t *testing.T) {
 // Thirty-six requests carrying thirty-six keys IAM does not know. The ceiling is
 // twelve, and IAM is asked twelve times.
 func TestAnOverLimitRequestAsksIAMNothing(t *testing.T) {
-	var asks int64
+	var asks atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&asks, 1)
+		asks.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "code": "key_unknown", "msg": "no such key"})
 	}))
@@ -412,7 +412,7 @@ func TestAnOverLimitRequestAsksIAMNothing(t *testing.T) {
 	if served != burst() {
 		t.Fatalf("a flood of unknown keys was served %d of %d; the ceiling is %d", served, 3*burst(), burst())
 	}
-	if got := int(atomic.LoadInt64(&asks)); got != burst() {
+	if got := int(asks.Load()); got != burst() {
 		t.Fatalf("IAM was asked about %d of %d keys; only the %d inside the ceiling may buy a lookup",
 			got, 3*burst(), burst())
 	}

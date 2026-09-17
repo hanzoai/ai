@@ -71,7 +71,7 @@ func (p *JinaEmbeddingProvider) QueryVector(text string, ctx context.Context, la
 		return nil, nil, fmt.Errorf("%s", i18n.Translate(lang, "embedding:text can not be empty."))
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model":          model,
 		"normalized":     true,
 		"embedding_type": "float",

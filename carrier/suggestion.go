@@ -39,9 +39,10 @@ Here is the user's question: %s`
 		return question, nil
 	}
 
-	format := "<Your answer>"
+	var format strings.Builder
+	format.WriteString("<Your answer>")
 	for i := 0; i < p.suggestionCount; i++ {
-		format += p.divider + "<Predicted question " + strconv.Itoa(i+1) + ">"
+		format.WriteString(p.divider + "<Predicted question " + strconv.Itoa(i+1) + ">")
 	}
 
 	promptTemplate := `\n\nPlease follow the steps below to optimize your answer:
@@ -70,7 +71,7 @@ Your reasoning and response must be in the same language as user's question.
 
 Here is the user's question: %s`
 
-	question = fmt.Sprintf(promptTemplate, p.divider, p.suggestionCount, p.divider, format, p.divider, question)
+	question = fmt.Sprintf(promptTemplate, p.divider, p.suggestionCount, p.divider, format.String(), p.divider, question)
 
 	return question, nil
 }

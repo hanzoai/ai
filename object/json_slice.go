@@ -30,7 +30,7 @@ import (
 // StringSlice is []string with JSON marshalling for SQL TEXT columns.
 type StringSlice []string
 
-func (s *StringSlice) Scan(src interface{}) error {
+func (s *StringSlice) Scan(src any) error {
 	if src == nil {
 		*s = nil
 		return nil
@@ -69,7 +69,7 @@ func (s StringSlice) Value() (driver.Value, error) {
 // JSONScan is a helper for fields that are scanned-from-JSON-text via a
 // pointer-receiver Scan method. Use it inside per-type Scanner impls so
 // they all share the same string/bytes/nil handling.
-func JSONScan(dst interface{}, src interface{}) error {
+func JSONScan(dst any, src any) error {
 	if src == nil {
 		return nil
 	}
@@ -92,7 +92,7 @@ func JSONScan(dst interface{}, src interface{}) error {
 }
 
 // JSONValue marshals v as a JSON string for driver.Valuer impls.
-func JSONValue(v interface{}) (driver.Value, error) {
+func JSONValue(v any) (driver.Value, error) {
 	if v == nil {
 		return "null", nil
 	}
@@ -107,17 +107,17 @@ func JSONValue(v interface{}) (driver.Value, error) {
 // stored as JSON in a TEXT column.
 type ExampleQuestionList []ExampleQuestion
 
-func (l *ExampleQuestionList) Scan(src interface{}) error  { return JSONScan(l, src) }
+func (l *ExampleQuestionList) Scan(src any) error          { return JSONScan(l, src) }
 func (l ExampleQuestionList) Value() (driver.Value, error) { return JSONValue(l) }
 
 // PropertiesMap implements sql.Scanner for map[string]*Properties.
 type PropertiesMapJSON map[string]*Properties
 
-func (m *PropertiesMapJSON) Scan(src interface{}) error  { return JSONScan(m, src) }
+func (m *PropertiesMapJSON) Scan(src any) error          { return JSONScan(m, src) }
 func (m PropertiesMapJSON) Value() (driver.Value, error) { return JSONValue(m) }
 
 // Scan on *TreeFile so Store.FileTree round-trips JSON<->struct.
-func (t *TreeFile) Scan(src interface{}) error { return JSONScan(t, src) }
+func (t *TreeFile) Scan(src any) error { return JSONScan(t, src) }
 
 func (t *TreeFile) Value() (driver.Value, error) {
 	if t == nil {

@@ -302,7 +302,7 @@ func zapFlattenMessages(messages []openai.ChatCompletionMessage) (question, syst
 // deltas → done → completed — into a byte buffer instead of a live writer.
 func responsesStreamBody(chatBody []byte, request *OpenAIResponsesRequest, toolKinds map[string]string) ([]byte, error) {
 	var out bytes.Buffer
-	emit := func(event string, data interface{}) error {
+	emit := func(event string, data any) error {
 		b, err := json.Marshal(data)
 		if err != nil {
 			return err
@@ -361,9 +361,9 @@ func responsesStreamBody(chatBody []byte, request *OpenAIResponsesRequest, toolK
 // Marshaling through JSON avoids repeating openaiStreamChunk's anonymous
 // nested struct literal.
 func streamChunkForContent(modelID, content string) *openaiStreamChunk {
-	b, _ := json.Marshal(map[string]interface{}{
+	b, _ := json.Marshal(map[string]any{
 		"model":   modelID,
-		"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": content}}},
+		"choices": []map[string]any{{"delta": map[string]any{"content": content}}},
 	})
 	var c openaiStreamChunk
 	_ = json.Unmarshal(b, &c)
@@ -372,10 +372,10 @@ func streamChunkForContent(modelID, content string) *openaiStreamChunk {
 
 // streamChunkForToolCall builds a single tool-call delta chunk.
 func streamChunkForToolCall(modelID string, index int, id, name, arguments string) *openaiStreamChunk {
-	b, _ := json.Marshal(map[string]interface{}{
+	b, _ := json.Marshal(map[string]any{
 		"model": modelID,
-		"choices": []map[string]interface{}{{"delta": map[string]interface{}{
-			"tool_calls": []map[string]interface{}{{
+		"choices": []map[string]any{{"delta": map[string]any{
+			"tool_calls": []map[string]any{{
 				"index":    index,
 				"id":       id,
 				"function": map[string]string{"name": name, "arguments": arguments},

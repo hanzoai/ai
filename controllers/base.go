@@ -387,7 +387,7 @@ func wrapActionResponse(affected bool, e ...error) *Response {
 	}
 }
 
-func wrapActionResponse2(affected bool, data interface{}, e ...error) *Response {
+func wrapActionResponse2(affected bool, data any, e ...error) *Response {
 	if len(e) != 0 && e[0] != nil {
 		return &Response{Status: "error", Msg: e[0].Error()}
 	} else if affected {

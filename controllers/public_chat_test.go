@@ -154,7 +154,7 @@ func TestReadingTheCeilingNeverRaisesIt(t *testing.T) {
 	d := &dayCount{}
 	const day, limit = "2026-08-15", 3
 
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		d.spent("visitor:a", day, limit)
 	}
 	if got := d.seen["visitor:a"]; got != 0 {
@@ -165,10 +165,10 @@ func TestReadingTheCeilingNeverRaisesIt(t *testing.T) {
 	}
 
 	// At the ceiling, a refusal leaves the count where it is.
-	for i := 0; i < limit; i++ {
+	for range limit {
 		serve(d, "visitor:a", day, limit)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if !d.spent("visitor:a", day, limit) {
 			t.Fatal("a visitor at the ceiling was admitted")
 		}
@@ -200,7 +200,7 @@ func TestTheDayTurnsOverForEveryone(t *testing.T) {
 // bound the lane turns away visitors it has not seen rather than growing.
 func TestVisitorMapIsBounded(t *testing.T) {
 	d := &dayCount{day: "2026-08-15", seen: make(map[string]int, publicVisitors)}
-	for i := 0; i < publicVisitors; i++ {
+	for i := range publicVisitors {
 		d.seen[strconv.Itoa(i)] = 0
 	}
 	if serve(d, "visitor:newcomer", "2026-08-15", 10) {
@@ -234,12 +234,10 @@ func TestTheCountNeverRunsPastTheCeiling(t *testing.T) {
 	d := &dayCount{}
 	const limit = 50
 	var wg sync.WaitGroup
-	for i := 0; i < 500; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 500 {
+		wg.Go(func() {
 			serve(d, "visitor:a", "2026-08-15", limit)
-		}()
+		})
 	}
 	wg.Wait()
 	if got := d.seen["visitor:a"]; got != limit {

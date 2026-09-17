@@ -91,7 +91,7 @@ func NewBillingQueue(endpoint, token string) *BillingQueue {
 	}
 
 	q.wg.Add(billingWorkerCount)
-	for i := 0; i < billingWorkerCount; i++ {
+	for range billingWorkerCount {
 		go q.worker()
 	}
 
@@ -159,7 +159,7 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 	// Per global rule: /v1/ only, never /api/. Commerce serves at /v1/billing/usage.
 	url := q.endpoint + "/v1/billing/usage"
 
-	for attempt := 0; attempt < billingMaxRetries; attempt++ {
+	for attempt := range billingMaxRetries {
 		if attempt > 0 {
 			delay := billingBackoff(attempt - 1)
 

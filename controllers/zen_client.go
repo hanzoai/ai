@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1704,8 +1705,8 @@ func familyRoutingText(rawBody []byte) (text string, hasMedia bool) {
 	if json.Unmarshal(rawBody, &body) != nil {
 		return "", false
 	}
-	for i := len(body.Messages) - 1; i >= 0; i-- {
-		m := body.Messages[i]
+	for _, m := range slices.Backward(body.Messages) {
+
 		if m.Role != "user" {
 			continue
 		}

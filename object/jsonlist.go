@@ -56,7 +56,7 @@ func (l JSONList[T]) Value() (driver.Value, error) {
 // ([{...}]), NULL (→ nil), and empty/"" (→ nil) — so existing rows (which the
 // previous xorm-based store already persisted as JSON) load without a
 // migration.
-func (l *JSONList[T]) Scan(src interface{}) error {
+func (l *JSONList[T]) Scan(src any) error {
 	*l = nil
 	if src == nil {
 		return nil

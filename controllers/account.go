@@ -19,6 +19,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -413,8 +414,8 @@ func (c *ApiController) isPublicDomain() bool {
 	}
 
 	if strings.Contains(configPublicDomain, ",") {
-		configPublicDomains := strings.Split(configPublicDomain, ",")
-		for _, domain := range configPublicDomains {
+		configPublicDomains := strings.SplitSeq(configPublicDomain, ",")
+		for domain := range configPublicDomains {
 			if c.Host() == domain {
 				return true
 			}
@@ -590,7 +591,7 @@ func (c *ApiController) UpdatePreferences() {
 		return
 	}
 
-	incoming := map[string]interface{}{}
+	incoming := map[string]any{}
 	if err := json.Unmarshal(c.Body(), &incoming); err != nil {
 		c.ResponseError(fmt.Sprintf("invalid preferences body: %v", err))
 		return
@@ -609,15 +610,13 @@ func (c *ApiController) UpdatePreferences() {
 	}
 
 	// Shallow-merge incoming top-level keys into the existing preferences object.
-	prefs := map[string]interface{}{}
+	prefs := map[string]any{}
 	if user.Properties != nil {
 		if raw := user.Properties[preferencesKey]; raw != "" {
 			_ = json.Unmarshal([]byte(raw), &prefs)
 		}
 	}
-	for k, v := range incoming {
-		prefs[k] = v
-	}
+	maps.Copy(prefs, incoming)
 
 	merged, err := json.Marshal(prefs)
 	if err != nil {

@@ -398,7 +398,9 @@ func countIdentCalls(n ast.Node, name string) int {
 }
 
 // nano is a *int64 literal — the shape "this caller knows its exact amount" takes.
-func nano(v int64) *int64 { return &v }
+//
+//go:fix inline
+func nano(v int64) *int64 { return new(v) }
 
 // TestBilledAmountHasOneSource pins the money view of a call to a single number.
 //
@@ -417,7 +419,7 @@ func TestBilledAmountHasOneSource(t *testing.T) {
 		PromptTokens:     100_000,
 		CompletionTokens: 100_000,
 		Status:           "success",
-		BilledNanoExact:  nano(usdToNano(price)),
+		BilledNanoExact:  new(usdToNano(price)),
 	}
 
 	table := usageBilledNano(rec, usageCostNano(rec))
@@ -442,7 +444,7 @@ func TestExactZeroIsAnAmountNotAnAbsence(t *testing.T) {
 		PromptTokens:     100_000,
 		CompletionTokens: 100_000,
 		Status:           "success",
-		BilledNanoExact:  nano(0),
+		BilledNanoExact:  new(int64(0)),
 	}
 
 	if got := usageMargin(free).BilledNano; got != 0 {
@@ -474,7 +476,7 @@ func TestSpanReportsWhatTheInvoiceCharged(t *testing.T) {
 		PromptTokens:     100_000,
 		CompletionTokens: 100_000,
 		Status:           "success",
-		BilledNanoExact:  nano(usdToNano(price)),
+		BilledNanoExact:  new(usdToNano(price)),
 	}
 
 	money := spanMoney(rec)
@@ -499,7 +501,7 @@ func TestUnpricedTurnReportsNoMargin(t *testing.T) {
 		PromptTokens:     100_000,
 		CompletionTokens: 100_000,
 		Status:           "success",
-		BilledNanoExact:  nano(usdToNano(0.00132)),
+		BilledNanoExact:  new(usdToNano(0.00132)),
 	}
 	if !recordUnpriced(unpriced) {
 		t.Skip("the model gained a configured price; this test needs an unpriced one")
@@ -520,8 +522,8 @@ func TestStatedCogsIsAMarginEvenOnAnUnpricedModel(t *testing.T) {
 		PromptTokens:     100_000,
 		CompletionTokens: 100_000,
 		Status:           "success",
-		BilledNanoExact:  nano(usdToNano(0.00132)),
-		CostNanoExact:    nano(usdToNano(0.0005)),
+		BilledNanoExact:  new(usdToNano(0.00132)),
+		CostNanoExact:    new(usdToNano(0.0005)),
 	}
 	m := usageMargin(rec).MarginNano
 	if m == nil {
@@ -564,7 +566,7 @@ func TestSpanReportsNothingForAFreeTurn(t *testing.T) {
 		PromptTokens:     100_000,
 		CompletionTokens: 100_000,
 		Status:           "success",
-		BilledNanoExact:  nano(0),
+		BilledNanoExact:  new(int64(0)),
 	}
 	if got := spanMoney(free).billed; got != 0 {
 		t.Errorf("span billed_cost = %v for a turn that billed nothing, want 0", got)

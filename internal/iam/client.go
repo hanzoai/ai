@@ -94,10 +94,10 @@ func (s *Status) UnmarshalJSON(b []byte) error {
 
 // Response is the IAM JSON envelope: {status, msg, data, data2}.
 type Response struct {
-	Status Status      `json:"status"`
-	Msg    string      `json:"msg"`
-	Data   interface{} `json:"data"`
-	Data2  interface{} `json:"data2"`
+	Status Status `json:"status"`
+	Msg    string `json:"msg"`
+	Data   any    `json:"data"`
+	Data2  any    `json:"data2"`
 }
 
 // HttpClient is the minimal http doer a Client uses; *http.Client satisfies it.

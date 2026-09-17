@@ -22,6 +22,7 @@ package object
 // filter over the one unified index, not a parallel store.
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -40,13 +41,7 @@ func (f *fakeIndex) matches(d DocIndex, tag string, fileIDs []string) bool {
 		return false
 	}
 	if len(fileIDs) > 0 {
-		ok := false
-		for _, id := range fileIDs {
-			if d.FileID == id {
-				ok = true
-				break
-			}
-		}
+		ok := slices.Contains(fileIDs, d.FileID)
 		if !ok {
 			return false
 		}
@@ -123,7 +118,7 @@ func (f *fakeIndex) install() func() {
 
 func containsAnyWord(haystack, query string) bool {
 	h := strings.ToLower(haystack)
-	for _, w := range strings.Fields(strings.ToLower(query)) {
+	for w := range strings.FieldsSeq(strings.ToLower(query)) {
 		if strings.Contains(h, w) {
 			return true
 		}

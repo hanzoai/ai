@@ -157,7 +157,7 @@ func TestGetCachedJudgeConfig(t *testing.T) {
 // stays self-contained.
 func splitJudgeModelsForTest(s string) []string {
 	out := []string{}
-	for _, p := range strings.Split(s, ",") {
+	for p := range strings.SplitSeq(s, ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}

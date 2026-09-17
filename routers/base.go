@@ -29,10 +29,10 @@ import (
 )
 
 type Response struct {
-	Status string      `json:"status"`
-	Msg    string      `json:"msg"`
-	Data   interface{} `json:"data"`
-	Data2  interface{} `json:"data2"`
+	Status string `json:"status"`
+	Msg    string `json:"msg"`
+	Data   any    `json:"data"`
+	Data2  any    `json:"data2"`
 }
 
 // GetSessionUser is the identity a FILTER sees, and it is the same identity the
@@ -73,7 +73,7 @@ func getUsername(c *zip.Ctx) string {
 // function beside it for callers who wanted a real one — so a filter could deny a
 // request and still answer success, which is exactly what that second function's
 // comment warned about. One function, and every caller says what it means.
-func responseError(c *zip.Ctx, status int, msg string, data ...interface{}) error {
+func responseError(c *zip.Ctx, status int, msg string, data ...any) error {
 	language := c.Header("Accept-Language")
 	if len(language) > 2 {
 		language = language[0:2]
@@ -100,12 +100,12 @@ func responseError(c *zip.Ctx, status int, msg string, data ...interface{}) erro
 //
 // Returning the write WITHOUT continuing is the denial. A filter that wrote a body
 // and then let the chain run would have the handler answer over the top of it.
-func denyUnauthorized(c *zip.Ctx, msg string, data ...interface{}) error {
+func denyUnauthorized(c *zip.Ctx, msg string, data ...any) error {
 	return responseError(c, http.StatusUnauthorized, msg, data...)
 }
 
 // denyForbidden renders a 403: verified, and not permitted.
-func denyForbidden(c *zip.Ctx, msg string, data ...interface{}) error {
+func denyForbidden(c *zip.Ctx, msg string, data ...any) error {
 	return responseError(c, http.StatusForbidden, msg, data...)
 }
 

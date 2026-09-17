@@ -260,15 +260,15 @@ func copyTable(src, dst *sql.DB, ti tableInfo) (copied, dropped int64, err error
 	defer stmt.Close()
 
 	for rows.Next() {
-		raw := make([]interface{}, len(colNames))
-		ptrs := make([]interface{}, len(colNames))
+		raw := make([]any, len(colNames))
+		ptrs := make([]any, len(colNames))
 		for i := range raw {
 			ptrs[i] = &raw[i]
 		}
 		if err = rows.Scan(ptrs...); err != nil {
 			return copied, dropped, fmt.Errorf("scan: %w", err)
 		}
-		args := make([]interface{}, len(raw))
+		args := make([]any, len(raw))
 		for i, v := range raw {
 			args[i] = coerceForSQLite(v)
 		}
@@ -297,7 +297,7 @@ func copyTable(src, dst *sql.DB, ti tableInfo) (copied, dropped int64, err error
 //   - time.Time -> RFC3339Nano string (cloud-api stores all temporal data as varchar)
 //   - []byte    -> BLOB (kept as-is)
 //   - nil       -> NULL
-func coerceForSQLite(v interface{}) interface{} {
+func coerceForSQLite(v any) any {
 	switch x := v.(type) {
 	case nil:
 		return nil

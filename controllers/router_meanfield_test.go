@@ -166,7 +166,7 @@ func TestMeanFieldGateOff(t *testing.T) {
 
 	// Gate ON with a heavily-loaded champion + strong β: the pick is displaced.
 	meanFieldCfg = func() object.MeanFieldConfig { return object.MeanFieldConfig{Enabled: true, Beta: 5.0} }
-	for i := 0; i < 90; i++ {
+	for range 90 {
 		routerLoads.record("a")
 	}
 	m, changed := meanFieldRoute(client, "code", "a")

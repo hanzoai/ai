@@ -102,11 +102,11 @@ func selectAccelerator(advertised map[string]int) (string, bool) {
 // acceleratorLimits renders the resource-limits map that asks for n accelerators of
 // the given resource. Pure. A count below one is a bug in the caller's arithmetic,
 // not a request for zero accelerators, so it floors at one.
-func acceleratorLimits(resource string, n int) map[string]interface{} {
+func acceleratorLimits(resource string, n int) map[string]any {
 	if n < 1 {
 		n = 1
 	}
-	return map[string]interface{}{resource: strconv.Itoa(n)}
+	return map[string]any{resource: strconv.Itoa(n)}
 }
 
 // advertisedAccelerators reads what this cluster's nodes advertise as allocatable,
@@ -136,7 +136,7 @@ func advertisedAccelerators(ctx context.Context, c K8sClient) (map[string]int, e
 // acceleratorRequest is the ONE call a workload renderer makes to turn "I need n
 // accelerators" into a scheduler contract this cluster can actually satisfy. It
 // refuses — loudly, before anything is created — when no node advertises one.
-func acceleratorRequest(ctx context.Context, c K8sClient, n int) (map[string]interface{}, error) {
+func acceleratorRequest(ctx context.Context, c K8sClient, n int) (map[string]any, error) {
 	advertised, err := advertisedAccelerators(ctx, c)
 	if err != nil {
 		return nil, err

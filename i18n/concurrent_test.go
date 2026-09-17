@@ -18,7 +18,7 @@ func TestTranslatingInManyLanguagesAtOnce(t *testing.T) {
 	langs := []string{"en", "zh", "fr", "de", "ja", "ko", "es", "ru", "pt", "it", "nl", "not-a-language"}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

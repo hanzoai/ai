@@ -189,7 +189,7 @@ func (p *ZapScanProvider) parseZapOutput(output string) *ZapScanResult {
 	}
 
 	// Try to parse as JSON first
-	var zapData map[string]interface{}
+	var zapData map[string]any
 	err := json.Unmarshal([]byte(output), &zapData)
 	if err != nil {
 		// If JSON parsing fails, try to extract structured data from text output
@@ -199,7 +199,7 @@ func (p *ZapScanProvider) parseZapOutput(output string) *ZapScanResult {
 	}
 
 	// Check if this is ZAP JSON format (has "site" array)
-	if sites, ok := zapData["site"].([]interface{}); ok {
+	if sites, ok := zapData["site"].([]any); ok {
 		for _, siteData := range sites {
 			site := p.parseSite(siteData)
 			result.Sites = append(result.Sites, site)
@@ -225,12 +225,12 @@ func (p *ZapScanProvider) parseZapOutput(output string) *ZapScanResult {
 }
 
 // parseSite parses a single site from ZAP output
-func (p *ZapScanProvider) parseSite(siteData interface{}) ZapSite {
+func (p *ZapScanProvider) parseSite(siteData any) ZapSite {
 	site := ZapSite{
 		Alerts: []ZapAlert{},
 	}
 
-	siteMap, ok := siteData.(map[string]interface{})
+	siteMap, ok := siteData.(map[string]any)
 	if !ok {
 		return site
 	}
@@ -249,7 +249,7 @@ func (p *ZapScanProvider) parseSite(siteData interface{}) ZapSite {
 	}
 
 	// Parse alerts
-	if alerts, ok := siteMap["alerts"].([]interface{}); ok {
+	if alerts, ok := siteMap["alerts"].([]any); ok {
 		for _, alertData := range alerts {
 			alert := p.parseAlert(alertData)
 			site.Alerts = append(site.Alerts, alert)
@@ -260,10 +260,10 @@ func (p *ZapScanProvider) parseSite(siteData interface{}) ZapSite {
 }
 
 // parseAlert parses a single alert from ZAP output
-func (p *ZapScanProvider) parseAlert(alertData interface{}) ZapAlert {
+func (p *ZapScanProvider) parseAlert(alertData any) ZapAlert {
 	alert := ZapAlert{}
 
-	alertMap, ok := alertData.(map[string]interface{})
+	alertMap, ok := alertData.(map[string]any)
 	if !ok {
 		return alert
 	}
@@ -313,9 +313,9 @@ func (p *ZapScanProvider) parseAlert(alertData interface{}) ZapAlert {
 	}
 
 	// Parse instances
-	if instances, ok := alertMap["instances"].([]interface{}); ok {
+	if instances, ok := alertMap["instances"].([]any); ok {
 		for _, instData := range instances {
-			if instMap, ok := instData.(map[string]interface{}); ok {
+			if instMap, ok := instData.(map[string]any); ok {
 				instance := struct {
 					URI      string `json:"uri"`
 					Method   string `json:"method"`

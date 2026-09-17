@@ -30,7 +30,7 @@ import (
 // contract (model_id, input.prompt, num_images) and Authorization header.
 type falImageServer struct {
 	srv         *httptest.Server
-	polls       int32
+	polls       atomic.Int32
 	pollsToDone int32
 	lastAuth    string
 	lastBody    map[string]any
@@ -56,7 +56,7 @@ func newFalImageServer(pollsToDone int32, imageURL string) *falImageServer {
 
 	// Status: GET /v1/async-invoke/{id}/status  — COMPLETE after pollsToDone polls.
 	mux.HandleFunc("/v1/async-invoke/req-123/status", func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&f.polls, 1)
+		n := f.polls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if n >= f.pollsToDone {
 			_, _ = w.Write([]byte(`{"status":"COMPLETE"}`))

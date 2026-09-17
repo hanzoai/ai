@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strconv"
@@ -219,10 +220,7 @@ func StartRouterTrainer() {
 		log.Info("router trainer: disabled (set ROUTER_TRAIN_ENABLED=1 to enable)")
 		return
 	}
-	every := envDuration("ROUTER_TRAIN_EVERY", trainDefaultEvery)
-	if every < trainMinEvery {
-		every = trainMinEvery
-	}
+	every := max(envDuration("ROUTER_TRAIN_EVERY", trainDefaultEvery), trainMinEvery)
 	bootDelay := envDuration("ROUTER_TRAIN_BOOT_DELAY", trainBootDelay)
 	log.Info("router trainer: enabled — first fit in %s, then every %s", bootDelay, every)
 	go func() {
@@ -378,12 +376,8 @@ func deployRouterPreferTo(scopeOwner string, prefer map[string][]string) error {
 	// RouterOverrides, TrainingContribution — and on the "*" row the Judge*/MeanField*
 	// config. That silently re-opened an org's disabled-model set and reset its cost dial.
 	merged := map[string][]string{}
-	for k, v := range existing.RouterPrefer {
-		merged[k] = v
-	}
-	for task, models := range prefer {
-		merged[task] = models
-	}
+	maps.Copy(merged, existing.RouterPrefer)
+	maps.Copy(merged, prefer)
 	existing.RouterPrefer = object.JSONMap[[]string](merged)
 	_, err = object.UpdateOrgSettings(scopeOwner, existing)
 	return err
@@ -409,7 +403,7 @@ func reservedInternalOrgs() []string {
 	// Reserved internal orgs — our own data (incl. the self-probe) is always ours.
 	add("admin")
 	add("hanzo")
-	for _, o := range strings.Split(os.Getenv("ROUTER_TRAIN_INTERNAL_ORGS"), ",") {
+	for o := range strings.SplitSeq(os.Getenv("ROUTER_TRAIN_INTERNAL_ORGS"), ",") {
 		add(o)
 	}
 	return out

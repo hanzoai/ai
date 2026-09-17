@@ -74,7 +74,7 @@ func TestRoutingDemo(t *testing.T) {
 	const N = 100000
 	req := Request{Text: prompts[0].text, ApproxTokens: 40}
 	t0 := time.Now()
-	for i := 0; i < N; i++ {
+	for range N {
 		_ = c.RouteDecision(ctx, req, Slo{})
 	}
 	per := time.Since(t0) / N

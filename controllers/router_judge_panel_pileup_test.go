@@ -74,9 +74,8 @@ func TestJudgeConcurrencyBounded(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < judgeConcurrency*4; i++ {
-		wg.Add(1)
-		go func() { defer wg.Done(); panelScore(&judgeConfig{}, []string{"j"}, "t", "p", "r") }()
+	for range judgeConcurrency * 4 {
+		wg.Go(func() { ; panelScore(&judgeConfig{}, []string{"j"}, "t", "p", "r") })
 	}
 	time.Sleep(200 * time.Millisecond) // let the goroutines race to fill the bound
 	got := atomic.LoadInt64(&inFlight)
@@ -98,11 +97,11 @@ func TestJudgeConcurrencyBounded(t *testing.T) {
 // judging sheds load rather than piling up another self-call.
 func TestJudgeSaturationAbstains(t *testing.T) {
 	resetPanel()
-	for i := 0; i < judgeConcurrency; i++ { // saturate the process-wide bound
+	for range judgeConcurrency { // saturate the process-wide bound
 		judgeSem <- struct{}{}
 	}
 	t.Cleanup(func() {
-		for i := 0; i < judgeConcurrency; i++ {
+		for range judgeConcurrency {
 			<-judgeSem
 		}
 	})

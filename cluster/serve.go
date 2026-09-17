@@ -65,24 +65,24 @@ const servingAccelerators = 1
 // model format auto-selects the vLLM/transformers serving runtime; storageUri is
 // the org's S3 checkpoint dir. limits carries the accelerator request the CLUSTER
 // can satisfy (see accelerator.go) — this renderer never names a vendor.
-func buildInferenceServiceObject(job *object.FinetuneJob, name string, limits map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{
+func buildInferenceServiceObject(job *object.FinetuneJob, name string, limits map[string]any) map[string]any {
+	return map[string]any{
 		"apiVersion": "serving.kserve.io/v1beta1",
 		"kind":       "InferenceService",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"name":      name,
 			"namespace": job.Namespace,
-			"labels": map[string]interface{}{
+			"labels": map[string]any{
 				"managed-by":            "hanzo-cloud",
 				"hanzo.ai/finetune-job": job.Name,
 			},
 		},
-		"spec": map[string]interface{}{
-			"predictor": map[string]interface{}{
-				"model": map[string]interface{}{
-					"modelFormat": map[string]interface{}{"name": "huggingface"},
+		"spec": map[string]any{
+			"predictor": map[string]any{
+				"model": map[string]any{
+					"modelFormat": map[string]any{"name": "huggingface"},
 					"storageUri":  job.OutputUri,
-					"resources": map[string]interface{}{
+					"resources": map[string]any{
 						"limits": limits,
 					},
 				},

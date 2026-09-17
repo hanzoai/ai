@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/hanzoai/ai/log"
@@ -74,26 +75,20 @@ func (c *ApiController) UploadTaskDocument() {
 	// Validate file extension - only .docx and .pdf allowed
 	ext := strings.ToLower(filepath.Ext(fileName))
 	allowedExtensions := []string{".docx", ".pdf"}
-	isValid := false
-	for _, allowed := range allowedExtensions {
-		if ext == allowed {
-			isValid = true
-			break
-		}
-	}
+	isValid := slices.Contains(allowedExtensions, ext)
 	if !isValid {
 		c.ResponseError(c.T("resource:Only docx and pdf files are allowed"))
 		return
 	}
 
 	// Decode base64 file data
-	index := strings.Index(fileBase64, ",")
-	if index == -1 {
+	_, after, ok := strings.Cut(fileBase64, ",")
+	if !ok {
 		c.ResponseError(c.T("resource:Invalid file data format"))
 		return
 	}
 
-	fileBytes, err := base64.StdEncoding.DecodeString(fileBase64[index+1:])
+	fileBytes, err := base64.StdEncoding.DecodeString(after)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -131,7 +126,7 @@ func (c *ApiController) UploadTaskDocument() {
 	}
 
 	// Return both URL and parsed text
-	result := map[string]interface{}{
+	result := map[string]any{
 		"url":  fileUrl,
 		"text": documentText,
 	}

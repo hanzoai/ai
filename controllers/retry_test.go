@@ -166,7 +166,7 @@ func TestRetryTransient_CannotRetryACommittedStream(t *testing.T) {
 
 func TestRetryPolicy_BackoffGrowsAndIsCapped(t *testing.T) {
 	p := retryPolicy{attempts: 6, base: 100 * time.Millisecond, max: 400 * time.Millisecond}
-	for n := 0; n < 6; n++ {
+	for n := range 6 {
 		d := p.backoff(n)
 		if d <= 0 || d > p.max {
 			t.Errorf("backoff(%d)=%v must be in (0, max=%v]", n, d, p.max)
@@ -175,7 +175,7 @@ func TestRetryPolicy_BackoffGrowsAndIsCapped(t *testing.T) {
 	// Jitter: the wait must not be identical every time, or every client that
 	// got a 429 together returns together and re-creates the overload.
 	seen := map[time.Duration]bool{}
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		seen[p.backoff(2)] = true
 	}
 	if len(seen) == 1 {

@@ -34,7 +34,7 @@ func TestCalibrationRemovesJudgeBias(t *testing.T) {
 	resetPanel()
 	// Warm each judge with its own baseline distribution over many mediocre responses:
 	// harsh averages ~0.3, lenient ~0.8, each with spread.
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		x := float64(i%5) * 0.05 // 0..0.2 jitter
 		panelState.stat("harsh").observe(0.30 + x)
 		panelState.stat("lenient").observe(0.80 + x)
@@ -69,7 +69,7 @@ func TestPanelConsensusAndReputation(t *testing.T) {
 	models := []string{"a", "b", "rogue"}
 	var reward, conf float64
 	var ok bool
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		reward, conf, ok = panelScore(&judgeConfig{}, models, "code", "p", "r")
 		if !ok {
 			t.Fatal("panelScore returned ok=false")

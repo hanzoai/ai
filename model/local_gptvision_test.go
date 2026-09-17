@@ -210,7 +210,7 @@ func TestImagesStopsAtTheCap(t *testing.T) {
 	s, _ := serve(t, png)
 
 	var b strings.Builder
-	for i := 0; i < maxImages*2; i++ {
+	for i := range maxImages * 2 {
 		fmt.Fprintf(&b, `<img src="%s/cat%d.png">`, s.URL, i)
 	}
 

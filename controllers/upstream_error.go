@@ -50,12 +50,10 @@ import (
 // fail over. Absence is reported as 0 here so the caller can tell "no status"
 // from "some status".
 func upstreamHTTPStatus(err error) int {
-	var oe *openai.APIError
-	if errors.As(err, &oe) {
+	if oe, ok := errors.AsType[*openai.APIError](err); ok {
 		return oe.HTTPStatusCode
 	}
-	var ae *apiError
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*apiError](err); ok {
 		return ae.status
 	}
 	return 0

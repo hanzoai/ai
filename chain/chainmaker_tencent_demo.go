@@ -58,9 +58,9 @@ func newChainTencentChainmakerDemoClient(clientId, clientSecret, region, network
 
 func (client ChainTencentChainmakerDemoClient) getQueryResult(txId string, lang string) (*tbaas.ChainMakerTransactionResult, error) {
 	request := tbaas.NewQueryChainMakerDemoTransactionRequest()
-	request.ClusterId = common.StringPtr(client.NetworkId)
-	request.ChainId = common.StringPtr(client.ChainId)
-	request.TxID = common.StringPtr(txId)
+	request.ClusterId = new(client.NetworkId)
+	request.ChainId = new(client.ChainId)
+	request.TxID = new(txId)
 
 	response, err := client.Client.QueryChainMakerDemoTransaction(request)
 	if err != nil {
@@ -79,11 +79,11 @@ func (client ChainTencentChainmakerDemoClient) getQueryResult(txId string, lang 
 
 func (client *ChainTencentChainmakerDemoClient) Commit(data string, lang string) (string, string, string, error) {
 	request := tbaas.NewInvokeChainMakerDemoContractRequest()
-	request.ClusterId = common.StringPtr(client.NetworkId)
-	request.ChainId = common.StringPtr(client.ChainId)
-	request.ContractName = common.StringPtr("ChainMakerDemo")
-	request.FuncName = common.StringPtr("save")
-	request.FuncParam = common.StringPtr(data)
+	request.ClusterId = new(client.NetworkId)
+	request.ChainId = new(client.ChainId)
+	request.ContractName = new("ChainMakerDemo")
+	request.FuncName = new("save")
+	request.FuncParam = new(data)
 
 	response, err := client.Client.InvokeChainMakerDemoContract(request)
 	if err != nil {

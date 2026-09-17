@@ -56,18 +56,18 @@ func newChainTencentChainmakerClient(clientId, clientSecret, region, networkId, 
 
 func (client *ChainTencentChainmakerClient) Commit(data string, lang string) (string, string, string, error) {
 	request := tbaas.NewInvokeRequest()
-	request.Module = common.StringPtr("transaction")
-	request.Operation = common.StringPtr("invoke")
-	request.ClusterId = common.StringPtr(client.NetworkId)
-	request.ChaincodeName = common.StringPtr("ChainMakerDemo")
-	request.ChannelName = common.StringPtr(client.ChainId)
+	request.Module = new("transaction")
+	request.Operation = new("invoke")
+	request.ClusterId = new(client.NetworkId)
+	request.ChaincodeName = new("ChainMakerDemo")
+	request.ChannelName = new(client.ChainId)
 	request.Peers = []*tbaas.PeerSet{
-		{OrgName: common.StringPtr("orgbeijing.chainmaker-demo"), PeerName: common.StringPtr("consensus1-orgbeijing.chainmaker-demo")},
+		{OrgName: new("orgbeijing.chainmaker-demo"), PeerName: new("consensus1-orgbeijing.chainmaker-demo")},
 	}
-	request.FuncName = common.StringPtr("save")
-	request.GroupName = common.StringPtr("orgbeijing.chainmaker-demo")
+	request.FuncName = new("save")
+	request.GroupName = new("orgbeijing.chainmaker-demo")
 	// request.Args = []*string{common.StringPtr(data["arg1"]), common.StringPtr(data["arg2"])}
-	request.Args = []*string{common.StringPtr(data)}
+	request.Args = []*string{new(data)}
 
 	response, err := client.Client.Invoke(request)
 	if err != nil {

@@ -77,7 +77,7 @@ func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string) (in
 	if endpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"user":      subject,
 		"currency":  "usd",
 		"amount":    amountCents,
@@ -87,7 +87,7 @@ func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string) (in
 		"premium":   true,
 		"stream":    false,
 		"status":    "success",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"kind":       "gpu-hours",
 			"gpuSeconds": gpuSeconds,
 			"gpuType":    gpuType,
@@ -140,9 +140,6 @@ func GpuSecondsForRun(startedRFC3339, finishedRFC3339 string, gpuCount, numNodes
 	if wall <= 0 {
 		return 0
 	}
-	parallel := gpuCount * numNodes
-	if parallel < 1 {
-		parallel = 1
-	}
+	parallel := max(gpuCount*numNodes, 1)
 	return wall * int64(parallel)
 }

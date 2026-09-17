@@ -8,7 +8,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm install --frozen-lockfile && pnpm build
 
 
-FROM public.ecr.aws/docker/library/golang:1.26.5-alpine AS back
+FROM public.ecr.aws/docker/library/golang:1.27.1-alpine AS back
 # go.mod pins the toolchain. The golang base image sets GOTOOLCHAIN=local,
 # which turns a `go` directive newer than the image into a hard build
 # failure instead of a download.

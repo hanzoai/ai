@@ -72,8 +72,8 @@ type RateLimiter struct {
 	stopCh   chan struct{}
 
 	// Metrics counters — accessed atomically.
-	totalAllowed uint64
-	totalDenied  uint64
+	totalAllowed atomic.Uint64
+	totalDenied  atomic.Uint64
 }
 
 // NewRateLimiter creates a RateLimiter that starts a background goroutine to
@@ -104,11 +104,11 @@ func (rl *RateLimiter) Allow(apiKey string) bool {
 	rl.mu.Unlock()
 
 	if entry.limiter.Allow() {
-		atomic.AddUint64(&rl.totalAllowed, 1)
+		rl.totalAllowed.Add(1)
 		return true
 	}
 
-	atomic.AddUint64(&rl.totalDenied, 1)
+	rl.totalDenied.Add(1)
 	return false
 }
 
@@ -146,16 +146,13 @@ func (rl *RateLimiter) RetryAfter(apiKey string) int {
 	delay := reservation.Delay()
 	reservation.Cancel()
 
-	seconds := int(math.Ceil(delay.Seconds()))
-	if seconds < 1 {
-		seconds = 1
-	}
+	seconds := max(int(math.Ceil(delay.Seconds())), 1)
 	return seconds
 }
 
 // Metrics returns the current rate limit hit/pass counters.
 func (rl *RateLimiter) Metrics() (allowed, denied uint64) {
-	return atomic.LoadUint64(&rl.totalAllowed), atomic.LoadUint64(&rl.totalDenied)
+	return rl.totalAllowed.Load(), rl.totalDenied.Load()
 }
 
 // Stop terminates the background cleanup goroutine.
@@ -182,10 +179,7 @@ func (rl *RateLimiter) getOrCreate(apiKey string) *keyEntry {
 	// rate.Limit is events per second; burst allows short spikes up to 20%
 	// of the per-minute allowance (minimum burst of 1).
 	perSecond := rate.Limit(float64(reqPerMin) / 60.0)
-	burst := reqPerMin / 5
-	if burst < 1 {
-		burst = 1
-	}
+	burst := max(reqPerMin/5, 1)
 
 	entry = &keyEntry{
 		limiter:  rate.NewLimiter(perSecond, burst),
@@ -426,8 +420,8 @@ func isRateLimitExempt(path string) bool {
 func extractAPIKey(c *zip.Ctx) string {
 	// Bearer token
 	authHeader := c.Header("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimPrefix(authHeader, "Bearer ")
+	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
+		return after
 	}
 
 	// X-API-Key header
@@ -506,7 +500,7 @@ func parseTierConfig() map[string]Tier {
 	}
 
 	result := make(map[string]Tier)
-	for _, entry := range strings.Split(raw, ",") {
+	for entry := range strings.SplitSeq(raw, ",") {
 		parts := strings.SplitN(strings.TrimSpace(entry), "=", 2)
 		if len(parts) != 2 {
 			continue

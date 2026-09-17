@@ -217,7 +217,7 @@ func GetRewardedRoutingEventsForOwners(owners []string, since string) ([]*Routin
 	if len(owners) == 0 {
 		return nil, nil
 	}
-	vals := make([]interface{}, len(owners))
+	vals := make([]any, len(owners))
 	for i, o := range owners {
 		vals[i] = o
 	}

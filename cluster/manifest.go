@@ -56,12 +56,12 @@ func Manifest(application *object.Application, lang string) (string, error) {
 // renderConfig renders the manifest from the application's basic configuration
 // options through the template.
 func renderConfig(a *object.Application, template *object.Template) (string, error) {
-	options := make(map[string]interface{}, len(a.BasicConfigOptions))
+	options := make(map[string]any, len(a.BasicConfigOptions))
 	for _, option := range a.BasicConfigOptions {
 		options[option.Parameter] = option.Setting
 	}
-	return template.Render(map[string]interface{}{
-		"application": map[string]interface{}{
+	return template.Render(map[string]any{
+		"application": map[string]any{
 			"name":      metadataName(a.Name),
 			"namespace": a.Namespace,
 		},
@@ -101,11 +101,9 @@ func renderKustomize(baseManifest, parameters string, lang string) (string, erro
 	}
 	// Create kustomization.yaml
 	kustomization := types.Kustomization{
-		TypeMeta: types.TypeMeta{
-			APIVersion: types.KustomizationVersion,
-			Kind:       types.KustomizationKind,
-		},
-		Resources: resourceFiles,
+		APIVersion: types.KustomizationVersion,
+		Kind:       types.KustomizationKind,
+		Resources:  resourceFiles,
 		Patches: []types.Patch{
 			{Path: patchFileName},
 		},

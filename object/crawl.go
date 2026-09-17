@@ -46,12 +46,12 @@ const crawlBudget = 60 * time.Second
 // crawl result shape — distinct from ScrapeResult, which is docs-structured for
 // search ingest.
 type CrawlResult struct {
-	URL         string                 `json:"url"`
-	Title       string                 `json:"title,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	Markdown    string                 `json:"markdown"`
-	Success     bool                   `json:"success"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	URL         string         `json:"url"`
+	Title       string         `json:"title,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Markdown    string         `json:"markdown"`
+	Success     bool           `json:"success"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 // Crawl fetches every URL and returns one result each, in the order asked.
@@ -70,11 +70,9 @@ func Crawl(urls []string) ([]CrawlResult, error) {
 	out := make([]CrawlResult, len(urls))
 	var wg sync.WaitGroup
 	for i, u := range urls {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			out[i] = crawlOne(ctx, u)
-		}()
+		})
 	}
 	wg.Wait()
 	return out, nil
@@ -88,11 +86,11 @@ func Crawl(urls []string) ([]CrawlResult, error) {
 func crawlOne(ctx context.Context, url string) CrawlResult {
 	fetch := Fetcher()
 	if fetch == nil {
-		return CrawlResult{URL: url, Metadata: map[string]interface{}{"error": "crawl: no fetcher bound by the host"}}
+		return CrawlResult{URL: url, Metadata: map[string]any{"error": "crawl: no fetcher bound by the host"}}
 	}
 	page, err := fetch(ctx, url)
 	if err != nil {
-		return CrawlResult{URL: url, Metadata: map[string]interface{}{"error": err.Error()}}
+		return CrawlResult{URL: url, Metadata: map[string]any{"error": err.Error()}}
 	}
 	r := CrawlResult{URL: url, Title: page.Title, Markdown: page.Markdown, Success: true, Metadata: page.Metadata}
 	if desc, ok := page.Metadata["description"].(string); ok {
@@ -106,7 +104,7 @@ func crawlOne(ctx context.Context, url string) CrawlResult {
 type Page struct {
 	Title    string
 	Markdown string
-	Metadata map[string]interface{}
+	Metadata map[string]any
 }
 
 // Fetch reads one URL and returns its content.

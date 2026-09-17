@@ -35,7 +35,7 @@ import (
 // not have — turning "route registered to a method that isn't there" from a
 // production 404 into a red test.
 func TestEveryTableMethodExists(t *testing.T) {
-	ctrl := reflect.TypeOf(&controllers.ApiController{})
+	ctrl := reflect.TypeFor[*controllers.ApiController]()
 	has := func(name string) bool {
 		_, ok := ctrl.MethodByName(name)
 		return ok
@@ -43,7 +43,7 @@ func TestEveryTableMethodExists(t *testing.T) {
 
 	for _, r := range resources {
 		for _, spec := range []string{collectionSpec(r), memberSpec(r)} {
-			for _, pair := range strings.Split(spec, ";") {
+			for pair := range strings.SplitSeq(spec, ";") {
 				if pair == "" {
 					continue
 				}

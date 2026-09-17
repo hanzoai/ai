@@ -228,15 +228,15 @@ func (w *AnthropicWriter) Write(p []byte) (n int, err error) {
 		w.headerSent = true
 
 		// message_start
-		msgStart := map[string]interface{}{
+		msgStart := map[string]any{
 			"type": "message_start",
-			"message": map[string]interface{}{
+			"message": map[string]any{
 				"id":      "msg_" + w.RequestID,
 				"type":    "message",
 				"role":    "assistant",
-				"content": []interface{}{},
+				"content": []any{},
 				"model":   w.Model,
-				"usage": map[string]interface{}{
+				"usage": map[string]any{
 					"input_tokens":  0,
 					"output_tokens": 0,
 				},
@@ -247,10 +247,10 @@ func (w *AnthropicWriter) Write(p []byte) (n int, err error) {
 		}
 
 		// content_block_start
-		blockStart := map[string]interface{}{
+		blockStart := map[string]any{
 			"type":  "content_block_start",
 			"index": 0,
-			"content_block": map[string]interface{}{
+			"content_block": map[string]any{
 				"type": "text",
 				"text": "",
 			},
@@ -261,10 +261,10 @@ func (w *AnthropicWriter) Write(p []byte) (n int, err error) {
 	}
 
 	// content_block_delta
-	delta := map[string]interface{}{
+	delta := map[string]any{
 		"type":  "content_block_delta",
 		"index": 0,
-		"delta": map[string]interface{}{
+		"delta": map[string]any{
 			"type": "text_delta",
 			"text": content,
 		},
@@ -305,7 +305,7 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 	}
 
 	// content_block_stop
-	blockStop := map[string]interface{}{
+	blockStop := map[string]any{
 		"type":  "content_block_stop",
 		"index": 0,
 	}
@@ -314,12 +314,12 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 	}
 
 	// message_delta
-	msgDelta := map[string]interface{}{
+	msgDelta := map[string]any{
 		"type": "message_delta",
-		"delta": map[string]interface{}{
+		"delta": map[string]any{
 			"stop_reason": "end_turn",
 		},
-		"usage": map[string]interface{}{
+		"usage": map[string]any{
 			"input_tokens":  promptTokens,
 			"output_tokens": completionTokens,
 		},
@@ -329,7 +329,7 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 	}
 
 	// message_stop
-	msgStop := map[string]interface{}{
+	msgStop := map[string]any{
 		"type": "message_stop",
 	}
 	if err := w.writeSSE("message_stop", msgStop); err != nil {
@@ -361,7 +361,7 @@ func (w *AnthropicWriter) Close(promptTokens, completionTokens, totalTokens int)
 // A partial write is still bytes delivered, so a flush that fails having moved SOME
 // of the buffer still sets the flag: what is left buffered afterwards is what did not
 // go out, which is how "some of it did" is known.
-func (w *AnthropicWriter) writeSSE(event string, data interface{}) error {
+func (w *AnthropicWriter) writeSSE(event string, data any) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -454,8 +454,8 @@ func (c *ApiController) AnthropicMessages() {
 	token := c.Header("x-api-key")
 	if token == "" {
 		authHeader := c.Header("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
+		if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
+			token = after
 		}
 	}
 
@@ -1088,7 +1088,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		snap := c.takeSnapshot(authUser)
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
 			defer upstream.Close()
-			emit := func(event string, data interface{}) error {
+			emit := func(event string, data any) error {
 				jsonData, mErr := json.Marshal(data)
 				if mErr != nil {
 					return mErr
@@ -1269,8 +1269,8 @@ func (c *ApiController) AnthropicCountTokens() {
 	token := c.Header("x-api-key")
 	if token == "" {
 		authHeader := c.Header("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
+		if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
+			token = after
 		}
 	}
 	if token == "" {

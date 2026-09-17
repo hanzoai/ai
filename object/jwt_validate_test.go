@@ -18,13 +18,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // makeJWT builds a syntactically valid (UNSIGNED) JWT string carrying the given
 // payload claims. Only the payload segment is meaningful for the iss/aud policy.
-func makeJWT(t *testing.T, claims map[string]interface{}) string {
+func makeJWT(t *testing.T, claims map[string]any) string {
 	t.Helper()
 	hdr := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
 	pj, err := json.Marshal(claims)
@@ -96,12 +97,7 @@ func TestCheckIssAud_Audience(t *testing.T) {
 // env or the pinned jwtAudiences config — and never duplicates an existing entry.
 func TestJwtAudienceAllowlist_BrandUnion(t *testing.T) {
 	has := func(list []string, v string) bool {
-		for _, s := range list {
-			if s == v {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(list, v)
 	}
 
 	// A legacy hanzo-only env override must STILL accept lux-cloud (brand union),
@@ -130,7 +126,7 @@ func TestJwtAudienceAllowlist_BrandUnion(t *testing.T) {
 // TestJwtUnverifiedClaims decodes iss/aud directly from the payload, proving the
 // raw-map decode avoids the iam.Claims embedded-field tag collision.
 func TestJwtUnverifiedClaims(t *testing.T) {
-	tok := makeJWT(t, map[string]interface{}{
+	tok := makeJWT(t, map[string]any{
 		"iss":   "https://hanzo.id",
 		"aud":   "hanzo-console",
 		"owner": "hanzo",
@@ -147,7 +143,7 @@ func TestJwtUnverifiedClaims(t *testing.T) {
 	}
 
 	// Array-form aud.
-	tok2 := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": []string{"a", "b"}})
+	tok2 := makeJWT(t, map[string]any{"iss": "https://hanzo.id", "aud": []string{"a", "b"}})
 	_, auds2, err := jwtUnverifiedClaims(tok2)
 	if err != nil {
 		t.Fatalf("decode array aud failed: %v", err)
@@ -184,15 +180,15 @@ func TestTokenIsOwnBrand(t *testing.T) {
 		t.Fatal("precondition: https://lux.id must be a trusted sign-in issuer for this test to mean anything")
 	}
 
-	own := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "owner": "admin"})
+	own := makeJWT(t, map[string]any{"iss": "https://hanzo.id", "owner": "admin"})
 	if !TokenIsOwnBrand(own) {
 		t.Error("own-brand token (iss=hanzo.id) must be own-brand")
 	}
-	sibling := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "owner": "admin"})
+	sibling := makeJWT(t, map[string]any{"iss": "https://lux.id", "owner": "admin"})
 	if TokenIsOwnBrand(sibling) {
 		t.Error("sibling-brand token (iss=lux.id) must NOT be own-brand — even though its issuer is trusted for sign-in")
 	}
-	noIss := makeJWT(t, map[string]interface{}{"owner": "admin"})
+	noIss := makeJWT(t, map[string]any{"owner": "admin"})
 	if TokenIsOwnBrand(noIss) {
 		t.Error("token with no iss must be fail-secure NOT own-brand")
 	}
@@ -206,11 +202,11 @@ func TestTokenIsOwnBrand(t *testing.T) {
 // TestValidateJWTIssAud_EndToEnd exercises the config-driven wrapper: a token
 // minted by the trusted issuer passes; a wrong-issuer token is rejected.
 func TestValidateJWTIssAud_EndToEnd(t *testing.T) {
-	good := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": "hanzo-console"})
+	good := makeJWT(t, map[string]any{"iss": "https://hanzo.id", "aud": "hanzo-console"})
 	if err := ValidateJWTIssAud(good); err != nil {
 		t.Fatalf("default-issuer token must pass, got %v", err)
 	}
-	bad := makeJWT(t, map[string]interface{}{"iss": "https://attacker.example", "aud": "hanzo-console"})
+	bad := makeJWT(t, map[string]any{"iss": "https://attacker.example", "aud": "hanzo-console"})
 	if err := ValidateJWTIssAud(bad); err != ErrJWTBadIssuer {
 		t.Fatalf("wrong-issuer token must be rejected, got %v", err)
 	}
@@ -299,12 +295,12 @@ func TestForeignAudienceRejectedFromEnv(t *testing.T) {
 	t.Setenv("GATEWAY_ALLOWED_AUDIENCES", "hanzo-app,hanzo-console,hanzo-cloud,https://api.hanzo.ai")
 	t.Setenv("IAM_AUDIENCE", "hanzo-cloud")
 
-	foreign := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": "evil-app"})
+	foreign := makeJWT(t, map[string]any{"iss": "https://hanzo.id", "aud": "evil-app"})
 	if err := ValidateJWTIssAud(foreign); err != ErrJWTBadAudience {
 		t.Fatalf("foreign-aud token MUST be rejected (R3), got %v", err)
 	}
 	for _, aud := range []string{"hanzo-console", "hanzo-cloud", "hanzo-app", "https://api.hanzo.ai"} {
-		good := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": aud})
+		good := makeJWT(t, map[string]any{"iss": "https://hanzo.id", "aud": aud})
 		if err := ValidateJWTIssAud(good); err != nil {
 			t.Errorf("legit aud %q must pass, got %v", aud, err)
 		}
@@ -338,12 +334,7 @@ func TestTrustedJWTIssuers_WhiteLabel(t *testing.T) {
 }
 
 func contains(xs []string, v string) bool {
-	for _, x := range xs {
-		if x == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, v)
 }
 
 // TestValidateJWTIssAud_LuxToken is THE white-label gate: a lux-brand token
@@ -359,25 +350,25 @@ func TestValidateJWTIssAud_LuxToken(t *testing.T) {
 	t.Setenv("IAM_AUDIENCE", "hanzo-cloud")
 
 	// A real lux console token: iss=lux.id, aud=lux-cloud.
-	luxTok := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "aud": "lux-cloud", "owner": "lux"})
+	luxTok := makeJWT(t, map[string]any{"iss": "https://lux.id", "aud": "lux-cloud", "owner": "lux"})
 	if err := ValidateJWTIssAud(luxTok); err != nil {
 		t.Fatalf("lux token (iss=lux.id, aud=lux-cloud) MUST pass on the white-label binary, got %v", err)
 	}
 
 	// A hanzo token STILL passes (no regression).
-	hanzoTok := makeJWT(t, map[string]interface{}{"iss": "https://hanzo.id", "aud": "hanzo-cloud", "owner": "hanzo"})
+	hanzoTok := makeJWT(t, map[string]any{"iss": "https://hanzo.id", "aud": "hanzo-cloud", "owner": "hanzo"})
 	if err := ValidateJWTIssAud(hanzoTok); err != nil {
 		t.Fatalf("hanzo token MUST still pass (no regression), got %v", err)
 	}
 
 	// A lux-issuer token carrying a FOREIGN aud is still rejected (aud enforced).
-	luxForeignAud := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "aud": "evil-app"})
+	luxForeignAud := makeJWT(t, map[string]any{"iss": "https://lux.id", "aud": "evil-app"})
 	if err := ValidateJWTIssAud(luxForeignAud); err != ErrJWTBadAudience {
 		t.Fatalf("lux-issuer token with foreign aud must be rejected on aud, got %v", err)
 	}
 
 	// An attacker-issuer token is rejected even with a valid brand aud.
-	attackerTok := makeJWT(t, map[string]interface{}{"iss": "https://attacker.id", "aud": "lux-cloud"})
+	attackerTok := makeJWT(t, map[string]any{"iss": "https://attacker.id", "aud": "lux-cloud"})
 	if err := ValidateJWTIssAud(attackerTok); err != ErrJWTBadIssuer {
 		t.Fatalf("attacker-issuer token must be rejected on iss, got %v", err)
 	}
@@ -408,7 +399,7 @@ func TestValidateJWTIssAud_BrandChatToken(t *testing.T) {
 		{"zoo", "https://zoolabs.id", "zoo-chat"},
 		{"pars", "https://pars.id", "pars-chat"},
 	} {
-		tok := makeJWT(t, map[string]interface{}{"iss": tc.iss, "aud": tc.aud, "owner": tc.brand})
+		tok := makeJWT(t, map[string]any{"iss": tc.iss, "aud": tc.aud, "owner": tc.brand})
 		if err := ValidateJWTIssAud(tok); err != nil {
 			t.Errorf("%s.chat token (iss=%s aud=%s) MUST authenticate: %v", tc.brand, tc.iss, tc.aud, err)
 		}
@@ -417,7 +408,7 @@ func TestValidateJWTIssAud_BrandChatToken(t *testing.T) {
 	// The mirror follows the app set, not just chat: every app the deployment allows
 	// for its own brand is allowed for a sibling brand, including a hyphenated one.
 	for _, aud := range []string{"lux-app", "zoo-console", "pars-studio", "lux-admin-guard"} {
-		tok := makeJWT(t, map[string]interface{}{"iss": "https://lux.id", "aud": aud})
+		tok := makeJWT(t, map[string]any{"iss": "https://lux.id", "aud": aud})
 		if err := ValidateJWTIssAud(tok); err != nil {
 			t.Errorf("brand app %q must be mirrored from the allowed hanzo app set: %v", aud, err)
 		}
@@ -433,12 +424,7 @@ func TestWithBrandAudiences_FailSecure(t *testing.T) {
 
 	got := withBrandAudiences([]string{"hanzo-chat", "https://api.hanzo.ai", "evil-app"})
 	has := func(v string) bool {
-		for _, s := range got {
-			if s == v {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(got, v)
 	}
 	if !has("lux-chat") {
 		t.Errorf("an approved app must mirror onto a trusted brand, got %v", got)

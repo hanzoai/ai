@@ -26,7 +26,6 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-	"github.com/volcengine/volcengine-go-sdk/volcengine"
 )
 
 type VolcengineModelProvider struct {
@@ -191,7 +190,7 @@ func (p *VolcengineModelProvider) QueryText(question string, writer io.Writer, h
 		{
 			Role: model.ChatMessageRoleUser,
 			Content: &model.ChatCompletionMessageContent{
-				StringValue: volcengine.String(question),
+				StringValue: new(question),
 			},
 		},
 	}

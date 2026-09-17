@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"maps"
 	"sort"
 	"strings"
 
@@ -180,9 +181,7 @@ var orgRouterCostCeilingLookup = func(owner string) float64 {
 // live ModelConfig map is safe to pass straight in.
 func effectiveRouterPrefer(org string, conf map[string][]string) map[string][]string {
 	out := make(map[string][]string, len(conf))
-	for k, v := range conf {
-		out[k] = v
-	}
+	maps.Copy(out, conf)
 	for _, owner := range []string{object.GlobalDefaultOwner, org} {
 		if owner == "" {
 			continue

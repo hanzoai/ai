@@ -28,7 +28,8 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-func fptr(f float64) *float64 { return &f }
+//go:fix inline
+func fptr(f float64) *float64 { return new(f) }
 
 // feedback is a request at the reward endpoint, carrying a body and whatever
 // credential the caller presents. A principal is a token here, so a test that needs
@@ -53,11 +54,11 @@ func TestResolveReward(t *testing.T) {
 		wantRecord bool
 		wantErr    bool
 	}{
-		{"explicit reward passthrough", fptr(0.7), nil, "", 0.7, true, false},
-		{"explicit reward zero", fptr(0), nil, "", 0, true, false},
-		{"explicit reward one", fptr(1), nil, "", 1, true, false},
-		{"explicit reward below range", fptr(-0.1), nil, "", 0, false, true},
-		{"explicit reward above range", fptr(1.1), nil, "", 0, false, true},
+		{"explicit reward passthrough", new(0.7), nil, "", 0.7, true, false},
+		{"explicit reward zero", new(float64(0)), nil, "", 0, true, false},
+		{"explicit reward one", new(float64(1)), nil, "", 1, true, false},
+		{"explicit reward below range", new(-0.1), nil, "", 0, false, true},
+		{"explicit reward above range", new(1.1), nil, "", 0, false, true},
 		{"signal up → 1", nil, nil, "up", 1, true, false},
 		{"signal accept → 1", nil, nil, "accept", 1, true, false},
 		{"signal down → 0", nil, nil, "down", 0, true, false},
@@ -66,15 +67,15 @@ func TestResolveReward(t *testing.T) {
 		{"signal revert → 0", nil, nil, "revert", 0, true, false},
 		{"signal regenerate → 0.25", nil, nil, "regenerate", 0.25, true, false},
 		{"signal case-insensitive", nil, nil, "UP", 1, true, false},
-		{"rating 1 → 0 (neg)", nil, fptr(1), "rating", 0, true, false},
-		{"rating 2 → 0.5 (neutral)", nil, fptr(2), "rating", 0.5, true, false},
-		{"rating 3 → 1 (strong-pos)", nil, fptr(3), "rating", 1, true, false},
-		{"rating out of range", nil, fptr(4), "rating", 0, false, true},
+		{"rating 1 → 0 (neg)", nil, new(float64(1)), "rating", 0, true, false},
+		{"rating 2 → 0.5 (neutral)", nil, new(float64(2)), "rating", 0.5, true, false},
+		{"rating 3 → 1 (strong-pos)", nil, new(float64(3)), "rating", 1, true, false},
+		{"rating out of range", nil, new(float64(4)), "rating", 0, false, true},
 		{"rating signal without rating", nil, nil, "rating", 0, false, true},
 		{"dismiss records nothing", nil, nil, "dismiss", 0, false, false},
 		{"no signal, no reward", nil, nil, "", 0, false, true},
 		{"unknown signal rejected", nil, nil, "meh", 0, false, true},
-		{"explicit reward wins over signal", fptr(0.9), nil, "down", 0.9, true, false},
+		{"explicit reward wins over signal", new(0.9), nil, "down", 0.9, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

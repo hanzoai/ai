@@ -97,8 +97,8 @@ func AddFile(file *File) (bool, error) {
 func DeleteFile(file *File, lang string) (bool, error) {
 	var objectKey string
 	prefix := fmt.Sprintf("%s_", file.Store)
-	if strings.HasPrefix(file.Name, prefix) {
-		objectKey = strings.TrimPrefix(file.Name, prefix)
+	if after, ok := strings.CutPrefix(file.Name, prefix); ok {
+		objectKey = after
 	}
 	if objectKey == "" {
 		return false, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:The file: %s is not found"), file.Name))

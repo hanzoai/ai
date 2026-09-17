@@ -166,9 +166,9 @@ type qdrantSearchResponse struct {
 	Result []qdrantScoredPoint `json:"result"`
 }
 type qdrantScoredPoint struct {
-	ID      interface{}            `json:"id"`
-	Score   float64                `json:"score"`
-	Payload map[string]interface{} `json:"payload"`
+	ID      any            `json:"id"`
+	Score   float64        `json:"score"`
+	Payload map[string]any `json:"payload"`
 }
 
 // qdrantUpsertRequest is the JSON body for Hanzo Vector's upsert endpoint.
@@ -176,9 +176,9 @@ type qdrantUpsertRequest struct {
 	Points []qdrantPoint `json:"points"`
 }
 type qdrantPoint struct {
-	ID      string                 `json:"id"`
-	Vector  []float32              `json:"vector"`
-	Payload map[string]interface{} `json:"payload"`
+	ID      string         `json:"id"`
+	Vector  []float32      `json:"vector"`
+	Payload map[string]any `json:"payload"`
 }
 
 const rrfK = 60
@@ -351,8 +351,8 @@ func ensureVectorCollection(baseURL, apiKey, collectionName string, dimension in
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
-	createBody := map[string]interface{}{
-		"vectors": map[string]interface{}{
+	createBody := map[string]any{
+		"vectors": map[string]any{
 			"size":     dimension,
 			"distance": "Cosine",
 		},
@@ -426,7 +426,7 @@ func searchFulltext(client meilisearch.ServiceManager, indexName string, query s
 	}
 	results := make([]DocSearchResult, 0, len(resp.Hits))
 	for _, hit := range resp.Hits {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		if decErr := hit.DecodeInto(&m); decErr != nil {
 			continue
 		}
@@ -549,7 +549,7 @@ func extractPageID(r DocSearchResult) string {
 }
 
 // docResultFromMap converts a map (from Hanzo Search hit or Hanzo Vector payload) to a DocSearchResult.
-func docResultFromMap(m map[string]interface{}) DocSearchResult {
+func docResultFromMap(m map[string]any) DocSearchResult {
 	r := DocSearchResult{}
 	if v, ok := m["id"].(string); ok {
 		r.ID = v
@@ -573,7 +573,7 @@ func docResultFromMap(m map[string]interface{}) DocSearchResult {
 	} else {
 		r.Type = "text"
 	}
-	if v, ok := m["breadcrumbs"].([]interface{}); ok {
+	if v, ok := m["breadcrumbs"].([]any); ok {
 		crumbs := make([]string, 0, len(v))
 		for _, c := range v {
 			if s, ok := c.(string); ok {
@@ -715,10 +715,7 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 	// sum of every round trip.
 	const embedWorkers = 8
 	for i := 0; i < len(docs); i += batchSize {
-		end := i + batchSize
-		if end > len(docs) {
-			end = len(docs)
-		}
+		end := min(i+batchSize, len(docs))
 		batch := docs[i:end]
 		vecs := make([][]float32, len(batch))
 		var wg sync.WaitGroup
@@ -748,7 +745,7 @@ func writeDocsToVector(indexName string, docs []DocIndex, replace bool, lang str
 				// derived, and derived in ONE place so deletes hit what writes made.
 				ID:     vectorPointID(doc.ID),
 				Vector: vecs[j],
-				Payload: map[string]interface{}{
+				Payload: map[string]any{
 					"id": doc.ID, "page_id": doc.PageID, "title": doc.Title,
 					"url": doc.URL, "content": doc.Content, "section": doc.Section,
 					"section_id": doc.SectionID, "tag": doc.Tag, "breadcrumbs": doc.Breadcrumbs,
@@ -979,7 +976,7 @@ func peaks(indexName, tag string) ([]peak, error) {
 	const page = int64(1000)
 	const maxRounds = 100
 	var out []peak
-	for round := 0; round < maxRounds; round++ {
+	for round := range maxRounds {
 		var resp meilisearch.DocumentsResult
 		if err := index.GetDocuments(&meilisearch.DocumentsQuery{
 			Limit:  page,
@@ -1339,7 +1336,7 @@ func staleTagIDs(indexName string, m *Mirror, live map[string]bool, scopes []str
 	for _, sc := range scopes {
 		outside[sc] = map[string]bool{}
 	}
-	for round := 0; round < maxRounds; round++ {
+	for round := range maxRounds {
 		var resp meilisearch.DocumentsResult
 		if err := index.GetDocuments(&meilisearch.DocumentsQuery{
 			Filter: buildMeiliFilter(m.Tag, nil),
@@ -1353,7 +1350,7 @@ func staleTagIDs(indexName string, m *Mirror, live map[string]bool, scopes []str
 			return extent{}, err
 		}
 		for _, hit := range resp.Results {
-			row := make(map[string]interface{})
+			row := make(map[string]any)
 			if decErr := hit.DecodeInto(&row); decErr != nil {
 				// One unreadable row and the whole prune is off. Skipping it would
 				// price a partial listing as a complete one, and a prune reading a
@@ -1429,16 +1426,13 @@ func deleteIDsFromVector(indexName string, ids []string) error {
 	baseURL, apiKey := getVectorEndpoint()
 	const batch = 1000
 	for i := 0; i < len(ids); i += batch {
-		end := i + batch
-		if end > len(ids) {
-			end = len(ids)
-		}
+		end := min(i+batch, len(ids))
 		points := make([]string, 0, end-i)
 		for _, id := range ids[i:end] {
 			points = append(points, vectorPointID(id))
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		err := deleteVectorPoints(ctx, baseURL, apiKey, indexName, map[string]interface{}{"points": points})
+		err := deleteVectorPoints(ctx, baseURL, apiKey, indexName, map[string]any{"points": points})
 		cancel()
 		if err != nil {
 			return err
@@ -1516,13 +1510,13 @@ func deleteAllVectorPoints(baseURL, apiKey, collectionName string) error {
 // deleteVectorPointsByFilter removes the points matching a payload filter from a
 // Qdrant collection (e.g. all chunks of one file_id).
 func deleteVectorPointsByFilter(ctx context.Context, baseURL, apiKey, collectionName string, filter *qdrantFilter) error {
-	return deleteVectorPoints(ctx, baseURL, apiKey, collectionName, map[string]interface{}{"filter": filter})
+	return deleteVectorPoints(ctx, baseURL, apiKey, collectionName, map[string]any{"filter": filter})
 }
 
 // deleteVectorPoints posts one delete selector — a payload filter, or an
 // explicit list of point ids — to a Hanzo Vector collection. A missing
 // collection is treated as success (nothing to delete).
-func deleteVectorPoints(ctx context.Context, baseURL, apiKey, collectionName string, selector map[string]interface{}) error {
+func deleteVectorPoints(ctx context.Context, baseURL, apiKey, collectionName string, selector map[string]any) error {
 	url := fmt.Sprintf("%s/collections/%s/points/delete", baseURL, collectionName)
 	body, err := json.Marshal(selector)
 	if err != nil {

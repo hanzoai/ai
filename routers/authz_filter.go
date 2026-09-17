@@ -17,6 +17,7 @@ package routers
 
 import (
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
@@ -405,10 +406,8 @@ func permissionFilter(c *zip.Ctx) error {
 		"update-training-contribution",
 	}
 
-	for _, exemptPath := range exemptedPaths {
-		if controllerName == exemptPath {
-			return c.Continue()
-		}
+	if slices.Contains(exemptedPaths, controllerName) {
+		return c.Continue()
 	}
 
 	if user := GetSessionUser(c); !util.IsAdmin(user) {

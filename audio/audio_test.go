@@ -66,7 +66,7 @@ func TestSomethingThatIsNotAVideo(t *testing.T) {
 		t.Skip("ffmpeg is not installed here")
 	}
 	before := leftBehind(t)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := GetAudioFromVideo(bytes.NewBuffer([]byte("not a video"))); err == nil {
 			t.Fatal("a file that is not a video converted")
 		}

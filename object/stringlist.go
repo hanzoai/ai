@@ -50,7 +50,7 @@ func (l StringList) Value() (driver.Value, error) {
 // form (["a","b"]), the legacy comma-separated/single-value form written by the
 // previous xorm-based store, and NULL/empty (→ nil) — so existing rows load
 // without a migration.
-func (l *StringList) Scan(src interface{}) error {
+func (l *StringList) Scan(src any) error {
 	*l = nil
 	if src == nil {
 		return nil

@@ -509,6 +509,6 @@ func zapAnthropicCountTokens(ctx context.Context, auth string, reqBody []byte) (
 		}
 	}
 
-	out, _ := json.Marshal(map[string]interface{}{"input_tokens": n})
+	out, _ := json.Marshal(map[string]any{"input_tokens": n})
 	return 200, out, ""
 }

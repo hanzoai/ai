@@ -133,7 +133,7 @@ func TestDbTagIsAColumnNameNotAXormDirective(t *testing.T) {
 // The specific column the record-chain task queries, named so a regression is
 // recognizable rather than merely red.
 func TestRecordNeedCommitMapsToNeedCommitColumn(t *testing.T) {
-	f, ok := reflect.TypeOf(object.Record{}).FieldByName("NeedCommit")
+	f, ok := reflect.TypeFor[object.Record]().FieldByName("NeedCommit")
 	if !ok {
 		t.Fatal("object.Record has no NeedCommit field")
 	}

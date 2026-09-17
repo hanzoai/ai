@@ -141,11 +141,11 @@ func zapMultipartReader(body []byte) (*multipart.Reader, bool) {
 	if !bytes.HasPrefix(body, []byte("--")) {
 		return nil, false
 	}
-	nl := bytes.IndexByte(body, '\n')
-	if nl < 0 {
+	before, _, ok := bytes.Cut(body, []byte{'\n'})
+	if !ok {
 		return nil, false
 	}
-	first := bytes.TrimRight(body[:nl], "\r")
+	first := bytes.TrimRight(before, "\r")
 	boundary := string(bytes.TrimPrefix(first, []byte("--")))
 	if boundary == "" {
 		return nil, false

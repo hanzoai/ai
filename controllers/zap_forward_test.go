@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -127,10 +128,8 @@ func waitForPeer(t *testing.T, n *zaplib.Node, peer string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		for _, p := range n.Peers() {
-			if p == peer {
-				return
-			}
+		if slices.Contains(n.Peers(), peer) {
+			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

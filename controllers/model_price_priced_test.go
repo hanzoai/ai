@@ -8,14 +8,14 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-var pricedSeq int64
+var pricedSeq atomic.Int64
 
 // routeDB stands a route table up in memory and returns the org the routes are
 // written under. Routes are global ("built-in"), which is what a deployment-wide
 // default is.
 func routeDB(t *testing.T) {
 	t.Helper()
-	n := atomic.AddInt64(&pricedSeq, 1)
+	n := pricedSeq.Add(1)
 	dsn := fmt.Sprintf("file:priced_%d?mode=memory&cache=shared", n)
 	restore, err := object.UseMemoryDB(dsn, &object.ModelRoute{})
 	if err != nil {
@@ -94,4 +94,3 @@ func TestPricedRouteKeepsANonZeroPrice(t *testing.T) {
 		t.Fatal("a route priced above zero read as free")
 	}
 }
-

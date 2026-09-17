@@ -140,7 +140,7 @@ func DatastoreEnabled() bool { return datastoreReady.Load() }
 
 // DatastoreExec runs a DDL or INSERT against Datastore. `?` placeholders are
 // bound positionally from args (datastore-go renders them into the statement).
-func DatastoreExec(ctx context.Context, stmt string, args ...interface{}) error {
+func DatastoreExec(ctx context.Context, stmt string, args ...any) error {
 	datastoreMu.RLock()
 	conn := datastoreConn
 	datastoreMu.RUnlock()
@@ -154,7 +154,7 @@ func DatastoreExec(ctx context.Context, stmt string, args ...interface{}) error 
 // each column into its native Datastore scan type (uint64, string, time.Time,
 // float64, …). The cloud_usage read layer's cu* coercers accept those native
 // types, so callers never touch reflect. Symmetric to DatastoreExec.
-func DatastoreQuery(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
+func DatastoreQuery(ctx context.Context, query string, args ...any) ([]map[string]any, error) {
 	datastoreMu.RLock()
 	conn := datastoreConn
 	datastoreMu.RUnlock()
@@ -169,16 +169,16 @@ func DatastoreQuery(ctx context.Context, query string, args ...interface{}) ([]m
 
 	cols := rows.Columns()
 	types := rows.ColumnTypes()
-	out := make([]map[string]interface{}, 0, 16)
+	out := make([]map[string]any, 0, 16)
 	for rows.Next() {
-		dest := make([]interface{}, len(cols))
+		dest := make([]any, len(cols))
 		for i := range dest {
 			dest[i] = reflect.New(types[i].ScanType()).Interface() // *T for the column's native type
 		}
 		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("datastore scan: %w", err)
 		}
-		m := make(map[string]interface{}, len(cols))
+		m := make(map[string]any, len(cols))
 		for i, c := range cols {
 			m[c] = reflect.ValueOf(dest[i]).Elem().Interface()
 		}

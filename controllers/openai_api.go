@@ -1271,7 +1271,7 @@ func recordUsage(record *usageRecord) {
 	// free call on this path indistinguishable from a paid one that happened to round to
 	// zero. Which writer a build has is a deployment fact; what a call spent is not, and
 	// must not depend on it.
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"user":             subject,
 		"actor":            record.User,
 		"currency":         "usd",
@@ -2527,7 +2527,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 
 	// Convert OpenAI messages to Anthropic format
 	var systemPrompt string
-	anthropicMessages := []map[string]interface{}{}
+	anthropicMessages := []map[string]any{}
 
 	for _, msg := range request.Messages {
 		if msg.Role == "system" {
@@ -2535,14 +2535,14 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			continue
 		}
 
-		anthropicMsg := map[string]interface{}{
+		anthropicMsg := map[string]any{
 			"role": msg.Role,
 		}
 
 		if msg.Role == "tool" {
 			// Tool result message
 			anthropicMsg["role"] = "user"
-			anthropicMsg["content"] = []map[string]interface{}{
+			anthropicMsg["content"] = []map[string]any{
 				{
 					"type":        "tool_result",
 					"tool_use_id": msg.ToolCallID,
@@ -2551,20 +2551,20 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			}
 		} else if len(msg.ToolCalls) > 0 {
 			// Assistant message with tool calls
-			content := []map[string]interface{}{}
+			content := []map[string]any{}
 			if msg.Content != "" {
-				content = append(content, map[string]interface{}{
+				content = append(content, map[string]any{
 					"type": "text",
 					"text": msg.Content,
 				})
 			}
 			for _, tc := range msg.ToolCalls {
-				var inputObj interface{}
+				var inputObj any
 				_ = json.Unmarshal([]byte(tc.Function.Arguments), &inputObj)
 				if inputObj == nil {
-					inputObj = map[string]interface{}{}
+					inputObj = map[string]any{}
 				}
-				content = append(content, map[string]interface{}{
+				content = append(content, map[string]any{
 					"type":  "tool_use",
 					"id":    tc.ID,
 					"name":  tc.Function.Name,
@@ -2573,10 +2573,10 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			}
 			anthropicMsg["content"] = content
 		} else if len(msg.MultiContent) > 0 {
-			content := []map[string]interface{}{}
+			content := []map[string]any{}
 			for _, part := range msg.MultiContent {
 				if part.Type == openai.ChatMessagePartTypeText {
-					content = append(content, map[string]interface{}{
+					content = append(content, map[string]any{
 						"type": "text",
 						"text": part.Text,
 					})
@@ -2591,22 +2591,22 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	}
 
 	// Convert OpenAI tools to Anthropic tool format
-	anthropicTools := []map[string]interface{}{}
+	anthropicTools := []map[string]any{}
 	for _, tool := range request.Tools {
 		if tool.Type == openai.ToolTypeFunction {
-			anthropicTool := map[string]interface{}{
+			anthropicTool := map[string]any{
 				"name":        tool.Function.Name,
 				"description": tool.Function.Description,
 			}
 			if tool.Function.Parameters != nil {
-				var params interface{}
+				var params any
 				raw, _ := json.Marshal(tool.Function.Parameters)
 				_ = json.Unmarshal(raw, &params)
 				anthropicTool["input_schema"] = params
 			} else {
-				anthropicTool["input_schema"] = map[string]interface{}{
+				anthropicTool["input_schema"] = map[string]any{
 					"type":       "object",
-					"properties": map[string]interface{}{},
+					"properties": map[string]any{},
 				}
 			}
 			anthropicTools = append(anthropicTools, anthropicTool)
@@ -2614,7 +2614,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	}
 
 	// Build Anthropic request
-	anthropicReq := map[string]interface{}{
+	anthropicReq := map[string]any{
 		"model":      request.Model,
 		"messages":   anthropicMessages,
 		"max_tokens": 4096,
@@ -2692,14 +2692,14 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	}
 
 	// Convert Anthropic response to OpenAI format
-	var contentText string
+	var contentText strings.Builder
 	var toolCalls []openai.ToolCall
 	toolCallIdx := 0
 
 	for _, block := range anthropicResp.Content {
 		switch block.Type {
 		case "text":
-			contentText += block.Text
+			contentText.WriteString(block.Text)
 		case "tool_use":
 			tc := openai.ToolCall{
 				Index: &toolCallIdx,
@@ -2730,7 +2730,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 				Index: 0,
 				Message: openai.ChatCompletionMessage{
 					Role:      "assistant",
-					Content:   contentText,
+					Content:   contentText.String(),
 					ToolCalls: toolCalls,
 				},
 				FinishReason: finishReason,
@@ -2784,16 +2784,16 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		c.SetHeader("Content-Type", "text/event-stream")
 		c.SetHeader("Cache-Control", "no-cache")
 		c.SetHeader("Connection", "keep-alive")
-		chunk := map[string]interface{}{
+		chunk := map[string]any{
 			"id":      openaiResp.ID,
 			"object":  "chat.completion.chunk",
 			"created": openaiResp.Created,
 			"model":   openaiResp.Model,
-			"choices": []map[string]interface{}{{
+			"choices": []map[string]any{{
 				"index": 0,
-				"delta": map[string]interface{}{
+				"delta": map[string]any{
 					"role":       "assistant",
-					"content":    contentText,
+					"content":    contentText.String(),
 					"tool_calls": toolCalls,
 				},
 				"finish_reason": finishReason,

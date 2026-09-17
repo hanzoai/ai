@@ -35,7 +35,7 @@ func TestATimestampSortsTheWayItHappened(t *testing.T) {
 
 	// Written in order, they sort in order.
 	stamps := []string{}
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		stamps = append(stamps, GetCurrentTimeWithMilli())
 		time.Sleep(2 * time.Millisecond)
 	}

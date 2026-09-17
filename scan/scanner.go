@@ -169,7 +169,7 @@ func binPath(given, bin string) (string, error) {
 // "-oN", "-oN/tmp/x" and "-oN=/tmp/x" are one thing.
 func (s scanner) reachesTheFilesystem(command string) string {
 	denied := append(append([]string{}, writesFiles...), s.offLimits...)
-	for _, field := range strings.Fields(command) {
+	for field := range strings.FieldsSeq(command) {
 		if !strings.HasPrefix(field, "-") {
 			continue
 		}

@@ -56,7 +56,7 @@ func verbs(app *zip.App) map[string]func(string, ...zip.Handler) zip.Router {
 // production by the customer. Now the binary refuses to start.
 func route(app *zip.App, path, mapping string) {
 	add := verbs(app)
-	for _, pair := range strings.Split(mapping, ";") {
+	for pair := range strings.SplitSeq(mapping, ";") {
 		verb, name, ok := strings.Cut(pair, ":")
 		if !ok {
 			panic(fmt.Sprintf("routers: %s: mapping %q is not VERB:Method", path, pair))
@@ -81,7 +81,7 @@ func route(app *zip.App, path, mapping string) {
 // the writer it answers through), so one shared instance would hand two callers
 // each other's identity.
 func serve(name string) zip.Handler {
-	method, ok := reflect.TypeOf(&controllers.ApiController{}).MethodByName(name)
+	method, ok := reflect.TypeFor[*controllers.ApiController]().MethodByName(name)
 	if !ok {
 		panic("routers: no controller method named " + name)
 	}

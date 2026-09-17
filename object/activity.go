@@ -71,10 +71,10 @@ func GetActivities(days int, user string, fieldNames []string, lang string) (map
 	// Adjusted to include today in the count by subtracting days-1
 	startDateTime := now.AddDate(0, 0, -(days - 1)).Truncate(24 * time.Hour)
 	resp := make(map[string][]*Activity)
-	for j := 0; j < len(fieldNames); j++ {
+	for j := range fieldNames {
 		// Adjusted the size to days, as we're now including today
 		activities := make([]*Activity, days)
-		for i := 0; i < days; i++ {
+		for i := range days {
 			activities[i] = &Activity{
 				Date:       startDateTime.AddDate(0, 0, i).Format("2006-01-02"),
 				FieldCount: make(map[string]int),

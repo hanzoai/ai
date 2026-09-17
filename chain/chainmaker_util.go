@@ -19,7 +19,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
+
 	"net/http"
 	"strings"
 
@@ -64,16 +65,16 @@ func SendChainmakerRequest(info *ChainChainmakerClient, method string, lang stri
 		return nil, err
 	}
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
 
 	type Response struct {
-		Status string      `json:"status"`
-		Msg    string      `json:"msg"`
-		Data   interface{} `json:"data"`
-		Data2  interface{} `json:"data2"`
+		Status string `json:"status"`
+		Msg    string `json:"msg"`
+		Data   any    `json:"data"`
+		Data2  any    `json:"data2"`
 	}
 
 	var response Response
@@ -98,7 +99,7 @@ func SendChainmakerRequest(info *ChainChainmakerClient, method string, lang stri
 }
 
 func normalizeChainData(data string, lang string) (string, error) {
-	var originChainData map[string]interface{}
+	var originChainData map[string]any
 	if err := json.Unmarshal([]byte(data), &originChainData); err != nil {
 		return "", fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "chain:parse json data error: %v"), err))
 	}

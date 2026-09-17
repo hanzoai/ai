@@ -122,14 +122,14 @@ func getAllRecords() ([]*Record, error) {
 	return records, nil
 }
 
-func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []interface{}, error) {
+func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []any, error) {
 	providerFirst, providerSecond, err := GetTwoActiveBlockchainProvider("admin")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	var validRecords []*Record
 	var needCommitIdx []int
-	var data []interface{}
+	var data []any
 	recordTime := util.GetCurrentTimeWithMilli()
 	for _, record := range records {
 		ok, err := prepareRecord(record, providerFirst, providerSecond)
@@ -142,7 +142,7 @@ func getValidAndNeedCommitRecords(records []*Record) ([]*Record, []int, []interf
 		record.CreatedTime = util.GetCurrentTimeBasedOnLastMilli(recordTime)
 		recordTime = record.CreatedTime
 		validRecords = append(validRecords, record)
-		data = append(data, map[string]interface{}{"name": record.Name})
+		data = append(data, map[string]any{"name": record.Name})
 		if record.NeedCommit {
 			// validRecords and data are appended in lockstep, and the commit results
 			// come back one per VALID record — so this index addresses those, not the
@@ -248,7 +248,7 @@ func UpdateRecordInternal(id int, record Record) error {
 	return nil
 }
 
-func UpdateRecordFields(id string, fields map[string]interface{}, lang string) (bool, error) {
+func UpdateRecordFields(id string, fields map[string]any, lang string) (bool, error) {
 	p, err := GetRecord(id, lang)
 	if err != nil {
 		return false, err
@@ -318,7 +318,7 @@ func NewRecord(ctx *zip.Ctx) (*Record, error) {
 	return &record, nil
 }
 
-func AddRecord(record *Record, lang string) (bool, interface{}, error) {
+func AddRecord(record *Record, lang string) (bool, any, error) {
 	providerFirst, providerSecond, err := GetTwoActiveBlockchainProvider(record.Owner)
 	if err != nil {
 		return false, nil, err
@@ -339,7 +339,7 @@ func AddRecord(record *Record, lang string) (bool, interface{}, error) {
 	if err != nil {
 		return false, nil, err
 	}
-	data := map[string]interface{}{"name": record.Name}
+	data := map[string]any{"name": record.Name}
 	if record.NeedCommit {
 		_, commitResult, err := CommitRecord(record, lang)
 		if err != nil {
@@ -351,7 +351,7 @@ func AddRecord(record *Record, lang string) (bool, interface{}, error) {
 	return true, data, nil
 }
 
-func AddRecords(records []*Record, syncEnabled bool, lang string) (bool, interface{}, error) {
+func AddRecords(records []*Record, syncEnabled bool, lang string) (bool, any, error) {
 	if len(records) == 0 {
 		return false, nil, nil
 	}

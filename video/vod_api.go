@@ -39,7 +39,7 @@ var errNoVodClient = errors.New("video: VOD client not configured (SetVodClient 
 
 func GetVideoPlayAuth(videoId string) (string, error) {
 	request := &vod20170321.GetVideoPlayAuthRequest{
-		VideoId: tea.String(videoId),
+		VideoId: new(videoId),
 	}
 
 	if VodClient == nil {
@@ -77,8 +77,8 @@ func UploadVideo(fileId string, filename string, fileBuffer *bytes.Buffer) (stri
 	// https://help.aliyun.com/document_detail/476208.html
 
 	request := &vod20170321.CreateUploadVideoRequest{
-		FileName: tea.String(filename),
-		Title:    tea.String(fileId),
+		FileName: new(filename),
+		Title:    new(fileId),
 	}
 	if VodClient == nil {
 		return "", errNoVodClient
@@ -123,7 +123,7 @@ func UploadVideo(fileId string, filename string, fileBuffer *bytes.Buffer) (stri
 
 func GetVideoCoverUrl(videoId string) string {
 	request := &vod20170321.GetVideoInfoRequest{
-		VideoId: tea.String(videoId),
+		VideoId: new(videoId),
 	}
 
 	if VodClient == nil {
@@ -146,7 +146,7 @@ func GetVideoCoverUrl(videoId string) string {
 
 func GetVideoFileUrl(videoId string) string {
 	request := &vod20170321.GetMezzanineInfoRequest{
-		VideoId: tea.String(videoId),
+		VideoId: new(videoId),
 	}
 
 	if VodClient == nil {

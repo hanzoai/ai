@@ -32,16 +32,16 @@ import (
 )
 
 // Info logs at info level.
-func Info(f interface{}, v ...interface{}) { luxlog.Info(format(f, v...)) }
+func Info(f any, v ...any) { luxlog.Info(format(f, v...)) }
 
 // Warning logs at warn level.
-func Warning(f interface{}, v ...interface{}) { luxlog.Warn(format(f, v...)) }
+func Warning(f any, v ...any) { luxlog.Warn(format(f, v...)) }
 
 // Warn logs at warn level.
-func Warn(f interface{}, v ...interface{}) { luxlog.Warn(format(f, v...)) }
+func Warn(f any, v ...any) { luxlog.Warn(format(f, v...)) }
 
 // Error logs at error level.
-func Error(f interface{}, v ...interface{}) { luxlog.Error(format(f, v...)) }
+func Error(f any, v ...any) { luxlog.Error(format(f, v...)) }
 
 // SetLogger applies the process log level from a JSON config's optional
 // "level" field. The runtime emits structured records to stderr for the
@@ -49,7 +49,7 @@ func Error(f interface{}, v ...interface{}) { luxlog.Error(format(f, v...)) }
 // "console") denote that single sink and carry no per-adapter wiring.
 func SetLogger(adapter string, config ...string) error {
 	for _, c := range config {
-		var m map[string]interface{}
+		var m map[string]any
 		if json.Unmarshal([]byte(c), &m) != nil {
 			continue
 		}
@@ -65,7 +65,7 @@ func SetLogger(adapter string, config ...string) error {
 // larger number is more verbose (7 debug, 6 info, 4 warning, 3 error); JSON
 // decodes those numbers as float64. Values below error clamp to error so a
 // numeric threshold never suppresses error records.
-func parseLevel(v interface{}) (luxlog.Level, bool) {
+func parseLevel(v any) (luxlog.Level, bool) {
 	switch t := v.(type) {
 	case string:
 		if l, err := luxlog.ParseLevel(t); err == nil {
@@ -91,7 +91,7 @@ func Reset() { luxlog.SetGlobalLevel(luxlog.InfoLevel) }
 
 // format renders the leading value and args into a single message under the
 // printf-plus-appended-fields contract the call sites rely on.
-func format(f interface{}, v ...interface{}) string {
+func format(f any, v ...any) string {
 	var msg string
 	switch t := f.(type) {
 	case string:

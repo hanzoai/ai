@@ -16,6 +16,7 @@ package routers
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/zap-proto/zip"
@@ -184,10 +185,8 @@ func expand(registered string) []string {
 		return all
 	}
 	registered = strings.ToUpper(registered)
-	for _, v := range all {
-		if v == registered {
-			return []string{registered}
-		}
+	if slices.Contains(all, registered) {
+		return []string{registered}
 	}
 	return nil
 }
@@ -399,7 +398,7 @@ func openAPIPath(p string) string {
 // given the value its own name asks for.
 func pathParams(p string) []string {
 	var names []string
-	for _, s := range strings.Split(p, "/") {
+	for s := range strings.SplitSeq(p, "/") {
 		if len(s) > 2 && s[0] == '{' && s[len(s)-1] == '}' {
 			names = append(names, s[1:len(s)-1])
 		}

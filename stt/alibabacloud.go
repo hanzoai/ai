@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,18 +76,18 @@ func (p *AlibabacloudSpeechToTextProvider) calculatePrice(res *SpeechToTextResul
 
 // getFullTranscript combines all speech segments into a complete transcript
 func getFullTranscript(completedSegments []*SpeechSegment, currentSegment *SpeechSegment) string {
-	var fullText string
+	var fullText strings.Builder
 	for _, segment := range completedSegments {
 		if segment.IsComplete {
-			fullText += segment.Text + " "
+			fullText.WriteString(segment.Text + " ")
 		}
 	}
 
 	if currentSegment != nil {
-		fullText += currentSegment.Text
+		fullText.WriteString(currentSegment.Text)
 	}
 
-	return fullText
+	return fullText.String()
 }
 
 // ProcessAudio processes an audio stream and returns the transcribed text.
@@ -120,12 +121,12 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 
 	// StreamCallback function to handle API responses
 	streamCallbackFn := func(ctx context.Context, chunk []byte) error {
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.Unmarshal(chunk, &response); err != nil {
 			return nil
 		}
 
-		header, ok := response["header"].(map[string]interface{})
+		header, ok := response["header"].(map[string]any)
 		if !ok {
 			return nil
 		}
@@ -145,15 +146,15 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 		switch event {
 		case "result-generated":
 			// Extract sentence data
-			payload, ok := response["payload"].(map[string]interface{})
+			payload, ok := response["payload"].(map[string]any)
 			if !ok {
 				return nil
 			}
-			output, ok := payload["output"].(map[string]interface{})
+			output, ok := payload["output"].(map[string]any)
 			if !ok {
 				return nil
 			}
-			sentence, ok := output["sentence"].(map[string]interface{})
+			sentence, ok := output["sentence"].(map[string]any)
 			if !ok {
 				return nil
 			}
@@ -167,7 +168,7 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 			}
 			endTime := 0.0
 			hasEndTime := false
-			if et, ok := sentence["end_time"].(interface{}); ok && et != nil {
+			if et, ok := sentence["end_time"].(any); ok && et != nil {
 				if etFloat, ok := et.(float64); ok {
 					endTime = etFloat
 					hasEndTime = true
@@ -206,7 +207,7 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 			}
 
 			// Get audio duration if available in the payload
-			if usage, hasUsage := payload["usage"].(map[string]interface{}); hasUsage {
+			if usage, hasUsage := payload["usage"].(map[string]any); hasUsage {
 				if duration, hasDuration := usage["duration"].(float64); hasDuration {
 					mutex.Lock()
 					if duration > totalDuration {
@@ -261,7 +262,7 @@ func (p *AlibabacloudSpeechToTextProvider) ProcessAudio(audioReader io.Reader, c
 			SampleRate: 16000,
 			Format:     "wav", // May need adjustment based on actual input
 		},
-		Input:     map[string]interface{}{},
+		Input:     map[string]any{},
 		Task:      "asr",
 		TaskGroup: "audio",
 		Function:  "recognition",

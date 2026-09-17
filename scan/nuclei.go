@@ -20,25 +20,26 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
 // NucleiVulnerability represents a single vulnerability found by Nuclei
 type NucleiVulnerability struct {
-	TemplateID       string                 `json:"templateID"`
-	Name             string                 `json:"name"`
-	Type             string                 `json:"type"`
-	Severity         string                 `json:"severity"`
-	Host             string                 `json:"host"`
-	MatchedAt        string                 `json:"matchedAt"`
-	ExtractedResults []string               `json:"extractedResults,omitempty"`
-	IP               string                 `json:"ip,omitempty"`
-	Timestamp        string                 `json:"timestamp,omitempty"`
-	CurlCommand      string                 `json:"curlCommand,omitempty"`
-	Description      string                 `json:"description,omitempty"`
-	Reference        []string               `json:"reference,omitempty"`
-	Classification   map[string]interface{} `json:"classification,omitempty"`
-	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+	TemplateID       string         `json:"templateID"`
+	Name             string         `json:"name"`
+	Type             string         `json:"type"`
+	Severity         string         `json:"severity"`
+	Host             string         `json:"host"`
+	MatchedAt        string         `json:"matchedAt"`
+	ExtractedResults []string       `json:"extractedResults,omitempty"`
+	IP               string         `json:"ip,omitempty"`
+	Timestamp        string         `json:"timestamp,omitempty"`
+	CurlCommand      string         `json:"curlCommand,omitempty"`
+	Description      string         `json:"description,omitempty"`
+	Reference        []string       `json:"reference,omitempty"`
+	Classification   map[string]any `json:"classification,omitempty"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
 }
 
 // NucleiScanResult represents the complete Nuclei scan result
@@ -96,12 +97,7 @@ func (p *NucleiScanProvider) Scan(target string, command string) (string, error)
 
 // contains checks if a string slice contains a specific value
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 func (p *NucleiScanProvider) ParseResult(rawResult string) (string, error) {
@@ -149,15 +145,15 @@ func (p *NucleiScanProvider) parseNucleiOutput(output string) *NucleiScanResult 
 		},
 	}
 
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(output, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 
 		// Parse each JSON line
-		var rawVuln map[string]interface{}
+		var rawVuln map[string]any
 		err := json.Unmarshal([]byte(line), &rawVuln)
 		if err != nil {
 			// Skip lines that aren't valid JSON
@@ -173,7 +169,7 @@ func (p *NucleiScanProvider) parseNucleiOutput(output string) *NucleiScanResult 
 			vuln.TemplateID = templateID
 		}
 
-		if name, ok := rawVuln["info"].(map[string]interface{}); ok {
+		if name, ok := rawVuln["info"].(map[string]any); ok {
 			if n, ok := name["name"].(string); ok {
 				vuln.Name = n
 			}
@@ -183,17 +179,17 @@ func (p *NucleiScanProvider) parseNucleiOutput(output string) *NucleiScanResult 
 			if desc, ok := name["description"].(string); ok {
 				vuln.Description = desc
 			}
-			if ref, ok := name["reference"].([]interface{}); ok {
+			if ref, ok := name["reference"].([]any); ok {
 				for _, r := range ref {
 					if refStr, ok := r.(string); ok {
 						vuln.Reference = append(vuln.Reference, refStr)
 					}
 				}
 			}
-			if class, ok := name["classification"].(map[string]interface{}); ok {
+			if class, ok := name["classification"].(map[string]any); ok {
 				vuln.Classification = class
 			}
-			if meta, ok := name["metadata"].(map[string]interface{}); ok {
+			if meta, ok := name["metadata"].(map[string]any); ok {
 				vuln.Metadata = meta
 			}
 		}
@@ -212,7 +208,7 @@ func (p *NucleiScanProvider) parseNucleiOutput(output string) *NucleiScanResult 
 			vuln.MatchedAt = matched
 		}
 
-		if extracted, ok := rawVuln["extracted-results"].([]interface{}); ok {
+		if extracted, ok := rawVuln["extracted-results"].([]any); ok {
 			for _, e := range extracted {
 				if eStr, ok := e.(string); ok {
 					vuln.ExtractedResults = append(vuln.ExtractedResults, eStr)

@@ -45,7 +45,7 @@ func (m JSONMap[V]) Value() (driver.Value, error) {
 // Scan decodes a stored column into the map. Accepts a JSON object, NULL, and
 // empty/"" (all -> nil), so a column added after the table existed (no value
 // for old rows) loads without a migration.
-func (m *JSONMap[V]) Scan(src interface{}) error {
+func (m *JSONMap[V]) Scan(src any) error {
 	*m = nil
 	if src == nil {
 		return nil

@@ -247,12 +247,12 @@ func anthropicToolsToOpenAI(tools []AnthropicTool) []openai.Tool {
 	}
 	out := make([]openai.Tool, 0, len(tools))
 	for _, t := range tools {
-		var params interface{}
+		var params any
 		if len(t.InputSchema) > 0 {
 			_ = json.Unmarshal(t.InputSchema, &params)
 		}
 		if params == nil {
-			params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+			params = map[string]any{"type": "object", "properties": map[string]any{}}
 		}
 		out = append(out, openai.Tool{
 			Type: openai.ToolTypeFunction,
@@ -268,7 +268,7 @@ func anthropicToolsToOpenAI(tools []AnthropicTool) []openai.Tool {
 
 // anthropicToolChoiceToOpenAI maps an Anthropic tool_choice to the OpenAI form:
 // auto→"auto", any→"required", none→"none", tool→{type:function,function:{name}}.
-func anthropicToolChoiceToOpenAI(raw json.RawMessage) interface{} {
+func anthropicToolChoiceToOpenAI(raw json.RawMessage) any {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -433,7 +433,7 @@ type openaiStreamToolCall struct {
 // interleaved thinking, text, and tool_use blocks. It also captures token usage
 // (from the forced include_usage chunk) for billing.
 type anthropicStreamTranslator struct {
-	emit    func(event string, data interface{}) error
+	emit    func(event string, data any) error
 	modelID string
 	reqID   string
 
@@ -452,7 +452,7 @@ type anthropicStreamTranslator struct {
 	prompt, completion, total int
 }
 
-func newAnthropicStreamTranslator(emit func(string, interface{}) error, modelID, reqID string) *anthropicStreamTranslator {
+func newAnthropicStreamTranslator(emit func(string, any) error, modelID, reqID string) *anthropicStreamTranslator {
 	t := &anthropicStreamTranslator{emit: emit, modelID: modelID, reqID: reqID, stopReason: "end_turn"}
 	if model.InlinesReasoning(modelID) {
 		t.reason = &model.ReasoningStripper{}
@@ -466,17 +466,17 @@ func (t *anthropicStreamTranslator) ensureStarted() error {
 		return nil
 	}
 	t.started = true
-	return t.emit("message_start", map[string]interface{}{
+	return t.emit("message_start", map[string]any{
 		"type": "message_start",
-		"message": map[string]interface{}{
+		"message": map[string]any{
 			"id":            "msg_" + t.reqID,
 			"type":          "message",
 			"role":          "assistant",
-			"content":       []interface{}{},
+			"content":       []any{},
 			"model":         t.modelID,
 			"stop_reason":   nil,
 			"stop_sequence": nil,
-			"usage":         map[string]interface{}{"input_tokens": 0, "output_tokens": 0},
+			"usage":         map[string]any{"input_tokens": 0, "output_tokens": 0},
 		},
 	})
 }
@@ -490,7 +490,7 @@ func (t *anthropicStreamTranslator) closeBlock() error {
 	kind := t.blockKind
 	t.blockKind = ""
 	_ = kind
-	return t.emit("content_block_stop", map[string]interface{}{
+	return t.emit("content_block_stop", map[string]any{
 		"type":  "content_block_stop",
 		"index": t.curIndex,
 	})
@@ -498,7 +498,7 @@ func (t *anthropicStreamTranslator) closeBlock() error {
 
 // openBlock closes any open block, then opens a new one of the given kind at the
 // next index and emits its content_block_start.
-func (t *anthropicStreamTranslator) openBlock(kind string, contentBlock map[string]interface{}) error {
+func (t *anthropicStreamTranslator) openBlock(kind string, contentBlock map[string]any) error {
 	if err := t.closeBlock(); err != nil {
 		return err
 	}
@@ -506,7 +506,7 @@ func (t *anthropicStreamTranslator) openBlock(kind string, contentBlock map[stri
 	t.nextIndex++
 	t.blockOpen = true
 	t.blockKind = kind
-	return t.emit("content_block_start", map[string]interface{}{
+	return t.emit("content_block_start", map[string]any{
 		"type":          "content_block_start",
 		"index":         t.curIndex,
 		"content_block": contentBlock,
@@ -521,9 +521,9 @@ func (t *anthropicStreamTranslator) ensureKind(kind string) error {
 	}
 	switch kind {
 	case "thinking":
-		return t.openBlock("thinking", map[string]interface{}{"type": "thinking", "thinking": ""})
+		return t.openBlock("thinking", map[string]any{"type": "thinking", "thinking": ""})
 	default: // text
-		return t.openBlock("text", map[string]interface{}{"type": "text", "text": ""})
+		return t.openBlock("text", map[string]any{"type": "text", "text": ""})
 	}
 }
 
@@ -551,10 +551,10 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 			if err := t.ensureKind("thinking"); err != nil {
 				return err
 			}
-			if err := t.emit("content_block_delta", map[string]interface{}{
+			if err := t.emit("content_block_delta", map[string]any{
 				"type":  "content_block_delta",
 				"index": t.curIndex,
-				"delta": map[string]interface{}{"type": "thinking_delta", "thinking": ch.Delta.ReasoningContent},
+				"delta": map[string]any{"type": "thinking_delta", "thinking": ch.Delta.ReasoningContent},
 			}); err != nil {
 				return err
 			}
@@ -573,10 +573,10 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 				if err := t.ensureKind("text"); err != nil {
 					return err
 				}
-				if err := t.emit("content_block_delta", map[string]interface{}{
+				if err := t.emit("content_block_delta", map[string]any{
 					"type":  "content_block_delta",
 					"index": t.curIndex,
-					"delta": map[string]interface{}{"type": "text_delta", "text": text},
+					"delta": map[string]any{"type": "text_delta", "text": text},
 				}); err != nil {
 					return err
 				}
@@ -588,11 +588,11 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 			tc := &ch.Delta.ToolCalls[j]
 			// A new tool call is signalled by an id and/or a function name.
 			if tc.ID != "" || tc.Function.Name != "" {
-				if err := t.openBlock("tool", map[string]interface{}{
+				if err := t.openBlock("tool", map[string]any{
 					"type":  "tool_use",
 					"id":    tc.ID,
 					"name":  tc.Function.Name,
-					"input": map[string]interface{}{},
+					"input": map[string]any{},
 				}); err != nil {
 					return err
 				}
@@ -601,16 +601,16 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 				// Arguments stream as a JSON fragment; if no tool block is open
 				// (defensive), open an unnamed one so we never drop input.
 				if !t.blockOpen || t.blockKind != "tool" {
-					if err := t.openBlock("tool", map[string]interface{}{
-						"type": "tool_use", "id": tc.ID, "name": tc.Function.Name, "input": map[string]interface{}{},
+					if err := t.openBlock("tool", map[string]any{
+						"type": "tool_use", "id": tc.ID, "name": tc.Function.Name, "input": map[string]any{},
 					}); err != nil {
 						return err
 					}
 				}
-				if err := t.emit("content_block_delta", map[string]interface{}{
+				if err := t.emit("content_block_delta", map[string]any{
 					"type":  "content_block_delta",
 					"index": t.curIndex,
-					"delta": map[string]interface{}{"type": "input_json_delta", "partial_json": tc.Function.Arguments},
+					"delta": map[string]any{"type": "input_json_delta", "partial_json": tc.Function.Arguments},
 				}); err != nil {
 					return err
 				}
@@ -632,14 +632,14 @@ func (t *anthropicStreamTranslator) finish() error {
 	if err := t.closeBlock(); err != nil {
 		return err
 	}
-	if err := t.emit("message_delta", map[string]interface{}{
+	if err := t.emit("message_delta", map[string]any{
 		"type":  "message_delta",
-		"delta": map[string]interface{}{"stop_reason": t.stopReason, "stop_sequence": nil},
-		"usage": map[string]interface{}{"input_tokens": t.prompt, "output_tokens": t.completion},
+		"delta": map[string]any{"stop_reason": t.stopReason, "stop_sequence": nil},
+		"usage": map[string]any{"input_tokens": t.prompt, "output_tokens": t.completion},
 	}); err != nil {
 		return err
 	}
-	return t.emit("message_stop", map[string]interface{}{"type": "message_stop"})
+	return t.emit("message_stop", map[string]any{"type": "message_stop"})
 }
 
 // streamCaptureAnthropicUsage copies a NATIVE Anthropic SSE stream verbatim to w
@@ -653,8 +653,8 @@ func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (prompt
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "data:") {
-			raw := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if after, ok := strings.CutPrefix(line, "data:"); ok {
+			raw := strings.TrimSpace(after)
 			if raw != "" && raw != "[DONE]" {
 				var ev struct {
 					Message struct {
@@ -694,7 +694,7 @@ func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (prompt
 
 // translateOpenAIStream reads an upstream OpenAI SSE stream and drives the
 // translator, returning captured usage. It never writes raw OpenAI frames.
-func translateOpenAIStream(r io.Reader, emit func(string, interface{}) error, modelID, reqID string) (prompt, completion, total int) {
+func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, reqID string) (prompt, completion, total int) {
 	t := newAnthropicStreamTranslator(emit, modelID, reqID)
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
@@ -723,7 +723,7 @@ func translateOpenAIStream(r io.Reader, emit func(string, interface{}) error, mo
 
 // openAIResponseToAnthropic converts a non-streaming OpenAI chat completion into
 // an Anthropic Messages response (content blocks + stop_reason + usage).
-func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[string]interface{}, prompt, completion int) {
+func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[string]any, prompt, completion int) {
 	var oai struct {
 		Choices []struct {
 			Message struct {
@@ -746,12 +746,12 @@ func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[str
 	}
 	_ = json.Unmarshal(body, &oai)
 
-	content := []interface{}{}
+	content := []any{}
 	stopReason := "end_turn"
 	if len(oai.Choices) > 0 {
 		ch := oai.Choices[0]
 		if ch.Message.ReasoningContent != "" {
-			content = append(content, map[string]interface{}{"type": "thinking", "thinking": ch.Message.ReasoningContent})
+			content = append(content, map[string]any{"type": "thinking", "thinking": ch.Message.ReasoningContent})
 		}
 		// A reasoning-inlining upstream (DeepSeek) buries its <think></think>
 		// block in content rather than reasoning_content; strip it so only the
@@ -761,14 +761,14 @@ func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[str
 			text = model.StripLeadingReasoning(text)
 		}
 		if text != "" {
-			content = append(content, map[string]interface{}{"type": "text", "text": text})
+			content = append(content, map[string]any{"type": "text", "text": text})
 		}
 		for _, tc := range ch.Message.ToolCalls {
-			var input interface{}
+			var input any
 			if err := json.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil || input == nil {
-				input = map[string]interface{}{}
+				input = map[string]any{}
 			}
-			content = append(content, map[string]interface{}{
+			content = append(content, map[string]any{
 				"type":  "tool_use",
 				"id":    tc.ID,
 				"name":  tc.Function.Name,
@@ -780,12 +780,12 @@ func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[str
 	// A tool_use content block always means stop_reason tool_use, even when the
 	// upstream omitted finish_reason.
 	for _, b := range content {
-		if m, ok := b.(map[string]interface{}); ok && m["type"] == "tool_use" {
+		if m, ok := b.(map[string]any); ok && m["type"] == "tool_use" {
 			stopReason = "tool_use"
 		}
 	}
 
-	resp = map[string]interface{}{
+	resp = map[string]any{
 		"id":            "msg_" + reqID,
 		"type":          "message",
 		"role":          "assistant",
@@ -793,7 +793,7 @@ func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[str
 		"content":       content,
 		"stop_reason":   stopReason,
 		"stop_sequence": nil,
-		"usage": map[string]interface{}{
+		"usage": map[string]any{
 			"input_tokens":  oai.Usage.PromptTokens,
 			"output_tokens": oai.Usage.CompletionTokens,
 		},

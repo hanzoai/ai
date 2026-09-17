@@ -108,7 +108,7 @@ func (record *Record) toParam() string {
 	return util.StructToJson(res)
 }
 
-func CommitRecord(record *Record, lang string) (bool, map[string]interface{}, error) {
+func CommitRecord(record *Record, lang string) (bool, map[string]any, error) {
 	if record.Block != "" {
 		return false, nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:the record: %s has already been committed, blockId = %s"), record.getUniqueId(), record.Block))
 	}
@@ -129,7 +129,7 @@ func CommitRecord(record *Record, lang string) (bool, map[string]interface{}, er
 		}
 		return false, nil, err
 	}
-	data := map[string]interface{}{
+	data := map[string]any{
 		"provider":    record.Provider,
 		"block":       blockId,
 		"transaction": transactionId,
@@ -165,7 +165,7 @@ func CommitRecordSecond(record *Record, lang string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	data := map[string]interface{}{
+	data := map[string]any{
 		"provider2":    record.Provider2,
 		"block2":       blockId,
 		"transaction2": transactionId,
@@ -177,11 +177,11 @@ func CommitRecordSecond(record *Record, lang string) (bool, error) {
 }
 
 // CommitRecords commits multiple records to the blockchain.
-func CommitRecords(records []*Record, lang string) (int, []map[string]interface{}) {
+func CommitRecords(records []*Record, lang string) (int, []map[string]any) {
 	if len(records) == 0 {
 		return 0, nil
 	}
-	var data []map[string]interface{}
+	var data []map[string]any
 	affected := 0
 	// Lock the mutex to prevent concurrent
 	scanNeedCommitRecordsMutex.Lock()
@@ -193,21 +193,21 @@ func CommitRecords(records []*Record, lang string) (int, []map[string]interface{
 		// to come from the record we hold rather than the one we were looking for.
 		stored, err := GetRecord(given.getId(), lang)
 		if err != nil {
-			data = append(data, map[string]interface{}{
+			data = append(data, map[string]any{
 				"name":       given.Name,
 				"error_text": err.Error(),
 			})
 			continue
 		}
 		if stored == nil {
-			data = append(data, map[string]interface{}{
+			data = append(data, map[string]any{
 				"name":       given.Name,
 				"error_text": fmt.Sprintf(i18n.Translate(lang, "object:the record: %s does not exist"), given.getId()),
 			})
 			continue
 		}
 		if stored.Block != "" {
-			data = append(data, map[string]interface{}{
+			data = append(data, map[string]any{
 				"name":        stored.Name,
 				"provider":    stored.Provider,
 				"block":       stored.Block,
@@ -218,7 +218,7 @@ func CommitRecords(records []*Record, lang string) (int, []map[string]interface{
 		}
 		recordAffected, commitResult, err := CommitRecord(stored, lang)
 		if err != nil {
-			data = append(data, map[string]interface{}{
+			data = append(data, map[string]any{
 				"name":       stored.Name,
 				"error_text": err.Error(),
 			})

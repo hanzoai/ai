@@ -55,6 +55,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/luxfi/zap"
@@ -668,23 +669,23 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 		}
 		var lastAIMessage *object.Message
 		var lastUserMessage *object.Message
-		for i := len(messages) - 1; i >= 0; i-- {
-			if messages[i].Author == "AI" && messages[i].ErrorText != "" {
-				lastAIMessage = messages[i]
+		for _, message := range slices.Backward(messages) {
+			if message.Author == "AI" && message.ErrorText != "" {
+				lastAIMessage = message
 				break
 			}
 		}
 		if lastAIMessage == nil {
-			for i := len(messages) - 1; i >= 0; i-- {
-				if messages[i].Author == "AI" {
-					lastAIMessage = messages[i]
+			for _, message := range slices.Backward(messages) {
+				if message.Author == "AI" {
+					lastAIMessage = message
 					break
 				}
 			}
 		}
-		for i := len(messages) - 1; i >= 0; i-- {
-			if messages[i].Author != "AI" {
-				lastUserMessage = messages[i]
+		for _, message := range slices.Backward(messages) {
+			if message.Author != "AI" {
+				lastUserMessage = message
 				break
 			}
 		}

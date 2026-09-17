@@ -39,11 +39,11 @@ var histNow = time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC) // window [07-10 .. 
 func TestComputeRouterHistory(t *testing.T) {
 	events := []*object.RoutingEvent{
 		// 07-14: two cheap "mini" routes (baseline opus=30), one scored.
-		evOn("2026-07-14", "code", "mini", "engine", f(0.8)),
+		evOn("2026-07-14", "code", "mini", "engine", new(0.8)),
 		evOn("2026-07-14", "code", "mini", "engine", nil),
 		// 07-15: three "mid" routes, two scored, mixed tasks.
-		evOn("2026-07-15", "code", "mid", "engine", f(0.6)),
-		evOn("2026-07-15", "reasoning", "mid", "engine", f(1.0)),
+		evOn("2026-07-15", "code", "mid", "engine", new(0.6)),
+		evOn("2026-07-15", "reasoning", "mid", "engine", new(1.0)),
 		evOn("2026-07-15", "chat", "mid", "heuristic", nil),
 		// 07-16: one route to the baseline itself → zero saving.
 		evOn("2026-07-16", "vision", "opus", "engine", nil),
@@ -66,7 +66,7 @@ func TestComputeRouterHistory(t *testing.T) {
 		t.Fatalf("day bounds wrong: %s .. %s", h.Daily[0].Date, h.Daily[6].Date)
 	}
 	// Empty leading days are honest zero rows.
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if h.Daily[i].Events != 0 || h.Daily[i].CumulativeCostSaved != 0 {
 			t.Errorf("day %s should be a zero row: %+v", h.Daily[i].Date, h.Daily[i])
 		}

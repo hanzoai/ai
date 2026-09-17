@@ -15,6 +15,7 @@
 package routers
 
 import (
+	"maps"
 	"net/http"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func TestRateLimiterAllow(t *testing.T) {
 	key := "sk-test-key-free"
 
 	// Burst of 12 should all succeed.
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		if !rl.Allow(key) {
 			t.Fatalf("request %d should have been allowed (within burst)", i)
 		}
@@ -51,13 +52,9 @@ func TestRateLimiterTierLimits(t *testing.T) {
 	const testBurst = testRPM / 5
 
 	origLimits := make(map[Tier]int, len(tierLimits))
-	for k, v := range tierLimits {
-		origLimits[k] = v
-	}
+	maps.Copy(origLimits, tierLimits)
 	defer func() {
-		for k, v := range origLimits {
-			tierLimits[k] = v
-		}
+		maps.Copy(tierLimits, origLimits)
 	}()
 
 	tiers := []Tier{
@@ -79,7 +76,7 @@ func TestRateLimiterTierLimits(t *testing.T) {
 			key := "sk-tier-test"
 
 			// All burst requests should succeed.
-			for i := 0; i < testBurst; i++ {
+			for i := range testBurst {
 				if !rl.Allow(key) {
 					t.Fatalf("request %d should have been allowed (burst=%d)", i, testBurst)
 				}
@@ -103,7 +100,7 @@ func TestRateLimiterMetrics(t *testing.T) {
 	key := "sk-metrics-test"
 
 	// 12 allowed (burst), then 1 denied.
-	for i := 0; i < 12; i++ {
+	for range 12 {
 		rl.Allow(key)
 	}
 	rl.Allow(key) // should be denied
@@ -124,7 +121,7 @@ func TestRateLimiterRetryAfter(t *testing.T) {
 	key := "sk-retry-test"
 
 	// Exhaust burst (12 for zen-free) plus 1 more to trigger denial.
-	for i := 0; i < 13; i++ {
+	for range 13 {
 		rl.Allow(key)
 	}
 
@@ -177,7 +174,7 @@ func TestRateLimiterSeparateKeys(t *testing.T) {
 	keyB := "sk-user-b"
 
 	// Exhaust key A's burst (12 for zen-free) plus 1 more.
-	for i := 0; i < 13; i++ {
+	for range 13 {
 		rl.Allow(keyA)
 	}
 
@@ -228,16 +225,16 @@ func TestRateLimiterConcurrent(t *testing.T) {
 	defer rl.Stop()
 
 	done := make(chan struct{})
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
-			for j := 0; j < 100; j++ {
+			for range 100 {
 				rl.Allow("sk-concurrent")
 			}
 			done <- struct{}{}
 		}()
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 

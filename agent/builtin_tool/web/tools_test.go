@@ -44,13 +44,13 @@ func TestUnconfiguredCapabilityIsAnErrorNotAnEmptyResult(t *testing.T) {
 		run  func() (*protocol.CallToolResult, error)
 	}{
 		{"web_search", func() (*protocol.CallToolResult, error) {
-			return (&SearchTool{}).Execute(ctx, map[string]interface{}{"query": "anything"})
+			return (&SearchTool{}).Execute(ctx, map[string]any{"query": "anything"})
 		}},
 		{"deep_research", func() (*protocol.CallToolResult, error) {
-			return (&ResearchTool{}).Execute(ctx, map[string]interface{}{"question": "anything"})
+			return (&ResearchTool{}).Execute(ctx, map[string]any{"question": "anything"})
 		}},
 		{"fetch_url", func() (*protocol.CallToolResult, error) {
-			return (&FetchTool{}).Execute(ctx, map[string]interface{}{"urls": []interface{}{"https://example.com"}})
+			return (&FetchTool{}).Execute(ctx, map[string]any{"urls": []any{"https://example.com"}})
 		}},
 	} {
 		res, err := tc.run()
@@ -72,7 +72,7 @@ func TestUnconfiguredCapabilityIsAnErrorNotAnEmptyResult(t *testing.T) {
 func TestGenuinelyEmptySearchIsAFindingNotAnError(t *testing.T) {
 	reset()
 	SetSearch(func(context.Context, string, int) ([]SearchResult, error) { return nil, nil })
-	res, _ := (&SearchTool{}).Execute(context.Background(), map[string]interface{}{"query": "zzz"})
+	res, _ := (&SearchTool{}).Execute(context.Background(), map[string]any{"query": "zzz"})
 	if res.IsError {
 		t.Error("an empty result set was reported as an error; the search worked and found nothing")
 	}
@@ -83,7 +83,7 @@ func TestSearchReturnsResultsAsJSON(t *testing.T) {
 	SetSearch(func(_ context.Context, q string, limit int) ([]SearchResult, error) {
 		return []SearchResult{{Title: "T", URL: "https://e.com", Snippet: "s"}}, nil
 	})
-	res, _ := (&SearchTool{}).Execute(context.Background(), map[string]interface{}{"query": "q"})
+	res, _ := (&SearchTool{}).Execute(context.Background(), map[string]any{"query": "q"})
 	var got []SearchResult
 	if err := json.Unmarshal([]byte(body(t, res)), &got); err != nil {
 		t.Fatalf("results are not JSON a model can parse: %v", err)
@@ -100,9 +100,9 @@ func TestSearchLimitIsClampedNotTrusted(t *testing.T) {
 		asked = limit
 		return nil, nil
 	})
-	run := func(v interface{}) int {
+	run := func(v any) int {
 		asked = 0
-		(&SearchTool{}).Execute(context.Background(), map[string]interface{}{"query": "q", "limit": v})
+		(&SearchTool{}).Execute(context.Background(), map[string]any{"query": "q", "limit": v})
 		return asked
 	}
 	// One confused call must not be able to exhaust the agent's context window.
@@ -127,8 +127,8 @@ func TestFetchRefusesNonHttpSchemes(t *testing.T) {
 		got = urls
 		return nil, nil
 	})
-	res, _ := (&FetchTool{}).Execute(context.Background(), map[string]interface{}{
-		"urls": []interface{}{"file:///etc/passwd", "javascript:alert(1)", "ftp://x", "https://ok.com"},
+	res, _ := (&FetchTool{}).Execute(context.Background(), map[string]any{
+		"urls": []any{"file:///etc/passwd", "javascript:alert(1)", "ftp://x", "https://ok.com"},
 	})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", body(t, res))
@@ -142,7 +142,7 @@ func TestFetchAcceptsABareStringBecauseModelsSendOne(t *testing.T) {
 	reset()
 	var got []string
 	SetFetch(func(_ context.Context, urls []string) ([]FetchResult, error) { got = urls; return nil, nil })
-	(&FetchTool{}).Execute(context.Background(), map[string]interface{}{"urls": "https://one.com"})
+	(&FetchTool{}).Execute(context.Background(), map[string]any{"urls": "https://one.com"})
 	if len(got) != 1 || got[0] != "https://one.com" {
 		t.Errorf("a single string url was not accepted: %v", got)
 	}
@@ -152,11 +152,11 @@ func TestFetchCapsTheNumberOfURLs(t *testing.T) {
 	reset()
 	var got []string
 	SetFetch(func(_ context.Context, urls []string) ([]FetchResult, error) { got = urls; return nil, nil })
-	many := make([]interface{}, 0, 20)
-	for i := 0; i < 20; i++ {
+	many := make([]any, 0, 20)
+	for range 20 {
 		many = append(many, "https://e.com/")
 	}
-	(&FetchTool{}).Execute(context.Background(), map[string]interface{}{"urls": many})
+	(&FetchTool{}).Execute(context.Background(), map[string]any{"urls": many})
 	if len(got) != maxURLs {
 		t.Errorf("passed %d urls, want a cap of %d", len(got), maxURLs)
 	}
@@ -169,8 +169,8 @@ func TestFetchReportsAFailedPage(t *testing.T) {
 	SetFetch(func(context.Context, []string) ([]FetchResult, error) {
 		return []FetchResult{{URL: "https://gone.com", Success: false}}, nil
 	})
-	res, _ := (&FetchTool{}).Execute(context.Background(), map[string]interface{}{
-		"urls": []interface{}{"https://gone.com"},
+	res, _ := (&FetchTool{}).Execute(context.Background(), map[string]any{
+		"urls": []any{"https://gone.com"},
 	})
 	if !strings.Contains(body(t, res), "could not be fetched") {
 		t.Errorf("a failed page was not named: %q", body(t, res))
@@ -182,7 +182,7 @@ func TestBackendErrorSurfacesAsAToolError(t *testing.T) {
 	SetSearch(func(context.Context, string, int) ([]SearchResult, error) {
 		return nil, errors.New("upstream is down")
 	})
-	res, _ := (&SearchTool{}).Execute(context.Background(), map[string]interface{}{"query": "q"})
+	res, _ := (&SearchTool{}).Execute(context.Background(), map[string]any{"query": "q"})
 	if !res.IsError || !strings.Contains(body(t, res), "upstream is down") {
 		t.Errorf("a backend failure did not surface: isError=%v body=%q", res.IsError, body(t, res))
 	}
@@ -192,10 +192,10 @@ func TestEmptyArgumentsAreRefused(t *testing.T) {
 	reset()
 	SetSearch(func(context.Context, string, int) ([]SearchResult, error) { return nil, nil })
 	SetResearch(func(context.Context, string) (string, error) { return "x", nil })
-	if res, _ := (&SearchTool{}).Execute(context.Background(), map[string]interface{}{"query": "  "}); !res.IsError {
+	if res, _ := (&SearchTool{}).Execute(context.Background(), map[string]any{"query": "  "}); !res.IsError {
 		t.Error("blank query accepted")
 	}
-	if res, _ := (&ResearchTool{}).Execute(context.Background(), map[string]interface{}{}); !res.IsError {
+	if res, _ := (&ResearchTool{}).Execute(context.Background(), map[string]any{}); !res.IsError {
 		t.Error("missing question accepted")
 	}
 }

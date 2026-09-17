@@ -250,7 +250,7 @@ func TestKmsGet_CachesFailures(t *testing.T) {
 	fs := &fakeStore{err: errors.New("store down")}
 	bind(t, fs)
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if _, err := kmsGet("K"); err == nil {
 			t.Fatal("want an error from a failing store")
 		}
@@ -267,7 +267,7 @@ func TestResolve_FailureCacheStillFallsBack(t *testing.T) {
 	bind(t, &fakeStore{err: errors.New("store down")})
 	t.Setenv("DO_AI_API_KEY", "env-only")
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		p := &Provider{Name: "do-ai", ClientSecret: "kms://DO_AI_API_KEY"}
 		if err := ResolveProviderSecret(p); err != nil {
 			t.Fatalf("resolve %d: %v", i, err)
@@ -283,7 +283,7 @@ func TestKmsGet_CachesReads(t *testing.T) {
 	fs := &fakeStore{vals: map[string]string{"K": "v"}}
 	bind(t, fs)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if v, err := kmsGet("K"); err != nil || v != "v" {
 			t.Fatalf("kmsGet = %q, %v", v, err)
 		}

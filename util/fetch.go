@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -60,10 +61,8 @@ func Fetchable(raw string) error {
 		}
 		addrs = resolved
 	}
-	for _, ip := range addrs {
-		if withheld(ip) {
-			return fmt.Errorf("%s is on this network, which is not somewhere we read from", host)
-		}
+	if slices.ContainsFunc(addrs, withheld) {
+		return fmt.Errorf("%s is on this network, which is not somewhere we read from", host)
 	}
 	return nil
 }

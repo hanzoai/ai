@@ -81,7 +81,7 @@ func TestConcurrentAnswersClaimOnce(t *testing.T) {
 
 	won := make([]bool, racers)
 	errs := make([]error, racers)
-	for i := 0; i < racers; i++ {
+	for i := range racers {
 		go func(i int) {
 			defer done.Done()
 			start.Wait()

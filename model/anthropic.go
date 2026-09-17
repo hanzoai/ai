@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -121,8 +122,8 @@ func (p *AnthropicModelProvider) QueryText(question string, writer io.Writer, hi
 	}
 
 	messages := []anthropic.MessageParam{}
-	for i := len(history) - 1; i >= 0; i-- {
-		historyMessage := history[i]
+	for _, historyMessage := range slices.Backward(history) {
+
 		messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(historyMessage.Text)))
 	}
 	messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(question)))

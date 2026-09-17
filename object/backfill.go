@@ -23,7 +23,7 @@ import (
 	"github.com/hanzoai/dbx"
 )
 
-var scannerType = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
+var scannerType = reflect.TypeFor[sql.Scanner]()
 
 // backfillNullScalars repairs rows that predate a column's addition, so a full read
 // of the model never trips over SQL NULL.
@@ -48,16 +48,15 @@ var scannerType = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
 // that implement sql.Scanner (the JSON/slice columns) tolerate NULL themselves and
 // are skipped, as is the primary key. Best-effort: a per-column failure logs and
 // never blocks boot.
-func backfillNullScalars(db *dbx.DB, table string, model interface{}) {
+func backfillNullScalars(db *dbx.DB, table string, model any) {
 	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
 		return
 	}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		if !f.IsExported() {
 			continue
 		}
@@ -81,9 +80,9 @@ func backfillNullScalars(db *dbx.DB, table string, model interface{}) {
 // is worth avoiding, and only the columns added since rows existed can hold NULL
 // anyway. The column name and zero literal still come from the struct field via the
 // same resolvers Sync used, so naming one field cannot drift from the schema.
-func backfillNullField(db *dbx.DB, table string, model interface{}, field string) {
+func backfillNullField(db *dbx.DB, table string, model any, field string) {
 	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	f, ok := t.FieldByName(field)

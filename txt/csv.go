@@ -48,7 +48,7 @@ func getTextFromCsv(path string) (string, error) {
 			return "", err
 		}
 
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		for i, header := range headers {
 			header = strings.TrimSpace(header)
 			value := strings.TrimSpace(record[i])

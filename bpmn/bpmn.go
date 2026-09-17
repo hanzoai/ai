@@ -339,11 +339,8 @@ func ComparePaths(standardPath, actualPath *PathNode, variance *int, mandatoryTa
 	}
 
 	// 递归比较并行任务
-	maxConcurrent := len(standardPath.Concurrent)
-	if len(actualPath.Concurrent) > maxConcurrent {
-		maxConcurrent = len(actualPath.Concurrent)
-	}
-	for i := 0; i < maxConcurrent; i++ {
+	maxConcurrent := max(len(actualPath.Concurrent), len(standardPath.Concurrent))
+	for i := range maxConcurrent {
 		var stdConcurrent, actualConcurrent *PathNode
 		if i < len(standardPath.Concurrent) {
 			stdConcurrent = standardPath.Concurrent[i]
@@ -355,11 +352,8 @@ func ComparePaths(standardPath, actualPath *PathNode, variance *int, mandatoryTa
 	}
 
 	// 递归比较下一个任务
-	maxNext := len(standardPath.Next)
-	if len(actualPath.Next) > maxNext {
-		maxNext = len(actualPath.Next)
-	}
-	for i := 0; i < maxNext; i++ {
+	maxNext := max(len(actualPath.Next), len(standardPath.Next))
+	for i := range maxNext {
 		var stdNext, actualNext *PathNode
 		if i < len(standardPath.Next) {
 			stdNext = standardPath.Next[i]

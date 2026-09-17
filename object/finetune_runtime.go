@@ -315,10 +315,9 @@ func EstimateMinutes(paramsB float64, method string, hp Hyperparams, examples, g
 	}
 	throughput := perGpu * float64(gpuCount) * 0.85 // 85% scaling efficiency
 	seconds := tokens / math.Max(throughput, 1)
-	minutes := int(math.Ceil(seconds/60)) + 3 // +3 for init/download/checkpointing
-	if minutes < 5 {
-		minutes = 5
-	}
+	minutes := max(
+		// +3 for init/download/checkpointing
+		int(math.Ceil(seconds/60))+3, 5)
 	return minutes
 }
 

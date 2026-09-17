@@ -18,7 +18,7 @@ func TestPricesAddUpToWhatTheyAre(t *testing.T) {
 
 	// A thousand completions at a tenth of a cent each is one dollar.
 	total := 0.0
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		total = AddPrices(total, 0.001)
 	}
 	if total != 1.0 {

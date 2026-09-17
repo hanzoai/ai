@@ -48,7 +48,7 @@ const (
 	chatOrg       = "acme"
 )
 
-var chatAuthSeq int64
+var chatAuthSeq atomic.Int64
 
 // balReader builds a BalanceReaderFunc that always returns the given cents/err —
 // the native seam the gate reads, injected so the test needs no Commerce.
@@ -113,7 +113,7 @@ func setupChatMoneyPath(t *testing.T) {
 	routingEventSink = func(object.RoutingEvent) {}
 	t.Cleanup(func() { routingEventSink = prevSink })
 
-	n := atomic.AddInt64(&chatAuthSeq, 1)
+	n := chatAuthSeq.Add(1)
 	dsn := fmt.Sprintf("file:chatauth_%d?mode=memory&cache=shared", n)
 	restore, err := object.UseMemoryDB(dsn, &object.Provider{})
 	if err != nil {

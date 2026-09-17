@@ -687,7 +687,7 @@ func TestAFallbackIsVisibleInTheLedgerAndTheSpan(t *testing.T) {
 	// The span: the two standard model attributes stop agreeing, and one
 	// attribute states the cause so a reader does not have to infer it.
 	got := map[string]string{}
-	for _, a := range buildGenAISpanFields(row, 0, 0, usdPtr(0), nil, nil, false).attrs {
+	for _, a := range buildGenAISpanFields(row, 0, 0, new(float64(0)), nil, nil, false).attrs {
 		if a.Value.Type() == attribute.STRING {
 			got[string(a.Key)] = a.Value.AsString()
 		}
@@ -703,7 +703,7 @@ func TestAFallbackIsVisibleInTheLedgerAndTheSpan(t *testing.T) {
 	// An ordinary generation carries none of it: absent IS the signal, so the
 	// attribute stays a filter rather than something to interpret.
 	plain := &usageRecord{Model: "vendor/paid-a", Provider: "openrouter", Status: "success"}
-	for _, a := range buildGenAISpanFields(plain, 0, 0, usdPtr(0), nil, nil, false).attrs {
+	for _, a := range buildGenAISpanFields(plain, 0, 0, new(float64(0)), nil, nil, false).attrs {
 		if string(a.Key) == attrFallback {
 			t.Error("an ordinary generation is tagged as a fallback")
 		}

@@ -51,7 +51,7 @@ func TestDownloadingADocumentCostsNoDescriptor(t *testing.T) {
 
 	before := lowestFreeFd(t)
 	const n = 20
-	for i := 0; i < n; i++ {
+	for i := range n {
 		path, err := getTempFilePathFromUrl(srv.URL + "/doc.txt")
 		if err != nil {
 			t.Fatalf("download %d: %v", i, err)

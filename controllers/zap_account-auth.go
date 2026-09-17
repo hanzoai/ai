@@ -49,6 +49,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -87,7 +88,7 @@ func registerZapAccountAuth() {
 // the HTTP handlers: ResponseUnauthorized -> 401; ResponseError -> 200 (the router's
 // default, with the error carried in the body's status:"error").
 
-func zapAccountOk(httpStatus uint32, data interface{}) (*zap.Message, error) {
+func zapAccountOk(httpStatus uint32, data any) (*zap.Message, error) {
 	body, _ := json.Marshal(Response{Status: "ok", Data: data})
 	return object.BuildCloudResponse(httpStatus, body, "")
 }
@@ -262,7 +263,7 @@ func zapUpdatePreferencesHandler(ctx context.Context, auth string, body []byte) 
 		return zapError(401, "auth:please sign in first")
 	}
 
-	incoming := map[string]interface{}{}
+	incoming := map[string]any{}
 	if err := json.Unmarshal(body, &incoming); err != nil {
 		return zapError(400, fmt.Sprintf("invalid preferences body: %v", err))
 	}
@@ -279,15 +280,13 @@ func zapUpdatePreferencesHandler(ctx context.Context, auth string, body []byte) 
 		return zapError(401, "auth:user not found")
 	}
 
-	prefs := map[string]interface{}{}
+	prefs := map[string]any{}
 	if user.Properties != nil {
 		if raw := user.Properties[preferencesKey]; raw != "" {
 			_ = json.Unmarshal([]byte(raw), &prefs)
 		}
 	}
-	for k, v := range incoming {
-		prefs[k] = v
-	}
+	maps.Copy(prefs, incoming)
 
 	merged, err := json.Marshal(prefs)
 	if err != nil {

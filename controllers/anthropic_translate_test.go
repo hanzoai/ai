@@ -26,15 +26,15 @@ import (
 // and returns the emitted Anthropic events as (event, decoded-data) pairs.
 type sseEvent struct {
 	Event string
-	Data  map[string]interface{}
+	Data  map[string]any
 }
 
 func runTranslator(t *testing.T, openaiSSE string) ([]sseEvent, int, int) {
 	t.Helper()
 	var events []sseEvent
-	emit := func(event string, data interface{}) error {
+	emit := func(event string, data any) error {
 		b, _ := json.Marshal(data)
-		var m map[string]interface{}
+		var m map[string]any
 		_ = json.Unmarshal(b, &m)
 		events = append(events, sseEvent{Event: event, Data: m})
 		return nil
@@ -72,17 +72,17 @@ func TestTranslateStream_TextOnly(t *testing.T) {
 
 	// content_block_start is a text block at index 0.
 	cbs := events[1]
-	if cbs.Data["content_block"].(map[string]interface{})["type"] != "text" {
+	if cbs.Data["content_block"].(map[string]any)["type"] != "text" {
 		t.Fatalf("first block not text: %v", cbs.Data)
 	}
 	// text deltas carry text_delta.
-	d0 := events[2].Data["delta"].(map[string]interface{})
+	d0 := events[2].Data["delta"].(map[string]any)
 	if d0["type"] != "text_delta" || d0["text"] != "Hello" {
 		t.Fatalf("delta0 = %v", d0)
 	}
 	// message_delta stop_reason end_turn + usage.
 	md := events[5].Data
-	if md["delta"].(map[string]interface{})["stop_reason"] != "end_turn" {
+	if md["delta"].(map[string]any)["stop_reason"] != "end_turn" {
 		t.Fatalf("stop_reason = %v", md["delta"])
 	}
 	if prompt != 7 || completion != 2 {
@@ -110,7 +110,7 @@ func TestTranslateStream_ToolCall(t *testing.T) {
 	}
 
 	// content_block_start must be a tool_use block with id+name.
-	cb := events[1].Data["content_block"].(map[string]interface{})
+	cb := events[1].Data["content_block"].(map[string]any)
 	if cb["type"] != "tool_use" || cb["id"] != "call_1" || cb["name"] != "get_weather" {
 		t.Fatalf("tool_use block = %v", cb)
 	}
@@ -118,7 +118,7 @@ func TestTranslateStream_ToolCall(t *testing.T) {
 	var partial strings.Builder
 	for _, e := range events {
 		if e.Event == "content_block_delta" {
-			d := e.Data["delta"].(map[string]interface{})
+			d := e.Data["delta"].(map[string]any)
 			if d["type"] != "input_json_delta" {
 				t.Fatalf("tool delta type = %v, want input_json_delta", d["type"])
 			}
@@ -129,7 +129,7 @@ func TestTranslateStream_ToolCall(t *testing.T) {
 		t.Fatalf("assembled tool args = %q, want %q", partial.String(), `{"city":"SF"}`)
 	}
 	// THE load-bearing assertion: stop_reason must be tool_use.
-	md := events[5].Data["delta"].(map[string]interface{})
+	md := events[5].Data["delta"].(map[string]any)
 	if md["stop_reason"] != "tool_use" {
 		t.Fatalf("stop_reason = %v, want tool_use", md["stop_reason"])
 	}
@@ -160,7 +160,7 @@ func TestTranslateStream_TextThenTool_IndexSpace(t *testing.T) {
 	// The tool block delta must reference index 1.
 	for _, e := range events {
 		if e.Event == "content_block_delta" {
-			d := e.Data["delta"].(map[string]interface{})
+			d := e.Data["delta"].(map[string]any)
 			if d["type"] == "input_json_delta" && int(e.Data["index"].(float64)) != 1 {
 				t.Fatalf("input_json_delta at index %v, want 1", e.Data["index"])
 			}
@@ -185,7 +185,7 @@ func TestTranslateStream_ReasoningToThinking(t *testing.T) {
 	var blockTypes []string
 	for _, e := range events {
 		if e.Event == "content_block_start" {
-			blockTypes = append(blockTypes, e.Data["content_block"].(map[string]interface{})["type"].(string))
+			blockTypes = append(blockTypes, e.Data["content_block"].(map[string]any)["type"].(string))
 		}
 	}
 	if strings.Join(blockTypes, ",") != "thinking,text" {
@@ -195,7 +195,7 @@ func TestTranslateStream_ReasoningToThinking(t *testing.T) {
 	sawThinkingDelta := false
 	for _, e := range events {
 		if e.Event == "content_block_delta" {
-			d := e.Data["delta"].(map[string]interface{})
+			d := e.Data["delta"].(map[string]any)
 			if d["type"] == "thinking_delta" {
 				sawThinkingDelta = true
 			}
@@ -431,16 +431,16 @@ func TestOpenAIResponseToAnthropic_ToolUse(t *testing.T) {
 	if resp["stop_reason"] != "tool_use" {
 		t.Fatalf("stop_reason = %v, want tool_use", resp["stop_reason"])
 	}
-	content := resp["content"].([]interface{})
+	content := resp["content"].([]any)
 	if len(content) != 1 {
 		t.Fatalf("content len = %d", len(content))
 	}
-	block := content[0].(map[string]interface{})
+	block := content[0].(map[string]any)
 	if block["type"] != "tool_use" || block["id"] != "call_7" || block["name"] != "get_weather" {
 		t.Fatalf("block = %v", block)
 	}
 	// input must be a decoded object, not the raw string.
-	input := block["input"].(map[string]interface{})
+	input := block["input"].(map[string]any)
 	if input["city"] != "SF" {
 		t.Fatalf("input = %v", input)
 	}
@@ -455,8 +455,8 @@ func TestOpenAIResponseToAnthropic_Text(t *testing.T) {
 	if resp["stop_reason"] != "end_turn" {
 		t.Fatalf("stop_reason = %v", resp["stop_reason"])
 	}
-	content := resp["content"].([]interface{})
-	block := content[0].(map[string]interface{})
+	content := resp["content"].([]any)
+	block := content[0].(map[string]any)
 	if block["type"] != "text" || block["text"] != "HANZO OK" {
 		t.Fatalf("block = %v", block)
 	}
@@ -487,9 +487,9 @@ func TestMapFinishReason(t *testing.T) {
 func runTranslatorModel(t *testing.T, openaiSSE, modelID string) []sseEvent {
 	t.Helper()
 	var events []sseEvent
-	emit := func(event string, data interface{}) error {
+	emit := func(event string, data any) error {
 		b, _ := json.Marshal(data)
-		var m map[string]interface{}
+		var m map[string]any
 		_ = json.Unmarshal(b, &m)
 		events = append(events, sseEvent{Event: event, Data: m})
 		return nil
@@ -519,10 +519,10 @@ func TestTranslateStream_DeepSeekInlineReasoningStripped(t *testing.T) {
 	var blockTypes, textDeltas []string
 	for _, e := range events {
 		if e.Event == "content_block_start" {
-			blockTypes = append(blockTypes, e.Data["content_block"].(map[string]interface{})["type"].(string))
+			blockTypes = append(blockTypes, e.Data["content_block"].(map[string]any)["type"].(string))
 		}
 		if e.Event == "content_block_delta" {
-			if d := e.Data["delta"].(map[string]interface{}); d["type"] == "text_delta" {
+			if d := e.Data["delta"].(map[string]any); d["type"] == "text_delta" {
 				textDeltas = append(textDeltas, d["text"].(string))
 			}
 		}
@@ -559,7 +559,7 @@ func TestTranslateStream_NonDeepSeekContentUntouched(t *testing.T) {
 	var text string
 	for _, e := range events {
 		if e.Event == "content_block_delta" {
-			if d := e.Data["delta"].(map[string]interface{}); d["type"] == "text_delta" {
+			if d := e.Data["delta"].(map[string]any); d["type"] == "text_delta" {
 				text += d["text"].(string)
 			}
 		}
@@ -576,11 +576,11 @@ func TestOpenAIResponseToAnthropic_DeepSeekInlineReasoningStripped(t *testing.T)
 	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"Reasoning here.</think>The final answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":9}}`)
 	resp, _, _ := openAIResponseToAnthropic(body, "deepseek-v4-pro", "req_1")
 
-	content := resp["content"].([]interface{})
+	content := resp["content"].([]any)
 	if len(content) != 1 {
 		t.Fatalf("content len = %d, want 1 (reasoning dropped, no thinking block)", len(content))
 	}
-	block := content[0].(map[string]interface{})
+	block := content[0].(map[string]any)
 	if block["type"] != "text" || block["text"] != "The final answer" {
 		t.Fatalf("block = %v, want text 'The final answer'", block)
 	}

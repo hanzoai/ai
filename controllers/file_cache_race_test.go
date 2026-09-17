@@ -13,7 +13,7 @@ import (
 // runtime fatal error under concurrency, which no recover() can answer for.
 func TestTheFileCacheIsReachedFromBothDoorsAtOnce(t *testing.T) {
 	var wg sync.WaitGroup
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -26,7 +26,7 @@ func TestTheFileCacheIsReachedFromBothDoorsAtOnce(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if _, ok := cachedPath(fmt.Sprintf("prefix-%d", i)); !ok {
 			t.Errorf("prefix-%d is missing after the writes settled", i)
 		}

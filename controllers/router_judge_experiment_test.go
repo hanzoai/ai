@@ -118,7 +118,7 @@ func TestMFJPRecoversGroundTruth(t *testing.T) {
 	raw := map[string][]float64{}
 	for _, j := range judges {
 		xs := make([]float64, M)
-		for i := 0; i < M; i++ {
+		for i := range M {
 			if j.adversary {
 				xs[i] = rng.Float64() // no signal at all
 			} else {
@@ -138,7 +138,7 @@ func TestMFJPRecoversGroundTruth(t *testing.T) {
 
 	mfjp := make([]float64, M)
 	naive := make([]float64, M)
-	for i := 0; i < M; i++ {
+	for i := range M {
 		cur = i
 		r, _, ok := panelScore(&judgeConfig{}, models, "task", "prompt", "response")
 		if !ok {

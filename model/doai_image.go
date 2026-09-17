@@ -169,13 +169,7 @@ type doaiImageSubmitBody struct {
 
 // doaiImageSubmit POSTs the async-invoke job and returns its request_id.
 func doaiImageSubmit(ctx context.Context, client *http.Client, base, apiKey string, req ImageGenRequest) (string, error) {
-	n := req.N
-	if n < 1 {
-		n = 1
-	}
-	if n > 10 {
-		n = 10
-	}
+	n := min(max(req.N, 1), 10)
 
 	body := doaiImageSubmitBody{
 		ModelID: req.UpstreamModel,

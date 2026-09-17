@@ -107,13 +107,11 @@ func Token(t testing.TB, u iam.User) string {
 		t.Fatalf("authtest: %v", fail)
 	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodRS256, iam.Claims{
-		User: u,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
-			Subject:   u.Owner + "/" + u.Name,
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		},
+		User:      u,
+		Issuer:    issuer,
+		Subject:   u.Owner + "/" + u.Name,
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}).SignedString(key)
 	if err != nil {
 		t.Fatalf("authtest: sign: %v", err)

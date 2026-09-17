@@ -171,7 +171,7 @@ func registrations(dir string) ([]route, error) {
 					return true
 				}
 				const ctrl = "ApiController"
-				for _, pair := range strings.Split(spec, ";") {
+				for pair := range strings.SplitSeq(spec, ";") {
 					verb, handler, found := strings.Cut(pair, ":")
 					if !found {
 						continue

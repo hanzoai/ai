@@ -124,9 +124,9 @@ func zapInfraSuperAdmin(auth string) (owner, name string, reject *zap.Message) {
 		return "", "", reject
 	}
 	owner = id
-	if i := strings.IndexByte(id, '/'); i >= 0 {
-		owner = id[:i]
-		name = id[i+1:]
+	if before, after, ok := strings.Cut(id, "/"); ok {
+		owner = before
+		name = after
 	}
 	// Reconstruct the principal for the ONE super-admin predicate rather than
 	// re-deriving the policy (owner == AdminOrg) inline.
@@ -176,10 +176,7 @@ func (p infraListParams) paged() (offset, limit int, ok bool) {
 		return 0, 0, false
 	}
 	limit = util.ParseInt(p.PageSize)
-	page := util.ParseInt(p.P)
-	if page < 1 {
-		page = 1
-	}
+	page := max(util.ParseInt(p.P), 1)
 	return (page - 1) * limit, limit, true
 }
 
@@ -284,8 +281,8 @@ func zapAddNodeTunnelHandler(ctx context.Context, auth string, body []byte) (*za
 		return zapError(401, err.Error())
 	}
 	name := id
-	if i := strings.IndexByte(id, '/'); i >= 0 {
-		name = id[i+1:]
+	if _, after, ok := strings.Cut(id, "/"); ok {
+		name = after
 	}
 
 	var req struct {

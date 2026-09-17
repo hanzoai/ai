@@ -16,6 +16,7 @@
 package model
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/hanzoai/go-openai"
@@ -114,10 +115,8 @@ func getOpenAiModelType(model string) string {
 		}
 	}
 
-	for _, completionModel := range completionModels {
-		if model == completionModel {
-			return "Completion"
-		}
+	if slices.Contains(completionModels, model) {
+		return "Completion"
 	}
 
 	// Text-to-video is checked BEFORE image so a video model is never
@@ -224,15 +223,16 @@ func OpenaiNumTokensFromMessages(messages []openai.ChatCompletionMessage, model 
 	numTokens := 0
 	for _, message := range messages {
 		// Calculate tokens for the message content
-		content := message.Content
+		var content strings.Builder
+		content.WriteString(message.Content)
 		for _, multiContentPart := range message.MultiContent {
 			if multiContentPart.Type == "text" {
-				content += multiContentPart.Text
+				content.WriteString(multiContentPart.Text)
 			}
 		}
 
 		numTokens += tokensPerMessage
-		numTokens += len(tkm.Encode(content, nil, nil))
+		numTokens += len(tkm.Encode(content.String(), nil, nil))
 		numTokens += len(tkm.Encode(message.Role, nil, nil))
 		numTokens += len(tkm.Encode(message.Name, nil, nil))
 		if message.Name != "" {

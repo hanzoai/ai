@@ -52,7 +52,8 @@ func ev(minsAgo int, task, model, source string, conf float64, reward *float64) 
 	return e
 }
 
-func f(v float64) *float64 { return &v }
+//go:fix inline
+func f(v float64) *float64 { return new(v) }
 
 // testTuned is a stand-in for the trainer-published prefer table: the picks the
 // flywheel has LEARNED, against which learned_share is measured.
@@ -62,9 +63,9 @@ func TestComputeRouterStats_Distributions(t *testing.T) {
 	now := time.Now().UTC()
 	start := now.Add(-24 * time.Hour)
 	events := []*object.RoutingEvent{
-		ev(10, "code", "mini", "engine", 0.9, f(1)),
+		ev(10, "code", "mini", "engine", 0.9, new(float64(1))),
 		ev(20, "code", "opus", "heuristic", 0, nil),
-		ev(30, "chat", "mini", "engine", 0.8, f(0)),
+		ev(30, "chat", "mini", "engine", 0.8, new(float64(0))),
 		ev(40, "chat", "mid", "engine", 0.7, nil),
 	}
 	s := computeRouterStats(events, fixedPrices, start, now, scopeOrg, "acme", true, testTuned)

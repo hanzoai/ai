@@ -180,7 +180,7 @@ func (c *ApiController) RagDelete() {
 		}
 		deleted++
 	}
-	c.ResponseOk(map[string]interface{}{"deleted": deleted})
+	c.ResponseOk(map[string]any{"deleted": deleted})
 }
 
 // RagContext

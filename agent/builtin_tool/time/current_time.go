@@ -33,11 +33,11 @@ func (t *CurrentTimeTool) GetDescription() string {
 	return "Get the current date and time. Returns the current date and time in the specified timezone."
 }
 
-func (t *CurrentTimeTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *CurrentTimeTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"timezone": map[string]interface{}{
+		"properties": map[string]any{
+			"timezone": map[string]any{
 				"type":        "string",
 				"description": "Optional. Timezone name (e.g., 'UTC', 'America/New_York', 'Asia/Shanghai'). Defaults to UTC.",
 			},
@@ -46,7 +46,7 @@ func (t *CurrentTimeTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *CurrentTimeTool) Execute(ctx context.Context, arguments map[string]interface{}) (*protocol.CallToolResult, error) {
+func (t *CurrentTimeTool) Execute(ctx context.Context, arguments map[string]any) (*protocol.CallToolResult, error) {
 	tzName := "UTC"
 	if tz, ok := arguments["timezone"].(string); ok && tz != "" {
 		tzName = tz

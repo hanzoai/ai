@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -66,13 +67,7 @@ func FilterQuery(urlString string, blackList []string) string {
 	retQuery := make(url.Values)
 	inBlackList := false
 	for key, value := range queries {
-		inBlackList = false
-		for _, blackListItem := range blackList {
-			if blackListItem == key {
-				inBlackList = true
-				break
-			}
-		}
+		inBlackList = slices.Contains(blackList, key)
 		if !inBlackList {
 			retQuery[key] = value
 		}

@@ -138,7 +138,7 @@ func (v *Video) Play(lang string) error {
 	if err := SetDefaultVodClient(lang); err != nil {
 		return err
 	}
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		auth, err := video.GetVideoPlayAuth(v.VideoId)
 		if err == nil {
 			v.PlayAuth = auth

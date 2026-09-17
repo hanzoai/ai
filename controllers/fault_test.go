@@ -606,7 +606,7 @@ func scrape(t *testing.T) string {
 // reading is the value of one series in a text exposition, or 0 when it is absent.
 func reading(t *testing.T, body, series string) float64 {
 	t.Helper()
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		rest, ok := strings.CutPrefix(strings.TrimSpace(line), series)
 		if !ok || !strings.HasPrefix(rest, " ") {
 			continue

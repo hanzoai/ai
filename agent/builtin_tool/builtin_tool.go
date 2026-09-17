@@ -27,8 +27,8 @@ import (
 type BuiltinTool interface {
 	GetName() string
 	GetDescription() string
-	GetInputSchema() interface{}
-	Execute(ctx context.Context, arguments map[string]interface{}) (*protocol.CallToolResult, error)
+	GetInputSchema() any
+	Execute(ctx context.Context, arguments map[string]any) (*protocol.CallToolResult, error)
 }
 
 type ToolRegistry struct {
@@ -95,7 +95,7 @@ func (r *ToolRegistry) GetToolsAsProtocolTools() []*protocol.Tool {
 	return tools
 }
 
-func (r *ToolRegistry) ExecuteTool(ctx context.Context, name string, arguments map[string]interface{}) (*protocol.CallToolResult, error) {
+func (r *ToolRegistry) ExecuteTool(ctx context.Context, name string, arguments map[string]any) (*protocol.CallToolResult, error) {
 	tool, exists := r.GetTool(name)
 	if !exists {
 		return &protocol.CallToolResult{

@@ -37,8 +37,8 @@ const upstreamHost = "api.openai.com"
 // customer lens is the point: proving the read redacts a host it was handed is a
 // stronger statement than proving it omits one it never had, and it is the case
 // that survives someone later adding `origin` back to a shared SELECT.
-func adversarialRow() map[string]interface{} {
-	return map[string]interface{}{
+func adversarialRow() map[string]any {
+	return map[string]any{
 		"timestamp":         time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC),
 		"model":             "gpt-4o",
 		"provider":          "hanzo",
@@ -81,7 +81,7 @@ func TestCustomerLensNeverEmitsUpstream(t *testing.T) {
 		if p.Admin {
 			t.Fatalf("test bug: a caller shape set Admin=%v; the lens must never come from request input", p.Admin)
 		}
-		got := buildCloudUsageActivity(p, []map[string]interface{}{adversarialRow()}, 1)
+		got := buildCloudUsageActivity(p, []map[string]any{adversarialRow()}, 1)
 		if len(got.Items) != 1 {
 			t.Fatalf("params %+v: got %d items, want 1", p, len(got.Items))
 		}
@@ -101,9 +101,9 @@ func TestCustomerLensNeverEmitsUpstream(t *testing.T) {
 func TestCustomerPayloadHasNoUpstreamKey(t *testing.T) {
 	overview := buildCloudUsageOverview(
 		CloudUsageParams{Org: "maxpower"}, // customer: Admin is the zero value
-		map[string]interface{}{}, map[string]interface{}{},
+		map[string]any{}, map[string]any{},
 		nil, nil,
-		[]map[string]interface{}{adversarialRow()}, 1,
+		[]map[string]any{adversarialRow()}, 1,
 	)
 	blob, err := json.Marshal(overview)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestCustomerPayloadHasNoUpstreamKey(t *testing.T) {
 // TestAdminLensEmitsUpstream — the other half. A lens that hides from everyone is
 // not a projection, it is a deletion; the admin read must actually carry the host.
 func TestAdminLensEmitsUpstream(t *testing.T) {
-	got := buildCloudUsageActivity(CloudUsageParams{Admin: true}, []map[string]interface{}{adversarialRow()}, 1)
+	got := buildCloudUsageActivity(CloudUsageParams{Admin: true}, []map[string]any{adversarialRow()}, 1)
 	if len(got.Items) != 1 {
 		t.Fatalf("got %d items, want 1", len(got.Items))
 	}
@@ -168,7 +168,7 @@ func TestActivitySQLProjectsOnlyAliasedColumns(t *testing.T) {
 		inner, outer := cloudUsageUpstreamColumns(p)
 		source := cloudUsageDedupedSource("1", inner)
 
-		for _, col := range strings.Split(strings.TrimPrefix(outer, ", "), ", ") {
+		for col := range strings.SplitSeq(strings.TrimPrefix(outer, ", "), ", ") {
 			if col == "" {
 				continue
 			}

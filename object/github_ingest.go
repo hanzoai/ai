@@ -120,7 +120,7 @@ func resolveGitHubToken(explicit, owner string) string {
 
 // githubGet performs an authenticated GET against the GitHub REST API and
 // decodes the JSON body into out.
-func githubGet(urlStr, token string, out interface{}) error {
+func githubGet(urlStr, token string, out any) error {
 	req, err := http.NewRequest(http.MethodGet, urlStr, nil)
 	if err != nil {
 		return err

@@ -97,7 +97,7 @@ func TestResponsesToChatRequestTools(t *testing.T) {
 	if kinds["shell_command"] != "function" {
 		t.Fatalf("tool kinds = %#v", kinds)
 	}
-	choice, ok := chat.ToolChoice.(map[string]interface{})
+	choice, ok := chat.ToolChoice.(map[string]any)
 	if !ok || choice["type"] != "function" {
 		t.Fatalf("tool choice = %#v", chat.ToolChoice)
 	}
@@ -208,7 +208,7 @@ func TestResponsesNonStreamingTranslation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got map[string]interface{}
+	var got map[string]any
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/hanzoai/account"
@@ -69,7 +70,7 @@ func ParseJwtToken(token string) (*Claims, error) { return ensureClient().ParseJ
 // a stated answer, on the security boundary — and carried an internet round trip
 // inside every parse to do it.
 func (c *Client) ParseJwtToken(token string) (*Claims, error) {
-	t, err := jwt.ParseWithClaims(token, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+	t, err := jwt.ParseWithClaims(token, &Claims{}, func(token *jwt.Token) (any, error) {
 		switch token.Method.Alg() {
 		case jwt.SigningMethodES256.Alg(), jwt.SigningMethodES512.Alg(),
 			jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg():
@@ -158,15 +159,13 @@ func (c *Claims) typeMachine() {
 	if len(c.Orgs) > 0 {
 		return
 	}
-	for _, aud := range c.Audience {
-		if aud == c.User.Name {
-			c.User.Type = Machine
-			return
-		}
+	if slices.Contains(c.Audience, c.User.Name) {
+		c.User.Type = Machine
+		return
 	}
 }
 
-func publicKeyFromPEM(pemBytes []byte) (interface{}, error) {
+func publicKeyFromPEM(pemBytes []byte) (any, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
 		return nil, errors.New("iam: not valid PEM")

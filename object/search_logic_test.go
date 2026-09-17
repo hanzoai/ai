@@ -126,7 +126,7 @@ func TestFusingTwoSearches(t *testing.T) {
 // answer so a single long page cannot be the whole of it.
 func TestOnePageCannotFillTheAnswer(t *testing.T) {
 	many := []DocSearchResult{}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		many = append(many, DocSearchResult{ID: string(rune('a' + i)), URL: "https://x/page#anchor"})
 	}
 	other := []DocSearchResult{{ID: "z", URL: "https://x/elsewhere"}}

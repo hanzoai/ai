@@ -118,7 +118,7 @@ func (p *AmazonBedrockModelProvider) QueryText(question string, writer io.Writer
 
 	maxTokens := GetContextLength(p.subType)
 
-	requestBody, err := json.Marshal(map[string]interface{}{
+	requestBody, err := json.Marshal(map[string]any{
 		"prompt":      prompt + question,
 		"temperature": p.temperature,
 		"max_tokens":  maxTokens,

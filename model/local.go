@@ -197,7 +197,7 @@ func flushDataThink(data string, eventType string, writer io.Writer, lang string
 
 func (p *LocalModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
 	var client *openai.Client
-	var flushData interface{} // Can be either flushData or flushDataThink
+	var flushData any // Can be either flushData or flushDataThink
 
 	if p.typ == "Local" || p.typ == "DigitalOcean" {
 		client = getLocalClientFromUrl(p.secretKey, p.providerUrl)

@@ -17,7 +17,6 @@ package video
 
 import (
 	openapi "github.com/alibabacloud-go/darabonba-openapi/client"
-	"github.com/alibabacloud-go/tea/tea"
 	vod20170321 "github.com/alibabacloud-go/vod-20170321/v2/client"
 )
 
@@ -25,10 +24,10 @@ var VodClient *vod20170321.Client
 
 func SetVodClient(region string, clientId string, clientSecret string) error {
 	config := &openapi.Config{
-		AccessKeyId:     tea.String(clientId),
-		AccessKeySecret: tea.String(clientSecret),
-		RegionId:        tea.String(region),
-		Endpoint:        tea.String("vod." + region + ".aliyuncs.com"),
+		AccessKeyId:     new(clientId),
+		AccessKeySecret: new(clientSecret),
+		RegionId:        new(region),
+		Endpoint:        new("vod." + region + ".aliyuncs.com"),
 	}
 	client, err := vod20170321.NewClient(config)
 	if err != nil {

@@ -17,7 +17,7 @@ package txt
 
 import (
 	"io"
-	"io/ioutil"
+
 	"os"
 	"path/filepath"
 
@@ -41,7 +41,7 @@ func getTempFilePathFromUrl(url string) (string, error) {
 		return "", err
 	}
 
-	file, err := ioutil.TempFile("", filepath.Base(url))
+	file, err := os.CreateTemp("", filepath.Base(url))
 	if err != nil {
 		return "", err
 	}

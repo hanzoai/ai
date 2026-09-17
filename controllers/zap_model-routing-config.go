@@ -66,7 +66,7 @@ func init() {
 // HTTP 200 {status:"error",msg} (a logic error is 200-with-error-body); auth
 // denials → real 401/403. These mirror that exactly over the gateway projection.
 
-func zapGwOk(data ...interface{}) (*zap.Message, error) {
+func zapGwOk(data ...any) (*zap.Message, error) {
 	resp := Response{Status: "ok"}
 	switch len(data) {
 	case 2:

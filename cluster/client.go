@@ -126,7 +126,7 @@ func applyManifest(ctx context.Context, c K8sClient, manifest, namespace, lang s
 // the apply loop so it is a pure, testable function.
 func splitManifest(manifest string) ([]map[string]any, error) {
 	var out []map[string]any
-	for _, doc := range strings.Split(manifest, "\n---") {
+	for doc := range strings.SplitSeq(manifest, "\n---") {
 		if strings.TrimSpace(doc) == "" {
 			continue
 		}

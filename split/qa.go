@@ -32,8 +32,8 @@ func (p *QaSplitProvider) SplitText(text string) ([]string, error) {
 	var collectingAnswer bool
 
 	// Split the text by lines
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(text, "\n")
+	for line := range lines {
 		if strings.HasPrefix(line, "Q:") {
 			if currentPair != "" {
 				// Save the previous question-answer pair

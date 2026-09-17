@@ -268,7 +268,7 @@ func orgOf(who string) string {
 // The code leads the message because both transports carry a message and only one
 // carries headers — putting the machine-readable part in the one channel they
 // share is what keeps HTTP and ZAP answering the same thing.
-func speechRefuse(org, code, detail string, a ...interface{}) error {
+func speechRefuse(org, code, detail string, a ...any) error {
 	speechRefusals.WithLabelValues(org, code).Inc()
 	return busyError("%s: %s", code, fmt.Sprintf(detail, a...))
 }

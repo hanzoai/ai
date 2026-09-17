@@ -911,8 +911,8 @@ func fetchRobotsTxt(origin string) *robotsRules {
 			continue
 		}
 		lower := strings.ToLower(line)
-		if strings.HasPrefix(lower, "user-agent:") {
-			agent := strings.TrimSpace(strings.TrimPrefix(lower, "user-agent:"))
+		if after, ok := strings.CutPrefix(lower, "user-agent:"); ok {
+			agent := strings.TrimSpace(after)
 			inWildcardAgent = (agent == "*")
 			continue
 		}

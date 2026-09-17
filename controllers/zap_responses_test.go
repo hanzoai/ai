@@ -98,7 +98,7 @@ func TestZapResponsesStreamBodyParity(t *testing.T) {
 
 	// The completed event must carry the real token counts (metering parity).
 	completed := lastEventData(t, out, "response.completed")
-	usage := completed["response"].(map[string]interface{})["usage"].(map[string]interface{})
+	usage := completed["response"].(map[string]any)["usage"].(map[string]any)
 	if usage["input_tokens"].(float64) != 11 || usage["output_tokens"].(float64) != 3 || usage["total_tokens"].(float64) != 14 {
 		t.Fatalf("usage = %#v, want input=11 output=3 total=14", usage)
 	}
@@ -117,20 +117,20 @@ func TestZapResponsesNonStreamParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openAIChatResponseToResponses: %v", err)
 	}
-	var resource map[string]interface{}
+	var resource map[string]any
 	if err := json.Unmarshal(out, &resource); err != nil {
 		t.Fatalf("unmarshal resource: %v", err)
 	}
 	if resource["object"] != "response" || resource["status"] != "completed" {
 		t.Fatalf("resource envelope = %#v", resource)
 	}
-	usage := resource["usage"].(map[string]interface{})
+	usage := resource["usage"].(map[string]any)
 	if usage["total_tokens"].(float64) != 7 {
 		t.Fatalf("total_tokens = %v, want 7", usage["total_tokens"])
 	}
-	outputs := resource["output"].([]interface{})
-	msg := outputs[0].(map[string]interface{})
-	content := msg["content"].([]interface{})[0].(map[string]interface{})
+	outputs := resource["output"].([]any)
+	msg := outputs[0].(map[string]any)
+	content := msg["content"].([]any)[0].(map[string]any)
 	if content["text"] != "answer" {
 		t.Fatalf("output text = %v, want answer", content["text"])
 	}
@@ -138,17 +138,17 @@ func TestZapResponsesNonStreamParity(t *testing.T) {
 
 // lastEventData returns the JSON payload of the last SSE event with the given
 // type from a rendered event-stream body.
-func lastEventData(t *testing.T, sse, event string) map[string]interface{} {
+func lastEventData(t *testing.T, sse, event string) map[string]any {
 	t.Helper()
-	var last map[string]interface{}
+	var last map[string]any
 	found := false
-	for _, block := range strings.Split(sse, "\n\n") {
+	for block := range strings.SplitSeq(sse, "\n\n") {
 		lines := strings.Split(strings.TrimSpace(block), "\n")
 		if len(lines) < 2 || strings.TrimSpace(lines[0]) != "event: "+event {
 			continue
 		}
 		data := strings.TrimPrefix(strings.TrimSpace(lines[1]), "data: ")
-		var payload map[string]interface{}
+		var payload map[string]any
 		if err := json.Unmarshal([]byte(data), &payload); err != nil {
 			t.Fatalf("bad SSE data for %s: %v", event, err)
 		}

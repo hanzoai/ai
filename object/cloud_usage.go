@@ -446,7 +446,7 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 		return nil, fmt.Errorf("usage by-model: %w", err)
 	}
 
-	var activityRows []map[string]interface{}
+	var activityRows []map[string]any
 	var activityTotal int64
 	if cloudUsageActivityQueryable(p.ActivityType) {
 		limit := p.ActivityLimit
@@ -456,10 +456,7 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 		if limit > 200 {
 			limit = 200
 		}
-		offset := p.ActivityOffset
-		if offset < 0 {
-			offset = 0
-		}
+		offset := max(p.ActivityOffset, 0)
 		inner, outer := cloudUsageUpstreamColumns(p)
 		activitySQL := fmt.Sprintf("SELECT timestamp, model, provider, status, total_tokens, prompt_tokens, "+
 			"completion_tokens, cost_cents, is_stream, is_premium, request_id, user_id, organization%s "+
@@ -481,9 +478,9 @@ func GetCloudUsageOverview(ctx context.Context, p CloudUsageParams) (*CloudUsage
 // whereClause builds the time + organization predicate. Times are formatted as
 // datastore DateTime literals (UTC); the org slug is always a bound parameter
 // (never interpolated) so a super admin's ?org= can't inject SQL.
-func (p CloudUsageParams) whereClause(start, end time.Time) (string, []interface{}) {
+func (p CloudUsageParams) whereClause(start, end time.Time) (string, []any) {
 	clause := "timestamp >= ? AND timestamp < ?"
-	args := []interface{}{cloudUsageTS(start), cloudUsageTS(end)}
+	args := []any{cloudUsageTS(start), cloudUsageTS(end)}
 	if !p.AllOrgs {
 		clause += " AND organization = ?"
 		args = append(args, p.Org)
@@ -493,13 +490,13 @@ func (p CloudUsageParams) whereClause(start, end time.Time) (string, []interface
 
 func cloudUsageTS(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05") }
 
-func cloudUsageQueryOne(ctx context.Context, sql string, args []interface{}) (map[string]interface{}, error) {
+func cloudUsageQueryOne(ctx context.Context, sql string, args []any) (map[string]any, error) {
 	rows, err := DatastoreQuery(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
 	return rows[0], nil
 }
@@ -523,8 +520,8 @@ func cloudUsageActivityQueryable(t string) bool {
 // It is pure (no I/O), so the test drives it with mock datastore rows.
 func buildCloudUsageOverview(
 	p CloudUsageParams,
-	totalsRow, priorRow map[string]interface{},
-	seriesRows, modelRows, activityRows []map[string]interface{},
+	totalsRow, priorRow map[string]any,
+	seriesRows, modelRows, activityRows []map[string]any,
 	activityTotal int64,
 ) *CloudUsageOverview {
 	totals := cloudUsageTotalsFromRow(totalsRow)
@@ -556,7 +553,7 @@ func buildCloudUsageOverview(
 	}
 }
 
-func cloudUsageTotalsFromRow(r map[string]interface{}) CloudUsageTotals {
+func cloudUsageTotalsFromRow(r map[string]any) CloudUsageTotals {
 	return CloudUsageTotals{
 		Tokens:           cuInt64(r["tokens"]),
 		PromptTokens:     cuInt64(r["prompt_tokens"]),
@@ -583,7 +580,7 @@ func cloudUsageDelta(current, prior int64) CloudUsageDelta {
 // gap-filled series so the client charts a continuous line. Bucket alignment
 // matches toStartOf{Hour,Day}(…, 'UTC'): Go's Truncate over the chosen step
 // lands on the same UTC boundaries.
-func buildCloudUsageSeries(start, end time.Time, interval types.Interval, rows []map[string]interface{}) []CloudUsageSeriesPoint {
+func buildCloudUsageSeries(start, end time.Time, interval types.Interval, rows []map[string]any) []CloudUsageSeriesPoint {
 	step := interval.Step()
 
 	type agg struct{ tokens, spend, requests, models int64 }
@@ -614,7 +611,7 @@ func buildCloudUsageSeries(start, end time.Time, interval types.Interval, rows [
 
 // foldCloudUsageModels keeps the top-N models by spend and folds the rest into a
 // single "other" bucket, computing each share of total spend. Pure.
-func foldCloudUsageModels(rows []map[string]interface{}, topN int, totalCents int64) ([]CloudUsageModelSpend, *CloudUsageModelOther) {
+func foldCloudUsageModels(rows []map[string]any, topN int, totalCents int64) ([]CloudUsageModelSpend, *CloudUsageModelOther) {
 	if topN <= 0 {
 		topN = 6
 	}
@@ -689,14 +686,14 @@ func cloudUsageUpstreamColumns(p CloudUsageParams) (inner, outer string) {
 // Two layers rather than one because they fail differently: the first keeps the
 // value out of memory, the second keeps it out of the payload. Either alone is
 // correct; together, being wrong takes two mistakes instead of one.
-func cloudUsageUpstream(p CloudUsageParams, r map[string]interface{}) string {
+func cloudUsageUpstream(p CloudUsageParams, r map[string]any) string {
 	if !p.Admin {
 		return ""
 	}
 	return cuString(r["origin"])
 }
 
-func buildCloudUsageActivity(p CloudUsageParams, rows []map[string]interface{}, total int64) CloudUsageActivity {
+func buildCloudUsageActivity(p CloudUsageParams, rows []map[string]any, total int64) CloudUsageActivity {
 	items := make([]CloudUsageActivityRow, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, CloudUsageActivityRow{
@@ -732,7 +729,7 @@ func buildCloudUsageActivity(p CloudUsageParams, rows []map[string]interface{}, 
 // as "2006-01-02 15:04:05". These helpers coerce robustly so a driver encoding
 // change can't crash a read.
 
-func cuInt64(v interface{}) int64 {
+func cuInt64(v any) int64 {
 	switch n := v.(type) {
 	case nil:
 		return 0
@@ -776,7 +773,7 @@ func cuInt64(v interface{}) int64 {
 	}
 }
 
-func cuString(v interface{}) string {
+func cuString(v any) string {
 	switch s := v.(type) {
 	case nil:
 		return ""
@@ -789,7 +786,7 @@ func cuString(v interface{}) string {
 	}
 }
 
-func cuBool(v interface{}) bool {
+func cuBool(v any) bool {
 	switch b := v.(type) {
 	case nil:
 		return false
@@ -802,7 +799,7 @@ func cuBool(v interface{}) bool {
 	}
 }
 
-func cuTime(v interface{}) time.Time {
+func cuTime(v any) time.Time {
 	// The direct datastore driver decodes DateTime columns to time.Time; take it
 	// as-is before falling back to the string/unix layouts (a JSON transport path).
 	if t, ok := v.(time.Time); ok {

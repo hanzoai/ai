@@ -53,7 +53,7 @@ func shape(t reflect.Type, named map[string]reflect.Type) map[string]any {
 
 	// time.Time marshals as an RFC 3339 string, not as its struct fields. Reading
 	// the fields would publish wall/ext/loc, which no client has ever seen.
-	if t == reflect.TypeOf(time.Time{}) {
+	if t == reflect.TypeFor[time.Time]() {
 		return map[string]any{"type": "string", "format": "date-time"}
 	}
 
@@ -88,8 +88,7 @@ func shape(t reflect.Type, named map[string]reflect.Type) map[string]any {
 // fields writes t's exported fields into props, flattening embedded structs the
 // way encoding/json does.
 func fields(t reflect.Type, props map[string]any, named map[string]reflect.Type) {
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		if !f.IsExported() {
 			continue
 		}
@@ -126,7 +125,7 @@ func ref(t reflect.Type, named map[string]reflect.Type) map[string]any {
 	for e.Kind() == reflect.Pointer {
 		e = e.Elem()
 	}
-	if e.Kind() == reflect.Struct && e.Name() != "" && e != reflect.TypeOf(time.Time{}) {
+	if e.Kind() == reflect.Struct && e.Name() != "" && e != reflect.TypeFor[time.Time]() {
 		n := component(e)
 		named[n] = e
 		return map[string]any{"$ref": "#/components/schemas/" + n}

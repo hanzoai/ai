@@ -34,7 +34,7 @@ func TestTheCeilingRefusesAndNamesThePeriod(t *testing.T) {
 	defer q.Stop()
 
 	limit := tierQuotas[TierZenFree][0]
-	for i := 0; i < limit; i++ {
+	for i := range limit {
 		if ok, _, _ := q.Spend("k", at); !ok {
 			t.Fatalf("refused at %d, below the ceiling of %d", i, limit)
 		}
@@ -58,7 +58,7 @@ func TestTheCountResetsWhenThePeriodRolls(t *testing.T) {
 	defer q.Stop()
 
 	limit := tierQuotas[TierZenFree][0]
-	for i := 0; i < limit; i++ {
+	for range limit {
 		q.Spend("k", at)
 	}
 	if ok, _, _ := q.Spend("k", at); ok {
@@ -83,10 +83,10 @@ func TestARefusalIsNotCharged(t *testing.T) {
 	defer q.Stop()
 
 	limit := tierQuotas[TierZenFree][0]
-	for i := 0; i < limit; i++ {
+	for range limit {
 		q.Spend("k", at)
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		q.Spend("k", at) // all refused
 	}
 
@@ -105,7 +105,7 @@ func TestTheLongerPeriodRefusesOnceTheShortOnesHaveRolled(t *testing.T) {
 	perEight, perWeek := tierQuotas[TierZenFree][0], tierQuotas[TierZenFree][1]
 	now := at
 	for spent := 0; spent < perWeek; spent += perEight {
-		for i := 0; i < perEight; i++ {
+		for i := range perEight {
 			if ok, _, _ := q.Spend("k", now); !ok {
 				t.Fatalf("refused at %d of the week's %d", spent+i, perWeek)
 			}
@@ -134,7 +134,7 @@ func TestKeysAreCountedApart(t *testing.T) {
 	defer q.Stop()
 
 	limit := tierQuotas[TierZenFree][0]
-	for i := 0; i < limit; i++ {
+	for range limit {
 		q.Spend("a", at)
 	}
 	if ok, _, _ := q.Spend("a", at); ok {

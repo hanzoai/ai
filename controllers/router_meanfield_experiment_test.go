@@ -6,6 +6,7 @@
 package controllers
 
 import (
+	"maps"
 	"math/rand"
 	"testing"
 )
@@ -42,9 +43,8 @@ func TestMeanFieldBeatsGreedyUnderCongestion(t *testing.T) {
 	models := []string{"m0", "m1", "m2", "m3", "m4"}
 	quality := map[string]float64{"m0": 0.90, "m1": 0.84, "m2": 0.78, "m3": 0.70, "m4": 0.60}
 	values := map[string]float64{}
-	for m, q := range quality {
-		values[m] = q // both policies route on the KNOWN value — congestion-awareness is the only difference
-	}
+	// both policies route on the KNOWN value — congestion-awareness is the only difference
+	maps.Copy(values, quality)
 	var qStar float64 // uncongested ideal = the reference for regret
 	for _, q := range quality {
 		if q > qStar {
@@ -85,7 +85,7 @@ func TestMeanFieldBeatsGreedyUnderCongestion(t *testing.T) {
 	var greedyMaxLoad, mfMaxLoad float64
 	mfPicks := map[string]float64{}
 
-	for i := 0; i < rounds; i++ {
+	for i := range rounds {
 		// Greedy: always the argmax; its share climbs toward 1.0 → self-congestion.
 		g := greedyPick()
 		greedyRegret += qStar - realized(g, greedyLoads.share(g))

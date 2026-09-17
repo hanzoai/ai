@@ -113,7 +113,6 @@ func (a ask) race() (*model.ModelResult, served, []attempt, error) {
 	done := make(chan shot, len(queue))
 	runs := make([]hedge.Attempt, len(queue))
 	for i, c := range queue {
-		i, c := i, c
 		runs[i] = func(_ context.Context, w io.Writer) error {
 			// Its OWN translating writer over its OWN share of the stream. The
 			// buffers this fills are what the ledger reads if it loses.
@@ -180,7 +179,7 @@ func (a ask) race() (*model.ModelResult, served, []attempt, error) {
 // It runs off the request's own goroutine whenever anybody is still running, so
 // it touches nothing but its arguments and the values fan.bill closed over.
 func (a ask) settle(over []shot, done <-chan shot, rest int) []attempt {
-	for i := 0; i < rest; i++ {
+	for range rest {
 		over = append(over, <-done)
 	}
 	out := make([]attempt, 0, len(over))

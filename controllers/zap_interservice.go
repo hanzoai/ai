@@ -192,6 +192,6 @@ func opsStatusHandler() (*zap.Message, error) {
 		return buildOpsResponse(500, nil, err.Error())
 	}
 
-	data, _ := json.Marshal(map[string]interface{}{"k8s": status})
+	data, _ := json.Marshal(map[string]any{"k8s": status})
 	return buildOpsResponse(200, data, "")
 }

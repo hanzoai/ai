@@ -32,8 +32,8 @@ func (p *BasicSplitProvider) SplitText(text string) ([]string, error) {
 	res := []string{}
 	var temp string
 
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(text, "\n")
+	for line := range lines {
 		tokenSize, err := model.GetTokenSize("gpt-3.5-turbo", temp+line)
 		if err != nil {
 			return nil, err

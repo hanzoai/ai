@@ -43,6 +43,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -342,7 +343,7 @@ func sortedSeries(m map[int64]*ProviderUsageSeriesPoint) []ProviderUsageSeriesPo
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	out := make([]ProviderUsageSeriesPoint, 0, len(keys))
 	for _, k := range keys {
 		out = append(out, *m[k])
@@ -865,12 +866,6 @@ func (groqUsageImporter) importUsage(_ context.Context, _ *object.Provider, _, _
 // windowDayLimit is the number of 1-day buckets a [from,to] window spans, +1 for the
 // partial edge, capped. Used as the provider `limit` so a single page covers the window.
 func windowDayLimit(from, to time.Time, cap int) int {
-	days := int(to.Sub(from).Hours()/24) + 2
-	if days < 1 {
-		days = 1
-	}
-	if days > cap {
-		days = cap
-	}
+	days := min(max(int(to.Sub(from).Hours()/24)+2, 1), cap)
 	return days
 }

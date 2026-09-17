@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -128,10 +129,8 @@ func findIngressURL(serviceName string, servicePort int32, ingresses []networkin
 // hasTLSForHost examine if the ingress has TLS configured for the given host
 func hasTLSForHost(ingress networkingv1.Ingress, host string) bool {
 	for _, tls := range ingress.Spec.TLS {
-		for _, tlsHost := range tls.Hosts {
-			if tlsHost == host {
-				return true
-			}
+		if slices.Contains(tls.Hosts, host) {
+			return true
 		}
 	}
 	return false

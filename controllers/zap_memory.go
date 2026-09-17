@@ -94,9 +94,9 @@ func zapMemoryIdentity(auth string) (org, userID string, err error) {
 		return "", "", resolveErr
 	}
 	org = id
-	if i := strings.IndexByte(id, '/'); i >= 0 {
-		org = id[:i]
-		userID = id[i+1:]
+	if before, after, ok := strings.Cut(id, "/"); ok {
+		org = before
+		userID = after
 	}
 	if strings.TrimSpace(org) == "" || strings.TrimSpace(userID) == "" {
 		return "", "", authError("Please sign in first")

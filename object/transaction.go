@@ -166,7 +166,7 @@ func AddTransactionForMessage(message *Message) error {
 	if endpoint == "" {
 		return fmt.Errorf("commerceEndpoint is not configured")
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"user":      userId,
 		"currency":  cur,
 		"amount":    amountCents,

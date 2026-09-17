@@ -33,15 +33,15 @@ func (t *LocalTimeToTimestampTool) GetDescription() string {
 	return "A tool for localtime convert to timestamp"
 }
 
-func (t *LocalTimeToTimestampTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *LocalTimeToTimestampTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"localtime": map[string]interface{}{
+		"properties": map[string]any{
+			"localtime": map[string]any{
 				"type":        "string",
 				"description": "Local time string (e.g., '2024-01-01 00:00:00')",
 			},
-			"timezone": map[string]interface{}{
+			"timezone": map[string]any{
 				"type":        "string",
 				"description": "Timezone (e.g., 'Asia/Shanghai')",
 				"default":     "Asia/Shanghai",
@@ -51,7 +51,7 @@ func (t *LocalTimeToTimestampTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *LocalTimeToTimestampTool) Execute(ctx context.Context, arguments map[string]interface{}) (*protocol.CallToolResult, error) {
+func (t *LocalTimeToTimestampTool) Execute(ctx context.Context, arguments map[string]any) (*protocol.CallToolResult, error) {
 	localtimeStr, ok := arguments["localtime"].(string)
 	if !ok || localtimeStr == "" {
 		return &protocol.CallToolResult{

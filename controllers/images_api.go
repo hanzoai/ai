@@ -115,13 +115,7 @@ func (c *ApiController) ImagesGenerations() {
 	// Zen family: forward to the zen service, billed per image at the discovered
 	// price. zen owns the SKU→upstream mapping; ai authenticates, meters, forwards.
 	if provider.Type == "Zen" {
-		n := req.N
-		if n < 1 {
-			n = 1
-		}
-		if n > 10 {
-			n = 10
-		}
+		n := min(max(req.N, 1), 10)
 		c.serveZenMedia("images/generations", req.Model, c.Body(), n, orgId, authUser, isPremium, startTime)
 		return
 	}
@@ -129,13 +123,7 @@ func (c *ApiController) ImagesGenerations() {
 	// Clamp n to [1,10] BEFORE any cost math so imageCostCents/reserveBudget are
 	// never fed an unbounded n (mirrors the same clamp in doaiImageSubmit). This
 	// makes the money-safety explicit rather than relying on int overflow.
-	n := req.N
-	if n < 1 {
-		n = 1
-	}
-	if n > 10 {
-		n = 10
-	}
+	n := min(max(req.N, 1), 10)
 
 	// ── Balance reservation ────────────────────────────────────────────
 	// Reserve the exact per-image cost so concurrent image requests for one
@@ -182,15 +170,12 @@ func (c *ApiController) ImagesGenerations() {
 	// covered n; capping here guarantees the settle can never exceed the hold
 	// even if the upstream ever returned more images than requested — the user
 	// is never charged beyond what they asked for.
-	billedCount := len(result.Images)
-	if billedCount > n {
-		billedCount = n
-	}
+	billedCount := min(len(result.Images), n)
 	hold.settle(imageCostCents(req.Model, billedCount))
 
 	c.recordImageUsage(authUser, provider, req.Model, isPremium, billedCount, "success", "", startTime)
 
-	c.jsonResponse(map[string]interface{}{
+	c.jsonResponse(map[string]any{
 		"created": time.Now().Unix(),
 		"data":    imageResponseData(result),
 	})

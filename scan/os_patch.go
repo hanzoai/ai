@@ -371,7 +371,7 @@ func (p *OsPatchScanProvider) InstallPatch(patchId string) (*InstallProgress, er
 	slog.Debug("powershell output", "host", hostname(), "scanner", "os_patch", "output", output)
 
 	// Parse the result
-	var result map[string]interface{}
+	var result map[string]any
 	output = strings.TrimSpace(output)
 	if output != "" && output != "null" {
 		err = json.Unmarshal([]byte(output), &result)

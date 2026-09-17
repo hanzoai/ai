@@ -73,14 +73,12 @@ type people struct {
 func (p *people) signedIn(t *testing.T, user *iam.User) string {
 	t.Helper()
 	claims := &iam.Claims{
-		User: *user,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    p.issuer,
-			Audience:  jwt.ClaimStrings{iamTestAudience},
-			Subject:   user.Name,
-			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		},
+		User:      *user,
+		Issuer:    p.issuer,
+		Audience:  jwt.ClaimStrings{iamTestAudience},
+		Subject:   user.Name,
+		IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = iamTestKid

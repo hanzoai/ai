@@ -46,7 +46,7 @@ func getRow[T any](table, owner, name string) (*T, error) {
 	return nil, nil
 }
 
-func getOne(db *dbx.DB, table string, dst interface{}, pk dbx.HashExp) (bool, error) {
+func getOne(db *dbx.DB, table string, dst any, pk dbx.HashExp) (bool, error) {
 	err := db.Select().From(table).Where(pk).One(dst)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -71,7 +71,7 @@ func narrow(where dbx.HashExp, optional map[string]string) dbx.HashExp {
 }
 
 // findAll fetches all rows from table matching the where clause into dst slice.
-func findAll(db *dbx.DB, table string, dst interface{}, where dbx.Expression, orderBy ...string) error {
+func findAll(db *dbx.DB, table string, dst any, where dbx.Expression, orderBy ...string) error {
 	q := db.Select().From(table)
 	if where != nil {
 		q = q.Where(where)
@@ -189,12 +189,12 @@ func addRow(row any) (bool, error) {
 	return true, nil
 }
 
-func insertRow(db *dbx.DB, model interface{}) error {
+func insertRow(db *dbx.DB, model any) error {
 	return db.Model(model).Insert()
 }
 
 // insertRows inserts multiple rows using a transaction.
-func insertRows(db *dbx.DB, models ...interface{}) (int64, error) {
+func insertRows(db *dbx.DB, models ...any) (int64, error) {
 	var count int64
 	err := db.Transactional(func(tx *dbx.Tx) error {
 		for _, m := range models {
@@ -260,7 +260,7 @@ func countWhere(db *dbx.DB, table string, where dbx.Expression) (int64, error) {
 
 // structToParams converts a struct's exported fields to dbx.Params using the field mapper.
 // This is used for UPDATE operations where we need all column values.
-func structToParams(db *dbx.DB, model interface{}) dbx.Params {
+func structToParams(db *dbx.DB, model any) dbx.Params {
 	// Use the model query's internal column extraction via a builder roundtrip.
 	// For updates we construct params manually in each call site.
 	_ = db
@@ -282,7 +282,7 @@ func queryCount(q *dbx.SelectQuery, table string) (int64, error) {
 }
 
 // queryFind executes a GetDbQuery-style query on a specific table.
-func queryFind(q *dbx.SelectQuery, table string, dst interface{}) error {
+func queryFind(q *dbx.SelectQuery, table string, dst any) error {
 	info := q.Info()
 	fq := info.Builder.Select().From(table)
 	if info.Where != nil {
@@ -316,8 +316,8 @@ func tableName(name string) string {
 }
 
 // toInterfaceSlice converts a []string to []interface{} for use with dbx.In().
-func toInterfaceSlice(s []string) []interface{} {
-	result := make([]interface{}, len(s))
+func toInterfaceSlice(s []string) []any {
+	result := make([]any, len(s))
 	for i, v := range s {
 		result[i] = v
 	}

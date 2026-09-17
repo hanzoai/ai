@@ -109,7 +109,7 @@ func TestLedgerStaleWindowClosedByLocalDebit(t *testing.T) {
 	l := NewBalanceLedger(BalanceLedgerTTL)
 	l.SetBalance("acme", 100)
 	// Spend 100 in ten settled requests of 10 each (reserve 10, settle 10).
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if !l.Reserve("acme", 10) {
 			t.Fatalf("reserve %d must pass", i)
 		}
@@ -132,16 +132,14 @@ func TestLedgerConcurrentNoOverdraw(t *testing.T) {
 
 	var granted int64
 	var wg sync.WaitGroup
-	for i := 0; i < 500; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 500 {
+		wg.Go(func() {
 			if l.Reserve("race", cost) {
 				atomic.AddInt64(&granted, 1)
 				// Settle the full actual cost (worst case == estimate).
 				l.Settle("race", cost, cost)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -168,15 +166,13 @@ func TestLedgerReserveThenConcurrentSettleNoNegative(t *testing.T) {
 	l := NewBalanceLedger(BalanceLedgerTTL)
 	l.SetBalance("mix", 10000)
 	var wg sync.WaitGroup
-	for i := 0; i < 200; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 200 {
+		wg.Go(func() {
 			if l.Reserve("mix", 50) {
 				time.Sleep(time.Microsecond)
 				l.Settle("mix", 50, 25)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if bal, _, _, _ := l.Snapshot("mix"); bal < 0 {

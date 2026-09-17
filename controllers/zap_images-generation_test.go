@@ -101,7 +101,7 @@ func TestZapImagesResponseShape(t *testing.T) {
 	}}
 
 	// Mirror exactly what zapImagesHandler marshals on success.
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"created": int64(1700000000),
 		"data":    imageResponseData(result),
 	}

@@ -71,7 +71,7 @@ func (c *ApiController) ThreeDGenerations() {
 		return
 	}
 
-	c.jsonResponse(map[string]interface{}{
+	c.jsonResponse(map[string]any{
 		"created": time.Now().Unix(),
 		"data":    []model.ThreeDStatus{*job},
 	})

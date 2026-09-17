@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -438,8 +439,8 @@ func (c *ApiController) routingUserId() string {
 // any user text if the final user turn is empty.
 func lastUserText(req *openai.ChatCompletionRequest) string {
 	var fallback string
-	for i := len(req.Messages) - 1; i >= 0; i-- {
-		m := req.Messages[i]
+	for _, m := range slices.Backward(req.Messages) {
+
 		if m.Role != openai.ChatMessageRoleUser {
 			continue
 		}

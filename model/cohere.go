@@ -128,7 +128,7 @@ func (p *CohereModelProvider) QueryText(message string, writer io.Writer, chat_h
 	}
 
 	output := generation.Generations[0].Text
-	resp := strings.Split(output, "\n")[0]
+	resp, _, _ := strings.Cut(output, "\n")
 
 	_, err = fmt.Fprint(writer, resp)
 	if err != nil {

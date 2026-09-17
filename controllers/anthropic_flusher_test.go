@@ -21,7 +21,7 @@ func TestAnthropicWriter_SatisfiesHTTPFlusher(t *testing.T) {
 	var buf bytes.Buffer
 	w := &AnthropicWriter{Writer: bufio.NewWriter(&buf)}
 
-	f, ok := interface{}(w).(http.Flusher)
+	f, ok := any(w).(http.Flusher)
 	if !ok {
 		t.Fatal("AnthropicWriter does not implement http.Flusher — /v1/messages will 500 on every request")
 	}

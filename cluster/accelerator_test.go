@@ -87,7 +87,7 @@ func TestSelectAccelerator_PrefersTheMostWidelyAdvertisedThenName(t *testing.T) 
 	if !ok || got != "nvidia.com/gpu" {
 		t.Errorf("want the accelerator 20 nodes advertise, got %q (ok=%v)", got, ok)
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		got, ok := selectAccelerator(map[string]int{"nvidia.com/gpu": 3, "amd.com/gpu": 3})
 		if !ok || got != "amd.com/gpu" {
 			t.Fatalf("a tie must resolve deterministically by name, got %q (ok=%v)", got, ok)
@@ -138,7 +138,7 @@ func TestRenderedContracts_CarryOnlyTheClusterSuppliedAccelerator(t *testing.T) 
 	}
 	limits := acceleratorLimits("amd.com/gpu", job.GpuCount)
 
-	for name, obj := range map[string]map[string]interface{}{
+	for name, obj := range map[string]map[string]any{
 		"TrainJob":         buildTrainJobObject(job, object.Hyperparams{}, "", limits),
 		"InferenceService": buildInferenceServiceObject(job, "ft-"+job.Name, acceleratorLimits("amd.com/gpu", servingAccelerators)),
 	} {

@@ -122,7 +122,7 @@ type zapAuthErr struct {
 // answers have no such thing — one call shape rather than an Ok and an Ok2 that
 // differ by an argument. Nine of these existed, one per group, identical but for
 // whether they wrote `switch` or `if` and `200` or http.StatusOK.
-func zapOk(data ...interface{}) (*zap.Message, error) {
+func zapOk(data ...any) (*zap.Message, error) {
 	resp := Response{Status: "ok"}
 	if len(data) > 0 {
 		resp.Data = data[0]
@@ -301,7 +301,7 @@ func zapError(status int, msg string) (*zap.Message, error) {
 
 // zapRaw marshals a bare payload (endpoints that write c.Data["json"] directly,
 // e.g. {hits:…}, the raw results array, or the LangChain tuple shape).
-func zapRaw(data interface{}) (*zap.Message, error) {
+func zapRaw(data any) (*zap.Message, error) {
 	b, _ := json.Marshal(data)
 	return object.BuildCloudResponse(http.StatusOK, b, "")
 }
@@ -434,7 +434,7 @@ func zapSearchHandler(_ context.Context, auth string, body []byte) (*zap.Message
 	}
 
 	recordSearchUsage(sa, "search-query", req.Mode, "success", len(results), "")
-	return zapRaw(map[string]interface{}{"hits": results})
+	return zapRaw(map[string]any{"hits": results})
 }
 
 // ── /v1/index ───────────────────────────────────────────────────────────
@@ -562,7 +562,7 @@ func zapCrawlHandler(_ context.Context, auth string, body []byte) (*zap.Message,
 	}
 
 	recordSearchUsage(sa, "crawl", "crawl4ai", "success", len(results), "")
-	return zapRaw(map[string]interface{}{"results": results})
+	return zapRaw(map[string]any{"results": results})
 }
 
 // ── /v1/ai/rag/ingest ───────────────────────────────────────────────────
@@ -704,7 +704,7 @@ func zapRagDeleteHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 		}
 		deleted++
 	}
-	return zapOk(map[string]interface{}{"deleted": deleted})
+	return zapOk(map[string]any{"deleted": deleted})
 }
 
 // ── /v1/ai/rag/context ──────────────────────────────────────────────────
@@ -740,7 +740,7 @@ func zapRagContextHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 // would go unnoticed.
 func ownedBy(row any, owner string) error {
 	v := reflect.ValueOf(row)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
+	if v.Kind() != reflect.Pointer || v.IsNil() {
 		return fmt.Errorf("cannot say who owns a %T", row)
 	}
 	field := v.Elem().FieldByName("Owner")

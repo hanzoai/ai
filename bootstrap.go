@@ -221,7 +221,7 @@ func doBootstrap() (err error) {
 	// is no conf/app.conf, so logConfig is empty — json.Unmarshal("") would
 	// panic. Skip when unset and keep the default logger.
 	if raw := conf.GetConfigString("logConfig"); raw != "" {
-		logConfigMap := make(map[string]interface{})
+		logConfigMap := make(map[string]any)
 		if err := json.Unmarshal([]byte(raw), &logConfigMap); err != nil {
 			log.Warn("logConfig parse failed: %v (keeping default logger)", err)
 		} else {

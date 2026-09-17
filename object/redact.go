@@ -57,7 +57,7 @@ func redactNonExposableStrings(u *iam.User) {
 		if f.PkgPath != "" { // unexported field — skip
 			continue
 		}
-		tag := strings.Split(f.Tag.Get("json"), ",")[0]
+		tag, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 		if tag == "" || tag == "-" {
 			continue
 		}

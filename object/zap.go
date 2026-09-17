@@ -255,9 +255,9 @@ func ZapKVSetEx(ctx context.Context, key, value string, ttlSeconds int) error {
 	if node == nil || peer == "" {
 		return fmt.Errorf("zap: kv not connected")
 	}
-	body, _ := json.Marshal(map[string]interface{}{
+	body, _ := json.Marshal(map[string]any{
 		"cmd":  "SETEX",
-		"args": []interface{}{key, ttlSeconds, value},
+		"args": []any{key, ttlSeconds, value},
 	})
 	status, _, err := zapCallBackend(ctx, node, peer, MsgTypeKV, "/cmd", body)
 	if err != nil {
@@ -277,7 +277,7 @@ func ZapKVDel(ctx context.Context, key string) error {
 	if node == nil || peer == "" {
 		return fmt.Errorf("zap: kv not connected")
 	}
-	body, _ := json.Marshal(map[string]interface{}{
+	body, _ := json.Marshal(map[string]any{
 		"cmd":  "DEL",
 		"args": []string{key},
 	})
@@ -287,14 +287,14 @@ func ZapKVDel(ctx context.Context, key string) error {
 
 // ── SQL client (native ZAP-to-ZAP) ─────────────────────────────────────
 // ZapSQLQuery executes a read query via native ZAP binary.
-func ZapSQLQuery(ctx context.Context, sql string, args ...interface{}) ([]map[string]interface{}, error) {
+func ZapSQLQuery(ctx context.Context, sql string, args ...any) ([]map[string]any, error) {
 	zapMu.RLock()
 	node, peer := zapNode, sqlPeerID
 	zapMu.RUnlock()
 	if node == nil || peer == "" {
 		return nil, fmt.Errorf("zap: sql not connected")
 	}
-	body, _ := json.Marshal(map[string]interface{}{"sql": sql, "args": args})
+	body, _ := json.Marshal(map[string]any{"sql": sql, "args": args})
 	status, resp, err := zapCallBackend(ctx, node, peer, MsgTypeSQL, "/query", body)
 	if err != nil {
 		return nil, err
@@ -302,7 +302,7 @@ func ZapSQLQuery(ctx context.Context, sql string, args ...interface{}) ([]map[st
 	if status != 200 {
 		return nil, fmt.Errorf("zap: sql query: status %d", status)
 	}
-	var rows []map[string]interface{}
+	var rows []map[string]any
 	if err := json.Unmarshal(resp, &rows); err != nil {
 		return nil, fmt.Errorf("zap: sql unmarshal: %w", err)
 	}
@@ -310,14 +310,14 @@ func ZapSQLQuery(ctx context.Context, sql string, args ...interface{}) ([]map[st
 }
 
 // ZapSQLExec executes a write query via native ZAP binary.
-func ZapSQLExec(ctx context.Context, sql string, args ...interface{}) error {
+func ZapSQLExec(ctx context.Context, sql string, args ...any) error {
 	zapMu.RLock()
 	node, peer := zapNode, sqlPeerID
 	zapMu.RUnlock()
 	if node == nil || peer == "" {
 		return fmt.Errorf("zap: sql not connected")
 	}
-	body, _ := json.Marshal(map[string]interface{}{"sql": sql, "args": args})
+	body, _ := json.Marshal(map[string]any{"sql": sql, "args": args})
 	status, _, err := zapCallBackend(ctx, node, peer, MsgTypeSQL, "/exec", body)
 	if err != nil {
 		return err
@@ -330,14 +330,14 @@ func ZapSQLExec(ctx context.Context, sql string, args ...interface{}) error {
 
 // ── DocDB client (native ZAP-to-ZAP → FerretDB) ─────────────────────────
 // ZapDocdbQuery executes a read query on DocDB via native ZAP binary.
-func ZapDocdbQuery(ctx context.Context, sql string, args ...interface{}) ([]map[string]interface{}, error) {
+func ZapDocdbQuery(ctx context.Context, sql string, args ...any) ([]map[string]any, error) {
 	zapMu.RLock()
 	node, peer := zapNode, docdbPeerID
 	zapMu.RUnlock()
 	if node == nil || peer == "" {
 		return nil, fmt.Errorf("zap: docdb not connected")
 	}
-	body, _ := json.Marshal(map[string]interface{}{"sql": sql, "args": args})
+	body, _ := json.Marshal(map[string]any{"sql": sql, "args": args})
 	status, resp, err := zapCallBackend(ctx, node, peer, MsgTypeDocdb, "/query", body)
 	if err != nil {
 		return nil, err
@@ -345,7 +345,7 @@ func ZapDocdbQuery(ctx context.Context, sql string, args ...interface{}) ([]map[
 	if status != 200 {
 		return nil, fmt.Errorf("zap: docdb query: status %d", status)
 	}
-	var rows []map[string]interface{}
+	var rows []map[string]any
 	if err := json.Unmarshal(resp, &rows); err != nil {
 		return nil, fmt.Errorf("zap: docdb unmarshal: %w", err)
 	}
@@ -353,14 +353,14 @@ func ZapDocdbQuery(ctx context.Context, sql string, args ...interface{}) ([]map[
 }
 
 // ZapDocdbExec executes a write query on DocDB via native ZAP binary.
-func ZapDocdbExec(ctx context.Context, sql string, args ...interface{}) error {
+func ZapDocdbExec(ctx context.Context, sql string, args ...any) error {
 	zapMu.RLock()
 	node, peer := zapNode, docdbPeerID
 	zapMu.RUnlock()
 	if node == nil || peer == "" {
 		return fmt.Errorf("zap: docdb not connected")
 	}
-	body, _ := json.Marshal(map[string]interface{}{"sql": sql, "args": args})
+	body, _ := json.Marshal(map[string]any{"sql": sql, "args": args})
 	status, _, err := zapCallBackend(ctx, node, peer, MsgTypeDocdb, "/exec", body)
 	if err != nil {
 		return err

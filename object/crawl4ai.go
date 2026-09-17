@@ -106,9 +106,9 @@ type Crawl4AIResult struct {
 	// floats (intrinsic_score) and nulls (head_data). A map-of-string value errors
 	// the whole decode, so the values are typed interface{} and read with an
 	// assertion where needed.
-	Links    map[string][]map[string]interface{} `json:"links,omitempty"`
-	Media    map[string][]map[string]interface{} `json:"media,omitempty"`
-	Metadata map[string]interface{}              `json:"metadata,omitempty"`
+	Links    map[string][]map[string]any `json:"links,omitempty"`
+	Media    map[string][]map[string]any `json:"media,omitempty"`
+	Metadata map[string]any              `json:"metadata,omitempty"`
 }
 
 // getCrawlEndpoint returns the Hanzo Crawl service base URL from config.

@@ -38,7 +38,7 @@ import (
 type McpToolsList []*McpTools
 
 // Scan implements sql.Scanner for the slice. Accepts string, []byte, or nil.
-func (l *McpToolsList) Scan(src interface{}) error {
+func (l *McpToolsList) Scan(src any) error {
 	if src == nil {
 		*l = nil
 		return nil

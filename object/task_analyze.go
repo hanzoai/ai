@@ -93,12 +93,12 @@ func AnalyzeTask(task *Task, lang string) (*TaskResult, error) {
 	log.Info("[analyze-task] AI returned task=%s elapsed=%v answerLen=%d bytes", taskID, aiElapsed, len(answer))
 	answer = strings.TrimSpace(answer)
 	// Strip markdown code block if present
-	if strings.HasPrefix(answer, "```json") {
-		answer = strings.TrimPrefix(answer, "```json")
+	if after, ok := strings.CutPrefix(answer, "```json"); ok {
+		answer = after
 		answer = strings.TrimSuffix(answer, "```")
 		answer = strings.TrimSpace(answer)
-	} else if strings.HasPrefix(answer, "```") {
-		answer = strings.TrimPrefix(answer, "```")
+	} else if after, ok := strings.CutPrefix(answer, "```"); ok {
+		answer = after
 		answer = strings.TrimSuffix(answer, "```")
 		answer = strings.TrimSpace(answer)
 	}

@@ -120,7 +120,7 @@ func TestAFullQueueDropsRatherThanWaits(t *testing.T) {
 	// Fill past capacity; the workers are stuck on the server above.
 	settled := make(chan struct{})
 	go func() {
-		for i := 0; i < billingQueueSize+64; i++ {
+		for range billingQueueSize + 64 {
 			q.Enqueue(&BillingRecord{Body: []byte(`{}`), Org: "acme"})
 		}
 		close(settled)
@@ -135,7 +135,7 @@ func TestAFullQueueDropsRatherThanWaits(t *testing.T) {
 // The schedule backs off rather than hammering a service that is already unwell.
 func TestTheRetryScheduleBacksOff(t *testing.T) {
 	last := time.Duration(0)
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := range 5 {
 		got := billingBackoff(attempt)
 		if got <= 0 {
 			t.Fatalf("attempt %d waits %v", attempt, got)

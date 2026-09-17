@@ -17,6 +17,7 @@ package util
 
 import (
 	"net"
+	"slices"
 	"strings"
 )
 
@@ -114,10 +115,8 @@ func MatchTargetWithMachine(target, hostname string) (bool, error) {
 		}
 
 		// Check if target IP matches any local IP
-		for _, localIP := range localIPs {
-			if target == localIP {
-				return true, nil
-			}
+		if slices.Contains(localIPs, target) {
+			return true, nil
 		}
 		return false, nil
 	}

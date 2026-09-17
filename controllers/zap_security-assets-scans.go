@@ -136,10 +136,7 @@ func zapGetAssetsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
-	offset := (page - 1) * limit
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max((page-1)*limit, 0)
 	assets, err := object.GetPaginationAssets(owner, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -303,10 +300,7 @@ func zapGetScansHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
-	offset := (page - 1) * limit
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max((page-1)*limit, 0)
 	scans, err := object.GetPaginationScans(owner, offset, limit, p.Field, p.Value, p.SortField, p.SortOrder)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())

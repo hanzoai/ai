@@ -33,15 +33,15 @@ func (t *TimestampToLocalTimeTool) GetDescription() string {
 	return "A tool for timestamp convert to localtime"
 }
 
-func (t *TimestampToLocalTimeTool) GetInputSchema() interface{} {
-	return map[string]interface{}{
+func (t *TimestampToLocalTimeTool) GetInputSchema() any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"timestamp": map[string]interface{}{
+		"properties": map[string]any{
+			"timestamp": map[string]any{
 				"type":        "number",
 				"description": "Unix timestamp",
 			},
-			"timezone": map[string]interface{}{
+			"timezone": map[string]any{
 				"type":        "string",
 				"description": "Timezone (e.g., 'Asia/Shanghai')",
 				"default":     "Asia/Shanghai",
@@ -51,7 +51,7 @@ func (t *TimestampToLocalTimeTool) GetInputSchema() interface{} {
 	}
 }
 
-func (t *TimestampToLocalTimeTool) Execute(ctx context.Context, arguments map[string]interface{}) (*protocol.CallToolResult, error) {
+func (t *TimestampToLocalTimeTool) Execute(ctx context.Context, arguments map[string]any) (*protocol.CallToolResult, error) {
 	var timestamp int64
 	switch v := arguments["timestamp"].(type) {
 	case float64:

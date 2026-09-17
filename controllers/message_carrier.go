@@ -161,28 +161,24 @@ func QueryCarrierText(question string, writer *RefinedWriter, history []*model.R
 
 	var modelResult *model.ModelResult
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		var err error
 		modelResult, err = modelProviderObj.QueryText(question, writer, history, prompt, knowledge, nil, lang)
 		if err != nil {
 			mainErr = err
 		}
-	}()
+	})
 
 	CarrierWriter := &CarrierWriter{*NewCleaner(6), []byte{}}
 	var carrierResult *model.ModelResult
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		var err error
 		carrierResult, err = getResultWithSuggestionsAndTitle(CarrierWriter, question, modelProviderObj, needTitle, suggestionCount, lang)
 		if err != nil {
 			carrierErr = err
 		}
-	}()
+	})
 
 	wg.Wait()
 

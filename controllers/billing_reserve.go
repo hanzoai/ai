@@ -66,8 +66,8 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		if strings.HasPrefix(line, "data: ") {
-			raw := strings.TrimPrefix(line, "data: ")
+		if after, ok := strings.CutPrefix(line, "data: "); ok {
+			raw := after
 			if strings.TrimSpace(raw) != "[DONE]" {
 				var chunk sseStreamChunk
 				if json.Unmarshal([]byte(raw), &chunk) == nil {
@@ -102,11 +102,11 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 						// An SDK client reads a usage-only event as a chunk like any
 						// other, so give it the rest of the envelope. The id and the
 						// model are the stamp's to say, and it says them below.
-						var usageChunk map[string]interface{}
+						var usageChunk map[string]any
 						if json.Unmarshal([]byte(raw), &usageChunk) == nil {
 							usageChunk["object"] = "chat.completion.chunk"
 							usageChunk["created"] = time.Now().Unix()
-							usageChunk["choices"] = []interface{}{}
+							usageChunk["choices"] = []any{}
 							if fixed, err := json.Marshal(usageChunk); err == nil {
 								line = "data: " + string(fixed)
 							}

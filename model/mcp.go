@@ -40,10 +40,10 @@ type AgentInfo struct {
 }
 
 type ToolCallResponse struct {
-	Success  bool        `json:"success"`
-	Data     interface{} `json:"data"`
-	Error    string      `json:"error,omitempty"`
-	ToolName string      `json:"toolName"`
+	Success  bool   `json:"success"`
+	Data     any    `json:"data"`
+	Error    string `json:"error,omitempty"`
+	ToolName string `json:"toolName"`
 }
 
 type ToolCall struct {
@@ -60,7 +60,7 @@ func reverseToolsToOpenAi(tools []*protocol.Tool) ([]openai.Tool, error) {
 			return nil, err
 		}
 
-		var parameters map[string]interface{}
+		var parameters map[string]any
 		if err := json.Unmarshal(schemaBytes, &parameters); err != nil {
 			return nil, err
 		}
@@ -169,7 +169,7 @@ func createToolMessage(toolCall openai.ToolCall, text string) *RawMessage {
 }
 
 func callTools(toolCall openai.ToolCall, serverName, toolName string, agentClients *agent.AgentClients, messages []*RawMessage, writer io.Writer, lang string) ([]*RawMessage, error) {
-	var arguments map[string]interface{}
+	var arguments map[string]any
 	ctx := context.Background()
 
 	if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &arguments); err != nil {
@@ -255,8 +255,8 @@ func GetToolCallsFromWriter(toolMessage string) []ToolCall {
 		return nil
 	}
 	var toolCalls []ToolCall
-	toolCallLines := strings.Split(toolMessage, "\n")
-	for _, line := range toolCallLines {
+	toolCallLines := strings.SplitSeq(toolMessage, "\n")
+	for line := range toolCallLines {
 		if line == "" {
 			continue
 		}

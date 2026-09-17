@@ -36,9 +36,9 @@ import (
 // one. The host installs object.TierReader precisely so the question has an
 // answer; when it is there, the edge must not be reached at all.
 func TestTierIsReadFromTheReaderRatherThanTheEdge(t *testing.T) {
-	var edgeCalls int32
+	var edgeCalls atomic.Int32
 	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&edgeCalls, 1)
+		edgeCalls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer edge.Close()
@@ -58,7 +58,7 @@ func TestTierIsReadFromTheReaderRatherThanTheEdge(t *testing.T) {
 	if got != TierZenPro {
 		t.Errorf("tier = %q, want %q — the reader said the plan is \"pro\"", got, TierZenPro)
 	}
-	if n := atomic.LoadInt32(&edgeCalls); n != 0 {
+	if n := edgeCalls.Load(); n != 0 {
 		t.Errorf("the edge was called %d time(s); with a reader installed it must not be reached, "+
 			"or the answer depends on a credential the caller does not have", n)
 	}

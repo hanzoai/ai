@@ -24,10 +24,10 @@ type SplitProvider interface {
 func GetSplitProvider(typ string) (SplitProvider, error) {
 	var p SplitProvider
 	var err error
-	if strings.HasPrefix(typ, "Code:") {
+	if after, ok := strings.CutPrefix(typ, "Code:"); ok {
 		// Code:<lang> selects the language-aware structural splitter (keeps whole
 		// functions/types together); the lang stem is the file extension.
-		p, err = NewCodeSplitProvider(strings.TrimPrefix(typ, "Code:"))
+		p, err = NewCodeSplitProvider(after)
 	} else if typ == "Default" {
 		p, err = NewDefaultSplitProvider("default")
 	} else if typ == "QA" {

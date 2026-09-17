@@ -45,12 +45,10 @@ func publishes(t *testing.T, public *rsa.PublicKey, kid string) *Client {
 func signedWith(t *testing.T, key *rsa.PrivateKey, kid string, method jwt.SigningMethod, secret any) string {
 	t.Helper()
 	claims := &Claims{
-		User: User{Owner: "acme", Name: "alice"},
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   "alice",
-			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		},
+		Owner: "acme", Name: "alice",
+		Subject:   "alice",
+		IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}
 	token := jwt.NewWithClaims(method, claims)
 	if kid != "" {
@@ -106,7 +104,7 @@ func TestATokenIsOnlyAsGoodAsWhoSignedIt(t *testing.T) {
 
 	// The two classic ways to ask a verifier to stop verifying.
 	t.Run("asking for no signature", func(t *testing.T) {
-		token := jwt.NewWithClaims(jwt.SigningMethodNone, &Claims{User: User{Owner: "admin", Name: "z"}})
+		token := jwt.NewWithClaims(jwt.SigningMethodNone, &Claims{Owner: "admin", Name: "z"})
 		token.Header["kid"] = "k1"
 		unsigned, err := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
 		if err != nil {
@@ -133,11 +131,9 @@ func TestATokenIsOnlyAsGoodAsWhoSignedIt(t *testing.T) {
 
 	t.Run("expired", func(t *testing.T) {
 		claims := &Claims{
-			User: User{Owner: "acme", Name: "alice"},
-			RegisteredClaims: jwt.RegisteredClaims{
-				IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Hour)),
-			},
+			Owner: "acme", Name: "alice",
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Hour)),
 		}
 		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 		token.Header["kid"] = "k1"

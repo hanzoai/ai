@@ -312,7 +312,7 @@ func GetOpenAiClientFromToken(authToken string, providerUrl string) openai.Clien
 
 func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
 	var client openai.Client
-	var flushData interface{}
+	var flushData any
 
 	client = GetOpenAiClientFromToken(p.secretKey, p.providerUrl)
 	flushData = flushDataThink
@@ -640,13 +640,7 @@ func generateImageOpenAI(ctx context.Context, baseURL, apiKey string, req ImageG
 	if req.UpstreamModel == "" {
 		return nil, fmt.Errorf("image generation requires an upstream model id")
 	}
-	n := req.N
-	if n < 1 {
-		n = 1
-	}
-	if n > 10 {
-		n = 10
-	}
+	n := min(max(req.N, 1), 10)
 
 	client := GetOpenAiClientFromToken(apiKey, baseURL)
 	params := openai.ImageGenerateParams{
@@ -900,7 +894,7 @@ func reverseMcpToolsToOpenAi(tools []*protocol.Tool) ([]responses.ToolUnionParam
 			return nil, err
 		}
 
-		var parameters map[string]interface{}
+		var parameters map[string]any
 		if err := json.Unmarshal(schemaBytes, &parameters); err != nil {
 			return nil, err
 		}

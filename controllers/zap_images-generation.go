@@ -104,13 +104,7 @@ func zapImagesHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	startTime := time.Now().UTC()
 
 	// Clamp n to [1,10] BEFORE any cost math (mirrors images_api.go + doaiImageSubmit).
-	n := req.N
-	if n < 1 {
-		n = 1
-	}
-	if n > 10 {
-		n = 10
-	}
+	n := min(max(req.N, 1), 10)
 
 	// Zen family: forward to the zen service, billed per image at the discovered
 	// price. zen owns the SKU→upstream mapping; ai authenticates, meters, forwards.
@@ -152,15 +146,12 @@ func zapImagesHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	}
 
 	// Bill for the images produced, capped at the requested n.
-	billedCount := len(result.Images)
-	if billedCount > n {
-		billedCount = n
-	}
+	billedCount := min(len(result.Images), n)
 	hold.settle(imageCostCents(req.Model, billedCount))
 
 	zapRecordImageUsage(ctx, authUser, provider, req.Model, isPremium, billedCount, "success", "", startTime)
 
-	data, _ := json.Marshal(map[string]interface{}{
+	data, _ := json.Marshal(map[string]any{
 		"created": time.Now().Unix(),
 		"data":    imageResponseData(result),
 	})

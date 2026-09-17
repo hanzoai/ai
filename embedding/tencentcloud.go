@@ -63,7 +63,7 @@ func (p *TencentCloudEmbeddingProvider) calculatePrice(res *EmbeddingResult) err
 
 func (p *TencentCloudEmbeddingProvider) QueryVector(text string, ctx context.Context, lang string) ([]float32, *EmbeddingResult, error) {
 	request := hunyuan.NewGetEmbeddingRequest()
-	request.Input = common.StringPtr(text)
+	request.Input = new(text)
 
 	response, err := p.client.GetEmbedding(request)
 	if err != nil {

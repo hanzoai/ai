@@ -273,8 +273,8 @@ func RefreshFileVectors(file *File, lang string) (bool, error) {
 	}
 	var objectKey string
 	prefix := fmt.Sprintf("%s_", file.Store)
-	if strings.HasPrefix(file.Name, prefix) {
-		objectKey = strings.TrimPrefix(file.Name, prefix)
+	if after, ok := strings.CutPrefix(file.Name, prefix); ok {
+		objectKey = after
 	} else {
 		objectKey = file.Name
 	}

@@ -81,7 +81,7 @@ func TestOpenRouterCatalogIsDiscoveredAndCachedOnTTL(t *testing.T) {
 	}
 
 	// Warm: every further read is a snapshot read, not an upstream fetch.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		openrouterFam.fresh()
 		openrouterFam.snapshot()
 	}

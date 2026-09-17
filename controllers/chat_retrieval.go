@@ -109,8 +109,8 @@ func (c *ApiController) retrieveKnowledgeIfEnabled(
 }
 
 func bearerToken(authorization, iamCookie string) string {
-	if strings.HasPrefix(authorization, "Bearer ") {
-		return strings.TrimPrefix(authorization, "Bearer ")
+	if after, ok := strings.CutPrefix(authorization, "Bearer "); ok {
+		return after
 	}
 	// First-party cookie fallback: a browser cookie session carries no
 	// Authorization header, but Signin persisted the verified IAM access token as

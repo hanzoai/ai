@@ -74,7 +74,7 @@ func TestSetJSONModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(out, &m); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestSetJSONModel(t *testing.T) {
 	if m["dimensions"].(float64) != 256 {
 		t.Fatalf("dimensions not preserved: %v", m["dimensions"])
 	}
-	input, ok := m["input"].([]interface{})
+	input, ok := m["input"].([]any)
 	if !ok || len(input) != 2 || input[0] != "a" {
 		t.Fatalf("input not preserved: %v", m["input"])
 	}

@@ -47,7 +47,7 @@ func TestAnthropicSSE_WireFormat_ToolStream(t *testing.T) {
 
 	// The controller's exact wire emit.
 	var wire bytes.Buffer
-	emit := func(event string, data interface{}) error {
+	emit := func(event string, data any) error {
 		b, err := json.Marshal(data)
 		if err != nil {
 			return err
@@ -107,7 +107,7 @@ func TestAnthropicSSE_WireFormat_ToolStream(t *testing.T) {
 
 	// 3. The streamed input_json_delta fragments reassemble to the full tool input.
 	var partial strings.Builder
-	for _, line := range strings.Split(got, "\n") {
+	for line := range strings.SplitSeq(got, "\n") {
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}

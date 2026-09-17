@@ -67,7 +67,7 @@ func TestMeterBillsTinyPushes(t *testing.T) {
 	const pushes = 1000
 	each := 0.0004 // 12.8 bytes of pcm16 — under `duration`'s rounding floor
 	total := 0.0
-	for i := 0; i < pushes; i++ {
+	for range pushes {
 		total += each
 		billed += meterDelta(s, total)
 	}
@@ -78,7 +78,7 @@ func TestMeterBillsTinyPushes(t *testing.T) {
 	// The control: rounding each push the way `duration` does bills exactly zero,
 	// which is the bug this test exists to keep out.
 	rounded := 0.0
-	for i := 0; i < pushes; i++ {
+	for range pushes {
 		rounded += math.Round(each*1000) / 1000
 	}
 	if rounded != 0 {
@@ -313,7 +313,7 @@ func TestAbandonedSessionsDoNotShutTheDoorForGood(t *testing.T) {
 	})
 
 	fill := func(age time.Duration) {
-		for i := 0; i < speechCeiling; i++ {
+		for i := range speechCeiling {
 			release, refused := admitSpeech("acme")
 			if refused != nil {
 				t.Fatalf("could not fill the ceiling: %v", refused)

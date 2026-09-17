@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -84,7 +85,7 @@ func TestProcessFiles(t *testing.T) {
 					return
 				}
 
-				err = ioutil.WriteFile(outputFilePath, []byte(parsedText), 0o644)
+				err = os.WriteFile(outputFilePath, []byte(parsedText), 0o644)
 				if err != nil {
 					mu.Lock()
 					t.Logf("Failed to write file %s: %v\n", outputFilePath, err)
@@ -105,10 +106,5 @@ func TestProcessFiles(t *testing.T) {
 }
 
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }

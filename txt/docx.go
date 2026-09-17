@@ -35,16 +35,16 @@ func GetTextFromDocx(path string, lang string) (string, error) {
 
 	paragraphs := []string{}
 	for _, para := range docx.Paragraphs() {
-		var paraText string
+		var paraText strings.Builder
 
 		for _, run := range para.Runs() {
-			paraText += run.Text()
+			paraText.WriteString(run.Text())
 		}
 
 		if len(para.Runs()) > 1 {
-			paragraphs = append(paragraphs, paraText+"\n\n")
+			paragraphs = append(paragraphs, paraText.String()+"\n\n")
 		} else {
-			paragraphs = append(paragraphs, paraText+"\n")
+			paragraphs = append(paragraphs, paraText.String()+"\n")
 		}
 	}
 

@@ -34,7 +34,7 @@ func exploreClient(explore float64, arms ...string) Client {
 func TestExploreSamplesNonChampion(t *testing.T) {
 	c := exploreClient(1.0, "champ", "alt1", "alt2")
 	seen := map[string]bool{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		d := c.RouteDecision(context.Background(), Request{}, Slo{})
 		if d.Model == "champ" {
 			t.Fatalf("explore returned the champion")
@@ -75,7 +75,7 @@ func TestExploreRateIsApproximatelyEpsilon(t *testing.T) {
 	c := exploreClient(0.2, "champ", "alt")
 	explored := 0
 	const n = 4000
-	for i := 0; i < n; i++ {
+	for range n {
 		if c.RouteDecision(context.Background(), Request{}, Slo{}).Source == SourceExplore {
 			explored++
 		}
@@ -101,7 +101,7 @@ func TestExploreStaysServableUnderPolicy(t *testing.T) {
 		Rand:    rand.New(rand.NewSource(1)),
 	}
 	rp := RoutingPolicy{Enabled: rpEnabled("served-champ", "unserved-alt")} // org enabled both
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		d := c.RouteDecisionFor(context.Background(), Request{Text: "hi"}, Slo{}, rp)
 		if d.Model == "unserved-alt" {
 			t.Fatalf("exploration routed to an enabled-but-UNSERVED model (would 404): %+v", d)
@@ -125,7 +125,7 @@ func TestExploreSamplesOnlyServedAlternatives(t *testing.T) {
 	}
 	rp := RoutingPolicy{Enabled: rpEnabled("champ", "alt", "unserved")} // org enabled all three
 	seenAlt := false
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		d := c.RouteDecisionFor(context.Background(), Request{Text: "hi"}, Slo{}, rp)
 		if d.Model == "unserved" {
 			t.Fatalf("explore sampled the enabled-but-unserved arm: %+v", d)
