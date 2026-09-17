@@ -34,13 +34,7 @@ import (
 // verb is bound to a handler; splitting it into per-verb calls would be the same
 // table written twice, in two orders, for someone to reconcile later.
 
-// verbs is the method each verb a mapping may name registers under. "*" is any
-// verb, which is what a method-aware handler asks for: /v1/ai/router/policy
-// splits GET from PUT itself and answers 405 for a verb it does not own.
-//
-// Every one of these is a raw registration — the handler is resolved by
-// reflection from a controller method name and takes the context itself — so the
-// method is a value here rather than a registrar to call.
+// verbs maps a mapping's verb to its method; "*" is any.
 var verbs = map[string]string{
 	"GET":    http.MethodGet,
 	"POST":   http.MethodPost,
