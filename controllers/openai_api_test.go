@@ -286,7 +286,7 @@ func TestOkWithNoUserIsAnActionableRefusal(t *testing.T) {
 		t.Fatal("err = nil; ok-with-no-user must refuse, not return a nil user with no error")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, keysURL) {
+	if !strings.Contains(msg, KeysURL) {
 		t.Errorf("refusal does not say what to do: %q", msg)
 	}
 	if !strings.Contains(msg, "resolved to no user") {
@@ -304,12 +304,12 @@ func TestOkWithNoUserIsAnActionableRefusal(t *testing.T) {
 // surface at /api-keys. One spelling, checked here, so the three refusals that quote
 // it cannot drift apart again.
 func TestKeysURL_isTheConsoleKeyPage(t *testing.T) {
-	if keysURL != "https://console.hanzo.ai/api-keys" {
-		t.Fatalf("keysURL = %q, which is not the console's key page", keysURL)
+	if KeysURL != "https://console.hanzo.ai/api-keys" {
+		t.Fatalf("KeysURL = %q, which is not the console's key page", KeysURL)
 	}
 	for _, code := range []string{"key_unknown", "key_expired"} {
 		msg := keyRefusal(code, "the entity does not exist", "sk-live-abcdef123456").Error()
-		if !strings.Contains(msg, keysURL) {
+		if !strings.Contains(msg, KeysURL) {
 			t.Errorf("%s refusal does not name where to mint a key: %q", code, msg)
 		}
 	}

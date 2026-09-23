@@ -96,11 +96,13 @@ func responseError(c *zip.Ctx, status int, msg string, data ...any) error {
 	return c.JSON(status, resp)
 }
 
-// denyUnauthorized renders a 401: no credential, or one that did not verify.
+// denyUnauthorized renders a 401: no credential, or one that did not verify. It
+// names the scheme that would have been accepted (RFC 9110 §11.6.1).
 //
 // Returning the write WITHOUT continuing is the denial. A filter that wrote a body
 // and then let the chain run would have the handler answer over the top of it.
 func denyUnauthorized(c *zip.Ctx, msg string, data ...any) error {
+	c.SetHeader("WWW-Authenticate", "Bearer")
 	return responseError(c, http.StatusUnauthorized, msg, data...)
 }
 

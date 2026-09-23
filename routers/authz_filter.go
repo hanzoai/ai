@@ -209,6 +209,11 @@ func requiresPresentCredential(controllerName string) bool {
 		strings.HasPrefix(controllerName, "ai/connections/")
 }
 
+// unauthenticated is the 401 a caller with no credential reads. It names the
+// header to send and the page that mints a key, because the caller most likely
+// to meet it is making a first call without one.
+const unauthenticated = "auth:authentication required: send Authorization: Bearer <API key>, created at " + controllers.KeysURL
+
 // hasPresentCredential reports whether the request carries SOME credential — a
 // session user (cookie auth) or a Bearer token. It is a coarse presence check
 // (defense in depth); the controller validates the credential. It deliberately
@@ -326,7 +331,7 @@ func permissionFilter(c *zip.Ctx) error {
 	if requiresSuperAdmin(controllerName) {
 		user := sessionOrBearerUser(c)
 		if user == nil {
-			return denyUnauthorized(c, "auth:authentication required")
+			return denyUnauthorized(c, unauthenticated)
 		}
 		if !util.IsSuperAdmin(user) {
 			return denyForbidden(c, "auth:this operation requires super admin privilege")
@@ -344,7 +349,7 @@ func permissionFilter(c *zip.Ctx) error {
 	// authoritative validation. This is an explicit set, NOT a blanket default,
 	// so health and metrics stay reachable without a Bearer.
 	if requiresPresentCredential(controllerName) && !hasPresentCredential(c) {
-		return denyUnauthorized(c, "auth:authentication required")
+		return denyUnauthorized(c, unauthenticated)
 	}
 
 	disablePreviewMode := conf.DisablePreviewMode()
@@ -366,7 +371,7 @@ func permissionFilter(c *zip.Ctx) error {
 		// opening one is a line in this list — visible, and reviewable as a
 		// decision.
 		if !isAnonymous(controllerName) && !hasPresentCredential(c) {
-			return denyUnauthorized(c, "auth:authentication required")
+			return denyUnauthorized(c, unauthenticated)
 		}
 		return c.Continue()
 	}

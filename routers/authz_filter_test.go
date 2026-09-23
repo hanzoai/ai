@@ -17,6 +17,7 @@ package routers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -530,5 +531,23 @@ func TestTheNamedOpenEndpointsStayOpen(t *testing.T) {
 		if q.status() == http.StatusUnauthorized {
 			t.Errorf("%s %s = 401; it is named open and must stay reachable", p.method, p.path)
 		}
+	}
+}
+
+// The first call a customer makes is often the one without a key. It is refused
+// 401, and the refusal is the next step: the header to send, the page that mints
+// the key, and the scheme on WWW-Authenticate (RFC 9110 §11.6.1).
+func TestAFirstCallWithoutAKeyIsToldHowToGetOne(t *testing.T) {
+	q := asUser(t, http.MethodPost, "/v1/chat/completions", nil).through(permissionFilter)
+	if q.status() != http.StatusUnauthorized {
+		t.Fatalf("POST /v1/chat/completions with no key = %d, want 401", q.status())
+	}
+	for _, want := range []string{"Authorization: Bearer", controllers.KeysURL} {
+		if !strings.Contains(q.wrote, want) {
+			t.Errorf("401 body %s does not name %q", q.wrote, want)
+		}
+	}
+	if got := q.head.Get("WWW-Authenticate"); got != "Bearer" {
+		t.Errorf("401 WWW-Authenticate = %q, want Bearer", got)
 	}
 }
