@@ -1425,7 +1425,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		ct = "application/json"
 	}
 	c.SetHeader("Content-Type", ct)
-	c.Bytes(http.StatusOK, mk.stamp(b))
+	c.answerBody(mk.stamp(b))
 	settle(prompt, completion, sniffZenModel(b), sniffZenId(b))
 	return done()
 }

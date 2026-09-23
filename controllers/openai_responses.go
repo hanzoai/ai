@@ -12,6 +12,7 @@ package controllers
 // wire protocol they require.
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -138,43 +139,32 @@ func (c *ApiController) Responses() {
 		return
 	}
 
+	// The chat request on the wire, because the completion reads its own body. This
+	// is the request being made, not a place being patched.
+	c.Fiber().Request().SetBody(chatBody)
+	c.Fiber().Request().Header.Del("Content-Length")
+
 	// This endpoint IS a chat completion, read in a second dialect. So it asks for
-	// one and says where the answer should go, rather than swapping the writer out
-	// of the request context and reading whatever came back through it.
-	//
-	// A stream is decorated as it is produced; a whole body is handed over entire.
-	// The bridge exists only on the streaming path, which is what `bridge != nil`
-	// means below.
-	var bridge *responsesBridge
-	to := &sink{
+	// one and says what shape the answer must take, rather than swapping the writer
+	// out of the request context and reading whatever came back through it.
+	c.chatCompletions(callerBearer, c.responsesAnswer(&request, toolKinds))
+}
+
+// responsesAnswer is the Responses shape of a chat completion: a stream is
+// decorated as it is produced, a whole body is handed over entire.
+func (c *ApiController) responsesAnswer(request *OpenAIResponsesRequest, toolKinds map[string]string) *sink {
+	return &sink{
 		wrap: func(w io.Writer) io.Writer {
-			bridge = newResponsesBridge(w, &request, toolKinds)
-			return bridge
+			return newResponsesBridge(w, request, toolKinds)
 		},
 		body: func(chat []byte) error {
-			out, err := openAIChatResponseToResponses(chat, &request, toolKinds)
+			out, err := openAIChatResponseToResponses(chat, request, toolKinds)
 			if err != nil {
 				return err
 			}
 			c.SetHeader("Content-Type", "application/json")
 			return c.Bytes(http.StatusOK, out)
 		},
-	}
-
-	// The chat request on the wire, because the completion reads its own body. This
-	// is the request being made, not a place being patched.
-	c.Fiber().Request().SetBody(chatBody)
-	c.Fiber().Request().Header.Del("Content-Length")
-
-	c.chatCompletions(callerBearer, to)
-
-	if bridge != nil {
-		// Logged, not answered: the events are already on the wire, so there is no
-		// status left to change. Losing it silently would leave a stream that simply
-		// stops with nothing to explain it.
-		if err := bridge.Close(); err != nil {
-			log.Error(fmt.Sprintf("Responses: closing the stream failed: %s", err.Error()))
-		}
 	}
 }
 
@@ -946,4 +936,58 @@ func openAIChatResponseToResponses(body []byte, request *OpenAIResponsesRequest,
 	}
 	resource := translator.resource("completed", outputs)
 	return json.Marshal(resource)
+}
+
+// SendStreamWriter is zip's, with this request's answer shape applied to every
+// stream it writes.
+//
+// The Responses bridge used to be installed by ONE path — the native text
+// completion — while the family relay, the tool-call proxy and the vision proxy
+// each opened their own stream and wrote upstream chat SSE straight to the
+// client. So /v1/responses answered `chat.completion.chunk` for every model a
+// family or a proxy serves, which is nearly all of them, and any request carrying
+// tools: a Responses client (Hanzo Dev, the OpenAI SDK) saw no response.* event,
+// dropped every chunk, and failed on "stream closed before response.completed".
+//
+// Here the bridge wraps the writer each path is handed, so the translation is a
+// property of the request rather than of which path happened to serve it. A path
+// flushes its own buffered writer after each chunk; the bridge emits and flushes
+// each Responses event as the chunk arrives, so the answer still streams.
+func (c *ApiController) SendStreamWriter(fn func(*bufio.Writer)) error {
+	to := c.answer
+	if to == nil || to.wrap == nil {
+		return c.Ctx.SendStreamWriter(fn)
+	}
+	return c.Ctx.SendStreamWriter(func(bw *bufio.Writer) {
+		out := to.wrap(bw)
+		in := bufio.NewWriter(out)
+		fn(in)
+		_ = in.Flush()
+		// An upstream that ends without [DONE] still gets its response.completed;
+		// finish is idempotent, so one that sent it is unaffected. This runs inside
+		// the callback because zip runs the callback after the handler returns: a
+		// close placed after chatCompletions ran before any byte was written.
+		//
+		// Logged, not answered: the events are already on the wire, so there is no
+		// status left to change.
+		if cl, ok := out.(io.Closer); ok {
+			if err := cl.Close(); err != nil {
+				log.Error(fmt.Sprintf("Responses: closing the stream failed: %s", err.Error()))
+			}
+		}
+	})
+}
+
+// answerBody writes one whole successful answer in the shape this request asked
+// for: the chat completion as is, or translated by the sink. It is the
+// non-streaming half of SendStreamWriter's rule, for the same reason.
+func (c *ApiController) answerBody(chat []byte) {
+	if to := c.answer; to != nil && to.body != nil {
+		if err := to.body(chat); err != nil {
+			c.ResponseError(err.Error())
+		}
+		return
+	}
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, chat)
 }

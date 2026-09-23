@@ -41,6 +41,12 @@ import (
 type ApiController struct {
 	*zip.Ctx
 
+	// answer is the shape this request's answer must take when it is not the chat
+	// completion every path produces. Responses sets it before handing the request
+	// to chatCompletions; it is applied where every path writes — SendStreamWriter
+	// and answerBody — so no path can answer in the wrong dialect by forgetting it.
+	answer *sink
+
 	// Which organization this request acts in, answered once. Resolving it
 	// validates the caller's credential, and for an IAM API key it asks IAM — so a
 	// handler that asks four times pays four times, and if IAM answers one of them

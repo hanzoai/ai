@@ -1651,6 +1651,7 @@ const (
 // differ only in who the caller is, which is a value passed in rather than a fact
 // re-derived here.
 func (c *ApiController) chatCompletions(from caller, to *sink) {
+	c.answer = to
 	var token string
 	if from == callerBearer {
 		// Extract Bearer token
@@ -2140,18 +2141,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 				return
 			}
 
-			// The whole answer, once. A sink takes it instead of the client, which is
-			// how /v1/responses translates a non-streaming completion — the status is
-			// still ours to send, and stays here.
-			if to != nil {
-				if err := to.body(jsonResponse); err != nil {
-					c.ResponseError(err.Error())
-					return
-				}
-			} else {
-				c.SetHeader("Content-Type", "application/json")
-				c.Bytes(http.StatusOK, jsonResponse)
-			}
+			c.answerBody(jsonResponse)
 		} else {
 			err = writer.Close(
 				modelResult.PromptTokenCount,
@@ -2188,11 +2178,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		c.SetHeader("Cache-Control", "no-cache")
 		c.SetHeader("Connection", "keep-alive")
 		_ = c.SendStreamWriter(func(bw *bufio.Writer) {
-			out := io.Writer(bw)
-			if to != nil {
-				out = to.wrap(bw)
-			}
-			complete(out)
+			complete(bw)
 			judge()
 		})
 		return
@@ -2502,7 +2488,7 @@ func (c *ApiController) proxyToolRequest(
 		if model.InlinesReasoning(request.Model) {
 			out = stripReasoningBody(out)
 		}
-		c.Bytes(http.StatusOK, out)
+		c.answerBody(out)
 	}
 }
 
@@ -2819,6 +2805,5 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		return
 	}
 
-	c.SetHeader("Content-Type", "application/json")
-	c.Bytes(http.StatusOK, jsonResponse)
+	c.answerBody(jsonResponse)
 }
