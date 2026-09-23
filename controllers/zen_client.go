@@ -259,10 +259,14 @@ const freeID = "free"
 // frontDoor reports that this id is a name this family publishes for the pool — its
 // own branded one, and, for the family that HOLDS the pool, the platform's unbranded
 // one. Such an id is not a model any vendor has: it is a name for a choice.
+//
+// A family whose own catalog publishes its branded free id serves it like any other
+// SKU, with that catalog's rungs, fallbacks and vision, so the id has one free path.
 func (f *modelFamily) frontDoor(model string) bool {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if f.freeName != "" && m == strings.ToLower(f.freeName) {
-		return true
+		_, own := f.lookup(m)
+		return !own
 	}
 	return f == freeFamily() && m == freeID
 }
@@ -272,7 +276,7 @@ func (f *modelFamily) frontDoor(model string) bool {
 // vendor's, whichever vendor happens to answer it.
 func (f *modelFamily) freeNames() []struct{ id, owner string } {
 	var out []struct{ id, owner string }
-	if f.freeName != "" {
+	if f.freeName != "" && f.frontDoor(f.freeName) {
 		out = append(out, struct{ id, owner string }{f.freeName, f.owner})
 	}
 	if f == freeFamily() {

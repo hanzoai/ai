@@ -1413,3 +1413,27 @@ func TestAnUnreachableRouteIsSteppedOver(t *testing.T) {
 		t.Error("an unreachable borrowed route ended the walk; our own route is the one that cannot be withdrawn")
 	}
 }
+
+// A family whose own catalog publishes its free id serves it as a SKU — its catalog's
+// rungs, fallbacks and vision — and lists it once, from its catalog. Without it the
+// id is the platform pool's.
+func TestAFamilyThatPublishesItsFreeIDServesItItself(t *testing.T) {
+	spareFamily(t, "http://vendor.invalid", "free-route")
+	fam := otherFamily(t, "http://enso.invalid")
+	if !fam.frontDoor("enso-free") {
+		t.Fatal("a catalog that does not publish enso-free must leave it to the pool")
+	}
+	fam.byID = map[string]zenModel{"enso-free": {ID: "enso-free"}}
+	fam.ids = []string{"enso-free"}
+	if fam.frontDoor("enso-free") {
+		t.Error("a catalog that publishes enso-free must serve it itself, not the pool")
+	}
+	if !fam.serves("enso-free") {
+		t.Error("the family no longer serves the free id its catalog publishes")
+	}
+	for _, n := range fam.freeNames() {
+		if n.id == "enso-free" {
+			t.Error("enso-free is listed as a pool door while the catalog lists it too")
+		}
+	}
+}
