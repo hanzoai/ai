@@ -210,9 +210,15 @@ func requiresPresentCredential(controllerName string) bool {
 }
 
 // unauthenticated is the 401 a caller with no credential reads. It names the
-// header to send and the page that mints a key, because the caller most likely
-// to meet it is making a first call without one.
-const unauthenticated = "auth:authentication required: send Authorization: Bearer <API key>, created at " + controllers.KeysURL
+// header to send and the page that mints a key on the caller's own brand, because
+// the caller most likely to meet it is making a first call without one.
+func unauthenticated(c *zip.Ctx) string {
+	msg := "auth:authentication required: send Authorization: Bearer <API key>"
+	if keys := controllers.KeysURL(c.Host()); keys != "" {
+		msg += ", created at " + keys
+	}
+	return msg
+}
 
 // hasPresentCredential reports whether the request carries SOME credential — a
 // session user (cookie auth) or a Bearer token. It is a coarse presence check
@@ -331,7 +337,7 @@ func permissionFilter(c *zip.Ctx) error {
 	if requiresSuperAdmin(controllerName) {
 		user := sessionOrBearerUser(c)
 		if user == nil {
-			return denyUnauthorized(c, unauthenticated)
+			return denyUnauthorized(c, unauthenticated(c))
 		}
 		if !util.IsSuperAdmin(user) {
 			return denyForbidden(c, "auth:this operation requires super admin privilege")
@@ -349,7 +355,7 @@ func permissionFilter(c *zip.Ctx) error {
 	// authoritative validation. This is an explicit set, NOT a blanket default,
 	// so health and metrics stay reachable without a Bearer.
 	if requiresPresentCredential(controllerName) && !hasPresentCredential(c) {
-		return denyUnauthorized(c, unauthenticated)
+		return denyUnauthorized(c, unauthenticated(c))
 	}
 
 	disablePreviewMode := conf.DisablePreviewMode()
@@ -371,7 +377,7 @@ func permissionFilter(c *zip.Ctx) error {
 		// opening one is a line in this list — visible, and reviewable as a
 		// decision.
 		if !isAnonymous(controllerName) && !hasPresentCredential(c) {
-			return denyUnauthorized(c, unauthenticated)
+			return denyUnauthorized(c, unauthenticated(c))
 		}
 		return c.Continue()
 	}

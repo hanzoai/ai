@@ -537,17 +537,36 @@ func TestTheNamedOpenEndpointsStayOpen(t *testing.T) {
 // The first call a customer makes is often the one without a key. It is refused
 // 401, and the refusal is the next step: the header to send, the page that mints
 // the key, and the scheme on WWW-Authenticate (RFC 9110 §11.6.1).
+//
+// The page is the one on the console of the brand the caller reached.
 func TestAFirstCallWithoutAKeyIsToldHowToGetOne(t *testing.T) {
-	q := asUser(t, http.MethodPost, "/v1/chat/completions", nil).through(permissionFilter)
-	if q.status() != http.StatusUnauthorized {
-		t.Fatalf("POST /v1/chat/completions with no key = %d, want 401", q.status())
-	}
-	for _, want := range []string{"Authorization: Bearer", controllers.KeysURL} {
-		if !strings.Contains(q.wrote, want) {
-			t.Errorf("401 body %s does not name %q", q.wrote, want)
+	for host, keys := range map[string]string{
+		"api.hanzo.ai":  "https://console.hanzo.ai/api-keys",
+		"api.lux.cloud": "https://console.lux.cloud/api-keys",
+	} {
+		q := toHost(host).through(permissionFilter)
+		if q.status() != http.StatusUnauthorized {
+			t.Fatalf("POST %s/v1/chat/completions with no key = %d, want 401", host, q.status())
+		}
+		for _, want := range []string{"Authorization: Bearer", keys} {
+			if !strings.Contains(q.wrote, want) {
+				t.Errorf("%s: 401 body %s does not name %q", host, q.wrote, want)
+			}
+		}
+		if got := q.head.Get("WWW-Authenticate"); got != "Bearer" {
+			t.Errorf("%s: 401 WWW-Authenticate = %q, want Bearer", host, got)
 		}
 	}
-	if got := q.head.Get("WWW-Authenticate"); got != "Bearer" {
-		t.Errorf("401 WWW-Authenticate = %q, want Bearer", got)
+	// A brand that runs no console names the header and no page.
+	q := toHost("api.pars.network").through(permissionFilter)
+	if q.status() != http.StatusUnauthorized || strings.Contains(q.wrote, "created at") {
+		t.Errorf("api.pars.network: %d %s, want a 401 naming no page", q.status(), q.wrote)
 	}
+}
+
+// toHost is a keyless chat call addressed to host.
+func toHost(host string) probe {
+	p := ask(http.MethodPost, "/v1/chat/completions")
+	p.Fiber().Request().URI().SetHost(host)
+	return p
 }

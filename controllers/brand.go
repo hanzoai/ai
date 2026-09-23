@@ -76,6 +76,9 @@ type brandDef struct {
 	// secretEnv is the env var carrying this brand's client_secret (KMS-synced).
 	// hanzo reuses the existing IAM_CLIENT_SECRET so hanzo is byte-unchanged.
 	secretEnv string
+	// console is the host this brand's console answers on, "" for a brand that
+	// runs none. It mirrors the cloud brand registry's Console.
+	console string
 }
 
 // brandDefs is the ONE brand->IAM registry. Keys are canonical brand IDs. Issuer
@@ -84,9 +87,9 @@ type brandDef struct {
 // for forward-compat; its exchange fails closed until pars-cloud + its secret
 // exist (no fabricated login).
 var brandDefs = map[string]brandDef{
-	"hanzo": {issuer: "https://hanzo.id", clientID: "hanzo-cloud", org: "hanzo", secretEnv: "IAM_CLIENT_SECRET"},
-	"lux":   {issuer: "https://lux.id", clientID: "lux-cloud", org: "lux", secretEnv: "LUX_CLOUD_CLIENT_SECRET"},
-	"zoo":   {issuer: "https://zoolabs.id", clientID: "zoo-cloud", org: "zoo", secretEnv: "ZOO_CLOUD_CLIENT_SECRET"},
+	"hanzo": {issuer: "https://hanzo.id", clientID: "hanzo-cloud", org: "hanzo", secretEnv: "IAM_CLIENT_SECRET", console: "console.hanzo.ai"},
+	"lux":   {issuer: "https://lux.id", clientID: "lux-cloud", org: "lux", secretEnv: "LUX_CLOUD_CLIENT_SECRET", console: "console.lux.cloud"},
+	"zoo":   {issuer: "https://zoolabs.id", clientID: "zoo-cloud", org: "zoo", secretEnv: "ZOO_CLOUD_CLIENT_SECRET", console: "console.zoo.cloud"},
 	"pars":  {issuer: "https://pars.id", clientID: "pars-cloud", org: "pars", secretEnv: "PARS_CLOUD_CLIENT_SECRET"},
 }
 

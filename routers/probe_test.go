@@ -105,6 +105,10 @@ func (p probe) through(f zip.Handler) probe {
 	p.Fiber().Request().Header.VisitAll(func(k, v []byte) {
 		req.Header.Set(string(k), string(v))
 	})
+	// The host too: a filter that answers per brand reads it.
+	if h := p.Fiber().Request().URI().Host(); len(h) > 0 {
+		req.Host = string(h)
+	}
 	if p.Fiber().Request().URI().Scheme() != nil && string(p.Fiber().Request().URI().Scheme()) == "https" {
 		req.Header.Set("X-Forwarded-Proto", "https")
 	}
