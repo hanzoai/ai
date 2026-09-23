@@ -23,6 +23,7 @@ import (
 
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
 )
@@ -136,10 +137,11 @@ func CorsFilter(c *zip.Ctx) error {
 	// 2. Dynamic check via IAM application RedirectUris.
 	ok, err := isOriginAllowed(origin)
 	if err != nil {
-		// If IAM is not configured at all, reject — no more open fallback.
-		return denyForbidden(c, fmt.Sprintf("CORS error: %s, path: %s", err.Error(), c.Path()))
+		// Still a refusal — there is no open fallback — but the reason is ours: an
+		// IAM read that failed, a deployment missing its app name. It goes to the
+		// log, and the caller reads what an unlisted origin reads.
+		log.Warning("cors: origin %s refused, IAM check failed: %v", origin, err)
 	}
-
 	if !ok {
 		return denyForbidden(c, fmt.Sprintf("CORS error: origin [%s] is not allowed, path: %s", origin, c.Path()))
 	}
