@@ -14,7 +14,10 @@
 
 package object
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // The ONE native billing seam. A HOST binary that embeds this module co-resident
 // with the finance ledger (hanzoai/cloud, unified binary) installs these typed hooks
@@ -44,6 +47,9 @@ type UsageEvent struct {
 	Currency string // default "usd"
 	Model    string
 	Provider string
+	// Actor is the member who made the call, "<org>/<name>". A pooled org pays from
+	// one subject; the plan's per-member limits count by this.
+	Actor string
 	// Allowance is the subject whose free-call allowance this call counts against. It
 	// is set only when a model ANSWERED and charged nothing for doing so. Empty means
 	// this call spent no allowance: it spent money, or it reached a vendor and came
@@ -89,25 +95,30 @@ type UsageEvent struct {
 // commerce blip never locks a paying caller out of a SKU they already had.
 type TierReaderFunc func(ctx context.Context, subject, namespace string) (name string, err error)
 
-// RollingCapReaderFunc reports whether the subject has EXCEEDED its plan's rolling
-// AI-spend cap within the trailing window — the Anthropic-style burst limit that
-// resets continuously (usage older than the window falls out of the sum, so there is
-// no fixed reset boundary). The HOST (hanzoai/cloud) implements it: resolve the
-// subject's plan tier → its ai.rolling_cap_usd + ai.rolling_window_hours (canonical
-// @hanzo/plans entitlements) → sum the subject's AI spend over the trailing window
-// from the in-process finance ledger → return over = (windowSpend >= cap). A plan
-// with no cap configured returns over=false.
-//
-// This is a THIRD gate, orthogonal to the two the family SKU gates answer (does the
-// PLAN include this model / may we spend our CASH on a prepaid upstream): it bounds
-// how fast a caller may burn their OWN budget, per plan. It is a subscription-shaped
-// limit, so it FAILS SAFE like the tier gate, not like the funding gate: on ANY
-// uncertainty the host returns (false, err) and the caller here treats a non-nil err
-// as ALLOW — a finance/commerce blip must never 429 a paying caller whose plan and
-// balance already admit the call. The hard money bounds remain the per-request
-// balance gate (below) and the monthly ai.spend_percent ceiling (commerce). nil (the
-// default, standalone ai) → no rolling cap, behavior unchanged.
-type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (over bool, err error)
+// LimitAsk names the priced call a plan's AI limits are asked about.
+type LimitAsk struct {
+	Subject   string // the billing subject the balance gate reads
+	Namespace string // the org whose ledger pays
+	Actor     string // the member making the call, "<org>/<name>"
+	Model     string // the model the call names
+}
+
+// LimitHit is why a priced call is refused: a plan window that is full (session,
+// weekly, weekly_premium, month) and when it resets, or "plan" when no plan covers
+// AI and no bought credit pays, which carries no reset.
+type LimitHit struct {
+	Name     string
+	ResetsAt time.Time
+}
+
+// LimitFunc answers whether a priced call fits inside the caller's plan AI limits.
+// The host (hanzoai/cloud) owns the plans, the windows and the usage they sum. A nil
+// hit leaves the call to the balance gate; a full window refuses with 429
+// usage_cap_exceeded naming it and its reset; "plan" refuses with 402 plan_required
+// and the upgrade link; an error refuses with 503 limits_unavailable, because a
+// limit that cannot be read bounds nothing. It is asked only for priced models, so a free model is
+// never refused by it. nil (standalone ai) means no plan limits.
+type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitHit, error)
 
 // SpentFunc reports whether subject has already used the free calls its plan allows
 // this period, within the org namespace.
@@ -149,11 +160,11 @@ type RollingCapReaderFunc func(ctx context.Context, subject, namespace string) (
 type SpentFunc func(ctx context.Context, subject, namespace string) (spent bool, err error)
 
 var (
-	balanceReader    BalanceReaderFunc
-	usageRecorder    UsageRecorderFunc
-	tierReader       TierReaderFunc
-	rollingCapReader RollingCapReaderFunc
-	spent            SpentFunc
+	balanceReader BalanceReaderFunc
+	usageRecorder UsageRecorderFunc
+	tierReader    TierReaderFunc
+	limits        LimitFunc
+	spent         SpentFunc
 )
 
 // SetBalanceReader installs the host's native balance reader (nil clears it).
@@ -165,8 +176,8 @@ func SetUsageRecorder(f UsageRecorderFunc) { usageRecorder = f }
 // SetTierReader installs the host's native subscription-tier reader (nil clears it).
 func SetTierReader(f TierReaderFunc) { tierReader = f }
 
-// SetRollingCapReader installs the host's native rolling-window cap reader (nil clears it).
-func SetRollingCapReader(f RollingCapReaderFunc) { rollingCapReader = f }
+// SetLimits installs the host's plan AI limits (nil clears them).
+func SetLimits(f LimitFunc) { limits = f }
 
 // SetSpent installs the host's native plan-allowance read (nil clears it).
 func SetSpent(f SpentFunc) { spent = f }
@@ -180,8 +191,8 @@ func UsageRecorder() UsageRecorderFunc { return usageRecorder }
 // TierReader returns the installed native tier reader, or nil when unset (standalone).
 func TierReader() TierReaderFunc { return tierReader }
 
-// RollingCapReader returns the installed native rolling-cap reader, or nil when unset.
-func RollingCapReader() RollingCapReaderFunc { return rollingCapReader }
+// Limits returns the installed plan AI limits, or nil when unset.
+func Limits() LimitFunc { return limits }
 
 // Spent returns the installed native allowance read, or nil when unset.
 func Spent() SpentFunc { return spent }

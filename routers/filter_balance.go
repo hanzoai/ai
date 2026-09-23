@@ -211,7 +211,8 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// Fails closed the same way its twin does: only a model whose price is FOUND and
 	// is zero skips. A body we cannot read, a model we cannot name, or a price we had
 	// to synthesize all leave the gate in force.
-	if m := requestedModel(c); m != "" && controllers.ModelCostsNothing(m, namespace) {
+	model := requestedModel(c)
+	if model != "" && controllers.ModelCostsNothing(model, namespace) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
 		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
 		// period, held by the host. It is the one gate a free caller meets, and the
@@ -240,23 +241,26 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
+	// The plan's AI limits come first for a priced MODEL call: a full window, or a
+	// caller whose plan covers no AI, is refused whatever else is true. Free models
+	// never ask, and a priced call that names no model (crawl, ingest) is the balance
+	// gate's alone. Fails CLOSED: a limit that cannot be read bounds nothing.
+	if limits := object.Limits(); limits != nil && model != "" {
+		hit, err := limits(c.Context(), object.LimitAsk{Subject: subject, Namespace: namespace, Actor: userKey, Model: model})
+		if err != nil {
+			log.Warning("limits: unreadable subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
+			c.SetHeader("Content-Type", "application/json")
+			return c.Bytes(http.StatusServiceUnavailable, []byte(
+				`{"error":{"message":"Unable to read your plan's usage limits right now. Please retry in a moment.","type":"api_error","code":"limits_unavailable"}}`))
+		}
+		if hit != nil {
+			log.Info("limits: %s subject=%s namespace=%s actor=%s path=%s", hit.Name, subject, namespace, userKey, path)
+			return limitReached(c, hit, namespace)
+		}
+	}
+
 	sufficient, deny, balance := balanceGate.checkBalance(c.Host(), subject, namespace, userKey)
 	if sufficient {
-		// Balance covers the call — but a plan also bounds how FAST a caller may burn
-		// its budget: the rolling-window AI-spend cap (Anthropic-style, resets
-		// continuously). This is distinct from insufficient_balance — the caller HAS
-		// money; their plan's trailing-window budget is momentarily spent. Fails OPEN on
-		// any error (see RollingCapReaderFunc): a finance blip must never 429 a paying
-		// caller. Only a positively-computed over-cap denies, as HTTP 429.
-		if reader := object.RollingCapReader(); reader != nil {
-			if over, err := reader(c.Context(), subject, namespace); err == nil && over {
-				log.Info("rolling_cap: window cap exceeded subject=%s namespace=%s path=%s",
-					subject, namespace, path)
-				c.SetHeader("Content-Type", "application/json")
-				return c.Bytes(http.StatusTooManyRequests, []byte(
-					`{"error":{"message":"You've reached your plan's usage limit for the moment. It resets shortly — or upgrade at https://hanzo.ai/pricing for a higher limit.","type":"rate_limit_error","code":"usage_cap_exceeded"}}`))
-			}
-		}
 		return c.Continue()
 	}
 
@@ -267,6 +271,55 @@ func BalanceGateFilter(c *zip.Ctx) error {
 
 	c.SetHeader("Content-Type", "application/json")
 	return c.Bytes(deny.Status, deny.ErrorJSON())
+}
+
+// limitReached writes the 429 for a plan limit: which window, when it resets, and
+// Retry-After in seconds, so a client can wait or show the reset time.
+func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
+	body := struct {
+		Error struct {
+			Message    string `json:"message"`
+			Type       string `json:"type"`
+			Code       string `json:"code"`
+			Limit      string `json:"limit,omitempty"`
+			ResetsAt   string `json:"resets_at,omitempty"`
+			UpgradeURL string `json:"upgrade_url,omitempty"`
+		} `json:"error"`
+	}{}
+	if hit.Name == "plan" {
+		body.Error.UpgradeURL = object.PayURL(c.Host(), org) + "/cart?plan=dev"
+		body.Error.Message = "Paid models need a plan. Free models keep working. Pick a plan at " + body.Error.UpgradeURL
+		body.Error.Type = "billing_error"
+		body.Error.Code = "plan_required"
+		raw, _ := json.Marshal(body)
+		c.SetHeader("Content-Type", "application/json")
+		return c.Bytes(http.StatusPaymentRequired, raw)
+	}
+	reset := hit.ResetsAt.UTC()
+	body.Error.Message = fmt.Sprintf("You've reached your plan's %s AI limit. It resets at %s, or add credits at %s to keep going now.",
+		limitNoun(hit.Name), reset.Format(time.RFC3339), object.PayURL(c.Host(), org))
+	body.Error.Type = "rate_limit_error"
+	body.Error.Code = "usage_cap_exceeded"
+	body.Error.Limit = hit.Name
+	body.Error.ResetsAt = reset.Format(time.RFC3339)
+	raw, _ := json.Marshal(body)
+	if wait := int64(time.Until(reset).Seconds()); wait > 0 {
+		c.SetHeader("Retry-After", fmt.Sprint(wait))
+	}
+	c.SetHeader("Content-Type", "application/json")
+	return c.Bytes(http.StatusTooManyRequests, raw)
+}
+
+// limitNoun is how a window is named to a person.
+func limitNoun(name string) string {
+	switch name {
+	case "weekly_premium":
+		return "weekly premium-model"
+	case "month":
+		return "monthly"
+	default:
+		return name
+	}
 }
 
 // isReadMethod reports whether an HTTP method only READS — it lists or fetches a

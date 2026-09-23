@@ -1260,6 +1260,7 @@ func recordUsage(record *usageRecord) {
 			Currency:  "usd",
 			Model:     record.Model,
 			Provider:  record.Provider,
+			Actor:     record.User,
 			Allowance: free,
 			RequestID: record.RequestID,
 		}); err != nil {
