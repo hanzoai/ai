@@ -15,6 +15,7 @@
 package routers
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"time"
@@ -55,6 +56,13 @@ func shape(t reflect.Type, named map[string]reflect.Type) map[string]any {
 	// the fields would publish wall/ext/loc, which no client has ever seen.
 	if t == reflect.TypeFor[time.Time]() {
 		return map[string]any{"type": "string", "format": "date-time"}
+	}
+
+	// json.RawMessage is JSON the handler keeps as written — a string, an array,
+	// an object. Its kind is a byte slice, which the case below would publish as
+	// base64, a shape no caller sends.
+	if t == reflect.TypeFor[json.RawMessage]() {
+		return map[string]any{}
 	}
 
 	switch t.Kind() {
@@ -295,6 +303,16 @@ func answer(a controllers.Answer, named map[string]reflect.Type) map[string]any 
 		},
 		"401": map[string]any{"description": "No credential, or one this service does not accept."},
 		"403": map[string]any{"description": "A valid credential that may not do this."},
+	}
+}
+
+// take is the Request Body Object for a hand-written route, built from the Go
+// value its handler decodes — the request half of [answer], with the same
+// sharing: a named struct is a $ref.
+func take(v any, named map[string]reflect.Type) map[string]any {
+	return map[string]any{
+		"required": true,
+		"content":  map[string]any{"application/json": map[string]any{"schema": ref(reflect.TypeOf(v), named)}},
 	}
 }
 

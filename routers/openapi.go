@@ -56,11 +56,15 @@ func Document(app *zip.App) map[string]any {
 	// without its components.
 	named := map[string]reflect.Type{}
 	answered := map[string]map[string]any{}
+	taken := map[string]map[string]any{}
 	for _, w := range wired {
 		path := openAPIPath(w.Path)
 		said[w.Method+" "+path] = Doc{Summary: w.Summary, Description: w.Description}
 		if a, ok := controllers.Answers()[w.Handler]; ok {
 			answered[w.Method+" "+path] = answer(a, named)
+		}
+		if b, ok := controllers.Takes()[w.Handler]; ok {
+			taken[w.Method+" "+path] = take(b, named)
 		}
 	}
 
@@ -104,6 +108,17 @@ func Document(app *zip.App) map[string]any {
 					}
 					if r != nil {
 						o["responses"] = r
+					}
+				}
+				// And the body it reads, on the same terms: the generated half
+				// speaks for itself, a hand-written route through the takes table.
+				if _, told := o["requestBody"]; !told {
+					b, ok := taken[verb+" "+path]
+					if !ok {
+						b = taken["* "+path]
+					}
+					if b != nil {
+						o["requestBody"] = b
 					}
 				}
 				// Named HERE because this is the one place that knows both the verb
