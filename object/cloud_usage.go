@@ -233,6 +233,10 @@ type CloudUsageParams struct {
 	Interval   types.Interval // time-series bucket width
 	Org        string         // organization slug; ignored when AllOrgs is true
 	AllOrgs    bool           // super-admin all-orgs view (no organization filter)
+	// User, when set, narrows the org's rows to one member's own ("org/name").
+	// A member who is not an admin of the org reads only their own usage; many
+	// people share a signup org, and its aggregate is not any one of theirs.
+	User string
 	// Admin selects which of the two lenses the ONE ledger row is read through.
 	// It is not a second permission check: the controller sets it from the SAME
 	// evaluation of the SAME predicate (util.IsSuperAdmin + own brand) that already
@@ -484,6 +488,10 @@ func (p CloudUsageParams) whereClause(start, end time.Time) (string, []any) {
 	if !p.AllOrgs {
 		clause += " AND organization = ?"
 		args = append(args, p.Org)
+	}
+	if p.User != "" {
+		clause += " AND user_id = ?"
+		args = append(args, p.User)
 	}
 	return clause, args
 }

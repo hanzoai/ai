@@ -82,6 +82,14 @@ func (c *ApiController) GetCloudUsages() {
 		return
 	}
 
+	// A member who is not an admin of their org sees only their own rows: an
+	// org's rows carry every member's spend, request ids and user ids, and a
+	// signup org holds many unrelated people.
+	member := ""
+	if !allOrgs && !admin && !util.IsAdmin(user) {
+		member = user.Owner + "/" + user.Name
+	}
+
 	params := object.CloudUsageParams{
 		RangeLabel:     cloudUsageRangeLabel(c.Input().Get("range")),
 		Start:          w.Start,
@@ -89,6 +97,7 @@ func (c *ApiController) GetCloudUsages() {
 		Interval:       w.Interval,
 		Org:            org,
 		AllOrgs:        allOrgs,
+		User:           member,
 		Admin:          admin,
 		TopModels:      cloudUsageIntParam(c.Input().Get("topModels"), 6, 1, 50),
 		ActivityType:   strings.ToLower(strings.TrimSpace(c.Input().Get("activityType"))),

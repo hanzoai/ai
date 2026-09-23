@@ -311,3 +311,23 @@ func TestCloudUsageCoercion(t *testing.T) {
 		t.Errorf("cuTime rfc3339 = %v", got)
 	}
 }
+
+func TestCloudUsageWhereClauseMember(t *testing.T) {
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	org := CloudUsageParams{Org: "hanzo"}
+	clause, args := org.whereClause(start, end)
+	if strings.Contains(clause, "user_id") || len(args) != 3 {
+		t.Fatalf("org scope: got %q %v, want no member filter and 3 args", clause, args)
+	}
+
+	member := CloudUsageParams{Org: "hanzo", User: "hanzo/alice"}
+	clause, args = member.whereClause(start, end)
+	if !strings.HasSuffix(clause, " AND organization = ? AND user_id = ?") {
+		t.Fatalf("member scope clause = %q", clause)
+	}
+	if len(args) != 4 || args[2] != "hanzo" || args[3] != "hanzo/alice" {
+		t.Fatalf("member scope args = %v, want org then member bound last", args)
+	}
+}
