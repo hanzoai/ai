@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/hanzoai/account"
@@ -89,10 +90,31 @@ func (c *Client) ParseJwtToken(token string) (*Claims, error) {
 	if t != nil {
 		if claims, ok := t.Claims.(*Claims); ok && t.Valid {
 			claims.typeMachine()
+			claims.homeOrg()
 			return claims, nil
 		}
 	}
 	return nil, err
+}
+
+// homeOrg sets User.Owner to the account's home org: the first entry of the
+// signed membership set, which IAM seeds with the user's own org
+// (store.MemberOrgRefs). The `owner` claim names the org of the APPLICATION the
+// token was minted for (iam oidc Sign), so a customer whose account lives in
+// org "acme" and signs in through hanzo-app carries owner "hanzo". Scope, the
+// balance gate, the debit and the signed billing_account claim all key on
+// User.Owner, so it names the account — the same reading hanzoai/cloud makes
+// (authz.Claims.Home).
+//
+// A machine token carries no membership set: the application is the
+// principal and `owner` is already its own org.
+func (c *Claims) homeOrg() {
+	if c == nil || len(c.Orgs) == 0 {
+		return
+	}
+	if home := strings.TrimSpace(c.Orgs[0].Org); home != "" {
+		c.User.Owner = home
+	}
 }
 
 // Machine is the User.Type a program carries — the word IAM's client_credentials
