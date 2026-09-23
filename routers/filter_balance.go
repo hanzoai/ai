@@ -521,11 +521,25 @@ func billingKey(c *zip.Ctx) (subject, namespace, userKey string, held bool) {
 		return "", "", "", true
 	}
 
-	// Source 1: session user from AutoSigninFilter. A cookie session carries no
-	// signed `orgs` claim, so it can never switch org — it always bills its home.
-	user := GetSessionUser(c)
-	if user != nil && user.Owner != "" {
-		return user.PayerSubject(""), user.Owner, user.Owner + "/" + user.Name, true
+	// The org the caller asked to act in. It is honored only where a signed `orgs`
+	// claim proves membership, and it scopes the cache: the same token resolves to
+	// a different wallet in a different org.
+	requested := strings.TrimSpace(c.Header("X-Org-Id"))
+
+	// Source 1: the signed token this request carries, as a bearer or as the
+	// sign-in cookie (GetSessionClaims reads both, and they are the same token). Its
+	// `orgs` claim decides an org switch by the two rules the controller's debit
+	// applies (account.EffectiveOrg, then account.LedgerOrg), so the gate reads the
+	// wallet and the plan of the org the caller is working in. An org the claim does
+	// not cover is refused here, not resolved to the home wallet: "" is this
+	// function's "no billing subject", which the controller refuses.
+	if claims := (&controllers.ApiController{Ctx: c}).GetSessionClaims(); claims != nil && claims.User.Owner != "" {
+		effective, orgErr := account.EffectiveOrg(claims.User.Owner, claims.Orgs, requested)
+		if orgErr != nil {
+			return "", "", "", true
+		}
+		ledger := account.LedgerOrg(effective, claims.User.Owner, util.IsSuperAdmin(&claims.User))
+		return claims.User.PayerSubject(ledger), ledger, claims.User.Owner + "/" + claims.User.Name, true
 	}
 
 	// Source 2/3: the key the caller presented, on WHICHEVER transport this estate
@@ -539,13 +553,6 @@ func billingKey(c *zip.Ctx) (subject, namespace, userKey string, held bool) {
 		return "", "", "", true
 	}
 
-	// The org the caller asked to act in. Unvalidated here — only the JWT branch
-	// below, which holds the signed membership set, may honor it. It scopes the
-	// cache because the SAME token resolves to a DIFFERENT wallet in a different
-	// org: keying the cache on the token alone would serve one org's billing
-	// identity to a request made in another.
-	requested := strings.TrimSpace(c.Header("X-Org-Id"))
-
 	// A publishable key identifies an org for ingest and authenticates nobody, so
 	// there is no principal here to bill. Skip it in the router gate.
 	if strings.HasPrefix(token, "pk-") {
@@ -557,51 +564,10 @@ func billingKey(c *zip.Ctx) (subject, namespace, userKey string, held bool) {
 		return s, ns, uk, true
 	}
 
-	// JWT token: parse locally (cheap, no network). Signature + iss/aud
-	// validated (R3) — a foreign-aud/wrong-issuer token resolves no billing
-	// subject here, so it is not billed and the controller rejects it (401).
+	// A JWT that did not verify above names nobody: signature and iss/aud are
+	// checked by the one parse, so a foreign or forged token bills no subject and the
+	// controller rejects it.
 	if isJwtTokenLike(token) {
-		claims, err := object.ParseAndValidateJWT(token)
-		if err != nil {
-			return "", "", "", true
-		}
-		if claims.User.Owner != "" {
-			// This is the ONE auth path that can honor an org switch, because it is
-			// the only one holding the signed `orgs` claim that proves membership. The
-			// gate must read the wallet the controller's debit will land on, so it
-			// resolves the ledger by the same two rules (account.EffectiveOrg, then
-			// account.LedgerOrg) the controller applies — check one balance and drain
-			// another and a funded org 402s while an unfunded one runs free.
-			// An org the signed claim does not cover is REFUSED here, not resolved
-			// to the caller's home wallet. Falling back would make this gate read a
-			// balance nobody selected and then let the controller debit it — the
-			// gate and the debit would agree, and both would be wrong. "" is this
-			// function's existing "no billing subject", which the controller
-			// rejects rather than serving free.
-			effective, orgErr := account.EffectiveOrg(claims.User.Owner, claims.Orgs, requested)
-			if orgErr != nil {
-				return "", "", "", true
-			}
-			ledger := account.LedgerOrg(
-				effective,
-				claims.User.Owner,
-				util.IsSuperAdmin(&claims.User),
-			)
-			// The token NAMES its payer: IAM signs `billing_account` from the real
-			// grant context, so the gate reads who pays instead of inferring it from
-			// User.Type — a field the user can set on themselves. Machine stays as the
-			// fallback for tokens minted before the claim shipped; when the claim is
-			// present Payer ignores it, so a forged Type can no longer point this gate
-			// at the signup org's pooled balance. A claim naming the home org is
-			// discarded on a switched request (Payer honors it only within the
-			// credential's own org), which is right: the selected org's wallet pays.
-			subject = claims.User.PayerSubject(ledger)
-			// userKey stays the caller's IDENTITY ("<home>/<name>"), never the ledger:
-			// it keys per-user exemption matching, not money.
-			userKey = claims.User.Owner + "/" + claims.User.Name
-			balanceGate.setUserKeyCache(token, requested, subject, ledger, userKey)
-			return subject, ledger, userKey, true
-		}
 		return "", "", "", true
 	}
 

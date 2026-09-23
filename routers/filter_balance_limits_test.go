@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/hanzoai/ai/internal/authtest"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -128,5 +130,63 @@ func TestPlanLimitsAreAskedOnlyForAModel(t *testing.T) {
 	p := ask(http.MethodPost, "/v1/crawl").with("Authorization", "Bearer tok").body([]byte(`{"url":"https://example.com"}`)).through(BalanceGateFilter)
 	if asked != 0 || p.status() == http.StatusPaymentRequired {
 		t.Fatalf("a call naming no model asked the plan limits %d time(s), status %d", asked, p.status())
+	}
+}
+
+// The gate reads the org the caller is working in: X-Org-Id when the signed `orgs`
+// claim lists it, the home org (orgs[0]) when the header is absent, and nobody when
+// it names an org the claim does not list. The plan limits are asked about exactly
+// that org, which is how a member of a paid team org is covered there and refused
+// in a free home org.
+func TestTheGateReadsTheOrgTheCallerIsWorkingIn(t *testing.T) {
+	bg := newTestGate("http://unused", "", balanceCacheTTL)
+	bg.ledger.SetBalance("webby-ai", 100000)
+	bg.ledger.SetBalance("joshuafl369", 100000)
+	prev := balanceGate
+	balanceGate = bg
+	t.Cleanup(func() { balanceGate = prev })
+	t.Cleanup(func() { object.SetLimits(nil) })
+
+	key := authtest.Signing(t)
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"owner": "hanzo", "name": "joshuafl369", "billing_account": "org:joshuafl369",
+		"iss": "https://hanzo.id", "aud": "hanzo-app",
+		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(),
+		"orgs": []map[string]string{{"org": "joshuafl369", "role": "admin"}, {"org": "webby-ai", "role": "owner"}},
+	}).SignedString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var asked []object.LimitAsk
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitHit, error) {
+		asked = append(asked, q)
+		if q.Namespace == "webby-ai" {
+			return nil, nil // the paid team org covers the call
+		}
+		return &object.LimitHit{Name: "plan"}, nil // the free home org does not
+	})
+	post := func(org string) int {
+		p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer "+tok)
+		if org != "" {
+			p = p.with("X-Org-Id", org)
+		}
+		return p.body([]byte(`{"model":"vendor/priced","messages":[]}`)).through(BalanceGateFilter).status()
+	}
+
+	if code := post("webby-ai"); code == http.StatusPaymentRequired || code == http.StatusTooManyRequests {
+		t.Fatalf("working in the paid team org: %d, want admitted", code)
+	}
+	if code := post(""); code != http.StatusPaymentRequired {
+		t.Fatalf("working in the free home org: %d, want 402 plan_required", code)
+	}
+	if len(asked) != 2 || asked[0].Namespace != "webby-ai" || asked[0].Subject != "webby-ai" ||
+		asked[1].Namespace != "joshuafl369" || asked[1].Actor != "joshuafl369/joshuafl369" {
+		t.Fatalf("limits asked %+v", asked)
+	}
+	asked = nil
+	post("acme") // an org the claim does not list
+	if len(asked) != 0 {
+		t.Fatalf("a non-member X-Org-Id reached the plan limits: %+v", asked)
 	}
 }
