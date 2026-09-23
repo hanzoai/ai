@@ -1238,18 +1238,13 @@ func TestBillingReadsTheSnapshotAndNeverTheVendor(t *testing.T) {
 	}
 }
 
-// A deny-terms route falls onto our OWN compute, and onto nothing borrowed.
+// A priced route whose vendor cannot serve is refused, and nothing answers in its
+// place: not a borrowed free route, which keeps what it carried, and not our own
+// compute, which is a different model than the one the caller is paying for.
 //
-// The floor exists because a borrowed free route is free BECAUSE the vendor keeps
-// what it carried, so answering a paid `deny` request with one would trade away the
-// term the customer bought. That reasoning is about the vendor, not about falling
-// back: on our own compute there is nobody to keep anything, so the substitution
-// costs the customer nothing they paid for.
-//
-// Both routes answer here. A borrowed one being passed over is therefore a CHOICE
-// and not a route that happened to be unavailable — which is the only way to tell
-// the floor is still standing rather than merely unexercised.
-func TestADenyRouteFallsOntoOurOwnComputeAndNothingBorrowed(t *testing.T) {
+// Both routes answer here, so neither being asked is the policy and not an
+// unavailable route.
+func TestADenyRouteIsRefusedNotSubstituted(t *testing.T) {
 	cooled.forget()
 	const free = "vendor/big:free"
 	const paid = "vendor/paid-a"
@@ -1289,9 +1284,8 @@ func TestADenyRouteFallsOntoOurOwnComputeAndNothingBorrowed(t *testing.T) {
 	c.Fiber().Request().SetBody(body)
 	c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, "acme", nil, false, nil, time.Now())
 
-	if asked[engineModel] == 0 {
-		t.Errorf("our own compute was never asked: %v — a %q route has nowhere to fall that keeps its terms",
-			asked, collectionDeny)
+	if asked[engineModel] != 0 {
+		t.Errorf("our own compute answered a %q route: %v", collectionDeny, asked)
 	}
 	if asked[free] != 0 {
 		t.Errorf("a borrowed free route answered a %q route: %v", collectionDeny, asked)
@@ -1317,9 +1311,6 @@ func TestADenyRouteWithNoComputeOfOurOwnStillRefuses(t *testing.T) {
 	restore(t, engineFam)
 	engineFam.urlKey = "TEST_ENGINE_URL_UNSET"
 	engineFam.providerFn = nil
-	if len(ownRoutes()) != 0 {
-		t.Fatalf("ownRoutes()=%v, want none — this case is about having no compute of our own", ownRoutes())
-	}
 
 	if _, _ = fake.pipe(t, fam, paid); len(fake.asked) != 1 {
 		t.Errorf("asked=%v — a %q route was offered a spare with no route of our own to fall to",

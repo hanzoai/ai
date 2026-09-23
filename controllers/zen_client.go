@@ -343,44 +343,14 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 	if err == nil || !down(err, strings.ToLower(err.Error())) {
 		return nil
 	}
-	// THE FLOOR. A priced route is bought under `deny` — the vendor keeps nothing
-	// of what it carried — and a BORROWED free route is free BECAUSE the vendor
-	// keeps it. Answering one with the other would move a customer who chose and
-	// paid for the first term onto the second, and the whole notice of it is a
-	// header and an id they would have to remember their own request to compare
-	// against. The terms are not ours to trade for an answer.
-	//
-	// What the floor bounds is WHERE such a request may fall, not whether it may.
-	// Our own compute has no vendor to keep anything, so falling onto it trades
-	// nothing away and the protection the customer bought still holds. Where this
-	// deployment serves nothing itself that list is empty, and the refusal stands
-	// exactly as it did before.
+	// A priced route is answered by the model the caller paid for, or refused as
+	// supply. Any free route in its place — a vendor's, which keeps what it
+	// carried, or our own compute — is a different model standing in for the one
+	// they are paying for.
 	if word, _ := fam.collection(sku); word == collectionDeny {
-		return ownRoutes()
+		return nil
 	}
 	return freeRoutes()
-}
-
-// ownRoutes are the free routes this deployment serves ITSELF — the subset a request
-// may fall onto without trading away the terms it was bought under.
-//
-// A borrowed free route is free BECAUSE the vendor keeps what it carried, which is
-// why a priced route bought under `deny` cannot be answered by one. There is no
-// vendor on our own compute, so there is nobody to keep anything and nothing to
-// trade: the customer's terms survive the substitution. It is the same pool, read
-// for the one property that makes a route safe to fall onto here, so a route added
-// there is considered here too.
-//
-// Empty when we serve nothing ourselves, and then a deny-terms refusal stands as it
-// always did.
-func ownRoutes() []spare {
-	var out []spare
-	for _, s := range freeRoutes() {
-		if s.fam == engineFam {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // inPool reports that a route is one the pool serves, whichever family carries it.

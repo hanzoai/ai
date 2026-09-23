@@ -4,6 +4,7 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -87,25 +88,18 @@ func TestFallbackNamesWhereARefusalMayGo(t *testing.T) {
 		}
 	})
 
-	t.Run("a deny route moves onto our own compute and nothing borrowed", func(t *testing.T) {
-		stage(t, true)
-		fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "v/paid")
-		if word, stated := fam.collection("v/paid"); !stated || word != collectionDeny {
-			t.Fatalf("v/paid is bought under (%q, %v), want %q", word, stated, collectionDeny)
-		}
-		got := fallback(fam, "v/paid", spent, nil)
-		if len(got) != 1 || got[0].fam != engineFam {
-			t.Fatalf("routes=%v, want our own compute alone", ids(got))
-		}
-	})
-
-	t.Run("a deny route with no compute of our own stands", func(t *testing.T) {
-		stage(t, false)
-		fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "v/paid")
-		if got := fallback(fam, "v/paid", spent, nil); len(got) != 0 {
-			t.Errorf("routes=%v, want none — there is nowhere it may go that keeps its terms", ids(got))
-		}
-	})
+	for _, ourOwn := range []bool{true, false} {
+		t.Run(fmt.Sprintf("a deny route stands (compute of our own: %v)", ourOwn), func(t *testing.T) {
+			stage(t, ourOwn)
+			fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "v/paid")
+			if word, stated := fam.collection("v/paid"); !stated || word != collectionDeny {
+				t.Fatalf("v/paid is bought under (%q, %v), want %q", word, stated, collectionDeny)
+			}
+			if got := fallback(fam, "v/paid", spent, nil); len(got) != 0 {
+				t.Errorf("routes=%v, want none — a priced route is its own model or a supply refusal", ids(got))
+			}
+		})
+	}
 
 	t.Run("a refusal that is not the vendor's stands", func(t *testing.T) {
 		stage(t, true)
