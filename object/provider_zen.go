@@ -15,6 +15,7 @@
 package object
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -52,21 +53,16 @@ func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 	// environment keeps working, because absence in the store falls through.
 	key := strings.TrimSpace(resolveSecretName(keyKey))
 
-	// The admin row wins where it speaks. getProvider is the direct store read,
-	// NOT GetModelProviderByName — which resolves families through here and would
-	// recurse. The store may not exist yet: this runs during boot and in tests, so
-	// an absent adapter falls through to configuration rather than panicking.
-	if adapter != nil && adapter.db != nil {
-		if row, err := getProvider("admin", name); err == nil && row != nil && row.Name == name {
-			if row.Category == "Model" && row.State != "" && row.State != "Active" {
-				return nil // disabled from the console: the family serves nothing
-			}
-			if u := strings.TrimRight(strings.TrimSpace(row.ProviderUrl), "/"); u != "" {
-				base = u
-			}
-			if s := strings.TrimSpace(row.ClientSecret); s != "" {
-				key = s
-			}
+	// The admin row wins where it speaks.
+	if row := familyRow(name); row != nil {
+		if row.Category == "Model" && row.State != "" && row.State != "Active" {
+			return nil // disabled from the console: the family serves nothing
+		}
+		if u := strings.TrimRight(strings.TrimSpace(row.ProviderUrl), "/"); u != "" {
+			base = u
+		}
+		if s := strings.TrimSpace(row.ClientSecret); s != "" {
+			key = s
 		}
 	}
 
@@ -98,6 +94,45 @@ func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 		return nil
 	}
 	return p
+}
+
+// familyRow is the admin-owned row for a family, or nil when there is none.
+// getProvider is the direct store read, NOT GetModelProviderByName — which
+// resolves families through familyProvider and would recurse. The store may not
+// exist yet (boot, tests), and then there is no row.
+func familyRow(name string) *Provider {
+	if adapter == nil || adapter.db == nil {
+		return nil
+	}
+	row, err := getProvider("admin", name)
+	if err != nil || row == nil || row.Name != name {
+		return nil
+	}
+	return row
+}
+
+// OpenRouterKeys names the OpenRouter credentials in the order a request tries
+// them. Each is a separate account; the first is the one kept funded.
+var OpenRouterKeys = []string{"OPENROUTER_API_KEY", "OPENROUTER_API_KEY_2", "OPENROUTER_API_KEY_3"}
+
+// FamilyKeys returns the credentials a family's requests try, in order, each
+// resolved the way familyProvider resolves its one key (resolveSecretName).
+// A name with no value is skipped and a value repeated under a second name is
+// tried once. It returns nil when the family's admin row supplies the key:
+// that key is then the only one, carried on the provider as before.
+func FamilyKeys(family string, names []string) []string {
+	if row := familyRow(family); row != nil && strings.TrimSpace(row.ClientSecret) != "" {
+		return nil
+	}
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		v := strings.TrimSpace(resolveSecretName(n))
+		if v == "" || slices.Contains(out, v) {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 // familyProviderFns is the ONE list of model families known to provider

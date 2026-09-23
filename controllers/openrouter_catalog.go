@@ -63,6 +63,7 @@ var openrouterFam = &modelFamily{
 	owner:      "openrouter",
 	urlKey:     "OPENROUTER_URL",
 	keyKey:     "OPENROUTER_API_KEY",
+	keyNames:   object.OpenRouterKeys,
 	providerFn: object.OpenRouterProvider,
 	decode:     openrouterCatalog,
 	terms:      openrouterTerms,

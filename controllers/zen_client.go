@@ -73,6 +73,7 @@ type modelFamily struct {
 	owner      string                  // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
 	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
 	keyKey     string                  // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
+	keyNames   []string                // the vendor accounts a request tries in order (family_keys.go); nil = the provider's one key
 	providerFn func() *object.Provider // the virtual provider ai forwards through
 	// windows is the served context window ai guarantees for a DISCOVERED SKU,
 	// keyed by SKU id — a flagship reports its real 1M window even when a given
@@ -1197,7 +1198,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// transport needs to replay a body across a redirect or an HTTP/2 refusal.
 		// Setting the body by hand without it silently drops that.
 		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
-		return zenPipeClient.Do(r)
+		return f.send(r, p, f.free(s))
 	}
 
 	send := func(s string) (*http.Response, error) { return dispatch(fam, s) }
