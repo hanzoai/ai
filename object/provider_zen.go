@@ -51,7 +51,7 @@ func familyProvider(name, typ, urlKey, keyKey string) *Provider {
 	// and leaves no record of who read it. Sealing the key in KMS now moves it out
 	// of the environment without any further change here; leaving it in the
 	// environment keeps working, because absence in the store falls through.
-	key := strings.TrimSpace(resolveSecretName(keyKey))
+	key := strings.TrimSpace(resolveKey(keyKey))
 
 	// The admin row wins where it speaks.
 	if row := familyRow(name); row != nil {
@@ -116,7 +116,7 @@ func familyRow(name string) *Provider {
 var OpenRouterKeys = []string{"OPENROUTER_API_KEY", "OPENROUTER_API_KEY_2", "OPENROUTER_API_KEY_3"}
 
 // FamilyKeys returns the credentials a family's requests try, in order, each
-// resolved the way familyProvider resolves its one key (resolveSecretName).
+// resolved the way familyProvider resolves its one key (resolveKey).
 // A name with no value is skipped and a value repeated under a second name is
 // tried once. It returns nil when the family's admin row supplies the key:
 // that key is then the only one, carried on the provider as before.
@@ -126,7 +126,7 @@ func FamilyKeys(family string, names []string) []string {
 	}
 	out := make([]string, 0, len(names))
 	for _, n := range names {
-		v := strings.TrimSpace(resolveSecretName(n))
+		v := strings.TrimSpace(resolveKey(n))
 		if v == "" || slices.Contains(out, v) {
 			continue
 		}

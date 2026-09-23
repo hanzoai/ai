@@ -240,6 +240,29 @@ func resolveSecretName(name string) string {
 	return conf.GetConfigString(name)
 }
 
+// ProviderKeysPath is the configuration key naming the KMS path provider keys
+// are read from, as a ref prefix: "orgs/hanzo/ai@prod" reads NAME at
+// orgs/hanzo/ai/NAME@prod — the record a KMSSecret with projectSlug hanzo,
+// envSlug prod and secretsPath /ai syncs to a namespace, so a deployment and the
+// services it fronts read one copy of each key.
+const ProviderKeysPath = "PROVIDER_KEYS_PATH"
+
+// resolveKey returns a provider key by NAME: from the KMS path the deployment
+// names (ProviderKeysPath) when it holds one, else as resolveSecretName does.
+func resolveKey(name string) string {
+	if at := strings.TrimSpace(conf.GetConfigString(ProviderKeysPath)); at != "" {
+		path, env, _ := strings.Cut(at, "@")
+		ref := strings.Trim(path, "/") + "/" + name
+		if env != "" {
+			ref += "@" + env
+		}
+		if v, err := kmsGet(ref); err == nil && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return resolveSecretName(name)
+}
+
 // ResolveProviderSecret resolves "kms://NAME" references on a provider record
 // in place. A non-reference value is left exactly as it is (an operator may set
 // a key directly on the admin row; that is a deliberate, visible choice and not

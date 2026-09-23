@@ -292,3 +292,24 @@ func TestKmsGet_CachesReads(t *testing.T) {
 		t.Errorf("store reads = %d, want 1 (cached)", fs.gets)
 	}
 }
+
+// TestProviderKeysReadTheNamedPath: with PROVIDER_KEYS_PATH set, a provider key
+// is read from that KMS path first — the record the kms-operator syncs to the
+// family services — and a name the path does not hold falls back to the store's
+// bare name and then the environment.
+func TestProviderKeysReadTheNamedPath(t *testing.T) {
+	bind(t, &fakeStore{vals: map[string]string{
+		"orgs/hanzo/ai/OPENROUTER_API_KEY@prod":   "k-path",
+		"orgs/hanzo/ai/OPENROUTER_API_KEY_3@prod": "k-path-3",
+		"OPENROUTER_API_KEY":                      "k-bare",
+	}})
+	t.Setenv("OPENROUTER_API_KEY_2", "k-env-2")
+	t.Setenv(ProviderKeysPath, "orgs/hanzo/ai@prod")
+	if got := FamilyKeys("openrouter", OpenRouterKeys); strings.Join(got, ",") != "k-path,k-env-2,k-path-3" {
+		t.Fatalf("keys = %v, want [k-path k-env-2 k-path-3]", got)
+	}
+	t.Setenv(ProviderKeysPath, "")
+	if got := resolveKey("OPENROUTER_API_KEY"); got != "k-bare" {
+		t.Fatalf("unset path: key = %q, want the bare name's k-bare", got)
+	}
+}
