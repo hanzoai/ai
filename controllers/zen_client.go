@@ -488,8 +488,8 @@ func (t zenTier) cacheRate() decimal.Decimal {
 
 // tokens is one answer's usage as it is billed: prompt tokens read fresh (a cache
 // write among them), prompt tokens served from the upstream's cache, and completion
-// tokens.
-type tokens struct{ fresh, cached, completion int }
+// tokens — of which reasoning is the part the model spent thinking.
+type tokens struct{ fresh, cached, completion, reasoning int }
 
 // prompt is every prompt token, fresh or cached.
 func (t tokens) prompt() int { return t.fresh + t.cached }
@@ -1516,6 +1516,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if served := resp.Header.Get(servedHeader); served != "" {
 		c.SetHeader(servedHeader, served)
 	}
+	// The rest of what the family said about this answer is for our records only:
+	// the vendor and the failed arms never reach the client.
+	sv := servingOf(resp.Header)
 	if word, stated := servingFamily(sku).collection(sku); stated {
 		c.SetHeader(headerCollection, word)
 	}
@@ -1546,14 +1549,20 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// at all, which is a compile-time property rather than a rule to remember.
 	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context()}
 
-	settle := func(t tokens, served, respID string) {
+	settle := func(t tokens, served, respID string, first time.Time) {
 		if mk.id != "" {
 			respID = mk.id
 		}
 		if t.prompt() == 0 {
 			t.fresh = coarseTokenEstimate(rawBody)
 		}
-		cents := recordFamilyUsage(w, fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, start, hold, "success", "")
+		if sv.arm != "" {
+			served = sv.arm
+		}
+		if !first.IsZero() {
+			sv.first = first.Sub(start)
+		}
+		cents := recordFamilyUsage(w, fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, hold, "success", "")
 		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, cents, start)
 	}
 
@@ -1590,6 +1599,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// client, so this is still movable.
 		return refused(rErr)
 	}
+	// A buffered answer's first token arrives with the rest of it.
+	read := time.Now()
 	var t tokens
 	sniffZenUsage(b, &t)
 	ct := resp.Header.Get("Content-Type")
@@ -1598,20 +1609,40 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	}
 	c.SetHeader("Content-Type", ct)
 	c.answerBody(mk.stamp(b))
-	settle(t, sniffZenModel(b), sniffZenId(b))
+	settle(t, sniffZenModel(b), sniffZenId(b), read)
 	return done()
 }
 
 // servedHeader names the arm that answered, set by the family and relayed as is.
 const servedHeader = "X-Hanzo-Served"
 
+// The vendor that ran the arm and the arms that failed before it, set by a family
+// for the gateway fronting it. Read into the usage record, never relayed.
+const (
+	providerHeader = "X-Hanzo-Provider"
+	failoverHeader = "X-Hanzo-Failover"
+)
+
+// serving is what a family said about an answer beyond its body: the arm that
+// wrote it, the vendor that ran that arm, the arms that failed first, and the
+// time to its first token.
+type serving struct {
+	arm, vendor, failover string
+	first                 time.Duration
+}
+
+// servingOf reads a family response's headers into a serving.
+func servingOf(h http.Header) serving {
+	return serving{arm: h.Get(servedHeader), vendor: h.Get(providerHeader), failover: h.Get(failoverHeader)}
+}
+
 // relayZenStream copies a family's SSE response to the client and captures the final
 // usage for billing. The family already emits correct dialect SSE, so ai does not
 // translate — it reads usage as it passes and, for the one dialect whose envelope is
 // ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
 // completion is stamped from the same mark, so the id a client correlates on holds
-// for the whole stream.
-func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (t tokens, served, respID string) {
+// for the whole stream. first is when the first data chunk was written.
+func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (t tokens, served, respID string, first time.Time) {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
@@ -1634,6 +1665,9 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (t tokens, served
 		_, _ = w.Write(line)
 		_, _ = w.Write(zenNewline)
 		w.Flush()
+		if first.IsZero() && bytes.HasPrefix(line, zenDataPrefix) {
+			first = time.Now()
+		}
 	}
 	return
 }
@@ -1704,6 +1738,9 @@ func sniffZenUsage(payload []byte, t *tokens) {
 		PromptDetails    *struct {
 			Cached int `json:"cached_tokens"`
 		} `json:"prompt_tokens_details"`
+		CompletionDetails *struct {
+			Reasoning int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
 	}
 	var p struct {
 		Usage   *usage `json:"usage"`
@@ -1736,6 +1773,9 @@ func sniffZenUsage(payload []byte, t *tokens) {
 		}
 		if u.CompletionTokens > 0 {
 			t.completion = u.CompletionTokens
+		}
+		if u.CompletionDetails != nil && u.CompletionDetails.Reasoning > 0 {
+			t.reasoning = u.CompletionDetails.Reasoning
 		}
 	}
 	read(p.Usage)
@@ -1772,7 +1812,7 @@ type whence struct {
 // stream writer that outlives the request, so a `c` in scope here is a request
 // this function must not touch — and the way to keep a rule like that is to leave
 // nothing to touch.
-func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, t tokens, start time.Time, hold *budgetHold, status, errMsg string) int64 {
+func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, t tokens, sv serving, start time.Time, hold *budgetHold, status, errMsg string) int64 {
 	// The vendor charges nothing for a spare route — that is the whole reason it can
 	// answer while the account is empty — so it is billed at nothing. Charging
 	// retail for a downgrade the customer did not choose would be taking money for
@@ -1795,6 +1835,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		Owner: w.ledger, Organization: authUser.Owner,
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: originOf(prov, mk),
 		PromptTokens: t.fresh, CacheReadTokens: t.cached, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
+		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: w.ip, RequestID: reqID, Account: "hanzo",

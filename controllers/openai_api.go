@@ -888,6 +888,21 @@ type usageRecord struct {
 	ClusterID string `json:"clusterId,omitempty"`
 	// RoutePolicy is the enso route-policy decision that selected the model.
 	RoutePolicy string `json:"routePolicy,omitempty"`
+	// Served is the arm that generated the answer when a family names one
+	// (X-Hanzo-Served) — the model behind an adaptive SKU. Emitted as
+	// gen_ai.response.model; empty leaves response.model the SKU.
+	Served string `json:"served,omitempty"`
+	// Vendor is the provider that ran that arm ("digitalocean", "openrouter").
+	// Emitted as gen_ai.provider.name, ahead of Provider, which is our route label.
+	Vendor string `json:"vendor,omitempty"`
+	// Failover is the chain of arms that failed before the one that answered, as
+	// the family reported it. Empty when the first arm answered.
+	Failover string `json:"failover,omitempty"`
+	// ReasoningTokens is the part of CompletionTokens the model spent reasoning.
+	ReasoningTokens int `json:"reasoningTokens,omitempty"`
+	// First is the time from the start of the call to the first token of the
+	// answer. Zero when not measured.
+	First time.Duration `json:"-"`
 	// InputMessages / OutputMessages are the serialized prompt/completion. They are
 	// PII and are emitted ONLY when O11Y_GENAI_CAPTURE_MESSAGES is enabled
 	// (default off = redacted). Never logged, never billed — telemetry only.

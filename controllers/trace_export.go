@@ -33,13 +33,20 @@ type ServedUsage struct {
 	Model            string // the SKU the caller requested (zen5, …)
 	Provider         string // serving family label ("zen")
 	RequestID        string
-	Status           string // "success" | "error"
+	Status           string // "success" | "error" | "failover" (an arm that failed)
 	ErrorMsg         string
-	PromptTokens     int
+	PromptTokens     int // the WHOLE prompt; CachedTokens is a part of it
 	CompletionTokens int
 	BilledNano       int64 // exact retail billed, nano-USD; 0 = recompute from rates
 	CostNano         int64 // exact upstream COGS, nano-USD; 0 = recompute from rates
 	StartTime        time.Time
+
+	Served          string        // the arm that generated the answer (gen_ai.response.model)
+	Vendor          string        // the provider that ran that arm (gen_ai.provider.name)
+	Failover        string        // the arms that failed before it, with why
+	CachedTokens    int           // of PromptTokens: served from the upstream's prompt cache
+	ReasoningTokens int           // of CompletionTokens: spent reasoning
+	First           time.Duration // time from StartTime to the first token of the answer
 }
 
 // TraceServedUsage emits the warehouse row (hanzo.cloud_usage) + gen_ai span for
@@ -55,15 +62,29 @@ func TraceServedUsage(ctx context.Context, in ServedUsage) {
 	if in.RequestID == "" {
 		in.RequestID = uuid.NewString()
 	}
-	rec := &usageRecord{
+	recordTrace(ctx, servedRecord(in), in.StartTime)
+}
+
+// servedRecord projects a ServedUsage onto the usage record recordTrace writes.
+func servedRecord(in ServedUsage) *usageRecord {
+	// The record counts the prompt the way the family path does: PromptTokens is
+	// the part read fresh and CacheReadTokens the cached part beside it.
+	cached := min(max(in.CachedTokens, 0), max(in.PromptTokens, 0))
+	return &usageRecord{
 		Owner:            in.Owner,
 		Organization:     in.Owner,
 		User:             in.User,
 		Model:            in.Model,
 		Provider:         in.Provider,
-		PromptTokens:     in.PromptTokens,
+		PromptTokens:     max(in.PromptTokens-cached, 0),
+		CacheReadTokens:  cached,
 		CompletionTokens: in.CompletionTokens,
 		TotalTokens:      in.PromptTokens + in.CompletionTokens,
+		Served:           in.Served,
+		Vendor:           in.Vendor,
+		Failover:         in.Failover,
+		ReasoningTokens:  in.ReasoningTokens,
+		First:            in.First,
 		Currency:         "USD",
 		Status:           in.Status,
 		ErrorMsg:         in.ErrorMsg,
@@ -71,5 +92,4 @@ func TraceServedUsage(ctx context.Context, in ServedUsage) {
 		BilledNanoExact:  &in.BilledNano,
 		CostNanoExact:    &in.CostNano,
 	}
-	recordTrace(ctx, rec, in.StartTime)
 }

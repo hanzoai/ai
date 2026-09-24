@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -165,6 +166,59 @@ func TestBuildGenAISpanFields_ErrorAndFallbacks(t *testing.T) {
 		if _, ok := m[k]; ok {
 			t.Errorf("attribute %q must be absent when unset", k)
 		}
+	}
+}
+
+// TestBuildGenAISpanFields_ServedArm pins what a family reports beyond its body:
+// response.model is the arm that answered, provider.name the vendor that ran it
+// (else our route label), and reasoning, time to first token and the failed arms
+// ride beside them. A failed arm is an Error span.
+func TestBuildGenAISpanFields_ServedArm(t *testing.T) {
+	rec := &usageRecord{
+		Owner: "acme", Model: "zen5", Provider: "zen", Status: "success",
+		PromptTokens: 200, CompletionTokens: 20, TotalTokens: 220, ReasoningTokens: 18,
+		Served: "z-ai/glm-5.3", Vendor: "digitalocean", First: 1500 * time.Millisecond,
+		Failover: "deepseek-v4 (openrouter): upstream status 429",
+	}
+	m := attrMap(buildGenAISpanFields(rec, 0, 0, nil, nil, nil, false).attrs)
+	for k, want := range map[string]string{
+		"gen_ai.request.model":  "zen5",
+		"gen_ai.response.model": "z-ai/glm-5.3",
+		"gen_ai.provider.name":  "digitalocean",
+		"gen_ai.hanzo.provider": "zen",
+		"gen_ai.hanzo.failover": "deepseek-v4 (openrouter): upstream status 429",
+	} {
+		if got := m[k].AsString(); got != want {
+			t.Errorf("attr %q = %q, want %q", k, got, want)
+		}
+	}
+	if got := m["gen_ai.usage.reasoning.output_tokens"].AsInt64(); got != 18 {
+		t.Errorf("reasoning = %d, want 18", got)
+	}
+	if got := m["gen_ai.server.time_to_first_token"].AsFloat64(); got != 1.5 {
+		t.Errorf("time to first token = %v, want 1.5s", got)
+	}
+
+	// No vendor: provider.name is the route label. No arm: response.model is the SKU.
+	plain := attrMap(buildGenAISpanFields(&usageRecord{Model: "gpt-5", Provider: "openai", Status: "success"}, 0, 0, nil, nil, nil, false).attrs)
+	if got := plain["gen_ai.provider.name"].AsString(); got != "openai" {
+		t.Errorf("provider.name = %q, want the route label", got)
+	}
+	if got := plain["gen_ai.response.model"].AsString(); got != "gpt-5" {
+		t.Errorf("response.model = %q, want the SKU", got)
+	}
+	for _, k := range []string{"gen_ai.usage.reasoning.output_tokens", "gen_ai.server.time_to_first_token", "gen_ai.hanzo.failover"} {
+		if _, ok := plain[k]; ok {
+			t.Errorf("attribute %q must be absent when unset", k)
+		}
+	}
+	if _, ok := attrMap(buildGenAISpanFields(&usageRecord{Model: "x"}, 0, 0, nil, nil, nil, false).attrs)["gen_ai.provider.name"]; ok {
+		t.Error("provider.name emitted with no vendor and no provider")
+	}
+
+	f := buildGenAISpanFields(&usageRecord{Model: "zen5", Status: "failover", ErrorMsg: "a: empty answer"}, 0, 0, nil, nil, nil, false)
+	if f.statusCode != codes.Error || f.statusMsg != "a: empty answer" {
+		t.Errorf("failover status = %v %q, want Error with the reason", f.statusCode, f.statusMsg)
 	}
 }
 

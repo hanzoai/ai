@@ -631,7 +631,7 @@ func TestASpareRouteIsBilledAtNothing(t *testing.T) {
 	c := visit(http.MethodPost, "/v1/x")
 	w := whence{ledger: c.billingOrg(nil), ip: c.Fiber().IP(), ctx: c.Context()}
 
-	if cents := recordFamilyUsage(w, fam, "vendor/big:free", "vendor/paid-a", nil, &mark{}, nil, false, false, "r1", tokens{fresh: 1000, completion: 1000}, time.Now(), nil, "success", ""); cents != 0 {
+	if cents := recordFamilyUsage(w, fam, "vendor/big:free", "vendor/paid-a", nil, &mark{}, nil, false, false, "r1", tokens{fresh: 1000, completion: 1000}, serving{}, time.Now(), nil, "success", ""); cents != 0 {
 		t.Errorf("a spare route billed %d cents", cents)
 	}
 

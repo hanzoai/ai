@@ -177,7 +177,7 @@ func TestFamilyStreamIsOurs(t *testing.T) {
 
 	mk := ourMark()
 	to := toStream()
-	used, _, _ := relayZenStream(to.w, strings.NewReader(upstreamStream), mk)
+	used, _, _, _ := relayZenStream(to.w, strings.NewReader(upstreamStream), mk)
 	prompt, completion := used.prompt(), used.completion
 
 	out := to.String()

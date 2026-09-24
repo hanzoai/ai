@@ -40,6 +40,13 @@ const (
 	attrGenAITotalTokens   = "gen_ai.usage.total_tokens"
 	attrGenAICacheRead     = "gen_ai.usage.cache_read.input_tokens"
 	attrGenAICacheCreation = "gen_ai.usage.cache_creation.input_tokens"
+	// The part of output_tokens spent reasoning, named after the cache_read and
+	// cache_creation subsets of input_tokens above.
+	attrGenAIReasoning = "gen_ai.usage.reasoning.output_tokens"
+	// The vendor that ran the model (semconv gen_ai.provider.name).
+	attrGenAIProviderName = "gen_ai.provider.name"
+	// Time to the first token, in seconds — semconv's name for the same measure.
+	attrGenAIFirstToken = "gen_ai.server.time_to_first_token"
 
 	// _o11y.gen_ai.* cost attributes (dollars) the o11y cost views read.
 	// total_cost = the FULL provider cost of the call (analytics). billed_cost = what
@@ -77,6 +84,9 @@ const (
 	// it, because "response.model differs from request.model" will one day have
 	// more than one cause and a reader should not have to guess which.
 	attrFallback = "gen_ai.hanzo.fallback"
+	// attrFailover is the chain of arms a family tried and could not use before
+	// the one that answered, with why. Absent when the first arm answered.
+	attrFailover = "gen_ai.hanzo.failover"
 	// attrPriced is emitted (=false) ONLY when the model had no configured price and
 	// billed at the default — so o11y can flag the row. Absent ⇒ priced normally.
 	attrPriced         = "gen_ai.hanzo.priced"
@@ -142,11 +152,18 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 		requested = record.Requested
 	}
 
+	// response.model is the model that generated the answer: the family's arm
+	// when it named one, else the route that answered.
+	served := model
+	if record.Served != "" {
+		served = record.Served
+	}
+
 	attrs := []attribute.KeyValue{
 		attribute.String(attrGenAISystem, "hanzo"),
 		attribute.String(attrGenAIOperation, "chat"),
 		attribute.String(attrGenAIRequestModel, requested),
-		attribute.String(attrGenAIResponseModel, model),
+		attribute.String(attrGenAIResponseModel, served),
 		attribute.Int(attrGenAIInputTokens, record.PromptTokens),
 		attribute.Int(attrGenAIOutputTokens, record.CompletionTokens),
 		attribute.Int(attrGenAITotalTokens, record.TotalTokens),
@@ -174,6 +191,12 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 	}
 	if record.CacheWriteTokens > 0 {
 		attrs = append(attrs, attribute.Int(attrGenAICacheCreation, record.CacheWriteTokens))
+	}
+	if record.ReasoningTokens > 0 {
+		attrs = append(attrs, attribute.Int(attrGenAIReasoning, record.ReasoningTokens))
+	}
+	if record.First > 0 {
+		attrs = append(attrs, attribute.Float64(attrGenAIFirstToken, record.First.Seconds()))
 	}
 
 	// Per-component cost detail — token-billed calls only (breakdown != nil).
@@ -225,8 +248,15 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 	if record.Provider != "" {
 		attrs = append(attrs, attribute.String(attrProvider, record.Provider))
 	}
+	// The vendor that ran the arm, else our route label for who served the call.
+	if name := firstNonEmptyStr(record.Vendor, record.Provider); name != "" {
+		attrs = append(attrs, attribute.String(attrGenAIProviderName, name))
+	}
 	if record.Requested != "" {
 		attrs = append(attrs, attribute.String(attrFallback, fallbackSpent))
+	}
+	if record.Failover != "" {
+		attrs = append(attrs, attribute.String(attrFailover, record.Failover))
 	}
 	if record.RequestID != "" {
 		attrs = append(attrs, attribute.String(attrRequestID, record.RequestID))
@@ -263,7 +293,8 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 	}
 
 	fields := genAISpanFields{name: "chat " + model, attrs: attrs, statusCode: codes.Ok}
-	if record.Status == "error" {
+	// A failed arm ("failover") is a failed call on that arm, the same as an error.
+	if record.Status == "error" || record.Status == "failover" {
 		fields.statusCode = codes.Error
 		fields.statusMsg = record.ErrorMsg
 	}
