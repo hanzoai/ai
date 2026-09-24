@@ -54,6 +54,7 @@ require (
 	github.com/hanzoai/search-go v0.36.0
 	github.com/hanzoai/sqlite v0.5.5
 	github.com/hanzoai/tasks v1.52.9
+	github.com/hanzoai/thinking v0.1.1
 	github.com/hanzoai/types v0.1.0
 	github.com/hanzoai/voice v0.1.1-0.20260815163030-30c22bcbd91a
 	github.com/hanzokv/go/v9 v9.22.0

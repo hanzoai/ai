@@ -62,6 +62,13 @@ type RouterConfigDef struct {
 	Endpoint    string              `yaml:"endpoint"`     // zen-router base URL; "" = heuristic only
 	Prefer      map[string][]string `yaml:"prefer"`       // task tag → ordered model ids ("default" catch-all)
 	CostCeiling float64             `yaml:"cost_ceiling"` // advisory cost cap, USD per 1k tokens (per-1k), forwarded verbatim as the engine SLO
+
+	// Depth names, for a free model id a caller sends by default, the priced SKU a
+	// FUNDED caller is served at each reasoning depth: requested id → depth → SKU.
+	// Depth keys are the effort words callers send (off, minimal, low, medium, high,
+	// xhigh, max) plus "default" for a request that states none. A caller whose plan
+	// or bought credit does not fund the priced SKU keeps the free id. See DepthRoute.
+	Depth map[string]map[string]string `yaml:"depth"`
 }
 
 // ServiceEndpoints holds URLs for external pricing/model services.
@@ -326,6 +333,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	if envEndpoint := os.Getenv("ROUTER_ENDPOINT"); envEndpoint != "" {
 		routerCfg.Endpoint = envEndpoint
 	}
+	routerCfg.Depth = foldDepth(routerCfg.Depth)
 
 	pricingTTL := 6 * time.Hour
 	if file.Cache.PricingTTL != "" {
@@ -657,6 +665,14 @@ func (mc *ModelConfig) AutoRoutingActive(orgPref string) bool {
 	default:
 		return mc.router.Enabled
 	}
+}
+
+// depthTable is the depth → SKU row router.depth holds for a requested id, nil when
+// the id is not depth-routed.
+func (mc *ModelConfig) depthTable(model string) map[string]string {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	return mc.router.Depth[strings.ToLower(strings.TrimSpace(model))]
 }
 
 // ConfRouterPolicy returns the live conf router Prefer + CostCeiling under the

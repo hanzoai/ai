@@ -44,6 +44,7 @@ type probe struct {
 	wrote   string
 	ran     bool
 	reached context.Context
+	arrived string
 }
 
 // ask builds a request for method and target — a path, plus a query string if any.
@@ -96,8 +97,10 @@ func (p probe) through(f zip.Handler) probe {
 	// the request ends, so a Ctx read afterwards is a recycled object with none of
 	// this request on it. Read it with left().
 	var reached context.Context
+	var arrived string
 	app.Raw(zip.MethodAll, "/*", func(c *zip.Ctx) error {
 		reached = c.Context()
+		arrived = string(c.Body())
 		return nil
 	})
 
@@ -123,8 +126,13 @@ func (p probe) through(f zip.Handler) probe {
 	_ = resp.Body.Close()
 	p.code, p.head, p.wrote, p.ran = resp.StatusCode, resp.Header, string(body), true
 	p.reached = reached
+	p.arrived = arrived
 	return p
 }
+
+// handed is the request body the handler read: what a filter that rewrites the
+// request passed on. Empty when the filter refused.
+func (p probe) handed() string { return p.arrived }
 
 // left is the context the request carried INTO the handler — what a filter that
 // answers by annotating rather than by writing actually changed. Nil when the filter

@@ -212,6 +212,17 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// is zero skips. A body we cannot read, a model we cannot name, or a price we had
 	// to synthesize all leave the gate in force.
 	model := requestedModel(c)
+	if sku, ok := depthRoute(model, c.Body()); ok && balanceGate.funds(c, subject, namespace, userKey, sku) {
+		// The default free id, asked by a caller whose plan or bought credit pays for
+		// the priced SKU router.depth names at this depth: the request is served, gated
+		// and billed as that SKU. A caller it does not fund keeps the free id.
+		if body, ok := controllers.WithModel(c.Body(), sku); ok {
+			c.Fiber().Request().SetBody(body)
+			c.Fiber().Request().Header.Del("Content-Encoding")
+			c.SetHeader(controllers.RoutedModelHeader, sku)
+			model = sku
+		}
+	}
 	if model != "" && controllers.ModelCostsNothing(model, namespace) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
 		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
@@ -271,6 +282,24 @@ func BalanceGateFilter(c *zip.Ctx) error {
 
 	c.SetHeader("Content-Type", "application/json")
 	return c.Bytes(deny.Status, deny.ErrorJSON())
+}
+
+// depthRoute names the priced SKU a free default id is served at for a funded caller
+// (controllers.DepthRoute), indirected so the gate's tests state the table directly.
+var depthRoute = controllers.DepthRoute
+
+// funds reports whether the caller pays for a priced call to model: the plan limits
+// cover it or leave it to bought credit, and the balance admits it. Any refusal or
+// unreadable answer is no, which leaves the caller on the free id it sent.
+func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey, model string) bool {
+	if limits := object.Limits(); limits != nil {
+		hit, err := limits(c.Context(), object.LimitAsk{Subject: subject, Namespace: namespace, Actor: userKey, Model: model})
+		if err != nil || hit != nil {
+			return false
+		}
+	}
+	sufficient, _, _ := g.checkBalance(c.Host(), subject, namespace, userKey)
+	return sufficient
 }
 
 // limitReached writes the 429 for a plan limit: which window, when it resets, and
