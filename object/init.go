@@ -36,15 +36,15 @@ func InitDb() {
 	initModelAccessSeed()
 }
 
-// initModelAccessSeed grants the Enso limited-preview SKUs to the launch org so its
-// accounts work immediately. The grant is ORG-WIDE (User=""), so every member of the
+// initModelAccessSeed grants the limited-preview SKUs to the launch org so its
+// accounts work immediately: Enso's, and zen6, which runs on our own GPUs. The grant is ORG-WIDE (User=""), so every member of the
 // `hanzo` org — including z (owner=hanzo, name=z) — is granted without enumerating
 // users. Idempotent: UpsertModelAccess never downgrades a grant, so re-running at
 // every boot is a no-op. Widen access later via the SuperAdmin grant endpoint — this
 // seed is only the founding allowlist, not the policy.
 func initModelAccessSeed() {
 	const org = "hanzo"
-	for _, m := range []string{"enso", "enso-ultra"} {
+	for _, m := range []string{"enso", "enso-ultra", "zen6"} {
 		if _, err := GrantModelAccess(org, "", "", m); err != nil {
 			slog.Warn("model access seed: org grant failed", "org", org, "model", m, "err", err)
 		}
