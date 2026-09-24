@@ -217,7 +217,9 @@ func publicVisitor(addr string) string {
 	if addr == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(addr))
+	// Counted by address.Bucket: an IPv6 host rotating addresses inside its /64 is
+	// one visitor, not one per request.
+	sum := sha256.Sum256([]byte(address.Bucket(addr)))
 	return "visitor:" + hex.EncodeToString(sum[:])[:32]
 }
 
@@ -258,6 +260,17 @@ func (c *ApiController) stated() string {
 		return addr
 	}
 	return c.Header("CF-Connecting-IP")
+}
+
+// Country is the caller's country as the host in front stated it (address.Country),
+// believed on the same terms as the address: only when the peer is one of our own.
+// Empty when nothing trustworthy stated one. CF-IPCountry is never read: the host
+// removes it, and anywhere else it is whatever the caller wrote.
+func Country(c *zip.Ctx) string {
+	if peer := strings.TrimSpace(c.Fiber().IP()); peer != "" && !internalAddr(peer) {
+		return ""
+	}
+	return strings.TrimSpace(c.Header(address.Country))
 }
 
 // internalAddr reports whether addr is one of our own hops rather than a caller.

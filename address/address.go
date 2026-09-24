@@ -30,12 +30,14 @@
 // in object, and object links 1122 packages; the host that stamps loads subsystems
 // rather than containing them, so reaching into object for a string would have
 // pulled the whole model layer into the light host. A name has no dependencies —
-// this package imports nothing at all — so it sits where both sides may reach it
+// this package imports only the standard library — so it sits where both sides may reach it
 // and neither pays for the other.
 //
 // The same reasoning already put funding outside internal/: a seam the host writes
 // to and this module reads from has to be reachable across the module boundary.
 package address
+
+import "net/netip"
 
 // Header carries the caller's address from a host in front to this module.
 //
@@ -64,3 +66,31 @@ package address
 // the other three and said nothing true about the value in any of them. What crosses
 // is the address of whoever is calling, and that is what it is now called.
 const Header = "X-Client-Ip"
+
+// Country carries the caller's country from the host in front, beside Header: the
+// upper-case ISO 3166-1 alpha-2 code the edge resolved the caller's address to, and
+// absent when no edge resolved one. It is read instead of CF-IPCountry, which the
+// host removes before forwarding: a raw edge header reaching this module is either
+// stale or the caller's own writing.
+const Country = "X-Client-Country"
+
+// Bucket is the key a per-caller count keeps an address under: an IPv4 address as
+// itself, an IPv6 address as its /64. One IPv6 host is handed a whole /64 and can
+// change its interface identifier on every request, so a count per /128 counts
+// nothing. An audit record keeps the full address; only counting buckets. Anything
+// that is not an address comes back unchanged.
+func Bucket(addr string) string {
+	a, err := netip.ParseAddr(addr)
+	if err != nil {
+		ap, perr := netip.ParseAddrPort(addr)
+		if perr != nil {
+			return addr
+		}
+		a = ap.Addr()
+	}
+	a = a.Unmap().WithZone("")
+	if a.Is4() {
+		return a.String()
+	}
+	return netip.PrefixFrom(a, 64).Masked().String()
+}

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/object"
+	"github.com/zap-proto/zip"
 )
 
 // The lane is CLOSED unless a deployment arms it. Every other deployment of this
@@ -103,6 +105,52 @@ func TestVisitorIsHashedAndNeverTheAddress(t *testing.T) {
 	}
 	if publicVisitor(publicAddr("", "")) != "" {
 		t.Fatal("a request with no address must yield no visitor, so the lane refuses it")
+	}
+}
+
+// One IPv6 host holds a /64: rotating the interface identifier is the same visitor,
+// and the next /64 over is somebody else.
+func TestAnIPv6HostIsOneVisitorPerSlash64(t *testing.T) {
+	a := publicVisitor("2001:db8:1:2::1")
+	for _, same := range []string{"2001:db8:1:2::2", "2001:db8:1:2:ffff:ffff:ffff:ffff"} {
+		if publicVisitor(same) != a {
+			t.Fatalf("%s is a different visitor from 2001:db8:1:2::1 inside one /64", same)
+		}
+	}
+	if publicVisitor("2001:db8:1:3::1") == a {
+		t.Fatal("the neighbouring /64 was counted as the same visitor")
+	}
+	if publicVisitor("203.0.113.9") == publicVisitor("203.0.113.10") {
+		t.Fatal("two IPv4 addresses were counted as one visitor")
+	}
+}
+
+// The country is the host's stamp, believed only from one of our own peers, and a
+// raw CF-IPCountry is never read.
+func TestCountryIsTheHostsStamp(t *testing.T) {
+	var got string
+	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app.Raw(http.MethodGet, "/probe", func(c *zip.Ctx) error {
+		got = Country(c)
+		return c.NoContent(http.StatusNoContent)
+	})
+	ask := func(h map[string]string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+		for k, v := range h {
+			req.Header.Set(k, v)
+		}
+		if _, err := app.Test(req); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	// app.Test's peer is the unspecified address: a socket from our own host.
+	if c := ask(map[string]string{address.Country: "DE"}); c != "DE" {
+		t.Fatalf("the host's stamp: %q, want DE", c)
+	}
+	if c := ask(map[string]string{"CF-IPCountry": "US"}); c != "" {
+		t.Fatalf("a raw CF-IPCountry was read as the country: %q", c)
 	}
 }
 

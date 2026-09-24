@@ -17,12 +17,13 @@ package routers
 import (
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 )
 
 // TrafficTapFilter is a BeforeRouter tap that folds each genuine inbound /v1 API
 // request into the in-process traffic aggregate (object.GlobalTraffic), keyed by the
-// EDGE-supplied geo (Cloudflare CF-IPCountry + optional CF-Region-Code) and a coarse
+// country the host stated for the caller (controllers.Country) and a coarse
 // service class derived from the path. It powers the public world.hanzo.ai live-
 // traffic globe.
 //
@@ -38,8 +39,8 @@ func TrafficTapFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 	object.GlobalTraffic.Record(
-		c.Header("CF-IPCountry"),
-		c.Header("CF-Region-Code"),
+		controllers.Country(c),
+		"",
 		object.TrafficServiceClass(path),
 	)
 	return c.Continue()

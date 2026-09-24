@@ -260,7 +260,7 @@ func judgeRoutedResponse(userAgent, org, requestId, country, model, task, prompt
 // euCountries is the EU + EEA + UK set for the per-request training-data guard. In
 // these jurisdictions the opt-out default is NOT sufficient consent to process a
 // user's content for training — the org must EXPLICITLY opt in. Keyed by the
-// edge-supplied CF-IPCountry (ISO-3166-1 alpha-2), so the protection follows the
+// country the host stamps (address.Country, read by Country), so the protection follows the
 // REQUEST's origin regardless of the org's home region.
 var euCountries = map[string]bool{
 	// EU-27

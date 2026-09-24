@@ -1767,8 +1767,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		requestId = r.requestId
 		routedTask, routingRecorded = r.task, true
 		object.GlobalTraffic.RecordTask(
-			c.Header("CF-IPCountry"),
-			c.Header("CF-Region-Code"),
+			Country(c.Ctx),
+			"",
 			r.task,
 		)
 	} else if routed, task, ok := resolveAutoModel(request.Model, orgId, routingUser, requestId, principal, &request, c.sloFromHeaders()); ok {
@@ -1778,8 +1778,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		// Fold this request's TASK into the region's task-mix for the live-traffic
 		// globe — geo from the edge headers only (NO IP), aggregates only. Best-effort.
 		object.GlobalTraffic.RecordTask(
-			c.Header("CF-IPCountry"),
-			c.Header("CF-Region-Code"),
+			Country(c.Ctx),
+			"",
 			task,
 		)
 	} else if !isAutoModel(request.Model) {
@@ -1789,8 +1789,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		task := recordExplicitRouting(request.Model, orgId, routingUser, requestId, &request)
 		routedTask, routingRecorded = task, true
 		object.GlobalTraffic.RecordTask(
-			c.Header("CF-IPCountry"),
-			c.Header("CF-Region-Code"),
+			Country(c.Ctx),
+			"",
 			task,
 		)
 	}
@@ -2191,7 +2191,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// the hook only spawns a goroutine after cheap gates, and is a no-op unless
 	// ROUTER_JUDGE_ENABLED. The prompt and response are passed transiently — never
 	// persisted (see router_judge.go).
-	agent, country := c.Header("User-Agent"), c.Header("CF-IPCountry")
+	agent, country := c.Header("User-Agent"), Country(c.Ctx)
 	judge := func() {
 		if answered && routingRecorded {
 			judgeRoutedResponse(agent, orgId, requestId, country, request.Model, routedTask, question, writer.MessageString())
