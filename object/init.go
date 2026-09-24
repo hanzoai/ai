@@ -349,10 +349,11 @@ func forceGatewayEmbedder(p *Provider) {
 // references ("kms://SECRET_NAME"), resolved at call time by
 // ResolveProviderSecret.
 //
-// DO-first defaults: do-ai is the primary (State Active, IsDefault true) —
-// the universal DigitalOcean GenAI router that backs OpenAI/Anthropic/Llama/
-// DeepSeek/Qwen/GLM/Kimi. fireworks and openai-direct ship DISABLED (an admin
-// opts in via /v1/admin/providers/toggle).
+// do-ai is the primary (State Active, IsDefault true): the DigitalOcean GenAI
+// endpoint behind the models OpenRouter does not serve — embeddings, image,
+// video, DigitalOcean's routers and a few chat models. Routed third-party chat is
+// served by the OpenRouter family, which is not a row here (see below).
+// fireworks and openai-direct serve the few ids the route tables still send them.
 //
 // EVERY ROW HERE IS A DIRECT RELAY. A model FAMILY — zen, enso, openrouter — is
 // addressed by deployment config (ZEN_URL, ENSO_URL, OPENROUTER_URL) and never
@@ -405,9 +406,10 @@ var seededLLMProviders = []Provider{
 		SubType:      "gpt-5",
 		ProviderUrl:  "https://api.openai.com/v1",
 		ClientSecret: "kms://OPENAI_API_KEY",
-		// Active because modelRoutes sends models here, and a Disabled Model
-		// provider resolves to nil. Its key is the kms:// reference above. State is
-		// an operator's to change and is never re-synced onto a row that exists.
+		// Active because models.yaml sends the text-embedding-* ids here, and a
+		// Disabled Model provider resolves to nil. Its key is the kms:// reference
+		// above. State is an operator's to change and is never re-synced onto a row
+		// that exists.
 		State:     "Active",
 		IsDefault: false,
 	},

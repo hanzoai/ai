@@ -285,9 +285,10 @@ models:
 }
 
 // TestListModelsRichStaticPath covers the fallback path: listAvailableModels()
-// reading the real static route + pricing tables. gpt-4o is unbranded (provider
-// exposed + priced); glm-5 is unbranded with no static price; zen-scribe is
-// branded (provider omitted).
+// reading the real static route + pricing tables. bge-m3 is unbranded (provider
+// exposed + priced); text-embedding-qwen3 is unbranded with no static price;
+// zen-scribe is branded (provider omitted). Third-party chat is not in the static
+// table at all — it is the OpenRouter family's, discovered at runtime.
 //
 // It used to name zen4 for the branded case and to skip itself whenever a catalog
 // was loaded. zen4 left the static table when the Zen chat family moved to the zen
@@ -297,29 +298,33 @@ models:
 func TestListModelsRichStaticPath(t *testing.T) {
 	byID := indexModels(listAvailableModels())
 
-	gpt, ok := byID["gpt-4o"]
-	if !ok {
-		t.Fatal("gpt-4o missing from static listing")
-	}
-	if gpt.Object != "model" || gpt.OwnedBy != "do-ai" {
-		t.Errorf("gpt-4o core wrong: %+v", gpt)
-	}
-	if gpt.Provider != "do-ai" {
-		t.Errorf("unbranded gpt-4o should expose provider do-ai, got %q", gpt.Provider)
-	}
-	if gpt.Pricing == nil || gpt.Pricing.Input != 2.50 || gpt.Pricing.Output != 10.00 {
-		t.Errorf("gpt-4o static pricing want {2.50,10.00}, got %+v", gpt.Pricing)
+	if _, ok := byID["gpt-4o"]; ok {
+		t.Error("gpt-4o is listed from the static table — third-party chat belongs to the OpenRouter family")
 	}
 
-	glm, ok := byID["glm-5"]
+	bge, ok := byID["bge-m3"]
 	if !ok {
-		t.Fatal("glm-5 missing from static listing")
+		t.Fatal("bge-m3 missing from static listing")
 	}
-	if glm.Provider != "do-ai" {
-		t.Errorf("unbranded glm-5 provider want do-ai, got %q", glm.Provider)
+	if bge.Object != "model" || bge.OwnedBy != "do-ai" {
+		t.Errorf("bge-m3 core wrong: %+v", bge)
 	}
-	if glm.Pricing != nil {
-		t.Errorf("glm-5 has no static pricing; must be omitted, got %+v", *glm.Pricing)
+	if bge.Provider != "do-ai" {
+		t.Errorf("unbranded bge-m3 should expose provider do-ai, got %q", bge.Provider)
+	}
+	if bge.Pricing == nil || bge.Pricing.Input != 0.02 || bge.Pricing.Output != 0 {
+		t.Errorf("bge-m3 static pricing want {0.02,0}, got %+v", bge.Pricing)
+	}
+
+	qwen, ok := byID["text-embedding-qwen3"]
+	if !ok {
+		t.Fatal("text-embedding-qwen3 missing from static listing")
+	}
+	if qwen.Provider != "do-ai" {
+		t.Errorf("unbranded text-embedding-qwen3 provider want do-ai, got %q", qwen.Provider)
+	}
+	if qwen.Pricing != nil {
+		t.Errorf("text-embedding-qwen3 has no static pricing; must be omitted, got %+v", *qwen.Pricing)
 	}
 
 	zen, ok := byID["zen-scribe"]
@@ -355,6 +360,27 @@ func TestNoStaticBrandedModels(t *testing.T) {
 		if route.ownedBy != "" && route.providerName != "speech" {
 			t.Errorf("static table brands %q (owned_by=%s) on provider %q — a SKU we do not serve is attributed, not claimed, and a zen SKU is discovered rather than hardcoded",
 				m.ID, route.ownedBy, route.providerName)
+		}
+	}
+}
+
+// TestModelInfoCapabilityFieldsOmitEmpty proves the new capability enrichments
+// are additive: present on the wire only when true/nonzero (so a legacy consumer
+// is unaffected), and a "no" is expressed by ABSENCE, never a fabricated false.
+func TestModelInfoCapabilityFieldsOmitEmpty(t *testing.T) {
+	bare := jsonKeys(t, modelInfo{ID: "x", Object: "model", Created: 1, OwnedBy: "do-ai"})
+	for _, k := range []string{"max_output_tokens", "supports_vision", "supports_tools"} {
+		if bare[k] {
+			t.Errorf("bare modelInfo must omit %q", k)
+		}
+	}
+	full := jsonKeys(t, modelInfo{
+		ID: "x", Object: "model", Created: 1, OwnedBy: "do-ai",
+		MaxOutputTokens: 128000, SupportsVision: true, SupportsTools: true,
+	})
+	for _, k := range []string{"max_output_tokens", "supports_vision", "supports_tools"} {
+		if !full[k] {
+			t.Errorf("modelInfo must surface %q when set", k)
 		}
 	}
 }

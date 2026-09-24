@@ -36,7 +36,7 @@ type modelRouteFallback struct {
 
 // modelRoute maps a user-facing model name to an upstream provider and model ID.
 type modelRoute struct {
-	providerName  string               // DB provider name: "do-ai", "fireworks", "openai-direct"
+	providerName  string               // provider name: a seeded row ("do-ai", "speech", …) or a model family ("openrouter", "zen", "enso")
 	upstreamModel string               // Model ID sent to upstream API
 	fallbacks     []modelRouteFallback // Alternate providers tried on error
 	premium       bool                 // Requires positive balance
@@ -51,79 +51,30 @@ type modelRoute struct {
 // modelRoutes is the static routing table. Keys are user-facing model names
 // (case-insensitive lookup via resolveModelRoute). Values describe where and
 // how to forward the request.
+//
+// Third-party CHAT models are not here. They are served by the OpenRouter family
+// under their OpenRouter ids, and the short ids callers know them by are aliases
+// the family resolves (openrouter_alias.go). What remains is what OpenRouter does
+// not serve: our own speech service, the embedding, image and video models (the
+// family relays chat only), DigitalOcean's inference routers, and the few chat
+// models OpenRouter does not carry.
 var modelRoutes = map[string]modelRoute{
-	// ── DO-AI models (28) ── usage tracked, no balance gate ─────────────
-	"gpt-4o":                       {providerName: "do-ai", upstreamModel: "openai-gpt-4o"},
-	"gpt-4o-mini":                  {providerName: "do-ai", upstreamModel: "openai-gpt-4o-mini"},
-	"gpt-4.1":                      {providerName: "do-ai", upstreamModel: "openai-gpt-4.1"},
-	"gpt-5":                        {providerName: "do-ai", upstreamModel: "openai-gpt-5"},
-	"gpt-5-mini":                   {providerName: "do-ai", upstreamModel: "openai-gpt-5-mini"},
-	"gpt-5-nano":                   {providerName: "do-ai", upstreamModel: "openai-gpt-5-nano"},
-	"gpt-5.1-codex-max":            {providerName: "do-ai", upstreamModel: "openai-gpt-5.1-codex-max"},
-	"gpt-5.2":                      {providerName: "do-ai", upstreamModel: "openai-gpt-5.2"},
-	"gpt-5.2-pro":                  {providerName: "do-ai", upstreamModel: "openai-gpt-5.2-pro"},
-	"gpt-5.3-codex":                {providerName: "do-ai", upstreamModel: "openai-gpt-5.3-codex"},
-	"gpt-5.4":                      {providerName: "do-ai", upstreamModel: "openai-gpt-5.4"},
-	"gpt-5.4-mini":                 {providerName: "do-ai", upstreamModel: "openai-gpt-5.4-mini"},
-	"gpt-5.4-nano":                 {providerName: "do-ai", upstreamModel: "openai-gpt-5.4-nano"},
-	"gpt-5.4-pro":                  {providerName: "do-ai", upstreamModel: "openai-gpt-5.4-pro"},
-	"gpt-5.5":                      {providerName: "do-ai", upstreamModel: "openai-gpt-5.5"},
-	"gpt-5.6-luna":                 {providerName: "do-ai", upstreamModel: "openai-gpt-5.6-luna"},
-	"gpt-5.6-sol":                  {providerName: "do-ai", upstreamModel: "openai-gpt-5.6-sol"},
-	"gpt-5.6-terra":                {providerName: "do-ai", upstreamModel: "openai-gpt-5.6-terra"},
-	"gpt-oss-120b":                 {providerName: "do-ai", upstreamModel: "openai-gpt-oss-120b"},
-	"gpt-oss-20b":                  {providerName: "do-ai", upstreamModel: "openai-gpt-oss-20b"},
-	"o1":                           {providerName: "do-ai", upstreamModel: "openai-o1"},
-	"o3":                           {providerName: "do-ai", upstreamModel: "openai-o3"},
-	"o3-mini":                      {providerName: "do-ai", upstreamModel: "openai-o3-mini"},
-	"claude-3-5-haiku":             {providerName: "do-ai", upstreamModel: "anthropic-claude-3.5-haiku"},
-	"claude-3-7-sonnet":            {providerName: "do-ai", upstreamModel: "anthropic-claude-3.7-sonnet"},
-	"claude-4-1-opus":              {providerName: "do-ai", upstreamModel: "anthropic-claude-4.1-opus"},
-	"claude-haiku-4-5":             {providerName: "do-ai", upstreamModel: "anthropic-claude-haiku-4.5"},
-	"claude-opus-4":                {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4"},
-	"claude-opus-4-5":              {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.5"},
-	"claude-opus-4-6":              {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6"},
-	"claude-opus-4-7":              {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.7"},
-	"claude-opus-4-8":              {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.8"},
-	"claude-sonnet-4":              {providerName: "do-ai", upstreamModel: "anthropic-claude-sonnet-4"},
-	"claude-sonnet-4-5":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet"},
-	"claude-sonnet-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-4.6-sonnet"}, // real 4.6 upstream — now served on this account (verified live 2xx chat+vision+tools); earlier fell back to 4.5 while 4.6 403'd
-	"claude-sonnet-5":              {providerName: "do-ai", upstreamModel: "anthropic-claude-5-sonnet"},
-	"deepseek-3.2":                 {providerName: "do-ai", upstreamModel: "deepseek-3.2"},
-	"deepseek-chat":                {providerName: "do-ai", upstreamModel: "deepseek-v4-pro"},
-	"deepseek-v4-flash":            {providerName: "do-ai", upstreamModel: "deepseek-4-flash"},
-	"deepseek-v4-pro":              {providerName: "do-ai", upstreamModel: "deepseek-v4-pro"},
-	"deepseek-r1-distill-70b":      {providerName: "do-ai", upstreamModel: "deepseek-r1-distill-llama-70b"},
-	"llama-3.1-8b":                 {providerName: "do-ai", upstreamModel: "llama3-8b-instruct"},
-	"llama-3.3-70b":                {providerName: "do-ai", upstreamModel: "llama3.3-70b-instruct"},
-	"llama-4-maverick":             {providerName: "do-ai", upstreamModel: "llama-4-maverick"},
-	"kimi-k2.5":                    {providerName: "do-ai", upstreamModel: "kimi-k2.5"},
-	"kimi-k2.6":                    {providerName: "do-ai", upstreamModel: "kimi-k2.6"},
-	"mimo-v2.5":                    {providerName: "do-ai", upstreamModel: "mimo-v2.5"},
-	"mimo-v2.5-pro":                {providerName: "do-ai", upstreamModel: "mimo-v2.5-pro"},
-	"minimax-m2.5":                 {providerName: "do-ai", upstreamModel: "minimax-m2.5"},
-	"nemotron-3-nano-omni":         {providerName: "do-ai", upstreamModel: "nemotron-3-nano-omni"},
-	"nemotron-3-super-120b":        {providerName: "do-ai", upstreamModel: "nvidia-nemotron-3-super-120b"},
-	"nemotron-3-ultra-550b":        {providerName: "do-ai", upstreamModel: "nemotron-3-ultra-550b"},
-	"nemotron-nano-12b-vl":         {providerName: "do-ai", upstreamModel: "nemotron-nano-12b-v2-vl"},
-	"qwen3-coder-flash":            {providerName: "do-ai", upstreamModel: "qwen3-coder-flash"},
-	"qwen3.5-397b":                 {providerName: "do-ai", upstreamModel: "qwen3.5-397b-a17b"},
-	"arcee-trinity-large-thinking": {providerName: "do-ai", upstreamModel: "arcee-trinity-large-thinking"},
-	"mistral-nemo":                 {providerName: "do-ai", upstreamModel: "mistral-nemo-instruct-2407"},
-	"qwen3-32b":                    {providerName: "do-ai", upstreamModel: "alibaba-qwen3-32b", hidden: true}, // hidden: use zen-mini instead
-	"glm-5":                        {providerName: "do-ai", upstreamModel: "glm-5"},
-	"glm-5.1":                      {providerName: "do-ai", upstreamModel: "glm-5.1"},
-	"glm-5.2":                      {providerName: "do-ai", upstreamModel: "glm-5.2", premium: true},
-	"gemma-3-31b":                  {providerName: "do-ai", upstreamModel: "gemma-3-31b"},
-	"gemma-4-31b":                  {providerName: "do-ai", upstreamModel: "gemma-4-31B-it"}, // real DO catalog id (was "gemma-4-31b" → 404)
-	"kimi-k2":                      {providerName: "do-ai", upstreamModel: "kimi-k2"},
-	"mistral-3-14b":                {providerName: "do-ai", upstreamModel: "mistral-3-14b"},
-	"mistral-small":                {providerName: "do-ai", upstreamModel: "mistral-small"},
-	"nemotron-3-nano":              {providerName: "do-ai", upstreamModel: "nemotron-3-nano"},
-	"nemotron-nano-vl":             {providerName: "do-ai", upstreamModel: "nemotron-nano-12b-v2-vl"},
-	"deepseek-v3.2":                {providerName: "do-ai", upstreamModel: "deepseek-3.2"},
-	"deepseek-reasoner":            {providerName: "do-ai", upstreamModel: "deepseek-r1"},
-	"qwen3-coder":                  {providerName: "do-ai", upstreamModel: "qwen3-coder-480b"},
+	// ── Chat models with no OpenRouter equivalent ── served where they always were ──
+	// OpenRouter lists no priced SKU of the same model at the same size for these.
+	// Claude 3.5 Haiku, 3.7 Sonnet and Opus 4 are retired there; nemotron-3-nano-omni
+	// is listed only as a free route, whose terms let the vendor keep the exchange;
+	// the 12B Nemotron VL and Cogito are absent. gemma-3-31b and mistral-small name
+	// no single model to point at: Gemma 3 has no 31B, and OpenRouter carries four
+	// Mistral Small releases of which the id names none.
+	"claude-3-5-haiku":      {providerName: "do-ai", upstreamModel: "anthropic-claude-3.5-haiku"},
+	"claude-3-7-sonnet":     {providerName: "do-ai", upstreamModel: "anthropic-claude-3.7-sonnet"},
+	"claude-opus-4":         {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4"},
+	"gemma-3-31b":           {providerName: "do-ai", upstreamModel: "gemma-3-31b"},
+	"mistral-small":         {providerName: "do-ai", upstreamModel: "mistral-small"},
+	"nemotron-3-nano-omni":  {providerName: "do-ai", upstreamModel: "nemotron-3-nano-omni"},
+	"nemotron-nano-12b-vl":  {providerName: "do-ai", upstreamModel: "nemotron-nano-12b-v2-vl"},
+	"nemotron-nano-vl":      {providerName: "do-ai", upstreamModel: "nemotron-nano-12b-v2-vl"},
+	"fireworks/cogito-671b": {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, hidden: true},
 
 	// ── DO-AI embeddings ── served at POST /v1/embeddings (passthrough) ──
 	// User-facing name == DO catalog id (already clean public names). owned_by
@@ -181,43 +132,6 @@ var modelRoutes = map[string]modelRoute{
 	"router:software-engineering":    {providerName: "do-ai", upstreamModel: "router:software-engineering"},
 	"router:software-engineering-01": {providerName: "do-ai", upstreamModel: "router:software-engineering-01"},
 	"router:writing":                 {providerName: "do-ai", upstreamModel: "router:writing"},
-
-	// ── DO-AI aliases (8) ── hidden from listing, still callable ─────────
-	"openai/gpt-4o":                        {providerName: "do-ai", upstreamModel: "openai-gpt-4o", hidden: true},
-	"openai/gpt-4o-mini":                   {providerName: "do-ai", upstreamModel: "openai-gpt-4o-mini", hidden: true},
-	"openai/gpt-5":                         {providerName: "do-ai", upstreamModel: "openai-gpt-5", hidden: true},
-	"openai/o3":                            {providerName: "do-ai", upstreamModel: "openai-o3", hidden: true},
-	"openai/o3-mini":                       {providerName: "do-ai", upstreamModel: "openai-o3-mini", hidden: true},
-	"anthropic/claude-haiku-4-5-20251001":  {providerName: "do-ai", upstreamModel: "anthropic-claude-haiku-4.5", hidden: true},
-	"anthropic/claude-opus-4-6":            {providerName: "do-ai", upstreamModel: "anthropic-claude-opus-4.6", hidden: true},
-	"anthropic/claude-sonnet-4-5-20250929": {providerName: "do-ai", upstreamModel: "anthropic-claude-4.5-sonnet", hidden: true},
-	"anthropic/claude-sonnet-4-6":          {providerName: "do-ai", upstreamModel: "anthropic-claude-4.6-sonnet", hidden: true}, // real 4.6 upstream — now served on this account (matches claude-sonnet-4-6)
-
-	// ── Fireworks premium models (17) ── hidden from listing, still callable ──
-	"fireworks/cogito-671b":           {providerName: "fireworks", upstreamModel: "accounts/cogito/models/cogito-671b-v2-p1", premium: true, hidden: true},
-	"fireworks/deepseek-v3p1":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p1", premium: true, hidden: true},
-	"fireworks/deepseek-v3p2":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/deepseek-v3p2", premium: true, hidden: true},
-	"fireworks/glm-4p7":               {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-4p7", premium: true, hidden: true},
-	"fireworks/glm-5":                 {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/glm-5", premium: true, hidden: true},
-	"fireworks/gpt-oss-120b":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-120b", premium: true, hidden: true},
-	"fireworks/gpt-oss-20b":           {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/gpt-oss-20b", premium: true, hidden: true},
-	"fireworks/kimi-k2":               {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-instruct-0905", premium: true, hidden: true},
-	"fireworks/kimi-k2-thinking":      {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2-thinking", premium: true, hidden: true},
-	"fireworks/kimi-k2p5":             {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/kimi-k2p5", premium: true, hidden: true},
-	"fireworks/llama-3.3-70b":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/llama-v3p3-70b-instruct", premium: true, hidden: true},
-	"fireworks/minimax-m2p1":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p1", premium: true, hidden: true},
-	"fireworks/minimax-m2p5":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/minimax-m2p5", premium: true, hidden: true},
-	"fireworks/mixtral-8x22b":         {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/mixtral-8x22b-instruct", premium: true, hidden: true},
-	"fireworks/qwen3-8b":              {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-8b", premium: true, hidden: true},
-	"fireworks/qwen3-vl-30b":          {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-instruct", premium: true, hidden: true},
-	"fireworks/qwen3-vl-30b-thinking": {providerName: "fireworks", upstreamModel: "accounts/fireworks/models/qwen3-vl-30b-a3b-thinking", premium: true, hidden: true},
-
-	// ── OpenAI Direct premium models (5 chat) ── hidden, use top-level names ──
-	"openai-direct/gpt-4o":      {providerName: "openai-direct", upstreamModel: "gpt-4o", premium: true, hidden: true},
-	"openai-direct/gpt-4o-mini": {providerName: "openai-direct", upstreamModel: "gpt-4o-mini", premium: true, hidden: true},
-	"openai-direct/gpt-5":       {providerName: "openai-direct", upstreamModel: "gpt-5", premium: true, hidden: true},
-	"openai-direct/o3":          {providerName: "openai-direct", upstreamModel: "o3", premium: true, hidden: true},
-	"openai-direct/o3-mini":     {providerName: "openai-direct", upstreamModel: "o3-mini", premium: true, hidden: true},
 
 	// ── DO-AI text-to-video ── served at POST /v1/videos/generations ─────
 	// wan2-2-t2v-a14b is the only text-to-video model in the do-ai catalog. It
@@ -359,9 +273,10 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 		return &route
 	}
 
-	// Model families (Zen, Enso): any family SKU routes to its family service, which
-	// owns the SKU→upstream mapping, identity, and reasoning. ai holds no such route of
-	// its own (hip-00NN).
+	// Model families (Zen, Enso, OpenRouter): any family SKU routes to its family
+	// service, which owns the SKU→upstream mapping, identity, and reasoning. ai holds no
+	// such route of its own (hip-00NN). An alias a family resolves (openrouter_alias.go)
+	// is reached here, so a DB row or a config entry for the same id still wins over it.
 	//
 	// Per-tier gate (Seam B): when the caller's commerce tier is CONFIDENTLY below the
 	// SKU's advertised min_tier, drop the route (nil) so the auto-router's `known`

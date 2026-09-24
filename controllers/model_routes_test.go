@@ -30,29 +30,16 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		wantModel    string
 		wantPremium  bool
 	}{
-		// DO-AI free-tier
-		{"gpt-4o", "do-ai", "openai-gpt-4o", false},
-		{"gpt-5", "do-ai", "openai-gpt-5", false},
-		{"claude-opus-4-6", "do-ai", "anthropic-claude-opus-4.6", false},
-		{"qwen3-32b", "do-ai", "alibaba-qwen3-32b", false},
+		// Chat OpenRouter does not carry stays on its relay.
+		{"claude-3-7-sonnet", "do-ai", "anthropic-claude-3.7-sonnet", false},
+		{"fireworks/cogito-671b", "fireworks", "accounts/cogito/models/cogito-671b-v2-p1", true},
 
-		// Aliases (free-tier)
-		{"openai/gpt-4o", "do-ai", "openai-gpt-4o", false},
-		{"anthropic/claude-opus-4-6", "do-ai", "anthropic-claude-opus-4.6", false},
-
-		// Fireworks premium
-		{"fireworks/glm-5", "fireworks", "accounts/fireworks/models/glm-5", true},
-		{"fireworks/qwen3-8b", "fireworks", "accounts/fireworks/models/qwen3-8b", true},
-
-		// OpenAI direct premium
-		{"openai-direct/gpt-5", "openai-direct", "gpt-5", true},
-		{"openai-direct/o3", "openai-direct", "o3", true},
-
-		// Zen branded premium (routed through DigitalOcean GenAI / "do-ai")
-		// zen3-omni used to resolve to glm-5 — a TEXT model. An "omni" alias that
-		// serves a text-only model is a promise we do not keep. DO's actual
-		// omni model is nemotron-3-nano-omni (verified working).
-
+		// What the family does not serve at all: embeddings, video, DO's routers,
+		// and our own speech service.
+		{"bge-m3", "do-ai", "bge-m3", false},
+		{"wan2-2-t2v-a14b", "do-ai", "wan2-2-t2v-a14b", true},
+		{"router:general", "do-ai", "router:general", false},
+		{"zen-scribe", "speech", "whisper", false},
 	}
 
 	for _, tc := range cases {
@@ -76,9 +63,9 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 
 func TestResolveModelRoute_CaseInsensitive(t *testing.T) {
 	// Keys in the map are lowercase; make sure uppercase input still resolves.
-	route := resolveModelRoute("GPT-4O")
+	route := resolveModelRoute("BGE-M3")
 	if route == nil {
-		t.Fatal("resolveModelRoute(\"GPT-4O\") = nil, want match")
+		t.Fatal("resolveModelRoute(\"BGE-M3\") = nil, want match")
 	}
 	if route.providerName != "do-ai" {
 		t.Errorf("providerName = %q, want \"do-ai\"", route.providerName)
@@ -214,10 +201,11 @@ func TestListAvailableModels_ReturnsSortedList(t *testing.T) {
 
 func TestListAvailableModels_CountSanity(t *testing.T) {
 	models := listAvailableModels()
-	// As of 2026-02: 41 visible models (hidden aliases/prefixed routes excluded from listing).
+	// The static table alone lists 24 models: third-party chat is discovered from
+	// OpenRouter at runtime, and hidden routes are excluded from the listing.
 	// Adjust if routes are added/removed. This is a canary for unexpected drift.
-	if len(models) < 30 {
-		t.Errorf("expected at least 30 visible models, got %d", len(models))
+	if len(models) < 20 {
+		t.Errorf("expected at least 20 visible models, got %d", len(models))
 	}
 }
 
@@ -226,9 +214,9 @@ func TestListAvailableModels_CountSanity(t *testing.T) {
 func TestResolveModelRouteForOrg_FallsBackToStatic(t *testing.T) {
 	// When DB adapter is nil (as in tests), resolveModelRouteForOrg should
 	// fall back to the static routing table for any org.
-	route := resolveModelRouteForOrg("gpt-4o", "some-org")
+	route := resolveModelRouteForOrg("claude-3-7-sonnet", "some-org")
 	if route == nil {
-		t.Fatal("resolveModelRouteForOrg(\"gpt-4o\", \"some-org\") = nil, want non-nil from static fallback")
+		t.Fatal("resolveModelRouteForOrg(\"claude-3-7-sonnet\", \"some-org\") = nil, want non-nil from static fallback")
 	}
 	if route.providerName != "do-ai" {
 		t.Errorf("provider = %q, want %q", route.providerName, "do-ai")
@@ -244,14 +232,14 @@ func TestResolveModelRouteForOrg_UnknownModelReturnsNil(t *testing.T) {
 
 func TestResolveModelRouteForOrg_EmptyOrgFallsBack(t *testing.T) {
 	// Empty org resolves from the static map
-	route := resolveModelRouteForOrg("glm-5.2", "")
+	route := resolveModelRouteForOrg("wan2-2-t2v-a14b", "")
 	if route == nil {
-		t.Fatal("resolveModelRouteForOrg(\"glm-5.2\", \"\") = nil, want non-nil")
+		t.Fatal("resolveModelRouteForOrg(\"wan2-2-t2v-a14b\", \"\") = nil, want non-nil")
 	}
 	if route.providerName != "do-ai" {
 		t.Errorf("provider = %q, want %q", route.providerName, "do-ai")
 	}
 	if !route.premium {
-		t.Error("glm-5.2 should be premium")
+		t.Error("wan2-2-t2v-a14b should be premium")
 	}
 }

@@ -124,6 +124,13 @@ type modelFamily struct {
 	// not define them.
 	terms func(body []byte, free bool) []byte
 
+	// aliases maps an id a caller may send onto the discovered SKU that serves it,
+	// lowercase on both sides. lookup reads through it, so everything that asks the
+	// family about a model — whether it serves it, its price, its floors, its terms
+	// — answers for the alias exactly as for the SKU, and sku is what goes upstream.
+	// nil for a family whose callers name its SKUs directly.
+	aliases map[string]string
+
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
 	// good snapshot so a transient blip never empties ai's model list.
 	mu        sync.RWMutex
@@ -746,12 +753,22 @@ func (f *modelFamily) fresh() string {
 	return url
 }
 
-// lookup returns the discovered model for an id/alias, if any.
+// lookup returns the discovered model for an id or one of the family's aliases, if
+// any. An alias whose SKU the vendor no longer lists resolves to nothing.
 func (f *modelFamily) lookup(model string) (zenModel, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	m, ok := f.byID[strings.ToLower(strings.TrimSpace(model))]
+	m, ok := f.byID[strings.ToLower(strings.TrimSpace(f.sku(model)))]
 	return m, ok
+}
+
+// sku is the id the family's vendor serves a model under: the SKU an alias names,
+// and the id itself for anything else.
+func (f *modelFamily) sku(model string) string {
+	if id, ok := f.aliases[strings.ToLower(strings.TrimSpace(model))]; ok {
+		return id
+	}
+	return model
 }
 
 // snapshot returns the family as last discovered. It does not refresh: fresh is
@@ -830,8 +847,10 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 	}
 	p, priced := f.modelPrice(model)
 	return &modelRoute{
-		providerName:  f.name,
-		upstreamModel: model, // identity: the family maps the SKU to its real upstream
+		providerName: f.name,
+		// The family maps the SKU to its real upstream. An alias travels as the SKU
+		// it names, because that is the id the vendor serves.
+		upstreamModel: f.sku(model),
 		// Premium is a claim about money, so the price makes it — the free id and the
 		// free routes are not premium, and saying they were would read to a client as
 		// a model their plan cannot afford.
@@ -1162,7 +1181,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 		r.Header = req.Header.Clone()
 		upstream.Authorize(r, p)
-		b := withModel(rawBody, s)
+		// The vendor is sent its own id for the SKU. An alias is ours, so it goes
+		// upstream as the SKU it names while the answer still wears the alias.
+		b := withModel(rawBody, f.sku(s))
 		if f.terms != nil {
 			b = f.terms(b, f.free(s))
 		}

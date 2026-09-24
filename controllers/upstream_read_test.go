@@ -69,7 +69,7 @@ func TestAnUnreadableUpstreamAnswerIsNotHandedOver(t *testing.T) {
 	// upstream that cuts the answer off.
 	if _, err := object.AddProvider(&object.Provider{
 		Owner: "acme", Name: "do-ai", Category: "Model", Type: "Anthropic",
-		SubType: "claude-opus-4-5", ProviderUrl: truncating(t), ProviderKey: "k",
+		SubType: "claude-opus-4", ProviderUrl: truncating(t), ProviderKey: "k",
 		State: "Active",
 	}); err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestAnUnreadableUpstreamAnswerIsNotHandedOver(t *testing.T) {
 	c := as(visit("POST", "/v1/messages"), val)
 	// Tools, because that is what forwards the request to the upstream verbatim and
 	// reads the answer back — the path this is about.
-	c.Fiber().Request().SetBody([]byte(`{"model":"claude-opus-4-5","max_tokens":16,` +
+	c.Fiber().Request().SetBody([]byte(`{"model":"claude-opus-4","max_tokens":16,` +
 		`"messages":[{"role":"user","content":"hi"}],` +
 		`"tools":[{"name":"noop","description":"does nothing","input_schema":{"type":"object"}}]}`))
 	c.AnthropicMessages()
@@ -102,7 +102,7 @@ func TestTheZapSurfaceAlsoRefusesAnUnreadableAnswer(t *testing.T) {
 
 	if _, err := object.AddProvider(&object.Provider{
 		Owner: "acme", Name: "do-ai", Category: "Model", Type: "Anthropic",
-		SubType: "claude-opus-4-5", ProviderUrl: truncating(t), ProviderKey: "k",
+		SubType: "claude-opus-4", ProviderUrl: truncating(t), ProviderKey: "k",
 		State: "Active",
 	}); err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestTheZapSurfaceAlsoRefusesAnUnreadableAnswer(t *testing.T) {
 
 	val := people.signedIn(t, &iam.User{Owner: "acme", Name: "val"})
 	_, respBody, _ := zapAnthropicMessages(context.Background(), val,
-		[]byte(`{"model":"claude-opus-4-5","max_tokens":16,`+
+		[]byte(`{"model":"claude-opus-4","max_tokens":16,`+
 			`"messages":[{"role":"user","content":"hi"}],`+
 			`"tools":[{"name":"noop","description":"does nothing","input_schema":{"type":"object"}}]}`))
 
@@ -126,7 +126,7 @@ func reporting(t *testing.T, in, out int) string {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"id":"msg_1","type":"message","role":"assistant",`+
-			`"content":[{"type":"text","text":"ok"}],"model":"claude-opus-4-5",`+
+			`"content":[{"type":"text","text":"ok"}],"model":"claude-opus-4",`+
 			`"usage":{"input_tokens":%d,"output_tokens":%d}}`, in, out)
 	}))
 	t.Cleanup(srv.Close)
@@ -148,7 +148,7 @@ func TestTheHoldSettlesOnWhatTheUpstreamReports(t *testing.T) {
 	const in, out = 1200, 340
 	if _, err := object.AddProvider(&object.Provider{
 		Owner: "acme", Name: "do-ai", Category: "Model", Type: "Anthropic",
-		SubType: "claude-opus-4-5", ProviderUrl: reporting(t, in, out), ProviderKey: "k",
+		SubType: "claude-opus-4", ProviderUrl: reporting(t, in, out), ProviderKey: "k",
 		State: "Active",
 	}); err != nil {
 		t.Fatal(err)
@@ -159,12 +159,12 @@ func TestTheHoldSettlesOnWhatTheUpstreamReports(t *testing.T) {
 	object.GlobalBalanceLedger.SetBalance(subject, available)
 
 	c := as(visit("POST", "/v1/messages"), people.signedIn(t, user))
-	c.Fiber().Request().SetBody([]byte(`{"model":"claude-opus-4-5","max_tokens":16,` +
+	c.Fiber().Request().SetBody([]byte(`{"model":"claude-opus-4","max_tokens":16,` +
 		`"messages":[{"role":"user","content":"hi"}],` +
 		`"tools":[{"name":"noop","description":"does nothing","input_schema":{"type":"object"}}]}`))
 	c.AnthropicMessages()
 
-	want := calculateCostCentsWithCache("claude-opus-4-5", in, out, 0, 0)
+	want := calculateCostCentsWithCache("claude-opus-4", in, out, 0, 0)
 	balance, reserved, _, known := object.GlobalBalanceLedger.Snapshot(subject)
 	if !known {
 		t.Fatalf("the ledger holds nothing for %q; answer was %s", subject, sent(c))

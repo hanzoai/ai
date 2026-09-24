@@ -705,9 +705,10 @@ func openrouterTail(route *modelRoute) []candidate {
 
 // openrouterEquivalent maps an upstream id onto OpenRouter's spelling of the same
 // model, and answers false unless the discovered catalog actually carries it.
-// `openai-gpt-4o` -> `openai/gpt-4o`; an id that is already vendor-qualified is
-// tried as-is first, which is what makes this work for a route whose upstream
-// happens to be spelled OpenRouter's way already.
+// `openai-gpt-4o` -> `openai/gpt-4o`; an id that is already vendor-qualified, or
+// that the family knows as an alias, is tried as-is first, which is what makes this
+// work for a route whose upstream happens to be spelled OpenRouter's way already.
+// The answer is the catalog's own id, because it is sent to the vendor verbatim.
 func openrouterEquivalent(upstream string) (string, bool) {
 	u := strings.ToLower(strings.TrimSpace(upstream))
 	if u == "" {
@@ -718,8 +719,8 @@ func openrouterEquivalent(upstream string) (string, bool) {
 		tries = append(tries, u[:i]+"/"+u[i+1:])
 	}
 	for _, t := range tries {
-		if _, ok := freeFamily().lookup(t); ok {
-			return t, true
+		if m, ok := freeFamily().lookup(t); ok {
+			return m.ID, true
 		}
 	}
 	return "", false

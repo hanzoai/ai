@@ -68,6 +68,7 @@ var openrouterFam = &modelFamily{
 	decode:     openrouterCatalog,
 	terms:      openrouterTerms,
 	spare:      openrouterSpare,
+	aliases:    openrouterAliases,
 }
 
 // openrouterMarginDefault is the retail multiple applied to the upstream price when

@@ -241,7 +241,7 @@ func TestModelCountByProvider_MatchesStaticMap(t *testing.T) {
 
 	// Every count must equal the number of routes whose providerName == prov —
 	// asserted here for the known providers so drift in the table is visible.
-	for _, prov := range []string{"do-ai", "fireworks", "openai-direct"} {
+	for _, prov := range []string{"do-ai", "speech"} {
 		n := 0
 		for _, route := range modelRoutes {
 			if route.providerName == prov {
@@ -273,7 +273,7 @@ func TestModelCountByProvider_NoStaticZenRoute(t *testing.T) {
 		t.Error("expected do-ai to serve at least one static route")
 	}
 	// A raw do-ai model resolves to the do-ai provider.
-	if r := resolveModelRoute("glm-5.2"); r == nil || r.providerName != "do-ai" {
-		t.Errorf("glm-5.2 route = %+v, want providerName=do-ai", r)
+	if r := resolveModelRoute("bge-m3"); r == nil || r.providerName != "do-ai" {
+		t.Errorf("bge-m3 route = %+v, want providerName=do-ai", r)
 	}
 }
