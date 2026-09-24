@@ -1744,7 +1744,19 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// that are actually in the routing ledger.
 	var routedTask string
 	var routingRecorded bool
-	if routed, task, ok := resolveAutoModel(request.Model, orgId, routingUser, requestId, principal, &request, c.sloFromHeaders()); ok {
+	if r, ok := c.Locals(autoRoutedKey).(autoRouted); ok && r.routed == request.Model && from == callerBearer {
+		// RouteAuto resolved `auto` ahead of the balance gate and rewrote the request
+		// to name the SKU; the gate priced that SKU and the RoutingEvent is already
+		// recorded under r.requestId. Keep that id so the response and the ledger join
+		// the decision, and record nothing twice.
+		requestId = r.requestId
+		routedTask, routingRecorded = r.task, true
+		object.GlobalTraffic.RecordTask(
+			c.Header("CF-IPCountry"),
+			c.Header("CF-Region-Code"),
+			r.task,
+		)
+	} else if routed, task, ok := resolveAutoModel(request.Model, orgId, routingUser, requestId, principal, &request, c.sloFromHeaders()); ok {
 		request.Model = routed
 		routedTask, routingRecorded = task, true
 		c.SetHeader(RoutedModelHeader, routed)

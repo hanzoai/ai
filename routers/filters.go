@@ -70,6 +70,9 @@ func InstallFilters(app *zip.App) {
 	// cert was ever established — and the two are indistinguishable at the parse.
 	// Refusing here with 503 keeps that ambiguity out of the chain.
 	app.Use(zip.H(AuthAvailableFilter))
+	// The virtual `auto` model is resolved to the SKU that serves it before the gate
+	// prices the request, so the gate prices that SKU.
+	app.Use(zip.H(AutoRouteFilter))
 	app.Use(zip.H(BalanceGateFilter))
 	app.Use(zip.H(TenantContextFilter))
 	app.Use(zip.H(AuthzFilter))

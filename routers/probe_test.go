@@ -77,7 +77,7 @@ func (p probe) body(b []byte) probe {
 	return p
 }
 
-// through runs the request through f, in an app.
+// through runs the request through the filters fs, in order, in an app.
 //
 // A filter is MIDDLEWARE: it ends in Continue(), and Continue means "the next
 // handler in the chain" — which a detached context does not have, so calling one
@@ -88,9 +88,11 @@ func (p probe) body(b []byte) probe {
 // The terminal handler answers 200 and writes nothing, so a status is the FILTER's
 // whenever it refused and 200 whenever it let the request through — which is exactly
 // the distinction every one of these tests is making.
-func (p probe) through(f zip.Handler) probe {
+func (p probe) through(fs ...zip.Handler) probe {
 	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
-	app.Use(zip.H(f))
+	for _, f := range fs {
+		app.Use(zip.H(f))
+	}
 	// The terminal handler records the CONTEXT VALUE, because some filters answer by
 	// leaving something on it rather than by writing — the tenant attribution is the
 	// whole example. The value, not the Ctx: fiber pools its Ctx and releases it when

@@ -270,6 +270,9 @@ func doBootstrap() (err error) {
 	// SeedInternalTrainingConsent first flips our OWN reserved orgs to explicit opt-in
 	// so the EU per-request guard never suppresses our internal traffic.
 	controllers.SeedInternalTrainingConsent()
+	// Read each model family's catalog once at boot, so the first request after a
+	// restart is priced from discovery (controllers.WarmFamilies).
+	controllers.WarmFamilies()
 	controllers.StartRouterProbe()
 	controllers.StartRouterTrainer()
 	controllers.StartRouterJudge()

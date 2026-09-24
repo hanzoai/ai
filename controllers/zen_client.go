@@ -139,6 +139,12 @@ type modelFamily struct {
 	spares    []string
 	fetchedAt time.Time
 	loaded    bool
+
+	// loading serializes the first discovery (warm), and tried is when it last ran
+	// without loading, so a family that cannot be reached is asked again after
+	// warmRetry rather than on every read.
+	loading sync.Mutex
+	tried   time.Time
 }
 
 var (
@@ -441,6 +447,7 @@ func familyPassthroughRoute(model string) *modelRoute {
 // familyModelPrice returns the discovered headline price for a family model.
 func familyModelPrice(model string) (modelPrice, bool) {
 	for _, f := range modelFamilies {
+		f.warm()
 		if p, ok := f.modelPrice(model); ok {
 			return p, true
 		}
@@ -729,6 +736,44 @@ func (f *modelFamily) isSpare(model string) bool {
 		}
 	}
 	return false
+}
+
+// warmRetry is how long a family whose first discovery failed waits before a read
+// asks it again.
+const warmRetry = 10 * time.Second
+
+// warm loads the family's catalog when it has never been read. A price asked for
+// before the first discovery is then the discovered one: on a pod that has just
+// started, enso-auto reads as the free SKU it is, not as an unknown and so priced id.
+// Concurrent readers wait for the one load; after a failed one they read the empty
+// snapshot until warmRetry has passed.
+func (f *modelFamily) warm() {
+	f.mu.RLock()
+	loaded := f.loaded
+	f.mu.RUnlock()
+	if loaded || f.baseURL() == "" {
+		return
+	}
+	f.loading.Lock()
+	defer f.loading.Unlock()
+	f.mu.RLock()
+	loaded = f.loaded
+	f.mu.RUnlock()
+	if loaded || time.Since(f.tried) < warmRetry {
+		return
+	}
+	f.tried = time.Now()
+	if err := f.refresh(); err != nil {
+		log.Warning("%s catalog discovery failed: %v", f.name, err)
+	}
+}
+
+// WarmFamilies reads every family's catalog once, in the background, so a pod that
+// has just started prices family SKUs from discovery on its first request.
+func WarmFamilies() {
+	for _, f := range modelFamilies {
+		go f.warm()
+	}
 }
 
 // fresh refreshes the snapshot if stale (or never loaded) and reports the address

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
@@ -498,4 +499,69 @@ func (c *ApiController) sloFromHeaders() router.Slo {
 		}
 	}
 	return slo
+}
+
+// autoRouted is the decision RouteAuto took for a request that named the virtual
+// model: the SKU it routed to, the task it classified, and the request id its
+// RoutingEvent carries, which the handler keeps as the response id so feedback
+// still joins the decision.
+type autoRouted struct {
+	routed, task, requestId string
+}
+
+// autoRoutedKey is where RouteAuto leaves its decision for the handler.
+const autoRoutedKey = "ai.autoRouted"
+
+// IsAutoModel reports whether a model id is the virtual `auto`/`zen-router` model.
+func IsAutoModel(model string) bool { return isAutoModel(model) }
+
+// RouteAuto resolves a completion that names `auto` or `zen-router` to the SKU that
+// will serve it, and rewrites the request to name that SKU. It runs ahead of the
+// balance gate, so the gate, the plan limits and the handler all price, admit and
+// serve the model that answers; the virtual id is never priced. The handler keeps
+// the request id and task decided here (see chatCompletions).
+//
+// Resolution calls the router engine with the caller's prompt and records a
+// RoutingEvent, so it runs only for a caller that authenticates. A request it cannot
+// resolve (no credential, routing off for the org, no servable model, an unreadable
+// body) runs as sent. A /v1/responses body is read in its own dialect and rewritten
+// in it. The body is read decoded, and a rewritten body is sent on plain.
+func (c *ApiController) RouteAuto() {
+	body := c.Body()
+	var named struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(body, &named) != nil || !isAutoModel(named.Model) {
+		return
+	}
+	token, ok := strings.CutPrefix(c.Header("Authorization"), "Bearer ")
+	if !ok || isPublishableKey(token) || c.authenticate(token) != nil {
+		return
+	}
+	chat := body
+	if strings.EqualFold(strings.TrimRight(c.Path(), "/"), "/v1/responses") {
+		call, err := ReadResponses(body, "")
+		if err != nil {
+			return
+		}
+		chat = call.Chat
+	}
+	var request openai.ChatCompletionRequest
+	if json.Unmarshal(chat, &request) != nil {
+		return
+	}
+	requestId := uuid.NewString()
+	routed, task, ok := resolveAutoModel(request.Model, c.GetOrg(), c.routingUserId(), requestId, c.principalUser(), &request, c.sloFromHeaders())
+	if !ok {
+		return
+	}
+	rewritten, ok := WithModel(body, routed)
+	if !ok {
+		return
+	}
+	req := c.Fiber().Request()
+	req.SetBody(rewritten)
+	req.Header.Del("Content-Encoding")
+	c.SetHeader(RoutedModelHeader, routed)
+	c.Locals(autoRoutedKey, autoRouted{routed: routed, task: task, requestId: requestId})
 }
