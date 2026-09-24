@@ -91,74 +91,95 @@ func (c *ApiController) Responses() {
 		return
 	}
 
-	body := c.Body()
-	if strings.EqualFold(strings.TrimSpace(c.Header("Content-Encoding")), "zstd") {
-		decoded, err := decodeResponsesZstd(body)
-		if err != nil {
-			// Authenticate before reporting, for the reason the 400 below gives.
-			if authErr := c.authenticate(token); authErr != nil {
-				c.ResponseAuthError(authErr)
-				return
-			}
-			// A body over the bound is 413, not 400: it is not malformed, it is
-			// too big, and only one of those tells the caller to send less.
-			if errors.Is(err, zstd.ErrDecoderSizeExceeded) {
-				c.ResponseErrorWithStatus(http.StatusRequestEntityTooLarge, fmt.Sprintf(
-					"request body exceeds the %d MiB limit", MaxDecoded>>20))
-				return
-			}
-			c.ResponseErrorWithStatus(http.StatusBadRequest, "Failed to decompress zstd request: "+err.Error())
-			return
-		}
-		body = decoded
-		c.Fiber().Request().Header.Del("Content-Encoding")
-	}
-
-	var request OpenAIResponsesRequest
-	if err := json.Unmarshal(body, &request); err != nil {
+	call, err := ReadResponses(c.Body(), c.Header("Content-Encoding"))
+	if err != nil {
+		// Authenticate before reporting: whatever the body says, a caller without
+		// a valid key is told that first, and learns nothing about how we read it.
 		if authErr := c.authenticate(token); authErr != nil {
 			c.ResponseAuthError(authErr)
 			return
 		}
-		c.ResponseErrorWithStatus(http.StatusBadRequest, "Failed to parse Responses request: "+err.Error())
-		return
-	}
-	if request.Model == "" {
-		c.ResponseErrorWithStatus(http.StatusBadRequest, "model is required")
-		return
-	}
-
-	chatRequest, toolKinds, err := responsesToChatRequest(&request)
-	if err != nil {
+		// A body over the bound is 413, not 400: it is not malformed, it is too
+		// big, and only one of those tells the caller to send less.
+		if errors.Is(err, zstd.ErrDecoderSizeExceeded) {
+			c.ResponseErrorWithStatus(http.StatusRequestEntityTooLarge, fmt.Sprintf(
+				"request body exceeds the %d MiB limit", MaxDecoded>>20))
+			return
+		}
 		c.ResponseErrorWithStatus(http.StatusBadRequest, err.Error())
-		return
-	}
-	chatBody, err := json.Marshal(chatRequest)
-	if err != nil {
-		c.ResponseErrorWithStatus(http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// The chat request on the wire, because the completion reads its own body. This
 	// is the request being made, not a place being patched.
-	c.Fiber().Request().SetBody(chatBody)
-	c.Fiber().Request().Header.Del("Content-Length")
+	req := c.Fiber().Request()
+	req.Header.Del("Content-Encoding")
+	req.SetBody(call.Chat)
+	req.Header.Del("Content-Length")
 
 	// This endpoint IS a chat completion, read in a second dialect. So it asks for
 	// one and says what shape the answer must take, rather than swapping the writer
 	// out of the request context and reading whatever came back through it.
-	c.chatCompletions(callerBearer, c.responsesAnswer(&request, toolKinds))
+	c.chatCompletions(callerBearer, c.responsesAnswer(call))
+}
+
+// ResponsesCall is a /v1/responses request read as the chat completion it asks
+// for. Chat is that completion's body; Stream and Whole write its answer back in
+// the Responses dialect. It is the one translation: ai serves Chat itself, and a
+// host that serves chat in-process (cloud's zen) serves it there and answers
+// through the same two functions.
+type ResponsesCall struct {
+	Chat  []byte
+	req   OpenAIResponsesRequest
+	kinds map[string]string
+}
+
+// ReadResponses reads a Responses body, zstd-compressed when encoding says so.
+// Every error is the caller's; one for a body too large to expand wraps
+// zstd.ErrDecoderSizeExceeded.
+func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
+	if strings.EqualFold(strings.TrimSpace(encoding), "zstd") {
+		decoded, err := decodeResponsesZstd(body)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to decompress zstd request: %w", err)
+		}
+		body = decoded
+	}
+	call := &ResponsesCall{}
+	if err := json.Unmarshal(body, &call.req); err != nil {
+		return nil, fmt.Errorf("Failed to parse Responses request: %w", err)
+	}
+	if call.req.Model == "" {
+		return nil, errors.New("model is required")
+	}
+	chat, kinds, err := responsesToChatRequest(&call.req)
+	if err != nil {
+		return nil, err
+	}
+	if call.Chat, err = json.Marshal(chat); err != nil {
+		return nil, err
+	}
+	call.kinds = kinds
+	return call, nil
+}
+
+// Stream writes a chat SSE stream to w as Responses events, as it is produced.
+func (r *ResponsesCall) Stream(w io.Writer) io.WriteCloser {
+	return newResponsesBridge(w, &r.req, r.kinds)
+}
+
+// Whole translates one finished chat completion into a Responses object.
+func (r *ResponsesCall) Whole(chat []byte) ([]byte, error) {
+	return openAIChatResponseToResponses(chat, &r.req, r.kinds)
 }
 
 // responsesAnswer is the Responses shape of a chat completion: a stream is
 // decorated as it is produced, a whole body is handed over entire.
-func (c *ApiController) responsesAnswer(request *OpenAIResponsesRequest, toolKinds map[string]string) *sink {
+func (c *ApiController) responsesAnswer(call *ResponsesCall) *sink {
 	return &sink{
-		wrap: func(w io.Writer) io.Writer {
-			return newResponsesBridge(w, request, toolKinds)
-		},
+		wrap: func(w io.Writer) io.Writer { return call.Stream(w) },
 		body: func(chat []byte) error {
-			out, err := openAIChatResponseToResponses(chat, request, toolKinds)
+			out, err := call.Whole(chat)
 			if err != nil {
 				return err
 			}

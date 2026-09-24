@@ -39,7 +39,7 @@ func TestResponsesAnswersInResponsesOnEveryPath(t *testing.T) {
 			defer upstream.Close()
 
 			c := visit("POST", "/v1/responses")
-			c.answer = c.responsesAnswer(&OpenAIResponsesRequest{Model: sku, Stream: mode.stream}, nil)
+			c.answer = c.responsesAnswer(&ResponsesCall{req: OpenAIResponsesRequest{Model: sku, Stream: mode.stream}})
 
 			request := openai.ChatCompletionRequest{Model: sku, Stream: mode.stream}
 			provider := &object.Provider{
