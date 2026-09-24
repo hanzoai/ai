@@ -57,8 +57,9 @@ import (
 //   - Consent-gated: only orgs where trainingOptedIn(org) is true are judged (the
 //     global opt-out default; an explicit "disabled" drops them), AND a per-request
 //     EU/EEA/UK guard requires EXPLICIT opt-in before judging a turn geolocated to
-//     those jurisdictions (shouldJudge + isEURequest). An opted-out org's turns —
-//     and any EU turn from a non-explicitly-consenting org — are never judged.
+//     those jurisdictions, or one with no country it can place (shouldJudge +
+//     isEURequest). An opted-out org's turns — and any EU or unplaced turn from a
+//     non-explicitly-consenting org — are never judged.
 //
 // CONFIDENTIAL COMPUTE — the endpoint is the seam (be honest about the split):
 //
@@ -272,11 +273,29 @@ var euCountries = map[string]bool{
 	"IS": true, "LI": true, "NO": true, "GB": true,
 }
 
-// isEURequest reports whether the edge-tagged country is in the EU/EEA/UK set.
-// Case-insensitive; an empty country (no edge geo) is treated as NON-EU — the guard
-// fires only on a POSITIVE EU signal, so it never blocks traffic we cannot geolocate.
+// isEURequest reports whether the training-data guard treats the request as EU/EEA/UK:
+// its country is in that set, or it has no country the guard can place. The guard
+// FAILS CLOSED: an empty value (no edge geo, a tunnel, a host that verified none),
+// Cloudflare's "XX" for an address it could not place, "T1" for Tor, and anything
+// that is not a two-letter country code all count as EU, so a request of unknown
+// origin needs the org's explicit consent exactly as an EU one does. Case-insensitive.
 func isEURequest(country string) bool {
-	return euCountries[strings.ToUpper(strings.TrimSpace(country))]
+	code := strings.ToUpper(strings.TrimSpace(country))
+	return !placed(code) || euCountries[code]
+}
+
+// placed reports whether code is an ISO 3166-1 alpha-2 code that can name a country:
+// two letters, and not one of the user-assigned codes (AA, QM–QZ, XA–XZ, ZZ), which
+// name no country and are what an edge states when it placed none ("XX").
+func placed(code string) bool {
+	if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+		return false
+	}
+	switch {
+	case code == "AA", code == "ZZ", code[0] == 'X', code[0] == 'Q' && code[1] >= 'M':
+		return false
+	}
+	return true
 }
 
 // shouldJudge is the synchronous, side-effect-free eligibility gate — split out so

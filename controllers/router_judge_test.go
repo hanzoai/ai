@@ -64,7 +64,11 @@ func TestShouldJudge(t *testing.T) {
 		{"sampled out (roll >= sample)", cfg, "curl/8", "o", "r", "", "p", "a", 0.9, true, false, false},
 		{"consent off", cfg, "curl/8", "o", "r", "", "p", "a", 0.0, false, false, false},
 		{"eligible (non-EU, opt-out default)", cfg, "curl/8", "o", "r", "US", "p", "a", 0.1, true, false, true},
-		{"eligible (no geo header)", cfg, "curl/8", "o", "r", "", "p", "a", 0.1, true, false, true},
+		// No country the guard can place is treated as EU: explicit consent only.
+		{"no geo header + unset ⇒ skip", cfg, "curl/8", "o", "r", "", "p", "a", 0.1, true, false, false},
+		{"no geo header + explicit-on ⇒ allow", cfg, "curl/8", "o", "r", "", "p", "a", 0.1, true, true, true},
+		{"unplaced (XX) + unset ⇒ skip", cfg, "curl/8", "o", "r", "XX", "p", "a", 0.1, true, false, false},
+		{"Tor (T1) + unset ⇒ skip", cfg, "curl/8", "o", "r", "T1", "p", "a", 0.1, true, false, false},
 		// EU/EEA/UK per-request guard: the opt-out default is NOT enough — explicit only.
 		{"EU + unset ⇒ skip", cfg, "curl/8", "o", "r", "DE", "p", "a", 0.1, true, false, false},
 		{"EU + explicit-on ⇒ allow", cfg, "curl/8", "o", "r", "DE", "p", "a", 0.1, true, true, true},
@@ -292,18 +296,28 @@ func TestJudgeDefaultEnabledPanel(t *testing.T) {
 	}
 }
 
-// TestIsEURequest pins the geo classifier the per-request GDPR guard keys off:
-// EU-27 + EEA + UK are EU (case-insensitive); a non-EU country and an empty (no
-// edge geo) header are NOT — the guard fires only on a positive EU signal.
+// TestIsEURequest pins the geo classifier the per-request GDPR guard keys off. EU-27 +
+// EEA + UK are EU (case-insensitive), and so is every request whose country the guard
+// cannot place: no header, Cloudflare's "XX" (unplaced) and "T1" (Tor), a
+// user-assigned code, and anything that is not a two-letter code. Only a placed
+// country outside the set is not EU.
+//
+// Mutation proof: return euCountries[code] alone and every unplaced row reads non-EU,
+// so the opt-out default would admit those turns to training.
 func TestIsEURequest(t *testing.T) {
 	for _, c := range []string{"DE", "fr", " gb ", "NO", "IS", "LI", "IE"} {
 		if !isEURequest(c) {
-			t.Errorf("isEURequest(%q) = false, want true", c)
+			t.Errorf("isEURequest(%q) = false, want true (an EU/EEA/UK country)", c)
 		}
 	}
-	for _, c := range []string{"US", "CA", "JP", "", "  ", "ZZ", "CH"} {
+	for _, c := range []string{"", "  ", "XX", "xx", "T1", "ZZ", "QZ", "AA", "Germany", "D", "DEU", "é", "1", "--"} {
+		if !isEURequest(c) {
+			t.Errorf("isEURequest(%q) = false, want true (no country the guard can place)", c)
+		}
+	}
+	for _, c := range []string{"US", "CA", "JP", "CH", " br ", "QA"} {
 		if isEURequest(c) {
-			t.Errorf("isEURequest(%q) = true, want false", c)
+			t.Errorf("isEURequest(%q) = true, want false (a placed country outside the EU/EEA/UK)", c)
 		}
 	}
 }
