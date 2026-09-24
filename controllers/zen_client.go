@@ -1436,6 +1436,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// is free in exchange for what the vendor keeps and somebody has to be able to
 	// say so — in a consent notice, in a log, in a policy page. Set before any byte
 	// of a stream goes out, which is the last moment a header can be set at all.
+	// Which arm of the family actually answered, as the family named it. An
+	// adaptive SKU picks among several models per request, and this header is the
+	// only way an operator can tell which one wrote a given answer; it carries a
+	// model id and never a provider, key or address.
+	if served := resp.Header.Get(servedHeader); served != "" {
+		c.SetHeader(servedHeader, served)
+	}
 	if word, stated := servingFamily(sku).collection(sku); stated {
 		c.SetHeader(headerCollection, word)
 	}
@@ -1521,6 +1528,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	settle(prompt, completion, sniffZenModel(b), sniffZenId(b))
 	return done()
 }
+
+// servedHeader names the arm that answered, set by the family and relayed as is.
+const servedHeader = "X-Hanzo-Served"
 
 // relayZenStream copies a family's SSE response to the client and captures the final
 // usage for billing. The family already emits correct dialect SSE, so ai does not

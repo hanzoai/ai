@@ -86,6 +86,7 @@ func withAliasVendor(t *testing.T) *aliasVendor {
 			v.bodies = append(v.bodies, string(body))
 			v.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set(servedHeader, in.Model)
 			fmt.Fprintf(w, `{"id":"gen-1","object":"chat.completion","model":%q,"provider":"OpenAI",`+
 				`"choices":[{"index":0,"message":{"role":"assistant","content":"4"},"finish_reason":"stop"}],`+
 				`"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`, in.Model)
@@ -192,6 +193,9 @@ func TestGPT4oIsServedByTheOpenRouterFamily(t *testing.T) {
 	}
 	if got := string(c.Fiber().Response().Header.Peek(headerCollection)); got != collectionDeny {
 		t.Errorf("%s = %q, want %q — a priced route keeps nothing", headerCollection, got, collectionDeny)
+	}
+	if got := string(c.Fiber().Response().Header.Peek(servedHeader)); got != "openai/gpt-4o" {
+		t.Errorf("%s = %q, want openai/gpt-4o — the arm the family named reaches the caller", servedHeader, got)
 	}
 
 	alias, sku := getModelPrice("gpt-4o"), getModelPrice("openai/gpt-4o")
