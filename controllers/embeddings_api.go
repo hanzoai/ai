@@ -105,7 +105,7 @@ func (c *ApiController) Embeddings() {
 			subject := authUser.PayerSubject(ledger)
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
-				est = zm.costCents(coarseTokenEstimate(c.Body()), 0)
+				est = zm.costCents(coarseTokenEstimate(c.Body()), 0, 0)
 			}
 			var ok2 bool
 			if hold, ok2 = reserveBudget(subject, est); !ok2 {

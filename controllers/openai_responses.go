@@ -91,7 +91,9 @@ func (c *ApiController) Responses() {
 		return
 	}
 
-	call, err := ReadResponses(c.Body(), c.Header("Content-Encoding"))
+	// c.Body() is the body the server already decoded (zstd included, within its body
+	// limit), so it is read as plain whatever Content-Encoding the caller sent.
+	call, err := ReadResponses(c.Body(), "")
 	if err != nil {
 		// Authenticate before reporting: whatever the body says, a caller without
 		// a valid key is told that first, and learns nothing about how we read it.

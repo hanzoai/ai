@@ -472,7 +472,27 @@ type zenTier struct {
 	MaxCtx int
 	In     decimal.Decimal
 	Out    decimal.Decimal
+	// CacheRead is what one input token served from the upstream's prompt cache
+	// bills at. Zero means the family states none, and such a token bills at In.
+	CacheRead decimal.Decimal
 }
+
+// cacheRate is what one cached input token bills at: the stated cache price, else
+// the full input rate. An unpriced cache is never a free cache.
+func (t zenTier) cacheRate() decimal.Decimal {
+	if t.CacheRead.Sign() > 0 {
+		return t.CacheRead
+	}
+	return t.In
+}
+
+// tokens is one answer's usage as it is billed: prompt tokens read fresh (a cache
+// write among them), prompt tokens served from the upstream's cache, and completion
+// tokens.
+type tokens struct{ fresh, cached, completion int }
+
+// prompt is every prompt token, fresh or cached.
+func (t tokens) prompt() int { return t.fresh + t.cached }
 
 // zenModel is a discovered SKU: what ai needs to list, route, and bill it — the SKU's
 // public contract (id, context, price ladder, vision). Not its upstream, which the
@@ -547,13 +567,18 @@ var zenMillion = decimal.New(1_000_000, 0)
 // family derives it — money/decimal, no float, no cents flooring mid-way; only the
 // final debit rounds to the cent, with a one-cent floor for any non-zero usage so a
 // served call is never billed zero.
-func (m zenModel) costCents(promptTokens, completionTokens int) int64 {
-	t := m.tierFor(promptTokens)
+//
+// promptTokens are the ones read fresh and cachedTokens the ones served from the
+// upstream's cache, which bill at the tier's cache rate; the tier is chosen by the
+// whole prompt.
+func (m zenModel) costCents(promptTokens, cachedTokens, completionTokens int) int64 {
+	t := m.tierFor(promptTokens + cachedTokens)
 	in := t.In.Mul(decimal.New(int64(promptTokens), 0))
 	out := t.Out.Mul(decimal.New(int64(completionTokens), 0))
-	usd := in.Add(out).Quo(zenMillion, 18) // exact dollars to 18 dp — identical to the family
+	cached := t.cacheRate().Mul(decimal.New(int64(cachedTokens), 0))
+	usd := in.Add(cached).Add(out).Quo(zenMillion, 18) // exact dollars to 18 dp — identical to the family
 	cents := money.New(usd, money.USD).Minor().Int64()
-	if cents <= 0 && (promptTokens > 0 || completionTokens > 0) {
+	if cents <= 0 && (promptTokens > 0 || cachedTokens > 0 || completionTokens > 0) {
 		cents = 1
 	}
 	return cents
@@ -570,10 +595,11 @@ func (m zenModel) costCents(promptTokens, completionTokens int) int64 {
 func (m zenModel) price() (modelPrice, bool) {
 	in, _ := strconv.ParseFloat(m.Base.In.String(), 64)
 	out, _ := strconv.ParseFloat(m.Base.Out.String(), 64)
+	cache, _ := strconv.ParseFloat(m.Base.cacheRate().String(), 64)
 	costIn, _ := strconv.ParseFloat(m.CostIn.String(), 64)
 	costOut, _ := strconv.ParseFloat(m.CostOut.String(), 64)
 	return modelPrice{
-		InputPerMillion: in, OutputPerMillion: out,
+		InputPerMillion: in, OutputPerMillion: out, CacheReadPerMillion: cache,
 		CostInPerMillion: costIn, CostOutPerMillion: costOut,
 	}, true
 }
@@ -589,13 +615,15 @@ type zenWireModel struct {
 	Funding       string `json:"funding"`  // "prepaid" = every path this SKU can take spends a real-cash balance
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
-		Input  decimal.Decimal `json:"input"`
-		Output decimal.Decimal `json:"output"`
+		Input     decimal.Decimal `json:"input"`
+		Output    decimal.Decimal `json:"output"`
+		CacheRead decimal.Decimal `json:"cache_read"`
 	} `json:"pricing"`
 	PricingTiers []struct {
 		MaxContext int             `json:"max_context"`
 		Input      decimal.Decimal `json:"input"`
 		Output     decimal.Decimal `json:"output"`
+		CacheRead  decimal.Decimal `json:"cache_read"`
 	} `json:"pricing_tiers"`
 	Capabilities struct {
 		Vision bool `json:"vision"`
@@ -605,10 +633,10 @@ type zenWireModel struct {
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
 		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier, Funding: w.Funding,
-		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output},
+		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output, CacheRead: w.Pricing.CacheRead},
 	}
 	for _, t := range w.PricingTiers {
-		zm.Tiers = append(zm.Tiers, zenTier{MaxCtx: t.MaxContext, In: t.Input, Out: t.Output})
+		zm.Tiers = append(zm.Tiers, zenTier{MaxCtx: t.MaxContext, In: t.Input, Out: t.Output, CacheRead: t.CacheRead})
 	}
 	if len(zm.Tiers) == 0 {
 		zm.Tiers = []zenTier{zm.Base}
@@ -1518,15 +1546,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// at all, which is a compile-time property rather than a rule to remember.
 	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context()}
 
-	settle := func(prompt, completion int, served, respID string) {
+	settle := func(t tokens, served, respID string) {
 		if mk.id != "" {
 			respID = mk.id
 		}
-		if prompt == 0 {
-			prompt = coarseTokenEstimate(rawBody)
+		if t.prompt() == 0 {
+			t.fresh = coarseTokenEstimate(rawBody)
 		}
-		cents := recordFamilyUsage(w, fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, prompt, completion, start, hold, "success", "")
-		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, prompt, completion, cents, start)
+		cents := recordFamilyUsage(w, fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, start, hold, "success", "")
+		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, cents, start)
 	}
 
 	if stream {
@@ -1562,15 +1590,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// client, so this is still movable.
 		return refused(rErr)
 	}
-	prompt, completion := 0, 0
-	sniffZenUsage(b, &prompt, &completion)
+	var t tokens
+	sniffZenUsage(b, &t)
 	ct := resp.Header.Get("Content-Type")
 	if ct == "" {
 		ct = "application/json"
 	}
 	c.SetHeader("Content-Type", ct)
 	c.answerBody(mk.stamp(b))
-	settle(prompt, completion, sniffZenModel(b), sniffZenId(b))
+	settle(t, sniffZenModel(b), sniffZenId(b))
 	return done()
 }
 
@@ -1583,7 +1611,7 @@ const servedHeader = "X-Hanzo-Served"
 // ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
 // completion is stamped from the same mark, so the id a client correlates on holds
 // for the whole stream.
-func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (prompt, completion int, served, respID string) {
+func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (t tokens, served, respID string) {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
@@ -1591,7 +1619,7 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (prompt, completi
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
-				sniffZenUsage(payload, &prompt, &completion)
+				sniffZenUsage(payload, &t)
 				if served == "" {
 					served = sniffZenModel(payload)
 				}
@@ -1656,49 +1684,63 @@ func sniffZenId(payload []byte) string {
 }
 
 // sniffZenUsage reads token usage from a family response — an SSE data payload or a
-// full body — trying the Anthropic (input_tokens/output_tokens, possibly nested under
+// full body — in the Anthropic (input_tokens/output_tokens, possibly nested under
 // message) and OpenAI (prompt_tokens/completion_tokens) shapes. Present fields update
 // the running counts; absent ones leave them, so Anthropic's message_start (input) and
 // message_delta (output) accumulate across events.
-func sniffZenUsage(payload []byte, prompt, completion *int) {
+//
+// The two dialects count a cached prompt differently, and both are read into the one
+// split: OpenAI's prompt_tokens INCLUDES prompt_tokens_details.cached_tokens, while
+// Anthropic's cache_read_input_tokens is IN ADDITION to input_tokens (as is
+// cache_creation_input_tokens, a fresh read billed at the input rate).
+func sniffZenUsage(payload []byte, t *tokens) {
+	type usage struct {
+		InputTokens      int `json:"input_tokens"`
+		OutputTokens     int `json:"output_tokens"`
+		CacheRead        int `json:"cache_read_input_tokens"`
+		CacheWrite       int `json:"cache_creation_input_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		PromptDetails    *struct {
+			Cached int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	}
 	var p struct {
-		Usage *struct {
-			InputTokens      int `json:"input_tokens"`
-			OutputTokens     int `json:"output_tokens"`
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-		} `json:"usage"`
+		Usage   *usage `json:"usage"`
 		Message *struct {
-			Usage *struct {
-				InputTokens  int `json:"input_tokens"`
-				OutputTokens int `json:"output_tokens"`
-			} `json:"usage"`
+			Usage *usage `json:"usage"`
 		} `json:"message"`
 	}
 	if json.Unmarshal(payload, &p) != nil {
 		return
 	}
-	if u := p.Usage; u != nil {
-		if u.InputTokens > 0 {
-			*prompt = u.InputTokens
+	read := func(u *usage) {
+		if u == nil {
+			return
+		}
+		if u.InputTokens > 0 || u.CacheWrite > 0 {
+			t.fresh = u.InputTokens + u.CacheWrite
+		}
+		if u.CacheRead > 0 {
+			t.cached = u.CacheRead
 		}
 		if u.PromptTokens > 0 {
-			*prompt = u.PromptTokens
+			cached := 0
+			if u.PromptDetails != nil {
+				cached = min(max(u.PromptDetails.Cached, 0), u.PromptTokens)
+			}
+			t.fresh, t.cached = u.PromptTokens-cached, cached
 		}
 		if u.OutputTokens > 0 {
-			*completion = u.OutputTokens
+			t.completion = u.OutputTokens
 		}
 		if u.CompletionTokens > 0 {
-			*completion = u.CompletionTokens
+			t.completion = u.CompletionTokens
 		}
 	}
-	if p.Message != nil && p.Message.Usage != nil {
-		if p.Message.Usage.InputTokens > 0 {
-			*prompt = p.Message.Usage.InputTokens
-		}
-		if p.Message.Usage.OutputTokens > 0 {
-			*completion = p.Message.Usage.OutputTokens
-		}
+	read(p.Usage)
+	if p.Message != nil {
+		read(p.Message.Usage)
 	}
 }
 
@@ -1730,7 +1772,7 @@ type whence struct {
 // stream writer that outlives the request, so a `c` in scope here is a request
 // this function must not touch — and the way to keep a rule like that is to leave
 // nothing to touch.
-func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, prompt, completion int, start time.Time, hold *budgetHold, status, errMsg string) int64 {
+func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, t tokens, start time.Time, hold *budgetHold, status, errMsg string) int64 {
 	// The vendor charges nothing for a spare route — that is the whole reason it can
 	// answer while the account is empty — so it is billed at nothing. Charging
 	// retail for a downgrade the customer did not choose would be taking money for
@@ -1740,9 +1782,9 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	var cents int64
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
-			cents = zm.costCents(prompt, completion)
+			cents = zm.costCents(t.fresh, t.cached, t.completion)
 		} else {
-			cents = calculateCostCentsWithCache(model, prompt, completion, 0, 0)
+			cents = calculateCostCentsWithCache(model, t.fresh, t.completion, t.cached, 0)
 		}
 	}
 	hold.settle(cents)
@@ -1752,7 +1794,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	rec := &usageRecord{
 		Owner: w.ledger, Organization: authUser.Owner,
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: originOf(prov, mk),
-		PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
+		PromptTokens: t.fresh, CacheReadTokens: t.cached, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: w.ip, RequestID: reqID, Account: "hanzo",
