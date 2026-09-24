@@ -549,7 +549,7 @@ func (c *ApiController) AnthropicMessages() {
 	// carries on to the route's declared alternates below.
 	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		familyRefused = c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Body(), request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		familyRefused = c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Body(), request.Stream, request.MaxTokens, orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
 			return
 		}

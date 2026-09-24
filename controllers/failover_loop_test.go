@@ -438,7 +438,7 @@ func pipeFamily(t *testing.T, subject string, status int, body string) (refused 
 	req := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
 	c := visit("POST", "/v1/chat/completions")
 
-	refused = c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false,
+	refused = c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false, 0,
 		"org-a", nil, false, hold, time.Now())
 	avail, _ = object.GlobalBalanceLedger.Available(subject)
 	return refused, avail
@@ -510,7 +510,7 @@ func TestTheHoldFollowsTheAnswer(t *testing.T) {
 		// production: off the request it was handed.
 		c.SetContext(gone)
 
-		if refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false,
+		if refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", req, false, 0,
 			"org-a", nil, false, hold, time.Now()); refused != nil {
 			t.Fatalf("nobody is listening; the request must not be offered elsewhere, got %+v", refused)
 		}
@@ -556,7 +556,7 @@ func TestTheFamilyPipeRestsTheCallersAccount(t *testing.T) {
 	body := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
 	c := visit("POST", "/v1/chat/completions")
 
-	refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", body, false,
+	refused := c.pipeToFamily(fam, "chat/completions", "openai", "enso-flash", body, false, 0,
 		"org-a", nil, false, nil, time.Now())
 
 	if len(refused) != 1 || refused[0].status != 402 {

@@ -224,7 +224,7 @@ func (f *refuses) pipeSince(t *testing.T, fam *modelFamily, sku string, start ti
 	body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	out := c.pipeToFamily(fam, "chat/completions", "openai", sku, body, false, "acme", nil, false, nil, start)
+	out := c.pipeToFamily(fam, "chat/completions", "openai", sku, body, false, 0, "acme", nil, false, nil, start)
 	return c, out
 }
 
@@ -1032,7 +1032,7 @@ func TestAnEmbeddingsRequestDoesNotWalkTheChatPool(t *testing.T) {
 	body := []byte(`{"model":"enso-embed","input":"x"}`)
 	c := visit(http.MethodPost, "/v1/embeddings")
 	c.Fiber().Request().SetBody(body)
-	c.pipeToFamily(enso, "embeddings", "openai", "enso-embed", body, false, "acme", nil, false, nil, time.Now())
+	c.pipeToFamily(enso, "embeddings", "openai", "enso-embed", body, false, 0, "acme", nil, false, nil, time.Now())
 
 	if len(fake.asked) != 1 {
 		t.Errorf("asked=%v — an embeddings refusal walked the chat pool", fake.asked)
@@ -1188,7 +1188,7 @@ func TestTheBudgetBoundsBorrowedRoutesNotOurOwn(t *testing.T) {
 	body := []byte(`{"model":"enso-free","messages":[{"role":"user","content":"hi"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	c.pipeToFamily(enso, "chat/completions", "openai", "enso-free", body, false, "acme", nil, false, nil, time.Now())
+	c.pipeToFamily(enso, "chat/completions", "openai", "enso-free", body, false, 0, "acme", nil, false, nil, time.Now())
 
 	if asked[engineModel] == 0 {
 		t.Fatalf("our own compute was never asked: %v — the budget made the one unwithdrawable route unreachable", asked)
@@ -1282,7 +1282,7 @@ func TestADenyRouteIsRefusedNotSubstituted(t *testing.T) {
 	body := []byte(`{"model":"` + paid + `","messages":[{"role":"user","content":"2+2?"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, "acme", nil, false, nil, time.Now())
+	c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, 0, "acme", nil, false, nil, time.Now())
 
 	if asked[engineModel] != 0 {
 		t.Errorf("our own compute answered a %q route: %v", collectionDeny, asked)
@@ -1357,7 +1357,7 @@ func TestTheRouteThatRefusedIsNotAskedAgain(t *testing.T) {
 	body := []byte(`{"model":"` + free + `","messages":[{"role":"user","content":"2+2?"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	c.pipeToFamily(fam, "chat/completions", "openai", free, body, false, "acme", nil, false, nil, time.Now())
+	c.pipeToFamily(fam, "chat/completions", "openai", free, body, false, 0, "acme", nil, false, nil, time.Now())
 
 	if asked[free] != 1 {
 		t.Errorf("the refusing route was asked %d times, want 1 — the walk offered it its own request back", asked[free])
@@ -1407,7 +1407,7 @@ func TestAnUnreachableRouteIsSteppedOver(t *testing.T) {
 	body := []byte(`{"model":"enso","messages":[{"role":"user","content":"2+2?"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	c.pipeToFamily(fam, "chat/completions", "openai", "enso", body, false, "acme", nil, false, nil, time.Now())
+	c.pipeToFamily(fam, "chat/completions", "openai", "enso", body, false, 0, "acme", nil, false, nil, time.Now())
 
 	if askedEngine == 0 {
 		t.Error("an unreachable borrowed route ended the walk; our own route is the one that cannot be withdrawn")

@@ -1016,6 +1016,68 @@ func withModel(body []byte, model string) []byte {
 	return out
 }
 
+// familyFields are the top-level request fields a family is sent, per API path.
+// Every other field the caller wrote stays behind: a vendor that resells other
+// vendors reads fields that choose other models (models), other endpoints
+// (provider, transforms, route), extra completions (n) and paid tools (plugins,
+// web_search_options), and each would be charged to our account at a price the SKU
+// never quoted. openrouterTerms writes its own provider field after this.
+var familyFields = map[string]map[string]bool{
+	"chat/completions": fieldSet("model", "messages", "stream", "stream_options",
+		"max_tokens", "temperature", "top_p", "top_k", "min_p", "top_a",
+		"frequency_penalty", "presence_penalty", "repetition_penalty", "seed", "stop",
+		"logit_bias", "logprobs", "top_logprobs", "response_format", "tools", "tool_choice",
+		"parallel_tool_calls", "user", "reasoning_effort", "reasoning"),
+	"messages": fieldSet("model", "messages", "system", "max_tokens", "stream",
+		"temperature", "top_p", "top_k", "stop_sequences", "tools", "tool_choice",
+		"thinking", "metadata"),
+	"embeddings": fieldSet("model", "input", "encoding_format", "dimensions", "user"),
+}
+
+func fieldSet(names ...string) map[string]bool {
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}
+
+// searchesWeb reports a model id that runs a web search on every call: a vendor's
+// ":online" variant, billed per search on top of the tokens.
+func searchesWeb(model string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(model)), ":online")
+}
+
+// familyBody is the body a family is sent for apiPath: the familyFields of the
+// caller's request, with max_tokens set to maxTokens (the ceiling the hold was
+// reserved for) when it is positive. max_completion_tokens is not sent, so the one
+// ceiling is the reserved one. A path with no field list, or a body that is not a
+// JSON object, is sent as it came.
+func familyBody(body []byte, apiPath string, maxTokens int) []byte {
+	allowed, ok := familyFields[apiPath]
+	if !ok {
+		return body
+	}
+	var in map[string]json.RawMessage
+	if json.Unmarshal(body, &in) != nil || in == nil {
+		return body
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for k, v := range in {
+		if allowed[k] {
+			out[k] = v
+		}
+	}
+	if maxTokens > 0 && allowed["max_tokens"] {
+		out["max_tokens"], _ = json.Marshal(maxTokens)
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return body
+	}
+	return b
+}
+
 // pipeToFamily forwards the caller's request to the family service verbatim and relays
 // the response back unchanged — the family owns identity, reasoning, upstream, and
 // dialect; ai only authenticates, meters, and forwards. apiPath is "messages"
@@ -1045,7 +1107,7 @@ func withModel(body []byte, model string) []byte {
 // rule cover every ending rather than each ending remembering for itself — which
 // is how a 400 from an embeddings family came to hold a customer's cents with
 // nothing left running that would ever give them back.
-func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) []attempt {
+func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, maxTokens int, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) []attempt {
 	// done ends the request here: the client has its answer, or has gone.
 	done := func() []attempt {
 		hold.settle(0)
@@ -1112,6 +1174,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// same SKU (body model == SKU) serves. Reconcile the forwarded body's model with
 	// the resolved SKU; byte-identical for a direct request (model already matches).
 	rawBody = withModel(rawBody, model)
+	// What a family is sent is the request that was priced and reserved for: the
+	// fields that shape the answer, and the token ceiling the hold covers. A field
+	// that picks other models, endpoints or paid tools on the vendor's side stays
+	// here (familyBody), and so does a web-searching model id.
+	if searchesWeb(model) {
+		c.zenError(dialect, fmt.Sprintf("%s runs a web search on every call and is not served", model), http.StatusBadRequest)
+		return done()
+	}
+	rawBody = familyBody(rawBody, apiPath, maxTokens)
 	reqID := uuid.NewString()
 	// The family relays whoever it bought the inference from, so the answer leaves
 	// in our envelope wearing our id, the SKU asked for, and the seller (see

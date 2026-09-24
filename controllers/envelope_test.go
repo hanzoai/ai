@@ -517,7 +517,7 @@ func TestEveryRelayedDialectReachesTheDoor(t *testing.T) {
 			body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
 			c := visit("POST", "/v1/x")
 
-			c.pipeToFamily(fam, relay.apiPath, relay.dialect, sku, body, relay.stream,
+			c.pipeToFamily(fam, relay.apiPath, relay.dialect, sku, body, relay.stream, 0,
 				"", nil, false, nil, time.Now())
 
 			out := sent(c)
@@ -701,7 +701,7 @@ func TestPipeToFamilyIsOurs(t *testing.T) {
 			body := []byte(`{"model":"` + sku + `","messages":[{"role":"user","content":"2+2?"}]}`)
 			c := visit("POST", "/v1/chat/completions")
 
-			c.pipeToFamily(fam, "chat/completions", "openai", sku, body, mode.stream,
+			c.pipeToFamily(fam, "chat/completions", "openai", sku, body, mode.stream, 0,
 				"", nil, false, nil, time.Now())
 
 			out := sent(c)

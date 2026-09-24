@@ -258,7 +258,7 @@ func TestThePipeServesOnTheNextAccountAndNeverBillsTheCaller(t *testing.T) {
 		fam := spareFamily(t, s.URL, free, paid)
 		c := visit(http.MethodPost, "/v1/chat/completions")
 		c.Fiber().Request().SetBody(body)
-		return c, c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, "acme", nil, false, nil, time.Now())
+		return c, c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, 0, "acme", nil, false, nil, time.Now())
 	}
 
 	forgetKeys()

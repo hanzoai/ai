@@ -24,8 +24,9 @@ var orSKU = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9._-]*$`)
 // aliasVendor is an OpenRouter that lists every alias target at a price and answers
 // chat, recording the model id each completion was sent under.
 type aliasVendor struct {
-	mu    sync.Mutex
-	asked []string
+	mu     sync.Mutex
+	asked  []string
+	bodies []string
 }
 
 func (v *aliasVendor) models() []string {
@@ -82,6 +83,7 @@ func withAliasVendor(t *testing.T) *aliasVendor {
 			_ = json.Unmarshal(body, &in)
 			v.mu.Lock()
 			v.asked = append(v.asked, in.Model)
+			v.bodies = append(v.bodies, string(body))
 			v.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"id":"gen-1","object":"chat.completion","model":%q,"provider":"OpenAI",`+
@@ -174,7 +176,7 @@ func TestGPT4oIsServedByTheOpenRouterFamily(t *testing.T) {
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"2+2?"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	if refused := c.pipeToFamily(fam, "chat/completions", "openai", "gpt-4o", body, false, "acme", nil, false, nil, time.Now()); refused != nil {
+	if refused := c.pipeToFamily(fam, "chat/completions", "openai", "gpt-4o", body, false, 0, "acme", nil, false, nil, time.Now()); refused != nil {
 		t.Fatalf("the family refused the request: %+v", refused)
 	}
 

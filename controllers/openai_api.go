@@ -1856,7 +1856,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// running out of money and the product going dark.
 	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Body(), request.Stream, orgId, authUser, isPremium, hold, requestStartTime)
+		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Body(), request.Stream, clampMaxTokens(request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
 			return
 		}

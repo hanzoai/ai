@@ -120,7 +120,7 @@ func (c *ApiController) Embeddings() {
 			// running that would ever release them.
 			defer hold.settle(0)
 		}
-		refused := c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Body(), false, orgId, authUser, isPremium, hold, startTime)
+		refused := c.pipeToFamily(fam, "embeddings", "openai", head.Model, c.Body(), false, 0, orgId, authUser, isPremium, hold, startTime)
 		if refused == nil {
 			return
 		}
