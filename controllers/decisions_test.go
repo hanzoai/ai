@@ -1,0 +1,337 @@
+// Copyright 2026 Hanzo AI Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package controllers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"testing"
+
+	"github.com/hanzoai/ai/object"
+)
+
+// POST /v1/decisions against a fake decision service. The vehicle is an sk-
+// provider key: the one credential that carries a billable principal with no
+// IAM round trip, exactly as the chat money-path suite drives it.
+
+const (
+	decisionsKey = "sk-decisions-funded"
+	decisionsOrg = "acme"
+)
+
+// decisionAnswer is a Decisions response as the service writes it.
+const decisionAnswer = `{"id":"dec_1","model":"kai","provider":"Hanzo","answers":{"is_bug":{"type":"noul","noul":0.96,"answer_confidence":0.96}},"usage":{"input_tokens":42,"output_tokens":0,"cost":0.00002},"routing":{"backend":"kai","checkpoint":"hanzoai/kai","reason":"explicit model='kai'"},"state_hash":"sha256:00","latency_ms":1.5}`
+
+const decisionBody = `{"model":"kai","state":{"message":"Payment failed twice"},"questions":{"is_bug":{"type":"noul","instructions":"Is this a bug?"}}}`
+
+var decisionsSeq atomic.Int64
+
+// fakeDecisions is the decision service: it records what reached it and answers
+// with status and body.
+type fakeDecisions struct {
+	mu     sync.Mutex
+	calls  int
+	path   string
+	body   []byte
+	status int
+	answer string
+}
+
+func (f *fakeDecisions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	b, _ := io.ReadAll(r.Body)
+	f.mu.Lock()
+	f.calls++
+	f.path, f.body = r.URL.Path, b
+	f.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(f.status)
+	_, _ = w.Write([]byte(f.answer))
+}
+
+func (f *fakeDecisions) seen() (int, string, []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls, f.path, f.body
+}
+
+// setupDecisions installs a funded provider-key principal, a fake decision
+// service at KAI_URL, and a recorder for every debit, and restores all of it.
+func setupDecisions(t *testing.T) (*fakeDecisions, *[]object.UsageEvent) {
+	t.Helper()
+	dsn := fmt.Sprintf("file:decisions_%d?mode=memory&cache=shared", decisionsSeq.Add(1))
+	restore, err := object.UseMemoryDB(dsn, &object.Provider{})
+	if err != nil {
+		t.Fatalf("UseMemoryDB: %v", err)
+	}
+	t.Cleanup(restore)
+	if _, err := object.AddProvider(&object.Provider{
+		Owner: decisionsOrg, Name: "acme-openai", Category: "Model", Type: "OpenAI",
+		ProviderKey: decisionsKey, ProviderUrl: "http://127.0.0.1:1/v1",
+		ClientSecret: "upstream-secret", State: "Active",
+	}); err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	fake := &fakeDecisions{status: http.StatusOK, answer: decisionAnswer}
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+	t.Setenv("KAI_URL", srv.URL)
+	t.Setenv("KAI_API_KEY", "")
+
+	prevBalance := object.BalanceReader()
+	object.SetBalanceReader(balReader(100_00, nil))
+	t.Cleanup(func() { object.SetBalanceReader(prevBalance) })
+
+	var mu sync.Mutex
+	events := &[]object.UsageEvent{}
+	prevUsage := object.UsageRecorder()
+	object.SetUsageRecorder(func(_ context.Context, u object.UsageEvent) error {
+		mu.Lock()
+		defer mu.Unlock()
+		*events = append(*events, u)
+		return nil
+	})
+	t.Cleanup(func() { object.SetUsageRecorder(prevUsage) })
+	return fake, events
+}
+
+// driveDecisions runs the real Decisions handler and returns its status and body.
+func driveDecisions(t *testing.T, authorization, body string) (int, string) {
+	t.Helper()
+	c := presenting(visit(http.MethodPost, "/v1/decisions"), authorization)
+	c.Fiber().Request().SetBody([]byte(body))
+	status := answering(t, c, c.Decisions)
+	return status, sent(c)
+}
+
+// The body reaches the service unchanged, the answer comes back unchanged, and
+// the call is debited once, at the per-call price, whatever its tokens.
+func TestDecisionsForwardsAndMeters(t *testing.T) {
+	fake, events := setupDecisions(t)
+
+	status, body := driveDecisions(t, "Bearer "+decisionsKey, decisionBody)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", status, body)
+	}
+	if body != decisionAnswer {
+		t.Fatalf("answer changed on the way back:\n got %s\nwant %s", body, decisionAnswer)
+	}
+	calls, path, sentBody := fake.seen()
+	if calls != 1 || path != "/v1/decisions" {
+		t.Fatalf("service saw %d call(s) at %q, want 1 at /v1/decisions", calls, path)
+	}
+	if string(sentBody) != decisionBody {
+		t.Fatalf("body changed on the way out:\n got %s\nwant %s", sentBody, decisionBody)
+	}
+
+	if len(*events) != 1 {
+		t.Fatalf("debits = %d, want exactly 1", len(*events))
+	}
+	e := (*events)[0]
+	if e.Model != "kai" || e.Provider != object.KaiName {
+		t.Fatalf("debit names %s/%s, want kai/kai", e.Provider, e.Model)
+	}
+	if e.USD != "0.03" {
+		t.Fatalf("debit = $%s, want the per-call $0.03", e.USD)
+	}
+	if e.Namespace != decisionsOrg {
+		t.Fatalf("debit lands on %q, want the key's org %q", e.Namespace, decisionsOrg)
+	}
+}
+
+// The row carries the answer's usage: tokens recorded, the stated upstream cost as
+// COGS, and a price the tokens do not move.
+func TestDecisionRecordMetersUsage(t *testing.T) {
+	cost := 0.00002
+	u := decisionsUsage{InputTokens: 42, OutputTokens: 3, Cost: &cost}
+	var answer decisionsResponse
+	if err := json.Unmarshal([]byte(decisionAnswer), &answer); err != nil {
+		t.Fatalf("the declared response does not read the service's answer: %v", err)
+	}
+	if answer.Usage.InputTokens != 42 || answer.Usage.Cost == nil || *answer.Usage.Cost != cost {
+		t.Fatalf("usage read from the answer = %+v", answer.Usage)
+	}
+
+	rec := &usageRecord{Model: "kai", Provider: object.KaiName, PromptTokens: u.InputTokens,
+		CompletionTokens: u.OutputTokens, DecisionCount: 1}
+	if got := usageCostNano(rec); got != 30_000_000 {
+		t.Fatalf("cost = %d nano, want 30,000,000 ($0.03 per call)", got)
+	}
+	rec.PromptTokens = 1_000_000
+	if got := usageCostNano(rec); got != 30_000_000 {
+		t.Fatalf("a million tokens moved the per-call price to %d nano", got)
+	}
+	if recordUnpriced(rec) {
+		t.Fatal("a decision is priced per call; it must not read as unpriced")
+	}
+	stated := usdToNano(cost)
+	rec.CostNanoExact = &stated
+	if m := usageMargin(rec); m.MarginNano == nil || *m.MarginNano != 30_000_000-stated {
+		t.Fatalf("margin = %v, want price − stated cost", m.MarginNano)
+	}
+}
+
+// No credential, or one nobody issued, is 401 — and nothing reaches the service.
+func TestDecisionsAuthRequired(t *testing.T) {
+	fake, events := setupDecisions(t)
+	for _, auth := range []string{"", "Bearer ", "Bearer sk-nobody-issued-this", "Bearer pk-publishable"} {
+		status, _ := driveDecisions(t, auth, decisionBody)
+		if status != http.StatusUnauthorized && status != http.StatusForbidden {
+			t.Errorf("%q => %d, want 401/403", auth, status)
+		}
+	}
+	if calls, _, _ := fake.seen(); calls != 0 {
+		t.Fatalf("service saw %d call(s) from unauthenticated callers", calls)
+	}
+	if len(*events) != 0 {
+		t.Fatalf("unauthenticated callers were debited %d time(s)", len(*events))
+	}
+}
+
+// A model this endpoint does not publish is refused in the service's error shape,
+// naming what it does serve, without a call. Laya is the benchmark baseline the
+// service can load; it is not published, so it is unknown here.
+func TestDecisionsUnknownModel(t *testing.T) {
+	fake, events := setupDecisions(t)
+	for _, model := range []string{"laya", "laya-agent", "gpt-4o", "zen5", "bge-m3", "zen-scribe"} {
+		status, body := driveDecisions(t, "Bearer "+decisionsKey,
+			`{"model":"`+model+`","state":"x","questions":{"q":{"type":"noul","instructions":"?"}}}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("%s => %d, want 400", model, status)
+		}
+		want := string(decisionsFailure(400, fmt.Sprintf("unknown model %q; use one of kai, typesafe/jev-1.13, ~typesafe/jev-latest", model)))
+		if body != want {
+			t.Fatalf("%s refusal:\n got %s\nwant %s", model, body, want)
+		}
+	}
+	// A body with no model says so, in the same shape.
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"state":"x"}`); status != 400 ||
+		body != `{"error":{"code":400,"message":"the request needs a 'model'"}}` {
+		t.Fatalf("no model => %d %s", status, body)
+	}
+	// Authentication still comes first.
+	if status, _ := driveDecisions(t, "Bearer sk-nobody-issued-this", `{"model":"laya"}`); status != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated unknown model => %d, want 401", status)
+	}
+	if calls, _, _ := fake.seen(); calls != 0 {
+		t.Fatalf("service saw %d call(s) for models it must never be sent", calls)
+	}
+	if len(*events) != 0 {
+		t.Fatalf("refused calls were debited %d time(s)", len(*events))
+	}
+}
+
+// The service's own refusal comes back unchanged and is not charged.
+func TestDecisionsServiceRefusalPassesThrough(t *testing.T) {
+	fake, events := setupDecisions(t)
+	fake.status = http.StatusUnprocessableEntity
+	fake.answer = `{"error":{"code":422,"message":"question 'c' options exceed head_max_len=16"}}`
+
+	status, body := driveDecisions(t, "Bearer "+decisionsKey, decisionBody)
+	if status != http.StatusUnprocessableEntity || body != fake.answer {
+		t.Fatalf("refusal => %d %s, want 422 %s", status, body, fake.answer)
+	}
+	if len(*events) != 0 {
+		t.Fatalf("a refused decision was debited %d time(s)", len(*events))
+	}
+}
+
+// With no decision service configured the answer is a 503 in the service's shape.
+func TestDecisionsUnconfigured(t *testing.T) {
+	setupDecisions(t)
+	t.Setenv("KAI_URL", "")
+	status, body := driveDecisions(t, "Bearer "+decisionsKey, decisionBody)
+	if status != http.StatusServiceUnavailable ||
+		body != `{"error":{"code":503,"message":"the decision service is not configured"}}` {
+		t.Fatalf("unconfigured => %d %s", status, body)
+	}
+}
+
+// The ZAP twin: 401 with no credential, the same refusal for an unknown model, and
+// the answer forwarded unchanged.
+func TestZapDecisions(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	if _, ok := lookupGatewayHandler("/v1/decisions"); !ok {
+		t.Fatal("gateway path /v1/decisions not registered")
+	}
+	if _, ok := lookupCloudHandler("decisions"); !ok {
+		t.Fatal("cloud method \"decisions\" not registered")
+	}
+
+	msg, err := zapDecisionsHandler(context.Background(), "", []byte(decisionBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := cloudRespStatus(t, msg); status != 401 {
+		t.Fatalf("no credential => %d, want 401", status)
+	}
+
+	msg, _ = zapDecisionsHandler(context.Background(), "Bearer "+decisionsKey, []byte(`{"model":"laya"}`))
+	status, body, _ := cloudRespStatus(t, msg)
+	if status != 400 || string(body) != string(decisionsFailure(400, `unknown model "laya"; use one of kai, typesafe/jev-1.13, ~typesafe/jev-latest`)) {
+		t.Fatalf("unknown model => %d %s", status, body)
+	}
+
+	msg, _ = zapDecisionsHandler(context.Background(), "Bearer "+decisionsKey, []byte(decisionBody))
+	status, body, errText := cloudRespStatus(t, msg)
+	if status != 200 || string(body) != decisionAnswer {
+		t.Fatalf("forward => %d %s (%s)", status, body, errText)
+	}
+	if calls, _, sentBody := fake.seen(); calls != 1 || string(sentBody) != decisionBody {
+		t.Fatalf("service saw %d call(s), body %s", calls, sentBody)
+	}
+}
+
+// The shipped catalog publishes kai as a decision model, keeps the Jev ids
+// callable and unlisted, and the static fallback agrees.
+func TestDecisionsCatalog(t *testing.T) {
+	want := []string{"kai", "typesafe/jev-1.13", "~typesafe/jev-latest"}
+	if got := decisionModels(); !slices.Equal(got, want) {
+		t.Fatalf("static decision models = %v, want %v", got, want)
+	}
+
+	useCatalog(t, "../conf/models.yaml")
+	if got := decisionModels(); !slices.Equal(got, want) {
+		t.Fatalf("catalog decision models = %v, want %v", got, want)
+	}
+	listed := map[string]modelInfo{}
+	for _, m := range listAvailableModels() {
+		listed[m.ID] = m
+	}
+	kai, ok := listed["kai"]
+	if !ok {
+		t.Fatal("kai is not in /v1/models")
+	}
+	if !slices.Equal(kai.Outputs, []string{"decision"}) || kai.OwnedBy != "hanzo" {
+		t.Fatalf("kai lists as outputs=%v owned_by=%q, want [decision] hanzo", kai.Outputs, kai.OwnedBy)
+	}
+	for _, id := range want[1:] {
+		if _, ok := listed[id]; ok {
+			t.Errorf("%s is listed; it is callable, not published", id)
+		}
+	}
+	for _, id := range []string{"laya", "laya-multilingual", "laya-agent"} {
+		if r := resolveModelRoute(id); r != nil && r.providerName == object.KaiName {
+			t.Errorf("%s routes to the decision service; the baseline is never published", id)
+		}
+	}
+}

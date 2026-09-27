@@ -284,6 +284,11 @@ func GetModelProviderByName(name string) (*Provider, error) {
 	if fn, ok := familyProviderFns[name]; ok {
 		return fn(), nil
 	}
+	// The decision service is addressed the same way and is not a family, so it
+	// is named here rather than in the family table (see KaiProvider).
+	if name == KaiName {
+		return KaiProvider(), nil
+	}
 
 	providerByNameCacheMu.RLock()
 	entry, ok := providerByNameCache[name]

@@ -83,7 +83,7 @@ func implicitQuality(r *usageRecord) float64 {
 	if r.Status != "success" {
 		return 0 // errored / refused / timed out — this arm failed the request
 	}
-	if r.CompletionTokens <= 0 && r.ImageCount == 0 && r.VideoCount == 0 && !recordIsAudio(r) {
+	if r.CompletionTokens <= 0 && r.ImageCount == 0 && r.VideoCount == 0 && r.DecisionCount == 0 && !recordIsAudio(r) {
 		return 0.2 // 2xx with no output — a weak, near-empty success
 	}
 	return 1.0

@@ -101,6 +101,8 @@ func usageCostNano(record *usageRecord) int64 {
 		return videoCostCents(record.Model, record.VideoCount) * 10_000_000 // 1¢ = 1e7 nano
 	case record.ImageCount > 0:
 		return imageCostCents(record.Model, record.ImageCount) * 10_000_000
+	case record.DecisionCount > 0:
+		return decisionCostCents(record.Model, record.DecisionCount) * 10_000_000
 	case recordIsAudio(record):
 		return audioCostCents(record) * 10_000_000
 	default:
@@ -161,6 +163,8 @@ func providerCostNano(record *usageRecord) *int64 {
 		return nil // the per-unit table is a price; no vendor invoice is known
 	case record.ImageCount > 0:
 		return nil
+	case record.DecisionCount > 0:
+		return nil // a decision that states its cost carries it as CostNanoExact
 	case recordIsAudio(record):
 		// Speech runs on hardware we already own, so there is no upstream invoice
 		// to pass through: COGS is 0 and the margin on an audio call is the whole

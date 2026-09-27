@@ -401,6 +401,31 @@ func videoCostCents(model string, n int) int64 {
 	return per * int64(n)
 }
 
+// decisionPricePerCallCents maps a decision model (POST /v1/decisions) to its price
+// per call, in cents. A decision bills per call like /v1/rerank, NOT per token: the
+// answer's token counts are recorded on the row, and none of them moves the price.
+// The price is the catalog's (hanzoai/pricing, the kai row, perUnit) and is the
+// zen-rerank rate until the owner sets one.
+var decisionPricePerCallCents = map[string]int64{
+	"kai":                  3,
+	"typesafe/jev-1.13":    3,
+	"~typesafe/jev-latest": 3,
+}
+
+// decisionCostCents is the cost in cents of n decision calls. A decision model
+// absent from the table bills at kai's rate rather than nothing. n <= 0 costs
+// nothing.
+func decisionCostCents(model string, n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	per, ok := decisionPricePerCallCents[strings.ToLower(model)]
+	if !ok {
+		per = decisionPricePerCallCents["kai"]
+	}
+	return per * int64(n)
+}
+
 // DO-AI alias pricing (same as their base model)
 var aliasPricing = map[string]string{
 	"openai/gpt-4o":                        "gpt-4o",
@@ -532,7 +557,7 @@ func recordUnpriced(record *usageRecord) bool {
 	if record.Free {
 		return false
 	}
-	if record.ImageCount > 0 || record.VideoCount > 0 {
+	if record.ImageCount > 0 || record.VideoCount > 0 || record.DecisionCount > 0 {
 		return false
 	}
 	// Audio is priced per minute / per million characters, not per token, so the

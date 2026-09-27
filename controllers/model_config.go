@@ -158,6 +158,10 @@ type ModelDef struct {
 	// never guessed — so absence means "not advertised", never a fabricated yes.
 	Vision bool `yaml:"vision,omitempty"`
 	Tools  bool `yaml:"tools,omitempty"`
+	// Outputs are the kinds of answer the model produces, surfaced in /v1/models
+	// as `outputs` — "decision" for a model served at /v1/decisions — so a
+	// catalog never offers it for a chat turn. Absent ⇒ not advertised.
+	Outputs []string `yaml:"outputs,omitempty"`
 }
 
 // ── Singleton ───────────────────────────────────────────────────────────
@@ -266,6 +270,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 				maxOutput:     def.MaxOutputTokens,
 				vision:        def.Vision,
 				tools:         def.Tools,
+				outputs:       def.Outputs,
 			}
 			for _, fb := range def.Fallbacks {
 				r.fallbacks = append(r.fallbacks, modelRouteFallback{
@@ -572,6 +577,7 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 			MaxOutputTokens: route.maxOutput,
 			SupportsVision:  route.vision,
 			SupportsTools:   route.tools,
+			Outputs:         route.outputs,
 			Pricing:         pricingInfo(price, hasPrice),
 		})
 	}

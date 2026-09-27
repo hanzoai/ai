@@ -35,4 +35,6 @@ var takes = map[string]any{
 	// The handler reads only the model and forwards the rest verbatim; this is the
 	// OpenAI embedding request it forwards.
 	"Embeddings": openai.EmbeddingRequest{},
+	// Forwarded verbatim to the decision service; this is the Decisions request.
+	"Decisions": decisionsRequest{},
 }

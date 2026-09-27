@@ -172,3 +172,15 @@ func EnsoProvider() *Provider { return familyProvider("enso", "Enso", "ENSO_URL"
 func OpenRouterProvider() *Provider {
 	return familyProvider("openrouter", "OpenRouter", "OPENROUTER_URL", "OPENROUTER_API_KEY")
 }
+
+// KaiName is the decision service's provider name — the one the decision routes
+// (conf/models.yaml, provider kai) name.
+const KaiName = "kai"
+
+// KaiProvider is the decision service (KAI_URL / KAI_API_KEY): Kai, Hanzo's
+// decision model, and the decision models it forwards. It is addressed the way a
+// family is — deployment config, overridden by an admin row of its name — but it
+// is not one: it answers POST /v1/decisions and nothing else, so nothing
+// discovers a catalog from it or pipes a chat turn to it. In-cluster it takes no
+// credential, so KAI_API_KEY is unset and no Authorization header is sent.
+func KaiProvider() *Provider { return familyProvider(KaiName, "Kai", "KAI_URL", "KAI_API_KEY") }

@@ -359,6 +359,29 @@ models:
     pricing: {input: 0.00, output: 0.00}
     hidden: true
 
+  # ── Hanzo Decision ── the decision service (KAI_URL), POST /v1/decisions ──
+  # Kai is Hanzo's decision model. The Jev ids are forwarded by the same service
+  # to OpenRouter's Decisions API: callable, not listed. No per-token pricing: a
+  # decision bills per call (controllers/model_pricing.go decisionPricePerCallCents).
+  # outputs: [decision] keeps every catalog from offering these for a chat turn.
+  kai:
+    provider: kai
+    upstream: kai
+    owned_by: hanzo
+    outputs: [decision]
+  typesafe/jev-1.13:
+    provider: kai
+    upstream: typesafe/jev-1.13
+    owned_by: typesafe
+    outputs: [decision]
+    hidden: true
+  "~typesafe/jev-latest":
+    provider: kai
+    upstream: "~typesafe/jev-latest"
+    owned_by: typesafe
+    outputs: [decision]
+    hidden: true
+
   # ── DO upstream leaves ──────────────────────────────────────────────
   # Declared so an alias above inherits its upstream's REAL served window
   # (ModelConfig.ContextWindow follows the alias chain). hidden: they are the

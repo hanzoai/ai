@@ -39,6 +39,7 @@ func TestTheModelCallsSayWhatTheyTake(t *testing.T) {
 		{"/v1/chat/completions", []string{"model", "messages"}},
 		{"/v1/messages", []string{"model", "messages", "max_tokens"}},
 		{"/v1/embeddings", []string{"model", "input"}},
+		{"/v1/decisions", []string{"model", "state", "questions"}},
 	} {
 		item, _ := paths[c.path].(map[string]any)
 		op, _ := item["post"].(map[string]any)

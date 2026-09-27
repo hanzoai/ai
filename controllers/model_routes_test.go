@@ -149,6 +149,9 @@ func TestModelRoutes_ProviderNamesAreKnown(t *testing.T) {
 	for _, name := range object.FamilyProviderNames() {
 		known[name] = true
 	}
+	// The decision service: addressed by config like a family, resolved by the
+	// name GetModelProviderByName reads (object.KaiProvider).
+	known[object.KaiName] = true
 	for name, route := range modelRoutes {
 		if !known[route.providerName] {
 			t.Errorf("model %q uses unknown provider %q", name, route.providerName)

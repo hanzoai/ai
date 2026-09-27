@@ -73,6 +73,7 @@ var answers = map[string]Answer{
 	"AudioTranscriptions":   whole(openai.AudioResponse{}),
 	"ListModels":            whole(modelList{}),
 	"Rerank":                whole(ranking{}),
+	"Decisions":             whole(decisionsResponse{}),
 	"VideosGenerations":     whole(videoStatus{}),
 	"RetrieveVideo":         whole(videoStatus{}),
 

@@ -46,6 +46,7 @@ type modelRoute struct {
 	maxOutput     int                  // Max completion tokens (from the upstream catalog); 0 = undeclared
 	vision        bool                 // Accepts image input (OpenAI image_url parts) — set only from a live probe
 	tools         bool                 // Supports function/tool calling — set only from a live probe
+	outputs       []string             // Kinds of answer the model produces (e.g. "decision"); nil = not advertised
 }
 
 // modelRoutes is the static routing table. Keys are user-facing model names
@@ -146,6 +147,14 @@ var modelRoutes = map[string]modelRoute{
 	// purely on a positive prepaid balance (there is no free credit), so a $0 signup
 	// is refused at the balance gate before ever reaching video.
 	"wan2-2-t2v-a14b": {providerName: "do-ai", upstreamModel: "wan2-2-t2v-a14b", premium: true},
+
+	// ── Hanzo Decision ── served at POST /v1/decisions by the decision service ──
+	// Kai is Hanzo's decision model; the Jev ids are forwarded by the same service
+	// to OpenRouter, so they stay callable and leave the listing. A decision answers
+	// typed questions, not a chat turn, and `outputs` says so to every catalog.
+	"kai":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}},
+	"typesafe/jev-1.13":    {providerName: object.KaiName, upstreamModel: "typesafe/jev-1.13", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true},
+	"~typesafe/jev-latest": {providerName: object.KaiName, upstreamModel: "~typesafe/jev-latest", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true},
 }
 
 // modelCountByProvider returns, per provider name, how many user-facing model
@@ -491,6 +500,7 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 			MaxOutputTokens: route.maxOutput,
 			SupportsVision:  route.vision,
 			SupportsTools:   route.tools,
+			Outputs:         route.outputs,
 			Pricing:         pricingInfo(staticModelPrice(name)),
 		})
 	}

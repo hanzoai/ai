@@ -126,6 +126,10 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/embeddings", "POST:Embeddings")
 	route(app, "/v1/rerank", "POST:Rerank")
 
+	// Hanzo Decision on the Decisions API wire: typed questions about a state,
+	// answered by the decision service (KAI_URL). Same auth + balance gate.
+	route(app, "/v1/decisions", "POST:Decisions")
+
 	// OpenAI-compatible image generation. Same auth + provider routing; the
 	// zen3-image family routes to do-ai's fal-hosted diffusion models.
 	route(app, "/v1/images/generations", "POST:ImagesGenerations")

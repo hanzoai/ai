@@ -794,6 +794,12 @@ type usageRecord struct {
 	// either an image or a video generation, never both).
 	VideoCount int `json:"videoCount,omitempty"`
 
+	// DecisionCount is the number of decisions answered (POST /v1/decisions), one
+	// per call. A decision bills per call at decisionCostCents, not per token: when
+	// > 0, usageCostNano prices the call from it, and the tokens the answer reports
+	// are recorded without moving the price.
+	DecisionCount int `json:"decisionCount,omitempty"`
+
 	// AudioSeconds is the DURATION of audio a speech-to-text call consumed, and
 	// AudioChars the number of characters a text-to-speech call synthesized.
 	// Audio bills per unit like images and video, but the unit differs by
@@ -1309,6 +1315,7 @@ func recordUsage(record *usageRecord) {
 		"cacheWriteTokens": record.CacheWriteTokens,
 		"imageCount":       record.ImageCount,
 		"videoCount":       record.VideoCount,
+		"decisionCount":    record.DecisionCount,
 		"audioSeconds":     record.AudioSeconds,
 		"audioChars":       record.AudioChars,
 		"requestId":        record.RequestID,

@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/hanzoai/ai/object"
 )
 
 // These tests pin the ADDITIVE enrichment of the /v1/models response shape
@@ -353,11 +355,12 @@ func TestListModelsRichStaticPath(t *testing.T) {
 // one re-hardcoded here instead of discovered. Speech never moved. It is served
 // from a deployment we operate, so its names are ours in the way owned_by means,
 // and the honest form of the rule is about WHO SERVES a branded model rather than
-// about there being none.
+// about there being none. Kai is the same case: served by the decision service, a
+// deployment we operate.
 func TestNoStaticBrandedModels(t *testing.T) {
 	for _, m := range listAvailableModels() {
 		route := modelRoutes[m.ID]
-		if route.ownedBy != "" && route.providerName != "speech" {
+		if route.ownedBy != "" && route.providerName != "speech" && route.providerName != object.KaiName {
 			t.Errorf("static table brands %q (owned_by=%s) on provider %q — a SKU we do not serve is attributed, not claimed, and a zen SKU is discovered rather than hardcoded",
 				m.ID, route.ownedBy, route.providerName)
 		}
