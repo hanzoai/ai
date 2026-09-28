@@ -1352,7 +1352,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// transport needs to replay a body across a redirect or an HTTP/2 refusal.
 		// Setting the body by hand without it silently drops that.
 		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
-		return f.send(r, p, f.free(s))
+		resp, sErr := f.send(r, p, f.free(s))
+		if sErr != nil || !stream {
+			return resp, sErr
+		}
+		// A stream's 200 arrives before its answer; its opening frames say whether
+		// there is one (family_open.go).
+		return opening(resp), nil
 	}
 
 	send := func(s string) (*http.Response, error) { return dispatch(fam, s) }
@@ -1539,7 +1545,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// BEFORE any byte of a stream is written — the WriteHeader below is still
 	// ahead of us — so a streaming request is exactly as movable here as a
 	// buffered one. This is the only window in which that is true, which is why
-	// the decision lives at the status and not somewhere down in the relay.
+	// the decision lives at the status and not somewhere down in the relay. A
+	// stream's status here is what its opening frames said (dispatch → opening).
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		err := &apiError{status: resp.StatusCode, msg: upstreamErrorMessage(b)}
