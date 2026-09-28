@@ -14,7 +14,7 @@
 
 // Native ZAP handler for POST /v1/decisions — the pure-ZAP twin of
 // ApiController.Decisions (decisions.go), on the same pipeline as the rerank
-// twin: auth → balance gate → forward unchanged → meter. POST /v1/decisions stays
+// twin: auth → balance gate → forward → meter. POST /v1/decisions stays
 // live on routers.App, which also backs the gateway fallback.
 
 package controllers
@@ -61,7 +61,7 @@ func zapDecisionsHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 
 	startTime := time.Now().UTC()
 	kai := object.KaiProvider()
-	status, out, usage, fault := decide(ctx, kai, body)
+	status, out, usage, fault := decide(ctx, kai, model, body)
 	if fault != nil {
 		return object.BuildCloudResponse(uint32(fault.status), fault.body, "")
 	}

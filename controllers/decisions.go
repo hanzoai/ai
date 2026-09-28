@@ -38,10 +38,11 @@ import (
 //
 // ai does not decide. The decision service (object.KaiProvider, KAI_URL) answers;
 // ai authenticates on the one auth + routing policy (authResolveProvider), gates
-// on the balance, forwards the body unchanged, returns the answer unchanged, and
-// meters the call. The models are the routes to that service (conf/models.yaml,
-// provider kai): kai, and the Jev ids the service forwards to OpenRouter. A
-// decision bills its input tokens at the model's price (decisionCostNano).
+// on the balance, forwards the body under the id the model's route names upstream,
+// returns the answer naming the model asked for, and meters the call. The models
+// are the routes to that service (conf/models.yaml, provider kai): kai, and the Jev
+// ids the service forwards to OpenRouter. A decision bills its input tokens at the
+// model's price (decisionCostNano).
 
 // decisionsRequest is the body POST /v1/decisions reads. The handler reads only
 // the model and forwards the rest verbatim; this is the shape it forwards.
@@ -199,12 +200,22 @@ func decisionModel(body []byte) (string, *decisionRefusal) {
 // forward pass, or one upstream call for a forwarded model.
 var decisionsClient = &http.Client{Timeout: 120 * time.Second}
 
-// decide forwards body unchanged to the decision service and returns the
-// service's status and bytes unchanged, with the usage a 200 answer reports. A
-// refusal is ai's own: the service is not configured, or could not be reached.
-func decide(ctx context.Context, kai *object.Provider, body []byte) (int, []byte, decisionsUsage, *decisionRefusal) {
+// decide forwards body to the decision service, naming model by the id its route
+// names upstream, and returns the service's status and bytes, a 200 answer naming
+// model, with the usage that answer reports. A refusal is ai's own: the service is
+// not configured, or could not be reached.
+func decide(ctx context.Context, kai *object.Provider, model string, body []byte) (int, []byte, decisionsUsage, *decisionRefusal) {
 	if kai == nil {
 		return 0, nil, decisionsUsage{}, refuseDecision(http.StatusServiceUnavailable, "the decision service is not configured")
+	}
+	up := model
+	if r := resolveModelRoute(model); r != nil && r.upstreamModel != "" {
+		up = r.upstreamModel
+	}
+	if up != model {
+		if b, ok := WithModel(body, up); ok {
+			body = b
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+"/v1/decisions", bytes.NewReader(body))
 	if err != nil {
@@ -224,6 +235,11 @@ func decide(ctx context.Context, kai *object.Provider, body []byte) (int, []byte
 	var answer decisionsResponse
 	if resp.StatusCode == http.StatusOK {
 		_ = json.Unmarshal(b, &answer)
+		if up != model {
+			if named, ok := WithModel(b, model); ok {
+				b = named
+			}
+		}
 	}
 	return resp.StatusCode, b, answer.Usage, nil
 }
@@ -264,10 +280,10 @@ func decisionRecord(ctx context.Context, ledger string, authUser *iam.User, mode
 // Response: {"id","model","provider","answers":{"<name>":{"type",...}},
 // "usage":{"input_tokens","output_tokens"}}
 //
-// The body goes to the decision service unchanged and its answer comes back
-// unchanged, errors included ({"error":{"code","message"}}). An unknown model is
-// refused here in that shape, without a call. Billed on the answer's input tokens
-// at the model's price.
+// The body goes to the decision service under the id the model's route names
+// upstream, and its answer comes back naming the model asked for, errors unchanged
+// ({"error":{"code","message"}}). An unknown model is refused here in that shape,
+// without a call. Billed on the answer's input tokens at the model's price.
 func (c *ApiController) Decisions() {
 	token, ok := c.bearerToken()
 	if !ok {
@@ -311,7 +327,7 @@ func (c *ApiController) Decisions() {
 	defer hold.settle(0)
 
 	kai := object.KaiProvider()
-	status, body, usage, fault := decide(c.Context(), kai, c.Body())
+	status, body, usage, fault := decide(c.Context(), kai, model, c.Body())
 	if fault != nil {
 		c.decisionsReply(fault.status, fault.body)
 		return

@@ -70,6 +70,8 @@ func InstallFilters(app *zip.App) {
 	// cert was ever established — and the two are indistinguishable at the parse.
 	// Refusing here with 503 keeps that ambiguity out of the chain.
 	app.Use(zip.H(AuthAvailableFilter))
+	// An alias is named as the id it stands for before anything reads the model.
+	app.Use(zip.H(AliasFilter))
 	// The virtual `auto` model is resolved to the SKU that serves it before the gate
 	// prices the request, so the gate prices that SKU.
 	app.Use(zip.H(AutoRouteFilter))

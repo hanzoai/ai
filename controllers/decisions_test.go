@@ -21,7 +21,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -155,6 +158,80 @@ func TestDecisionsForwardsAndMeters(t *testing.T) {
 	}
 	if e.Namespace != decisionsOrg {
 		t.Fatalf("debit lands on %q, want the key's org %q", e.Namespace, decisionsOrg)
+	}
+}
+
+// A model whose route names another id upstream reaches the service under that id,
+// and the answer and the debit name the model asked for, at its own row. Its alias
+// is neither listed nor a route of its own: it names that model.
+func TestDecisionsServeTheModelAskedFor(t *testing.T) {
+	fake, events := setupDecisions(t)
+	path := filepath.Join(t.TempDir(), "models.yaml")
+	catalog := `version: 1
+models:
+  hanzo/kai:
+    provider: kai
+    upstream: kai
+    owned_by: hanzo
+    outputs: [decision]
+    pricing: {input: 0.021, output: 0}
+  hanzoai/kai:
+    alias_of: hanzo/kai
+`
+	if err := os.WriteFile(path, []byte(catalog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	useCatalog(t, path)
+
+	if id, ok := Canonical("HanzoAI/Kai"); !ok || id != "hanzo/kai" {
+		t.Fatalf("Canonical(hanzoai/kai) = %q, %v; want hanzo/kai", id, ok)
+	}
+	if id, ok := Canonical("hanzo/kai"); ok {
+		t.Fatalf("hanzo/kai is not an alias, yet names %q", id)
+	}
+	if r := resolveModelRoute("hanzoai/kai"); r != nil {
+		t.Fatalf("an alias is a route of its own: %+v", r)
+	}
+	listed := map[string]bool{}
+	for _, m := range listAvailableModels() {
+		listed[m.ID] = true
+	}
+	if !listed["hanzo/kai"] || listed["hanzoai/kai"] {
+		t.Fatalf("listed hanzo/kai=%v hanzoai/kai=%v, want the model listed and its alias not", listed["hanzo/kai"], listed["hanzoai/kai"])
+	}
+
+	asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"hanzo/kai"`, 1)
+	status, body := driveDecisions(t, "Bearer "+decisionsKey, asked)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", status, body)
+	}
+	var answer, served map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &answer); err != nil || string(answer["model"]) != `"hanzo/kai"` {
+		t.Fatalf("answer names %s, want hanzo/kai (body %s)", answer["model"], body)
+	}
+	var sent, in map[string]json.RawMessage
+	_, _, raw := fake.seen()
+	if err := json.Unmarshal(raw, &sent); err != nil || string(sent["model"]) != `"kai"` {
+		t.Fatalf("service was sent %s, want kai", raw)
+	}
+	_ = json.Unmarshal([]byte(asked), &in)
+	_ = json.Unmarshal([]byte(decisionAnswer), &served)
+	for _, k := range []string{"state", "questions"} {
+		if string(sent[k]) != string(in[k]) {
+			t.Fatalf("%s changed on the way out: %s", k, sent[k])
+		}
+	}
+	for _, k := range []string{"answers", "usage", "routing"} {
+		if string(answer[k]) != string(served[k]) {
+			t.Fatalf("%s changed on the way back: %s", k, answer[k])
+		}
+	}
+
+	if len(*events) != 1 {
+		t.Fatalf("debits = %d, want exactly 1", len(*events))
+	}
+	if e := (*events)[0]; e.Model != "hanzo/kai" || e.USD != nanoToUSD(42*21) {
+		t.Fatalf("debit = %s at $%s, want hanzo/kai at 42 input tokens × $0.021/M", e.Model, e.USD)
 	}
 }
 

@@ -439,6 +439,12 @@ Request flow for a completion:
    truth in prod**) → static `controllers/model_routes.go` map. The YAML wins,
    so changing routing live = edit the ConfigMap (then `/v1/reload-model-config`
    or restart). The static map is the fallback when no YAML is present.
+   A models.yaml entry with `alias_of: <id>` is an alias: not a route, not
+   listed. `AliasFilter` rewrites a POST body naming it to name `<id>` ahead of
+   every other reader, so it is routed, gated and billed as `<id>`. An alias of a
+   zen SKU belongs in the zen catalog instead: cloud's in-process zen claims
+   the request before this chain runs. `/v1/decisions` sends the service the
+   route's `upstream` and answers naming the id asked for.
 4. **Provider records** live in the DB (`object/init.go` `initLLMProviders`),
    keyed by name: `do-ai` (DigitalOcean GenAI, the primary — backs OpenAI/
    Anthropic/Llama/DeepSeek/Qwen/GLM/Kimi via `inference.do-ai.run`),

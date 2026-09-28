@@ -137,7 +137,7 @@ type ModelDef struct {
 	Premium      bool           `yaml:"premium"`
 	Hidden       bool           `yaml:"hidden"`
 	OwnedBy      string         `yaml:"owned_by"`
-	AliasOf      string         `yaml:"alias_of"`
+	AliasOf      string         `yaml:"alias_of"` // the id this one stands for: not a route, not listed, served and billed as that id
 	AliasPricing string         `yaml:"alias_pricing"`
 	PricingOnly  bool           `yaml:"pricing_only"`
 	Pricing      *ModelPriceDef `yaml:"pricing,omitempty"`
@@ -177,6 +177,7 @@ type ModelConfig struct {
 	mu       sync.RWMutex
 	routes   map[string]modelRoute // lowercase key → route
 	pricing  map[string]modelPrice // lowercase key → price
+	aliases  map[string]string     // lowercase alias → the id it stands for
 	features FeatureFlags
 	retry    RetryDef
 	router   RouterConfigDef
@@ -251,12 +252,17 @@ func (mc *ModelConfig) loadFromFile(path string) error {
 func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	routes := make(map[string]modelRoute, len(file.Models))
 	pricing := make(map[string]modelPrice, len(file.Models))
+	aliases := make(map[string]string)
 
 	// Build alias pricing map for resolution
 	aliasPricingMap := make(map[string]string)
 
 	for name, def := range file.Models {
 		key := strings.ToLower(name)
+		if id := strings.TrimSpace(def.AliasOf); id != "" {
+			aliases[key] = id
+			continue
+		}
 
 		// Build route (skip pricing-only entries)
 		if !def.PricingOnly {
@@ -360,6 +366,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 	mc.mu.Lock()
 	mc.routes = routes
 	mc.pricing = pricing
+	mc.aliases = aliases
 	mc.features = file.Features
 	mc.retry = file.Retry
 	mc.router = routerCfg
@@ -405,6 +412,19 @@ func (mc *ModelConfig) ResolveRoute(model string) *modelRoute {
 		return &route
 	}
 	return nil
+}
+
+// Canonical names the id an alias stands for; ok is false for an id that is not
+// an alias.
+func Canonical(model string) (string, bool) {
+	cfg := GetModelConfig()
+	if cfg == nil {
+		return "", false
+	}
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	id, ok := cfg.aliases[strings.ToLower(strings.TrimSpace(model))]
+	return id, ok
 }
 
 // RetryConfig returns the configured retry policy (zero fields mean "use the
