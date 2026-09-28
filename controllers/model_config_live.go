@@ -24,6 +24,12 @@ import (
 	"github.com/hanzoai/ai/log"
 )
 
+// pricingRetry is how soon a failed refresh is tried again, doubling up to the TTL.
+// The first fetch runs as the pod boots, when the service it asks may not be
+// answering yet; waiting the whole TTL left every model without a local row on the
+// default price until then.
+var pricingRetry = 10 * time.Second
+
 // backgroundRefresh is a long-running goroutine that periodically refreshes
 // pricing data from pricing.hanzo.ai. It runs only when live_mode is true.
 func (mc *ModelConfig) backgroundRefresh() {
@@ -35,19 +41,20 @@ func (mc *ModelConfig) backgroundRefresh() {
 		ttl = 6 * time.Hour
 	}
 
-	// Do an initial fetch immediately
-	mc.fetchLivePricing()
-
-	ticker := time.NewTicker(ttl)
-	defer ticker.Stop()
-
+	var wait time.Duration
+	first := pricingRetry
+	retry := first
 	for {
 		select {
-		case <-ticker.C:
-			mc.fetchLivePricing()
+		case <-time.After(wait):
 		case <-mc.stopCh:
 			return
 		}
+		if mc.fetchLivePricing() {
+			wait, retry = ttl, first
+			continue
+		}
+		wait, retry = retry, min(2*retry, ttl)
 	}
 }
 
@@ -70,14 +77,15 @@ type livePricingEntry struct {
 
 // fetchLivePricing fetches current pricing from the pricing service and
 // merges it into the runtime config. Only overwrites pricing for models
-// that exist in the response — never removes existing entries.
-func (mc *ModelConfig) fetchLivePricing() {
+// that exist in the response — never removes existing entries. It reports
+// whether the prices were read.
+func (mc *ModelConfig) fetchLivePricing() bool {
 	mc.mu.RLock()
 	url := mc.pricingURL
 	mc.mu.RUnlock()
 
 	if url == "" {
-		return
+		return false
 	}
 
 	url = strings.TrimRight(url, "/") + "/v1/pricing/models"
@@ -86,24 +94,24 @@ func (mc *ModelConfig) fetchLivePricing() {
 	resp, err := client.Get(url)
 	if err != nil {
 		log.Warn("Live pricing fetch failed: %v", err)
-		return
+		return false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Warn("Live pricing returned status %d", resp.StatusCode)
-		return
+		return false
 	}
 
 	var result livePricingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Warn("Live pricing parse failed: %v", err)
-		return
+		return false
 	}
 
 	if len(result.Models) == 0 {
 		log.Info("Live pricing: no models in response, keeping current data")
-		return
+		return false
 	}
 
 	// Merge live pricing into existing map
@@ -126,6 +134,7 @@ func (mc *ModelConfig) fetchLivePricing() {
 	mc.mu.Unlock()
 
 	log.Info("Live pricing refreshed: %d models updated from %s", updated, url)
+	return true
 }
 
 // LastPricingRefresh returns when pricing was last refreshed from live source.
