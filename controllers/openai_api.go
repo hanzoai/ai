@@ -795,9 +795,8 @@ type usageRecord struct {
 	VideoCount int `json:"videoCount,omitempty"`
 
 	// DecisionCount is the number of decisions answered (POST /v1/decisions), one
-	// per call. A decision bills per call at decisionCostCents, not per token: when
-	// > 0, usageCostNano prices the call from it, and the tokens the answer reports
-	// are recorded without moving the price.
+	// per call. When > 0, usageCostNano prices the call by decisionCostNano: its
+	// input tokens at the model's price, or Jev's per-call pass-through.
 	DecisionCount int `json:"decisionCount,omitempty"`
 
 	// AudioSeconds is the DURATION of audio a speech-to-text call consumed, and

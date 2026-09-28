@@ -150,7 +150,7 @@ func TestDecisionsForwardsAndMeters(t *testing.T) {
 	if e.Model != "kai" || e.Provider != object.KaiName {
 		t.Fatalf("debit names %s/%s, want kai/kai", e.Provider, e.Model)
 	}
-	if e.USD != nanoToUSD(int64(42)*nanoPerToken(kaiInputPerMillion)) {
+	if e.USD != nanoToUSD(42*21) {
 		t.Fatalf("debit = $%s, want 42 input tokens at $0.021/M", e.USD)
 	}
 	if e.Namespace != decisionsOrg {
@@ -173,7 +173,7 @@ func TestDecisionRecordMetersUsage(t *testing.T) {
 
 	rec := &usageRecord{Model: "kai", Provider: object.KaiName, PromptTokens: u.InputTokens,
 		CompletionTokens: u.OutputTokens, DecisionCount: 1}
-	want := int64(u.InputTokens) * nanoPerToken(kaiInputPerMillion)
+	want := int64(u.InputTokens) * 21
 	if got := usageCostNano(rec); got != want {
 		t.Fatalf("cost = %d nano, want %d (42 input tokens at $0.021/M)", got, want)
 	}
@@ -183,7 +183,7 @@ func TestDecisionRecordMetersUsage(t *testing.T) {
 	}
 	rec.PromptTokens = 1_000_000
 	rec.CompletionTokens = u.OutputTokens
-	if got := usageCostNano(rec); got != 1_000_000*nanoPerToken(kaiInputPerMillion) {
+	if got := usageCostNano(rec); got != 21_000_000 {
 		t.Fatalf("a million input tokens cost %d nano, want $0.021", got)
 	}
 	rec.PromptTokens = u.InputTokens
@@ -194,6 +194,39 @@ func TestDecisionRecordMetersUsage(t *testing.T) {
 	rec.CostNanoExact = &stated
 	if m := usageMargin(rec); m.MarginNano == nil || *m.MarginNano != want-stated {
 		t.Fatalf("margin = %v, want price − stated cost", m.MarginNano)
+	}
+}
+
+// Kai is priced from the model price table like every model: the row the loaded
+// config states, a live catalog refresh included, sets the decision's price. Jev's
+// ids stay per call.
+func TestDecisionPriceIsTheTableRow(t *testing.T) {
+	prev := globalModelConfig
+	globalModelConfig = &ModelConfig{
+		routes:   map[string]modelRoute{},
+		pricing:  map[string]modelPrice{"kai": {InputPerMillion: 0.042}},
+		defaults: modelPrice{InputPerMillion: 1, OutputPerMillion: 4},
+		stopCh:   make(chan struct{}),
+	}
+	t.Cleanup(func() { globalModelConfig = prev })
+
+	rec := &usageRecord{Model: "kai", Provider: object.KaiName, PromptTokens: 1000, CompletionTokens: 50, DecisionCount: 1}
+	if got := usageCostNano(rec); got != 1000*42 {
+		t.Fatalf("cost = %d nano, want 1000 input tokens at the table's $0.042/M", got)
+	}
+	if recordUnpriced(rec) {
+		t.Fatal("kai has a row in the table; it must not read as unpriced")
+	}
+	rec.Model = "typesafe/jev-1.13"
+	if got := usageCostNano(rec); got != 3*10_000_000 {
+		t.Fatalf("jev = %d nano, want its 3¢ per call", got)
+	}
+	if recordUnpriced(rec) {
+		t.Fatal("jev's per-call rate is a price; it must not read as unpriced")
+	}
+	rec.Model = "laya"
+	if !recordUnpriced(rec) {
+		t.Fatal("a decision model with no row reads as unpriced")
 	}
 }
 

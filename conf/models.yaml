@@ -360,15 +360,16 @@ models:
     hidden: true
 
   # ── Hanzo Decision ── the decision service (KAI_URL), POST /v1/decisions ──
-  # Kai is Hanzo's decision model. The Jev ids are forwarded by the same service
-  # to OpenRouter's Decisions API: callable, not listed. No per-token pricing: a
-  # decision bills per call (controllers/model_pricing.go decisionPricePerCallCents).
+  # Kai is Hanzo's decision model, priced per input token like any model. The Jev
+  # ids are forwarded by the same service to OpenRouter's Decisions API: callable,
+  # not listed, billed per call (controllers/model_pricing.go decisionPricePerCallCents).
   # outputs: [decision] keeps every catalog from offering these for a chat turn.
   kai:
     provider: kai
     upstream: kai
     owned_by: hanzo
     outputs: [decision]
+    pricing: {input: 0.021, output: 0.00}
   typesafe/jev-1.13:
     provider: kai
     upstream: typesafe/jev-1.13

@@ -41,7 +41,7 @@ import (
 // on the balance, forwards the body unchanged, returns the answer unchanged, and
 // meters the call. The models are the routes to that service (conf/models.yaml,
 // provider kai): kai, and the Jev ids the service forwards to OpenRouter. A
-// decision bills per call (decisionCostCents), like /v1/rerank.
+// decision bills its input tokens at the model's price (decisionCostNano).
 
 // decisionsRequest is the body POST /v1/decisions reads. The handler reads only
 // the model and forwards the rest verbatim; this is the shape it forwards.
