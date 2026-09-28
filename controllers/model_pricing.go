@@ -401,35 +401,38 @@ func videoCostCents(model string, n int) int64 {
 	return per * int64(n)
 }
 
-// kaiCallNano is Kai's price per call in nano-USD: $0.00001. Jev's published list
-// is $0.042 per million input tokens, about $0.00002 for a typical triage, and
-// they advertise under a cent. Kai runs on our own CPU, so the call is priced
-// under that list rate. Token counts are recorded and do not move the price.
-const kaiCallNano int64 = 10_000
+// kaiInputPerMillion is Kai's price in dollars per million input tokens: half of
+// Jev's published $0.042. Output tokens are free, the same way Jev bills, so a
+// call is half of Jev's on the same input.
+const kaiInputPerMillion = 0.021
 
 // decisionPricePerCallCents is the pass-through rate for Jev, in cents. Those
 // calls leave the cluster, so they stay at the previous per-call rate rather
-// than Kai's. A model absent from this map is Kai's price.
+// than Kai's token rate. A model absent from this map is Kai.
 var decisionPricePerCallCents = map[string]int64{
 	"typesafe/jev-1.13":    3,
 	"~typesafe/jev-latest": 3,
 }
 
-// decisionCostNano is the billed price of n decision calls in nano-USD.
-func decisionCostNano(model string, n int) int64 {
-	if n <= 0 {
-		return 0
-	}
+// decisionCostNano is the billed price of a decision in nano-USD. Kai is
+// inputTokens × $0.021/M. Jev's ids are the per-call pass-through.
+func decisionCostNano(model string, inputTokens, n int) int64 {
 	if per, ok := decisionPricePerCallCents[strings.ToLower(model)]; ok {
+		if n <= 0 {
+			return 0
+		}
 		return per * 10_000_000 * int64(n)
 	}
-	return kaiCallNano * int64(n)
+	if inputTokens <= 0 {
+		return 0
+	}
+	return int64(inputTokens) * nanoPerToken(kaiInputPerMillion)
 }
 
 // decisionCostCents is decisionCostNano rounded to the nearest cent, for the
 // cent-precision surfaces. Kai rounds to zero; the nano path is the charge.
 func decisionCostCents(model string, n int) int64 {
-	return nanoToCents(decisionCostNano(model, n))
+	return nanoToCents(decisionCostNano(model, 0, n))
 }
 
 // DO-AI alias pricing (same as their base model)

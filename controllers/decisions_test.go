@@ -124,7 +124,7 @@ func driveDecisions(t *testing.T, authorization, body string) (int, string) {
 }
 
 // The body reaches the service unchanged, the answer comes back unchanged, and
-// the call is debited once, at the per-call price, whatever its tokens.
+// the call is debited once, at $0.021 per million input tokens. Output is free.
 func TestDecisionsForwardsAndMeters(t *testing.T) {
 	fake, events := setupDecisions(t)
 
@@ -150,16 +150,16 @@ func TestDecisionsForwardsAndMeters(t *testing.T) {
 	if e.Model != "kai" || e.Provider != object.KaiName {
 		t.Fatalf("debit names %s/%s, want kai/kai", e.Provider, e.Model)
 	}
-	if e.USD != "0.00001" {
-		t.Fatalf("debit = $%s, want the per-call $0.00001", e.USD)
+	if e.USD != nanoToUSD(int64(42)*nanoPerToken(kaiInputPerMillion)) {
+		t.Fatalf("debit = $%s, want 42 input tokens at $0.021/M", e.USD)
 	}
 	if e.Namespace != decisionsOrg {
 		t.Fatalf("debit lands on %q, want the key's org %q", e.Namespace, decisionsOrg)
 	}
 }
 
-// The row carries the answer's usage: tokens recorded, the stated upstream cost as
-// COGS, and a price the tokens do not move.
+// The row carries the answer's usage: input tokens set the price, output tokens
+// do not, and the stated upstream cost is COGS.
 func TestDecisionRecordMetersUsage(t *testing.T) {
 	cost := 0.00002
 	u := decisionsUsage{InputTokens: 42, OutputTokens: 3, Cost: &cost}
@@ -173,19 +173,26 @@ func TestDecisionRecordMetersUsage(t *testing.T) {
 
 	rec := &usageRecord{Model: "kai", Provider: object.KaiName, PromptTokens: u.InputTokens,
 		CompletionTokens: u.OutputTokens, DecisionCount: 1}
-	if got := usageCostNano(rec); got != kaiCallNano {
-		t.Fatalf("cost = %d nano, want %d ($0.00001 per call)", got, kaiCallNano)
+	want := int64(u.InputTokens) * nanoPerToken(kaiInputPerMillion)
+	if got := usageCostNano(rec); got != want {
+		t.Fatalf("cost = %d nano, want %d (42 input tokens at $0.021/M)", got, want)
+	}
+	rec.CompletionTokens = 1_000_000
+	if got := usageCostNano(rec); got != want {
+		t.Fatalf("output tokens moved the price to %d nano", got)
 	}
 	rec.PromptTokens = 1_000_000
-	if got := usageCostNano(rec); got != kaiCallNano {
-		t.Fatalf("a million tokens moved the per-call price to %d nano", got)
+	rec.CompletionTokens = u.OutputTokens
+	if got := usageCostNano(rec); got != 1_000_000*nanoPerToken(kaiInputPerMillion) {
+		t.Fatalf("a million input tokens cost %d nano, want $0.021", got)
 	}
+	rec.PromptTokens = u.InputTokens
 	if recordUnpriced(rec) {
-		t.Fatal("a decision is priced per call; it must not read as unpriced")
+		t.Fatal("a decision is priced on its input tokens; it must not read as unpriced")
 	}
 	stated := usdToNano(cost)
 	rec.CostNanoExact = &stated
-	if m := usageMargin(rec); m.MarginNano == nil || *m.MarginNano != kaiCallNano-stated {
+	if m := usageMargin(rec); m.MarginNano == nil || *m.MarginNano != want-stated {
 		t.Fatalf("margin = %v, want price − stated cost", m.MarginNano)
 	}
 }
