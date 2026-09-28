@@ -129,6 +129,9 @@ func registerAPI(app *zip.App) {
 	// Hanzo Decision on the Decisions API wire: typed questions about a state,
 	// answered by the decision service (KAI_URL). Same auth + balance gate.
 	route(app, "/v1/decisions", "POST:Decisions")
+	// The same call on Jev's wire, for a Jev client pointed here by its base URL.
+	// Published as compat: the Jev migration guide documents it, the contract does not.
+	route(app, "/v1/systemone", "POST:Systemone")
 
 	// OpenAI-compatible image generation. Same auth + provider routing; the
 	// zen3-image family routes to do-ai's fal-hosted diffusion models.

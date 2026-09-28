@@ -64,6 +64,9 @@ func InstallFilters(app *zip.App) {
 	app.Use(zip.H(TrafficTapFilter))
 	app.Use(zip.H(HstsFilter))
 	app.Use(zip.H(CacheControlFilter))
+	// Ahead of every filter that can refuse, so a refusal on a decision path is said
+	// in that path's words whichever layer wrote it.
+	app.Use(zip.H(Dialect))
 	app.Use(zip.H(RateLimitFilter))
 	// Ahead of every filter that reads a token. Below this line a token that does
 	// not parse means the TOKEN is bad; above it, it could also mean no signing

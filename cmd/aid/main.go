@@ -67,6 +67,14 @@ func main() {
 			log.Info("Rate limiter stopped (total_allowed=%d total_denied=%d)", allowed, denied)
 		}
 
+		// A debit filed after its reply is handed to the ledger — or to the billing
+		// queue drained just below — before the process goes.
+		settleCtx, settleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := controllers.Settled(settleCtx); err != nil {
+			log.Error("Debits filed after their reply did not all land before shutdown: %v", err)
+		}
+		settleCancel()
+
 		if bq != nil {
 			remaining := bq.Shutdown()
 			if remaining > 0 {

@@ -498,6 +498,42 @@ comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. No
 principal bypasses it: the gate always consults the balance, and a lookup that
 fails returns 500 rather than free access. To verify premium/zen, credit the org.
 
+## Decisions — `/v1/decisions` and `/v1/systemone`, one call on two wires
+
+`controllers/decisions.go`. Both paths reach the decision service (`KAI_URL`) and
+share one core, `decide`, which the HTTP handlers and the ZAP twins
+(`zap_decisions.go`) call after resolving the principal. `/v1/systemone` is Jev's
+wire (request, answer, FastAPI `{"detail": ...}` refusals) and serves Kai only:
+every Jev id, bare or `typesafe/`-prefixed, is 400 `Unknown model: <id>` there.
+`/v1/decisions` keeps serving the hidden Jev routes. The service's own path is
+the one called, so it answers in the path's shape.
+
+- **One principal pays.** The ledger org (`billingOrg` on HTTP, the principal's
+  own org on ZAP) is what the reservation, the debit and every handle name. A
+  vendor key over ZAP pays as the org that owns it, gated like HTTP.
+- **A handle belongs to the org that observed it.** `observe`/`handle` are sent as
+  `<org>/<id>`; `unscope` takes the prefix off anything said back. An answer with no
+  handle in it goes back byte for byte.
+- **The reply never waits on the books.** The in-process ledger settles before the
+  reply; `recordUsage` runs in `settleAfter`'s goroutine, counted so
+  `controllers.Settled` can drain it at shutdown (cmd/aid does). The native
+  recorder call is bounded by `usageTimeout`.
+- **Held answers are per org.** `decisioncache.go` gives a Kai answer again for an
+  identical body (whitespace-insensitive, order kept) from the same org within a
+  minute, under a fresh `id`, billed like a miss. Never across orgs: a faster
+  reply would say what another tenant sent. Handle requests are never held.
+- **`Restate` is the wording rule**: refusal shape per path, `Retry-After` +
+  `Retry-After-Ms` on 402/429/529, `X-Request-Id` on everything. The `Dialect`
+  filter applies it to refusals other layers write (rate limit, quota, balance
+  gate, authz) before the handler runs; the handler and the ZAP twins apply it
+  themselves. `usageRecord.RequestID` stays server-minted: a caller's id is
+  correlation, never a key the ledger could dedupe on.
+- **The spec is derived.** `routers/shape.go` reads `validate:"required,min=,max="`
+  and `enum:"..."` tags, a type's `Schema()` (Content kinds) and `Variants()`
+  (a question is one of three, by `type`); `controllers.Answer.Refusals` states
+  each refusal and its headers. `/v1/systemone` is tagged `compat`, so cloud keeps
+  it out of `openapi.yaml` and in `private.yaml`.
+
 ## AI Login Manager — universal metering + connected accounts + 1% BYO fee
 
 `ai` is the centralized login manager for every user's AI providers. Every AI call

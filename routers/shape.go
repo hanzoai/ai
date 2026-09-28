@@ -17,6 +17,7 @@ package routers
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -65,6 +66,18 @@ func shape(t reflect.Type, named map[string]reflect.Type) map[string]any {
 		return map[string]any{}
 	}
 
+	// A type that reflection cannot read states its own schema: JSON kept as
+	// written that is still one of a few kinds, or a value that is one of several
+	// shapes named by a field.
+	if t.Kind() != reflect.Interface {
+		switch v := reflect.Zero(t).Interface().(type) {
+		case interface{ Schema() map[string]any }:
+			return v.Schema()
+		case interface{ Variants() (string, []any) }:
+			return variants(v, named)
+		}
+	}
+
 	switch t.Kind() {
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}
@@ -85,8 +98,11 @@ func shape(t reflect.Type, named map[string]reflect.Type) map[string]any {
 		return map[string]any{"type": "object", "additionalProperties": ref(t.Elem(), named)}
 	case reflect.Struct:
 		props := map[string]any{}
-		fields(t, props, named)
-		return map[string]any{"type": "object", "properties": props}
+		out := map[string]any{"type": "object", "properties": props}
+		if required := fields(t, props, named); len(required) > 0 {
+			out["required"] = required
+		}
+		return out
 	}
 	// Interfaces and anything else carry no declared shape. An empty schema says
 	// "any JSON", which is the honest answer rather than a guessed one.
@@ -94,8 +110,13 @@ func shape(t reflect.Type, named map[string]reflect.Type) map[string]any {
 }
 
 // fields writes t's exported fields into props, flattening embedded structs the
-// way encoding/json does.
-func fields(t reflect.Type, props map[string]any, named map[string]reflect.Type) {
+// way encoding/json does, and returns the ones a body must carry.
+//
+// What a field promises beyond its type is read from its tags, in the vocabulary
+// zip's typed handlers already publish with: `validate:"required"` names a field
+// the body must carry, `validate:"min=N,max=N"` bounds a map's entries, a slice's
+// items or a string's length, and `enum:"a,b"` lists the values a string takes.
+func fields(t reflect.Type, props map[string]any, named map[string]reflect.Type) (required []any) {
 	for f := range t.Fields() {
 		if !f.IsExported() {
 			continue
@@ -111,14 +132,87 @@ func fields(t reflect.Type, props map[string]any, named map[string]reflect.Type)
 				e = e.Elem()
 			}
 			if e.Kind() == reflect.Struct {
-				fields(e, props, named)
+				required = append(required, fields(e, props, named)...)
 				continue
 			}
 		}
 		if name == "" {
 			name = f.Name
 		}
-		props[name] = ref(f.Type, named)
+		fs := ref(f.Type, named)
+		if _, isRef := fs["$ref"]; !isRef {
+			bound(fs, f)
+		}
+		props[name] = fs
+		for rule := range strings.SplitSeq(f.Tag.Get("validate"), ",") {
+			if rule == "required" {
+				required = append(required, name)
+			}
+		}
+	}
+	return required
+}
+
+// bound writes a field's enum and its min and max into its schema, under the
+// keyword each kind of value takes them by.
+func bound(fs map[string]any, f reflect.StructField) {
+	if e := f.Tag.Get("enum"); e != "" {
+		var vals []any
+		for v := range strings.SplitSeq(e, ",") {
+			vals = append(vals, v)
+		}
+		fs["enum"] = vals
+	}
+	var min, max string
+	switch fs["type"] {
+	case "object":
+		min, max = "minProperties", "maxProperties"
+	case "array":
+		min, max = "minItems", "maxItems"
+	case "string":
+		min, max = "minLength", "maxLength"
+	default:
+		return
+	}
+	for rule := range strings.SplitSeq(f.Tag.Get("validate"), ",") {
+		key, n, ok := strings.Cut(rule, "=")
+		if !ok {
+			continue
+		}
+		v, err := strconv.Atoi(n)
+		if err != nil {
+			continue
+		}
+		switch key {
+		case "min":
+			fs[min] = v
+		case "max":
+			fs[max] = v
+		}
+	}
+}
+
+// variants is the schema of a value that is one of several shapes, told apart by
+// one field: oneOf the shapes, and the discriminator mapping each shape's value of
+// that field — read from the field's enum — to the shape.
+func variants(v interface{ Variants() (string, []any) }, named map[string]reflect.Type) map[string]any {
+	field, shapes := v.Variants()
+	var one []any
+	mapping := map[string]any{}
+	for _, s := range shapes {
+		t := reflect.TypeOf(s)
+		r := ref(t, named)
+		one = append(one, r)
+		for f := range t.Fields() {
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if name == field && f.Tag.Get("enum") != "" && !strings.Contains(f.Tag.Get("enum"), ",") {
+				mapping[f.Tag.Get("enum")] = r["$ref"]
+			}
+		}
+	}
+	return map[string]any{
+		"oneOf":         one,
+		"discriminator": map[string]any{"propertyName": field, "mapping": mapping},
 	}
 }
 
@@ -296,7 +390,7 @@ func answer(a controllers.Answer, named map[string]reflect.Type) map[string]any 
 	if a.Data {
 		s = result(s)
 	}
-	return map[string]any{
+	out := map[string]any{
 		"200": map[string]any{
 			"description": "Success.",
 			"content":     map[string]any{"application/json": map[string]any{"schema": s}},
@@ -304,6 +398,40 @@ func answer(a controllers.Answer, named map[string]reflect.Type) map[string]any 
 		"401": map[string]any{"description": "No credential, or one this service does not accept."},
 		"403": map[string]any{"description": "A valid credential that may not do this."},
 	}
+	for status, r := range a.Refusals {
+		entry := map[string]any{
+			"description": r.Says,
+			"content":     map[string]any{"application/json": map[string]any{"schema": ref(reflect.TypeOf(r.Shape), named)}},
+		}
+		if r.Wait {
+			entry["headers"] = map[string]any{
+				"Retry-After": map[string]any{
+					"description": "Seconds to wait before asking again.",
+					"schema":      map[string]any{"type": "integer"},
+				},
+				"Retry-After-Ms": map[string]any{
+					"description": "Milliseconds to wait before asking again.",
+					"schema":      map[string]any{"type": "integer"},
+				},
+			}
+		}
+		out[strconv.Itoa(status)] = entry
+	}
+	if a.Traced {
+		for _, e := range out {
+			entry := e.(map[string]any)
+			headers, _ := entry["headers"].(map[string]any)
+			if headers == nil {
+				headers = map[string]any{}
+				entry["headers"] = headers
+			}
+			headers["X-Request-Id"] = map[string]any{
+				"description": "The id this answer is filed under: the caller's own X-Request-Id, or a fresh one.",
+				"schema":      map[string]any{"type": "string"},
+			}
+		}
+	}
+	return out
 }
 
 // take is the Request Body Object for a hand-written route, built from the Go

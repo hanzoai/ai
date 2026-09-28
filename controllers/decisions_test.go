@@ -28,6 +28,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -49,25 +50,35 @@ const decisionBody = `{"model":"kai","state":{"message":"Payment failed twice"},
 var decisionsSeq atomic.Int64
 
 // fakeDecisions is the decision service: it records what reached it and answers
-// with status and body.
+// with status, body and header — or, when answer is set, with what it says.
 type fakeDecisions struct {
 	mu     sync.Mutex
 	calls  int
 	path   string
 	body   []byte
+	rid    string
 	status int
 	answer string
+	header map[string]string
+	serve  func(path string, body []byte) (int, string)
 }
 
 func (f *fakeDecisions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
 	f.calls++
-	f.path, f.body = r.URL.Path, b
+	f.path, f.body, f.rid = r.URL.Path, b, r.Header.Get("X-Request-Id")
+	status, answer, serve := f.status, f.answer, f.serve
+	for k, v := range f.header {
+		w.Header().Set(k, v)
+	}
 	f.mu.Unlock()
+	if serve != nil {
+		status, answer = serve(r.URL.Path, b)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(f.status)
-	_, _ = w.Write([]byte(f.answer))
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(answer))
 }
 
 func (f *fakeDecisions) seen() (int, string, []byte) {
@@ -76,10 +87,27 @@ func (f *fakeDecisions) seen() (int, string, []byte) {
 	return f.calls, f.path, f.body
 }
 
+// settled waits for every debit filed after its reply.
+func settled(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := Settled(ctx); err != nil {
+		t.Fatalf("debits filed after their reply did not land: %v", err)
+	}
+}
+
 // setupDecisions installs a funded provider-key principal, a fake decision
 // service at KAI_URL, and a recorder for every debit, and restores all of it.
 func setupDecisions(t *testing.T) (*fakeDecisions, *[]object.UsageEvent) {
 	t.Helper()
+	forget := func() {
+		decisionCache.mu.Lock()
+		decisionCache.m, decisionCache.rev, decisionCache.size = nil, nil, 0
+		decisionCache.mu.Unlock()
+	}
+	forget()
+	t.Cleanup(forget)
 	dsn := fmt.Sprintf("file:decisions_%d?mode=memory&cache=shared", decisionsSeq.Add(1))
 	restore, err := object.UseMemoryDB(dsn, &object.Provider{})
 	if err != nil {
@@ -113,17 +141,39 @@ func setupDecisions(t *testing.T) (*fakeDecisions, *[]object.UsageEvent) {
 		*events = append(*events, u)
 		return nil
 	})
-	t.Cleanup(func() { object.SetUsageRecorder(prevUsage) })
+	t.Cleanup(func() { settled(t); object.SetUsageRecorder(prevUsage) })
 	return fake, events
 }
 
-// driveDecisions runs the real Decisions handler and returns its status and body.
+// driveDecisions runs the real Decisions handler, waits for the debit it filed
+// after replying, and returns its status and body.
 func driveDecisions(t *testing.T, authorization, body string) (int, string) {
 	t.Helper()
-	c := presenting(visit(http.MethodPost, "/v1/decisions"), authorization)
+	status, body, _ := drive(t, decisionsPath, authorization, body, nil)
+	return status, body
+}
+
+// drive runs the handler for path with the given request headers, waits for the
+// debit it filed after replying, and returns its status, body and reply.
+func drive(t *testing.T, path, authorization, body string, header map[string]string) (int, string, *ApiController) {
+	t.Helper()
+	c := presenting(visit(http.MethodPost, path), authorization)
+	for k, v := range header {
+		c.Fiber().Request().Header.Set(k, v)
+	}
 	c.Fiber().Request().SetBody([]byte(body))
-	status := answering(t, c, c.Decisions)
-	return status, sent(c)
+	handler := c.Decisions
+	if path == systemonePath {
+		handler = c.Systemone
+	}
+	status := answering(t, c, handler)
+	settled(t)
+	return status, sent(c), c
+}
+
+// replied is a header the handler set on its reply.
+func replied(c *ApiController, name string) string {
+	return string(c.Fiber().Response().Header.Peek(name))
 }
 
 // The body reaches the service unchanged, the answer comes back unchanged, and
@@ -394,7 +444,8 @@ func TestZapDecisions(t *testing.T) {
 		t.Fatal("cloud method \"decisions\" not registered")
 	}
 
-	msg, err := zapDecisionsHandler(context.Background(), "", []byte(decisionBody))
+	zapDecisions, _ := lookupCloudHandler("decisions")
+	msg, err := zapDecisions(context.Background(), "", []byte(decisionBody))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,13 +453,18 @@ func TestZapDecisions(t *testing.T) {
 		t.Fatalf("no credential => %d, want 401", status)
 	}
 
-	msg, _ = zapDecisionsHandler(context.Background(), "Bearer "+decisionsKey, []byte(`{"model":"laya"}`))
+	msg, _ = zapDecisions(context.Background(), "Bearer "+decisionsKey, []byte(`{"model":"laya"}`))
 	status, body, _ := cloudRespStatus(t, msg)
 	if status != 400 || string(body) != string(decisionsFailure(400, `unknown model "laya"; use one of kai, typesafe/jev-1.13, ~typesafe/jev-latest`)) {
 		t.Fatalf("unknown model => %d %s", status, body)
 	}
 
-	msg, _ = zapDecisionsHandler(context.Background(), "Bearer "+decisionsKey, []byte(decisionBody))
+	msg, _ = zapDecisions(context.Background(), "Bearer sk-nobody-issued-this", []byte(`{"model":"laya"}`))
+	if status, _, _ := cloudRespStatus(t, msg); status != 401 {
+		t.Fatalf("unauthenticated unknown model => %d, want 401", status)
+	}
+
+	msg, _ = zapDecisions(context.Background(), "Bearer "+decisionsKey, []byte(decisionBody))
 	status, body, errText := cloudRespStatus(t, msg)
 	if status != 200 || string(body) != decisionAnswer {
 		t.Fatalf("forward => %d %s (%s)", status, body, errText)

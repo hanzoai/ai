@@ -1178,6 +1178,13 @@ func usageBilledCents(record *usageRecord, costCents int64) int64 {
 	return costCents
 }
 
+// usageTimeout bounds one debit's hand-off to the ledger. The native recorder
+// answers once the debit is durably posted, which is milliseconds; a ledger that
+// has not answered in this long has failed, and the failure is logged with the
+// request id instead of holding a goroutine — and, on a path that files the debit
+// before its reply, the caller — for as long as the ledger stays silent.
+const usageTimeout = 30 * time.Second
+
 // recordUsage files what a call spent. It is the ONE chokepoint between a request and
 // the money: an exact debit on the org's wallet where this build is co-resident with
 // the ledger, or the same amount on its way to Commerce where it is not.
@@ -1293,7 +1300,9 @@ func recordUsage(record *usageRecord) {
 	// enqueue to Commerce — that would double-bill. Standalone ai (no hook) falls
 	// through to the HTTP billing queue below.
 	if rec := object.UsageRecorder(); rec != nil {
-		if err := rec(context.Background(), object.UsageEvent{
+		ctx, cancel := context.WithTimeout(context.Background(), usageTimeout)
+		defer cancel()
+		if err := rec(ctx, object.UsageEvent{
 			Subject:   subject,
 			Namespace: org,
 			USD:       usageBilledUSD(record), // EXACT atto-precise debit, never a floored cent

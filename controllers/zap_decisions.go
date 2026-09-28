@@ -12,67 +12,125 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Native ZAP handler for POST /v1/decisions — the pure-ZAP twin of
-// ApiController.Decisions (decisions.go), on the same pipeline as the rerank
-// twin: auth → balance gate → forward → meter. POST /v1/decisions stays
-// live on routers.App, which also backs the gateway fallback.
+// Native ZAP handlers for POST /v1/decisions and POST /v1/systemone — the pure-ZAP
+// twins of ApiController.Decisions and ApiController.Systemone (decisions.go). Both
+// resolve the principal as the HTTP path does and hand it to the same decide, so the
+// reservation, the debit and every handle name the same org whichever door the call
+// came through. The paths stay live on routers.App, which also backs the gateway
+// fallback.
 
 package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/luxfi/zap"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 )
 
 func init() {
-	registerCloud("decisions", zapDecisionsHandler)
-	registerGatewayPath("/v1/decisions", zapDecisionsHandler)
+	registerCloud("decisions", func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+		return decisionCloud(zapDecision(ctx, decisionsPath, auth, body))
+	})
+	registerCloud("systemone", func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+		return decisionCloud(zapDecision(ctx, systemonePath, auth, body))
+	})
+	registerGatewayPath(decisionsPath, func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+		return decisionGateway(zapDecision(ctx, decisionsPath, auth, body))
+	})
+	registerGatewayPath(systemonePath, func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+		return decisionGateway(zapDecision(ctx, systemonePath, auth, body))
+	})
 }
 
-// zapDecisionsHandler is the native twin of ApiController.Decisions. The
-// service's answer, and its refusals, come back as the body with the service's
-// status; ai's own refusals of the body are in the service's error shape.
-func zapDecisionsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	if auth == "" {
-		return object.BuildCloudResponse(401, nil, "authentication required")
+// decisionCloud is a reply on the cloud wire: status, body, and a refusal's words
+// in the error slot.
+func decisionCloud(r decisionReply) (*zap.Message, error) {
+	said := ""
+	if r.status >= http.StatusBadRequest {
+		var v map[string]any
+		_ = json.Unmarshal(r.body, &v)
+		said = wording(v, r.body, r.status)
 	}
-	model, bad := decisionModel(body)
+	return object.BuildCloudResponse(uint32(r.status), r.body, said)
+}
+
+// decisionGateway is a reply on the gateway wire, whose third slot carries the
+// headers: the request id and, on a refusal that asks for it, the wait.
+func decisionGateway(r decisionReply) (*zap.Message, error) {
+	header := map[string]string{"Content-Type": "application/json"}
+	for k, v := range r.header {
+		header[k] = v
+	}
+	h, _ := json.Marshal(header)
+	return object.BuildGatewayResponse(uint32(r.status), r.body, h)
+}
+
+// zapDecision is the native twin of ApiController.decision. A ZAP call names no
+// org to switch to, so it pays from the principal's own.
+func zapDecision(ctx context.Context, path, auth string, body []byte) decisionReply {
+	rid := RequestID("")
+	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	if token == "" {
+		return refused(path, rid, decline(path, http.StatusUnauthorized, "authentication required"))
+	}
+	if isPublishableKey(token) {
+		return refused(path, rid, decline(path, http.StatusForbidden,
+			"Publishable keys (pk-) can only access read-only endpoints. Use a secret key (sk-) for this endpoint."))
+	}
+	model, bad := decisionModel(path, body)
+
+	// Authentication comes first, as on HTTP: an invalid credential is 401 whatever
+	// the body says. A body naming no model this path serves is resolved as kai, and
+	// once the credential holds, the body's own error is the answer.
+	asked := model
 	if bad != nil {
-		return object.BuildCloudResponse(uint32(bad.status), bad.body, "")
+		asked = "kai"
 	}
+	user, premium, err := zapDecisionPrincipal(token, asked)
+	if err != nil && (bad == nil || statusOf(err) == http.StatusUnauthorized || statusOf(err) == http.StatusForbidden) {
+		return refused(path, rid, decline(path, statusOf(err), err.Error()))
+	}
+	if bad != nil {
+		return refused(path, rid, bad)
+	}
+	var ledger string
+	if user != nil {
+		ledger = user.Owner
+	}
+	return decide(ctx, decisionCall{
+		path: path, model: model, body: body,
+		user: user, ledger: ledger, premium: premium,
+		rid: rid, start: time.Now().UTC(), ctx: context.WithoutCancel(ctx),
+	})
+}
 
-	_, authUser, _, err := zapResolveAuth(auth, model)
+// zapDecisionPrincipal resolves who is asking and runs the balance gate on the org
+// that pays, the way authResolveProvider does for HTTP: an IAM key or a JWT through
+// the resolver, whose gate reads the principal's own org, and a vendor key as the
+// org that owns it, gated the same way.
+func zapDecisionPrincipal(token, model string) (*iam.User, bool, error) {
+	provider, user, _, err := zapResolveAuth("Bearer "+token, model)
 	if err != nil {
-		return object.BuildCloudResponse(401, nil, err.Error())
+		return nil, false, err
 	}
-	// The ONE prepaid-balance gate, shared verbatim with the HTTP path.
-	if gateErr := enforceBalanceGate(authUser, "", model); gateErr != nil {
-		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
+	if user == nil {
+		if user, err = providerKeyBillingUser(provider); err != nil {
+			return nil, false, err
+		}
+		if err := enforceBalanceGate(user, user.Owner, model); err != nil {
+			return nil, false, err
+		}
 	}
-	isPremium := false
+	premium := false
 	if route := resolveModelRoute(model); route != nil {
-		isPremium = route.premium
+		premium = route.premium
 	}
-
-	startTime := time.Now().UTC()
-	kai := object.KaiProvider()
-	status, out, usage, fault := decide(ctx, kai, model, body)
-	if fault != nil {
-		return object.BuildCloudResponse(uint32(fault.status), fault.body, "")
-	}
-	if status == http.StatusOK && authUser != nil {
-		rec := decisionRecord(ctx, authUser.Owner, authUser, model, kai, isPremium, usage)
-		// One goroutine for both, in this order: recordUsage stamps the honesty
-		// flag the span then reads.
-		go func() {
-			recordUsage(rec)
-			recordTrace(ctx, rec, startTime)
-		}()
-	}
-	return object.BuildCloudResponse(uint32(status), out, "")
+	return user, premium, nil
 }

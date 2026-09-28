@@ -50,6 +50,20 @@ import (
 type Answer struct {
 	Shape any
 	Data  bool
+	// Refusals are the statuses the handler refuses with, each with the body it
+	// carries. A handler that states none refuses with 401 and 403 and says no more.
+	Refusals map[int]Refusal
+	// Traced says every answer carries X-Request-Id.
+	Traced bool
+}
+
+// Refusal is one status a handler refuses with: what it means to the caller, the
+// body it carries, and whether it asks the caller to wait (Retry-After and
+// Retry-After-Ms).
+type Refusal struct {
+	Says  string
+	Shape any
+	Wait  bool
 }
 
 // Answers is the whole table. routers joins it to the route that reaches each
@@ -73,7 +87,8 @@ var answers = map[string]Answer{
 	"AudioTranscriptions":   whole(openai.AudioResponse{}),
 	"ListModels":            whole(modelList{}),
 	"Rerank":                whole(ranking{}),
-	"Decisions":             whole(decisionsResponse{}),
+	"Decisions":             {Shape: decisionsResponse{}, Refusals: decisionRefusals(decisionsPath), Traced: true},
+	"Systemone":             {Shape: systemoneResponse{}, Refusals: decisionRefusals(systemonePath), Traced: true},
 	"VideosGenerations":     whole(videoStatus{}),
 	"RetrieveVideo":         whole(videoStatus{}),
 
@@ -146,4 +161,34 @@ var answers = map[string]Answer{
 	"GetRouterJudgePanel": data(judgePanelState{}),
 	"AddRoutingReward":    data(routingRewardResult{}),
 	"GetTrafficGlobe":     data(object.TrafficGlobe{}),
+}
+
+// decisionRefusals are the refusals a decision path answers with, in that path's
+// words: {"error":{"code","message"}} on /v1/decisions, FastAPI's {"detail": ...}
+// on /v1/systemone.
+func decisionRefusals(path string) map[int]Refusal {
+	says := map[int]string{
+		400: "Malformed JSON, or a model this path does not serve.",
+		401: "No credential, or one this service does not accept.",
+		402: "The balance cannot cover the call. Retry-After is when a top-up is read.",
+		403: "A credential whose kind may not call this, such as a publishable (pk-) key.",
+		422: "A question that is not valid, or a state beyond what the checkpoint reads (code state_too_long).",
+		429: "Rate limited, or the queue is full.",
+		502: "The decision service failed.",
+		503: "The model is known and not served.",
+		529: "Overloaded.",
+	}
+	out := make(map[int]Refusal, len(says))
+	for status, s := range says {
+		var shape any = decisionsRefused{}
+		if path == systemonePath {
+			shape = systemoneRefused{}
+			if status == 422 {
+				shape = systemoneInvalid{}
+			}
+		}
+		_, wait := pause(status)
+		out[status] = Refusal{Says: s, Shape: shape, Wait: wait}
+	}
+	return out
 }
