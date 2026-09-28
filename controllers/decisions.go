@@ -266,7 +266,8 @@ func decisionRecord(ctx context.Context, ledger string, authUser *iam.User, mode
 //
 // The body goes to the decision service unchanged and its answer comes back
 // unchanged, errors included ({"error":{"code","message"}}). An unknown model is
-// refused here in that shape, without a call. Billed per call, like /v1/rerank.
+// refused here in that shape, without a call. Billed on the answer's input tokens
+// at the model's price.
 func (c *ApiController) Decisions() {
 	token, ok := c.bearerToken()
 	if !ok {
