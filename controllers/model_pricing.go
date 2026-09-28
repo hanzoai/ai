@@ -204,8 +204,11 @@ var modelPricing = map[string]modelPrice{
 	"openai-direct/o3-mini":     {InputPerMillion: 1.10, OutputPerMillion: 4.40},
 
 	// ── Hanzo Decision (POST /v1/decisions) ─────────────────────────
-	// Half of Jev's $0.042 per million input tokens; output is free.
-	"kai": {InputPerMillion: 0.021},
+	// Kai's list rate. Relative-cost claims are made only from same-request billing
+	// measurements because Jev and Kai count tokens differently.
+	"kai":        {InputPerMillion: 0.021},
+	"jev":        {InputPerMillion: 0.021},
+	"jev-latest": {InputPerMillion: 0.021},
 }
 
 // imagePricePerImageCents maps an image model (user-facing name OR upstream
