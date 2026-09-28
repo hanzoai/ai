@@ -150,8 +150,8 @@ func TestDecisionsForwardsAndMeters(t *testing.T) {
 	if e.Model != "kai" || e.Provider != object.KaiName {
 		t.Fatalf("debit names %s/%s, want kai/kai", e.Provider, e.Model)
 	}
-	if e.USD != "0.03" {
-		t.Fatalf("debit = $%s, want the per-call $0.03", e.USD)
+	if e.USD != "0.00001" {
+		t.Fatalf("debit = $%s, want the per-call $0.00001", e.USD)
 	}
 	if e.Namespace != decisionsOrg {
 		t.Fatalf("debit lands on %q, want the key's org %q", e.Namespace, decisionsOrg)
@@ -173,11 +173,11 @@ func TestDecisionRecordMetersUsage(t *testing.T) {
 
 	rec := &usageRecord{Model: "kai", Provider: object.KaiName, PromptTokens: u.InputTokens,
 		CompletionTokens: u.OutputTokens, DecisionCount: 1}
-	if got := usageCostNano(rec); got != 30_000_000 {
-		t.Fatalf("cost = %d nano, want 30,000,000 ($0.03 per call)", got)
+	if got := usageCostNano(rec); got != kaiCallNano {
+		t.Fatalf("cost = %d nano, want %d ($0.00001 per call)", got, kaiCallNano)
 	}
 	rec.PromptTokens = 1_000_000
-	if got := usageCostNano(rec); got != 30_000_000 {
+	if got := usageCostNano(rec); got != kaiCallNano {
 		t.Fatalf("a million tokens moved the per-call price to %d nano", got)
 	}
 	if recordUnpriced(rec) {
@@ -185,7 +185,7 @@ func TestDecisionRecordMetersUsage(t *testing.T) {
 	}
 	stated := usdToNano(cost)
 	rec.CostNanoExact = &stated
-	if m := usageMargin(rec); m.MarginNano == nil || *m.MarginNano != 30_000_000-stated {
+	if m := usageMargin(rec); m.MarginNano == nil || *m.MarginNano != kaiCallNano-stated {
 		t.Fatalf("margin = %v, want price − stated cost", m.MarginNano)
 	}
 }

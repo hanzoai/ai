@@ -401,29 +401,35 @@ func videoCostCents(model string, n int) int64 {
 	return per * int64(n)
 }
 
-// decisionPricePerCallCents maps a decision model (POST /v1/decisions) to its price
-// per call, in cents. A decision bills per call like /v1/rerank, NOT per token: the
-// answer's token counts are recorded on the row, and none of them moves the price.
-// The price is the catalog's (hanzoai/pricing, the kai row, perUnit) and is the
-// zen-rerank rate until the owner sets one.
+// kaiCallNano is Kai's price per call in nano-USD: $0.00001. Jev's published list
+// is $0.042 per million input tokens, about $0.00002 for a typical triage, and
+// they advertise under a cent. Kai runs on our own CPU, so the call is priced
+// under that list rate. Token counts are recorded and do not move the price.
+const kaiCallNano int64 = 10_000
+
+// decisionPricePerCallCents is the pass-through rate for Jev, in cents. Those
+// calls leave the cluster, so they stay at the previous per-call rate rather
+// than Kai's. A model absent from this map is Kai's price.
 var decisionPricePerCallCents = map[string]int64{
-	"kai":                  3,
 	"typesafe/jev-1.13":    3,
 	"~typesafe/jev-latest": 3,
 }
 
-// decisionCostCents is the cost in cents of n decision calls. A decision model
-// absent from the table bills at kai's rate rather than nothing. n <= 0 costs
-// nothing.
-func decisionCostCents(model string, n int) int64 {
+// decisionCostNano is the billed price of n decision calls in nano-USD.
+func decisionCostNano(model string, n int) int64 {
 	if n <= 0 {
 		return 0
 	}
-	per, ok := decisionPricePerCallCents[strings.ToLower(model)]
-	if !ok {
-		per = decisionPricePerCallCents["kai"]
+	if per, ok := decisionPricePerCallCents[strings.ToLower(model)]; ok {
+		return per * 10_000_000 * int64(n)
 	}
-	return per * int64(n)
+	return kaiCallNano * int64(n)
+}
+
+// decisionCostCents is decisionCostNano rounded to the nearest cent, for the
+// cent-precision surfaces. Kai rounds to zero; the nano path is the charge.
+func decisionCostCents(model string, n int) int64 {
+	return nanoToCents(decisionCostNano(model, n))
 }
 
 // DO-AI alias pricing (same as their base model)
