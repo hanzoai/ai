@@ -205,6 +205,10 @@ var decisionsClient = &http.Client{Timeout: 120 * time.Second}
 // model, with the usage that answer reports. A refusal is ai's own: the service is
 // not configured, or could not be reached.
 func decide(ctx context.Context, kai *object.Provider, model string, body []byte) (int, []byte, decisionsUsage, *decisionRefusal) {
+	return decideAt(ctx, kai, model, body, "/v1/decisions")
+}
+
+func decideAt(ctx context.Context, kai *object.Provider, model string, body []byte, endpoint string) (int, []byte, decisionsUsage, *decisionRefusal) {
 	if kai == nil {
 		return 0, nil, decisionsUsage{}, refuseDecision(http.StatusServiceUnavailable, "the decision service is not configured")
 	}
@@ -217,7 +221,7 @@ func decide(ctx context.Context, kai *object.Provider, model string, body []byte
 			body = b
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+"/v1/decisions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, decisionsUsage{}, refuseDecision(http.StatusInternalServerError, "build decision request: %s", err.Error())
 	}
@@ -285,6 +289,16 @@ func decisionRecord(ctx context.Context, ledger string, authUser *iam.User, mode
 // ({"error":{"code","message"}}). An unknown model is refused here in that shape,
 // without a call. Billed on the answer's input tokens at the model's price.
 func (c *ApiController) Decisions() {
+	c.decisionRequest("/v1/decisions")
+}
+
+// SystemOne is the Jev-compatible alias. It uses the same auth, admission and
+// metering path, but asks the decision service for the compact compatibility wire.
+func (c *ApiController) SystemOne() {
+	c.decisionRequest("/v1/systemone")
+}
+
+func (c *ApiController) decisionRequest(endpoint string) {
 	token, ok := c.bearerToken()
 	if !ok {
 		return
@@ -327,7 +341,7 @@ func (c *ApiController) Decisions() {
 	defer hold.settle(0)
 
 	kai := object.KaiProvider()
-	status, body, usage, fault := decide(c.Context(), kai, model, c.Body())
+	status, body, usage, fault := decideAt(c.Context(), kai, model, c.Body(), endpoint)
 	if fault != nil {
 		c.decisionsReply(fault.status, fault.body)
 		return
