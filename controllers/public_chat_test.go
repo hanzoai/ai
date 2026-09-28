@@ -507,7 +507,7 @@ func TestACallThatReachesNoModelChargesNobody(t *testing.T) {
 
 			// The host allowance may be READ — reading costs nothing. What must not
 			// happen is a usage record, which is what would raise the persistent count.
-			object.SetSpent(func(_ context.Context, _, _ string) (bool, error) { return false, nil })
+			object.SetSpent(func(_ context.Context, _, _ string) (object.Standing, error) { return object.Standing{}, nil })
 			t.Cleanup(func() { object.SetSpent(nil) })
 
 			prevRec := object.UsageRecorder()

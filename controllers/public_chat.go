@@ -341,7 +341,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 	// starve every visitor's tier. It may refuse; it may not admit, which is why its
 	// silence is not consulted.
 	if spent := object.Spent(); spent != nil {
-		if out, err := spent(c.Context(), visitor, publicOrg); err == nil && out {
+		if out, err := spent(c.Context(), visitor, publicOrg); err == nil && out.Spent {
 			c.publicSpent(visitor, "allowance")
 			return
 		}

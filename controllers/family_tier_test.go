@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -154,5 +155,39 @@ func TestZenModelMinTier(t *testing.T) {
 	// The wire field decodes onto the model.
 	if got := (zenWireModel{ID: "enso", MinTier: "paid"}).model().minTier(); got != "paid" {
 		t.Errorf("wire min_tier did not carry onto the model: got %q", got)
+	}
+}
+
+// A PAYMENT IS READ WITHIN SECONDS. Free is the one tier answer a payment changes,
+// so it is held for familyFreeTTL rather than the paid minute: a subscriber who was
+// Free a moment ago is read as what they bought once that has passed. A paid
+// answer is held for the full TTL.
+func TestAFreeTierIsHeldForSecondsSoAPaymentTakesEffect(t *testing.T) {
+	saved := object.TierReader()
+	t.Cleanup(func() { object.SetTierReader(saved) })
+	familyTierMu.Lock()
+	familyTierCache = map[string]familyTierCacheEntry{}
+	familyTierMu.Unlock()
+
+	plan, asks := "free", 0
+	object.SetTierReader(func(_ context.Context, _, _ string) (string, error) {
+		asks++
+		return plan, nil
+	})
+	if got := cachedFamilyTier("acme/pay-now"); got != "free" {
+		t.Fatalf("tier %q, want free", got)
+	}
+	plan = "pro" // commerce records the subscription
+	familyTierMu.Lock()
+	e := familyTierCache["acme/pay-now"]
+	e.at = e.at.Add(-familyFreeTTL - time.Second)
+	familyTierCache["acme/pay-now"] = e
+	familyTierMu.Unlock()
+	if got := cachedFamilyTier("acme/pay-now"); got != "pro" {
+		t.Fatalf("tier after paying %q, want pro once the free answer's seconds are up", got)
+	}
+	plan = "free"
+	if got := cachedFamilyTier("acme/pay-now"); got != "pro" || asks != 2 {
+		t.Fatalf("tier %q after %d asks, want the paid answer held for its TTL", got, asks)
 	}
 }

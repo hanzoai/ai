@@ -341,10 +341,13 @@ func TestAFreeDoorClosesOnAnEmptyPool(t *testing.T) {
 // — its account with us spent, or its own failure — moves the request to a free
 // route, because a route it charges nothing for is subject to neither. Everything
 // else fails as itself: a malformed body, a model this vendor has not got, refused
-// content and a rate limit are all facts the caller needs, and answering any of
-// them with a smaller model hides a real failure that cannot be debugged later.
-// A rate limit is the near miss — it clears in seconds, so it is waited out rather
-// than downgraded.
+// content are all facts the caller needs, and answering any of them with a smaller
+// model hides a real failure that cannot be debugged later.
+//
+// A rate limit is the near miss. On a PRICED route it clears in seconds, so it is
+// waited out rather than downgraded (TestABusyFreeRouteIsServedByThePool holds
+// that). The routes here are FREE, and a free route nobody chose that is busy on
+// one account moves to the pool, which spends every account in turn.
 //
 // Each case drives the REAL relay against a real HTTP vendor, and the assertion
 // is on what the vendor was ASKED — so "it did not fall back" is a fact about the
@@ -374,7 +377,7 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 		{"content refused", 422, `{"error":{"message":"content policy violation"}}`, false},
 		{"credential rejected", 401, `{"error":{"message":"unauthorized"}}`, false},
 		{"forbidden", 403, `{"error":{"message":"forbidden"}}`, false},
-		{"rate limited", 429, `{"error":{"message":"rate limit exceeded"}}`, false},
+		{"rate limited, and the route is free", 429, `{"error":{"message":"rate limit exceeded"}}`, true},
 
 		{"vendor broken", 500, `{"error":{"message":"internal server error"}}`, true},
 		{"bad gateway", 502, `{"error":{"message":"bad gateway"}}`, true},
@@ -384,7 +387,7 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 		// customer who owes money, and serving them a free model instead would
 		// tell them their payment problem had fixed itself. Told apart by the
 		// CODE we stamp on every denial we make, which no vendor writes.
-		{"our own balance gate", 402, `{"error":{"message":"Insufficient balance. Add credits to your wallet at https://pay.hanzo.ai","type":"billing_error","code":"insufficient_balance"}}`, false},
+		{"our own balance gate", 402, `{"error":{"message":"Insufficient balance. Add credits to your wallet at https://hanzo.ai/pay","type":"billing_error","code":"insufficient_balance"}}`, false},
 		{"our own balance lookup blip", 402, `{"error":{"message":"Unable to verify your balance right now.","type":"billing_error","code":"balance_unavailable"}}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

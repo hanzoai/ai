@@ -357,7 +357,16 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 	// (404), refused content (422) and a rate limit (429) all stay where they are,
 	// so none of them can quietly hand the caller a smaller model in place of an
 	// error.
-	if err == nil || !down(err, strings.ToLower(err.Error())) {
+	//
+	// EXCEPT A RATE LIMIT ON A FREE ROUTE. Nobody chose a free route's model — it
+	// is the free lane, and a free lane that answers one account's per-minute limit
+	// with an error, while the other accounts in the pool sit idle, has turned a
+	// shared pool into a queue for one key. So a free route that is busy moves to
+	// the pool, which spends every account in turn.
+	if err == nil {
+		return nil
+	}
+	if !down(err, strings.ToLower(err.Error())) && !(upstreamHTTPStatus(err) == http.StatusTooManyRequests && freeLane(fam, sku)) {
 		return nil
 	}
 	// A priced route is answered by the model the caller paid for, or refused as
@@ -368,6 +377,12 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 		return nil
 	}
 	return freeRoutes()
+}
+
+// freeLane reports that sku is a route of the free lane: one its family charges
+// nothing for, a name for the pool, or a route out of the pool.
+func freeLane(fam *modelFamily, sku string) bool {
+	return fam.frontDoor(sku) || fam.free(sku) || inPool(sku)
 }
 
 // inPool reports that a route is one the pool serves, whichever family carries it.
@@ -1430,12 +1445,54 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// to answer — and bounded because every try is a round trip the caller waits
 	// through, so worst-case latency stays a property of spareTries rather than of
 	// how many free routes a vendor happens to advertise.
-	spared := func(err error, body []byte) (*http.Response, string) {
+	spared := func(err error, body []byte) (*http.Response, string, bool) {
 		routes := fallback(fam, sku, err, body)
 		if len(routes) == 0 || c.Context().Err() != nil {
-			return nil, ""
+			return nil, "", false
 		}
-		return pool(routes, sku)
+		r, alt := pool(routes, sku)
+		return r, alt, true
+	}
+
+	// lane is whether the caller is on the free lane: the route they named costs
+	// nothing. Read before any route stands in, since a stand-in rewrites sku.
+	lane := freeLane(fam, sku)
+
+	// pooled reports whether a free-lane request the pool could not serve is the
+	// POOL's to answer: some account in it is benched by the vendor. Any other
+	// failure — a vendor down, nothing discovered, a slow walk — is the request's
+	// own and keeps its own path to the route's alternates.
+	pooled := func() (Pool, bool) {
+		p := FreePool()
+		return p, p.State != PoolAvailable
+	}
+
+	// poolRefused answers a free-lane request the pool could not serve: no account
+	// the platform shares among free users had room for it. It is the Free plan's
+	// own refusal — busy for a minute, or spent until the vendor resets — with the
+	// page that lifts it, never a vendor's words about an account the caller has
+	// never heard of. A caller whose plan is paid is told to pick a paid model
+	// instead: they have nothing to upgrade to.
+	poolRefused := func(p Pool) []attempt {
+		plan := familyTier(familyAccessSubject(orgId, authUser))
+		paid := plan != "" && !strings.EqualFold(plan, "free")
+		n := object.PoolRefused(c.Host(), c.billingOrg(authUser), p.State, p.Resets, paid)
+		log.Warn("free pool refused %s: state=%s ready=%d/%d", model, p.State, p.Ready, p.Keys)
+		if wait := n.RetryAfter(time.Now()); wait > 0 {
+			c.SetHeader("Retry-After", strconv.FormatInt(wait, 10))
+		}
+		// Spent until a reset hours away: a client's automatic retry would only
+		// be refused again, so it is told not to.
+		if n.Code == object.CodePoolExhausted {
+			c.SetHeader("x-should-retry", "false")
+		}
+		if dialect == "anthropic" {
+			c.respondAnthropicError("rate_limit_error", n.Message, n.Status)
+			return done()
+		}
+		c.SetHeader("Content-Type", "application/json")
+		_ = c.Bytes(n.Status, n.ErrorJSON())
+		return done()
 	}
 
 	// A free router is served by CHOOSING. The caller named the family's free id,
@@ -1451,6 +1508,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if fam.frontDoor(sku) {
 		r, alt := pool(freeRoutes(), "")
 		if r == nil {
+			if c.Context().Err() != nil {
+				return done()
+			}
+			if p, ok := pooled(); ok {
+				return poolRefused(p)
+			}
 			return refused(&apiError{status: http.StatusServiceUnavailable,
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
@@ -1480,18 +1543,24 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		err := &apiError{status: resp.StatusCode, msg: upstreamErrorMessage(b)}
-		r, alt := spared(err, b)
+		r, alt, tried := spared(err, b)
 		if r == nil {
+			if tried && lane && c.Context().Err() == nil {
+				if p, ok := pooled(); ok {
+					note(err)
+					return poolRefused(p)
+				}
+			}
 			if faultOf(err) == faultProvider {
 				return refused(err)
 			}
 			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
 			return done()
 		}
-		// The account is empty and this vendor still serves that route for
-		// nothing. The refusal is recorded anyway — it is why the caller is about
-		// to get a different model, and the account it names does not top itself
-		// up. The answer leaves wearing the SKU the caller asked for; the route that
+		// The vendor could not serve — its account is empty, it is down, or a free
+		// route is at its rate limit — and a free route in the pool could. The
+		// refusal is recorded anyway — it is why the caller is about to get a
+		// different model, and the account it names does not top itself up. The answer leaves wearing the SKU the caller asked for; the route that
 		// wrote it is the ledger's Model against that Requested, which is where the
 		// substitution is a fact a query can filter on.
 		//
@@ -1501,8 +1570,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		note(err)
 		resp.Body.Close()
 		resp, requested, sku = r, model, alt
-		log.Warn("family=%s is out of money (402) — %s served by the free route %s",
-			fam.name, model, alt)
+		log.Warn("family=%s refused %s (%d) — served by the free route %s",
+			fam.name, model, err.status, alt)
 	}
 
 	// The client is told the terms its answer was served under, because a free route

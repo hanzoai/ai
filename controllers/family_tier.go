@@ -177,7 +177,7 @@ func cachedFamilyTier(subject string) string {
 	now := time.Now()
 
 	familyTierMu.Lock()
-	if e, ok := familyTierCache[subject]; ok && now.Sub(e.at) < familyTierTTL {
+	if e, ok := familyTierCache[subject]; ok && now.Sub(e.at) < ttlOf(e.name) {
 		familyTierMu.Unlock()
 		return e.name
 	}
@@ -189,6 +189,19 @@ func cachedFamilyTier(subject string) string {
 	familyTierCache[subject] = familyTierCacheEntry{name: name, at: now}
 	familyTierMu.Unlock()
 	return name
+}
+
+// familyFreeTTL is how long a FREE answer is trusted. Free is the one answer a
+// payment changes, so it is held for seconds rather than a minute: a subscriber who
+// has just paid is read as what they bought by the time checkout has brought them
+// back, while a burst from one free caller still costs commerce one read.
+const familyFreeTTL = 10 * time.Second
+
+func ttlOf(name string) time.Duration {
+	if strings.EqualFold(name, "free") {
+		return familyFreeTTL
+	}
+	return familyTierTTL
 }
 
 // commerceFamilyTier performs the un-cached lookup of the plan NAME at tier.name.

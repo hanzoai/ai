@@ -166,11 +166,22 @@ func (rl *RateLimiter) getOrCreate(apiKey string) *keyEntry {
 	entry, ok := rl.keys[apiKey]
 	rl.mu.RUnlock()
 
+	// A FREE ENTRY ASKS AGAIN. Free is the one tier a payment changes, and the
+	// lookup behind tierFunc never holds it, so an org that has just paid is
+	// rated as what it bought as soon as the lookup has its answer — not after
+	// ten idle minutes, which an org that keeps sending never reaches. A paid
+	// entry is kept: its tier does not move under it.
+	tier := TierZenFree
 	if ok {
-		return entry
+		if entry.tier != TierZenFree {
+			return entry
+		}
+		if tier = rl.tierFunc(apiKey); tier == TierZenFree || tierLimits[tier] == 0 {
+			return entry
+		}
+	} else {
+		tier = rl.tierFunc(apiKey)
 	}
-
-	tier := rl.tierFunc(apiKey)
 	reqPerMin := tierLimits[tier]
 	if reqPerMin == 0 {
 		reqPerMin = tierLimits[TierZenFree]
@@ -189,7 +200,8 @@ func (rl *RateLimiter) getOrCreate(apiKey string) *keyEntry {
 
 	rl.mu.Lock()
 	// Double-check: another goroutine may have inserted while we upgraded the lock.
-	if existing, ok := rl.keys[apiKey]; ok {
+	// A free entry it finds is the one being replaced, so only a paid one wins.
+	if existing, ok := rl.keys[apiKey]; ok && existing.tier != TierZenFree {
 		rl.mu.Unlock()
 		return existing
 	}
@@ -597,10 +609,23 @@ func (tc *TierCache) get(apiKey string) (Tier, bool) {
 	if !ok {
 		return "", false
 	}
-	if time.Since(entry.fetchedAt) > tierCacheTTL {
+	if time.Since(entry.fetchedAt) > tierTTL(entry.tier) {
 		return "", false
 	}
 	return entry.tier, true
+}
+
+// freeTierTTL is how long a FREE answer is trusted. Free is the one answer a
+// payment changes, so it is held for seconds rather than minutes: an org that has
+// just paid is rated as what it bought by the time checkout has brought it back,
+// while a free org's burst still costs commerce one lookup.
+const freeTierTTL = 10 * time.Second
+
+func tierTTL(t Tier) time.Duration {
+	if t == TierZenFree {
+		return freeTierTTL
+	}
+	return tierCacheTTL
 }
 
 // set stores a tier mapping in the cache.

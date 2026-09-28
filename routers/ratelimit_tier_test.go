@@ -20,8 +20,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -209,5 +211,56 @@ func TestEveryFailureIsReportedRatherThanCachedQuietly(t *testing.T) {
 		if tier != TierZenFree {
 			t.Errorf("%s: tier = %q, want %q on a failed read", c.what, tier, TierZenFree)
 		}
+	}
+}
+
+// A PAYMENT MOVES THE RATE. A free org's tier is held for seconds, not minutes,
+// and its limiter asks again, so the org that just paid is rated as what it bought
+// once the lookup has its answer — even while it keeps sending.
+func TestAPaymentMovesTheRateOfAnOrgThatKeepsSending(t *testing.T) {
+	saved := object.TierReader()
+	t.Cleanup(func() { object.SetTierReader(saved) })
+	plan := "free"
+	object.SetTierReader(func(context.Context, string, string) (string, error) { return plan, nil })
+
+	tc := &TierCache{entries: map[string]*tierCacheEntry{}, inflight: map[string]struct{}{}}
+	wait := func() {
+		for {
+			tc.inflightMu.Lock()
+			n := len(tc.inflight)
+			tc.inflightMu.Unlock()
+			if n == 0 {
+				return
+			}
+			runtime.Gosched()
+		}
+	}
+	tc.refreshAsync("acme")
+	wait()
+	got, held := tc.get("acme")
+	if !held || got != TierZenFree {
+		t.Fatalf("free = %q (held %v), want zen-free held briefly", got, held)
+	}
+	tc.mu.Lock()
+	tc.entries["acme"].fetchedAt = time.Now().Add(-freeTierTTL - time.Second)
+	tc.mu.Unlock()
+	if _, held := tc.get("acme"); held {
+		t.Fatal("a free answer outlived freeTierTTL — a payment would wait out the paid TTL")
+	}
+
+	// The limiter keeps its entry across the payment and still moves.
+	tier := TierZenFree
+	rl := NewRateLimiter(func(string) Tier { return tier }, time.Hour)
+	t.Cleanup(rl.Stop)
+	if e := rl.getOrCreate("acme"); e.tier != TierZenFree {
+		t.Fatalf("first entry tier %q, want zen-free", e.tier)
+	}
+	tier = TierZenPro // the lookup now answers the plan that was bought
+	if e := rl.getOrCreate("acme"); e.tier != TierZenPro {
+		t.Fatalf("after paying, entry tier %q, want %q — the org is still rated free", e.tier, TierZenPro)
+	}
+	tier = TierZenFree
+	if e := rl.getOrCreate("acme"); e.tier != TierZenPro {
+		t.Fatalf("a paid entry moved back to %q on a stale read", e.tier)
 	}
 }

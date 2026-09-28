@@ -120,8 +120,9 @@ type LimitHit struct {
 // never refused by it. nil (standalone ai) means no plan limits.
 type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitHit, error)
 
-// SpentFunc reports whether subject has already used the free calls its plan allows
-// this period, within the org namespace.
+// SpentFunc reports where subject stands against the free calls its plan allows
+// this period, within the org namespace: whether they are spent, and which window
+// binds and when it starts again, so a refusal can say when the free lane reopens.
 //
 // It is the bound on the ONE thing a wallet cannot bound. A route priced at zero
 // leaves the balance gate nothing to refuse (see BalanceGateFilter), so a caller on
@@ -157,7 +158,19 @@ type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitHit, error)
 // The hard money bounds are untouched: a priced route never reaches this branch. A
 // plan with no limit configured, and any caller whose plan is unlimited, is never
 // spent. nil (the default, standalone ai) → no allowance, behavior unchanged.
-type SpentFunc func(ctx context.Context, subject, namespace string) (spent bool, err error)
+type SpentFunc func(ctx context.Context, subject, namespace string) (Standing, error)
+
+// Standing is a subject's free-call allowance as the host counts it.
+//
+// Window names the ceiling the numbers describe — "hour" or "day" — and is the one
+// that refused where one did. Limit 0 means no window bounds the subject.
+type Standing struct {
+	Spent  bool
+	Window string
+	Limit  int64
+	Used   int64
+	Resets time.Time
+}
 
 var (
 	balanceReader BalanceReaderFunc

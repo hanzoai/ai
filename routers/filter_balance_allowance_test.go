@@ -16,10 +16,12 @@ package routers
 
 import (
 	stdcontext "context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -63,9 +65,9 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 
 	// 2. Allowance left: served, and the read saw the right subject and org.
 	var saw struct{ subject, namespace string }
-	object.SetSpent(func(_ stdcontext.Context, subject, namespace string) (bool, error) {
+	object.SetSpent(func(_ stdcontext.Context, subject, namespace string) (object.Standing, error) {
 		saw.subject, saw.namespace = subject, namespace
-		return false, nil
+		return object.Standing{}, nil
 	})
 	if code, _ := post(free); code == http.StatusPaymentRequired {
 		t.Error("a caller with allowance left was refused")
@@ -92,13 +94,45 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	// 3. Allowance spent: 402 with the distinct code, so the product can offer a plan
 	//    rather than a top-up — and the refusal is NOT usage, which the recorder
 	//    installed above is standing by to catch.
-	object.SetSpent(func(_ stdcontext.Context, _, _ string) (bool, error) { return true, nil })
-	code, body := post(free)
+	resets := time.Now().Add(40 * time.Minute).UTC().Truncate(time.Second)
+	object.SetSpent(func(_ stdcontext.Context, _, _ string) (object.Standing, error) {
+		return object.Standing{Spent: true, Window: "hour", Limit: 10, Used: 10, Resets: resets}, nil
+	})
+	p := ask(http.MethodPost, "/v1/chat/completions").
+		with("Authorization", "Bearer tok").
+		body([]byte(free)).
+		through(BalanceGateFilter)
+	code, body := p.status(), p.said()
 	if code != http.StatusPaymentRequired {
 		t.Fatalf("a spent allowance returned %d, want 402", code)
 	}
 	if !strings.Contains(body, `"code":"allowance_spent"`) {
 		t.Errorf("refusal body %q does not carry code allowance_spent", body)
+	}
+	// THE REFUSAL SAYS WHAT THE FREE PLAN IS, WHEN IT REFILLS, AND WHERE TO PAY.
+	var got struct {
+		Error struct {
+			Message    string `json:"message"`
+			ResetsAt   string `json:"resets_at"`
+			UpgradeURL string `json:"upgrade_url"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("refusal body %q: %v", body, err)
+	}
+	for _, want := range []string{"this hour's 10 free messages", "pool shared by all free users", resets.Format("15:04 UTC")} {
+		if !strings.Contains(got.Error.Message, want) {
+			t.Errorf("message %q does not say %q", got.Error.Message, want)
+		}
+	}
+	if got.Error.ResetsAt != resets.Format(time.RFC3339) {
+		t.Errorf("resets_at = %q, want %q", got.Error.ResetsAt, resets.Format(time.RFC3339))
+	}
+	if got.Error.UpgradeURL != object.PayURL("", "acme") || got.Error.UpgradeURL == "" {
+		t.Errorf("upgrade_url = %q, want the pay page %q", got.Error.UpgradeURL, object.PayURL("", "acme"))
+	}
+	if ra := p.replied("Retry-After"); ra == "" || ra == "0" {
+		t.Errorf("Retry-After = %q, want the seconds until the window refills", ra)
 	}
 	if strings.Contains(body, "insufficient_balance") {
 		t.Error("a spent allowance was reported as an empty wallet — the two have different cures")
@@ -106,8 +140,8 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 
 	// 4. Reader error: fails OPEN. The route costs nothing, so an unreadable
 	//    allowance can only ever hand out our own compute.
-	object.SetSpent(func(_ stdcontext.Context, _, _ string) (bool, error) {
-		return true, errors.New("store unreachable")
+	object.SetSpent(func(_ stdcontext.Context, _, _ string) (object.Standing, error) {
+		return object.Standing{Spent: true}, errors.New("store unreachable")
 	})
 	if code, _ := post(free); code == http.StatusPaymentRequired {
 		t.Error("an allowance read error refused a free route — it must fail open")
@@ -129,9 +163,9 @@ func TestAllowanceLeavesThePaywallAlone(t *testing.T) {
 	t.Cleanup(func() { object.SetSpent(nil) })
 
 	called := false
-	object.SetSpent(func(_ stdcontext.Context, _, _ string) (bool, error) {
+	object.SetSpent(func(_ stdcontext.Context, _, _ string) (object.Standing, error) {
 		called = true
-		return false, nil // "allowance left" must not rescue a caller with no money
+		return object.Standing{}, nil // "allowance left" must not rescue a caller with no money
 	})
 
 	p := ask(http.MethodPost, "/v1/chat/completions").

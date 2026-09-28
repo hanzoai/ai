@@ -48,9 +48,9 @@ func TestPublicLaneIsCountedOnceAndOnlyByTheLane(t *testing.T) {
 	t.Cleanup(func() { object.SetSpent(nil) })
 
 	asks := 0
-	object.SetSpent(func(_ stdcontext.Context, subject, namespace string) (bool, error) {
+	object.SetSpent(func(_ stdcontext.Context, subject, namespace string) (object.Standing, error) {
 		asks++
-		return false, nil
+		return object.Standing{}, nil
 	})
 
 	post := func(path, body string, withCredential bool) int {

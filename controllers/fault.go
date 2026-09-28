@@ -502,7 +502,11 @@ func billingNotice(body []byte) bool {
 		return false
 	}
 	switch string(e.Error.Code) {
-	case `"` + object.CodeInsufficientBalance + `"`, `"` + object.CodeBalanceUnavailable + `"`:
+	case `"` + object.CodeInsufficientBalance + `"`, `"` + object.CodeBalanceUnavailable + `"`,
+		// The Free plan's own limits, relayed: a caller whose share is spent must
+		// not be served from the pool that share bounds, and a pool that already
+		// refused is not asked again.
+		`"` + object.CodeAllowanceSpent + `"`, `"` + object.CodePoolBusy + `"`, `"` + object.CodePoolExhausted + `"`:
 		return true
 	}
 	return false

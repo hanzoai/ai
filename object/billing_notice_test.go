@@ -62,7 +62,7 @@ func TestBalanceUnavailableMessage(t *testing.T) {
 	if strings.Contains(strings.ToLower(n.Message), "add credits") {
 		t.Errorf("transient denial must NOT say add credits, got %q", n.Message)
 	}
-	if strings.Contains(n.Message, "pay.hanzo.ai") {
+	if strings.Contains(n.Message, "hanzo.ai/pay") {
 		t.Errorf("transient denial carries no wallet link, got %q", n.Message)
 	}
 	if !strings.Contains(strings.ToLower(n.Message), "retry") {

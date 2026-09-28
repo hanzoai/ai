@@ -787,3 +787,44 @@ The admin cockpit's below-cost check compared price against a "cost" that WAS th
 so its difference was always exactly zero and it could neither fire honestly nor stay
 quiet honestly. It now has a cost to compare against, or a flag saying there is none.
 
+
+## The free pool — every OpenRouter account, spent as one
+
+The Free plan is limited usage from ONE pool every free user shares: the
+OpenRouter accounts named by `object.OpenRouterKeys` (`OPENROUTER_API_KEY`,
+`_2`, `_3`, resolved KMS-first), spent by `controllers/family_keys.go`.
+
+- **A free route turns the ring; a priced route does not.** OpenRouter's free
+  allowance is per ACCOUNT (20/min; 50/day, or 1000/day once $10 of credit was
+  bought), so a free request starts one key further round each time. A priced
+  request starts at the first key, the funded one. An admin row's single key is
+  sent as before and never benched (one tenant's 402 must not bench it for all).
+- **A 429 is read, not guessed.** `freeQuota` benches a key for free routes only
+  when the message STARTS `Rate limit exceeded: free-models-per-min|day`, until
+  `X-RateLimit-Reset` (header or `error.metadata.headers`, ms epoch), else the
+  window's own length; a bench is never shortened. Any other 429 on a FREE route
+  is the model limited upstream: answered after one account (asking all three is
+  three calls for one refusal) and the pool moves it to the next route. On a
+  priced route it still asks the next account.
+- **`FreePool()` is the pool's standing**: state (`available` | `busy` |
+  `exhausted`) and when it refills, per process. Cloud's `ai_pool` plane op
+  publishes state + refill only (no account counts) and `GET /v1/allowance`
+  carries it to the Free usage page.
+- **A busy FREE route moves to the pool** (`fallback`): enso-auto on the enso
+  service's one account answering 429 while three accounts sit idle made a shared
+  pool a queue for one key. A busy PRICED route still stays itself.
+- **The pool answers for itself only when an account is benched.** A free-lane
+  request the pool could not serve gets `object.PoolRefused` (429 `pool_busy` /
+  `pool_exhausted`, `upgrade_url` = `object.PayURL`, hanzo.ai/pay) only when
+  `FreePool()` is not available; a walk that failed with every account ready
+  (502s, nothing discovered) keeps its path to the route's alternates. Busy never
+  carries a reset past a minute; exhausted carries the refill and
+  `x-should-retry: false`. A caller on a paid plan is told to pick a paid model,
+  not to upgrade. A person's own share spent is 402 `allowance_spent`
+  (`object.AllowanceSpent`) naming the window; `object.SpentFunc` answers a
+  `Standing`. All three codes are `billingNotice`: relayed, they are never moved
+  to the pool.
+- **Free is held for seconds, not minutes** (`familyFreeTTL`, `freeTierTTL`, 10s),
+  and the rate limiter re-asks a free entry's tier: it is the one answer a
+  payment changes, so a paying org is rated as what it bought by the time
+  checkout brings it back.

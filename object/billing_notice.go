@@ -21,12 +21,14 @@ import (
 )
 
 // payBaseURL is the hosted prepaid-wallet page a spend-gate denial points the caller
-// to. pay.<brand> is a tenant-neutral SPA: it resolves the BRAND from the request Host
-// and the WALLET from the authenticated IAM identity (the `owner` claim), so signing in
-// lands the caller on their own org-pooled wallet. It has no /<org> route today
-// (pay/src/main.tsx routes: / /amount /confirm /success), so PayURL returns this bare
-// root; see PayURL for the per-org deep-link seam.
-const payBaseURL = "https://pay.hanzo.ai"
+// to. The pay SPA is tenant-neutral: it resolves the BRAND from the request Host and
+// the WALLET from the authenticated IAM identity (the `owner` claim), so signing in
+// lands the caller on their own org-pooled wallet. Hanzo serves it at hanzo.ai/pay,
+// so a person pays without leaving the site; pay.hanzo.ai redirects there with its
+// path and query. It has no /<org> route today (pay/src/main.tsx routes: / /amount
+// /confirm /success), so PayURL returns this bare root; see PayURL for the per-org
+// deep-link seam.
+const payBaseURL = "https://hanzo.ai/pay"
 
 // payHosts maps a request host to the wallet that serves ITS brand. One cloud origin
 // answers every brand and reads the brand off the Host, so a denial built without the

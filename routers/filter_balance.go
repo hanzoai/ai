@@ -241,12 +241,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		// name and returns the error only for one it can. A priced route never
 		// reaches this branch, so nothing here can free a metered call.
 		if spent := object.Spent(); spent != nil {
-			if out, err := spent(c.Context(), subject, namespace); err == nil && out {
-				log.Info("allowance: period allowance spent subject=%s namespace=%s path=%s",
-					subject, namespace, path)
-				c.SetHeader("Content-Type", "application/json")
-				return c.Bytes(http.StatusPaymentRequired, []byte(
-					`{"error":{"message":"You've used your free messages for today. They reset at midnight UTC — or pick a plan at https://hanzo.ai/pricing to keep going now.","type":"insufficient_quota","code":"allowance_spent"}}`))
+			if out, err := spent(c.Context(), subject, namespace); err == nil && out.Spent {
+				log.Info("allowance: period allowance spent subject=%s namespace=%s window=%s path=%s",
+					subject, namespace, out.Window, path)
+				return freeRefused(c, object.AllowanceSpent(c.Host(), namespace, out))
 			}
 		}
 		return c.Continue()
@@ -337,6 +335,16 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	}
 	c.SetHeader("Content-Type", "application/json")
 	return c.Bytes(http.StatusTooManyRequests, raw)
+}
+
+// freeRefused writes a Free-plan refusal with Retry-After when it says when it
+// clears.
+func freeRefused(c *zip.Ctx, n object.FreeNotice) error {
+	if wait := n.RetryAfter(time.Now()); wait > 0 {
+		c.SetHeader("Retry-After", fmt.Sprint(wait))
+	}
+	c.SetHeader("Content-Type", "application/json")
+	return c.Bytes(n.Status, n.ErrorJSON())
 }
 
 // limitNoun is how a window is named to a person.
