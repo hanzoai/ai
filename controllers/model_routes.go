@@ -153,6 +153,8 @@ var modelRoutes = map[string]modelRoute{
 	// to OpenRouter, so they stay callable and leave the listing. A decision answers
 	// typed questions, not a chat turn, and `outputs` says so to every catalog.
 	"kai":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}},
+	"jev":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}, hidden: true},
+	"jev-latest":           {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}, hidden: true},
 	"typesafe/jev-1.13":    {providerName: object.KaiName, upstreamModel: "typesafe/jev-1.13", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true},
 	"~typesafe/jev-latest": {providerName: object.KaiName, upstreamModel: "~typesafe/jev-latest", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true},
 }
