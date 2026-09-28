@@ -19,7 +19,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestGetUserByAccessKeyUsesClientSecretBasic pins the ONE transport sk- key
@@ -163,5 +166,92 @@ func TestGetUserByAccessKeyRequiresCredentials(t *testing.T) {
 
 	if _, err := GetUserByAccessKey("sk-test-000000000000000000000000000000ab"); err == nil {
 		t.Fatal("missing client credentials must be an error, got nil")
+	}
+}
+
+// IAM is asked about a key once a minute, whatever asks: the balance gate, the authz
+// filter and the controller each resolve the key on every request, and IAM takes
+// hundreds of milliseconds an ask. What IAM says about the key is held, a principal
+// or a refusal; a fault in reaching it is asked again; each caller gets its own user.
+func TestKeyAnswerIsHeldForAMinute(t *testing.T) {
+	var asks atomic.Int64
+	answer := `{"status":"ok","msg":"","data":{"owner":"hanzo","name":"held"}}`
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asks.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		mu.Lock()
+		body := answer
+		mu.Unlock()
+		if body == "" {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	t.Setenv("IAM_URL", srv.URL)
+	t.Setenv("IAM_CLIENT_ID", "hanzo-cloud")
+	t.Setenv("IAM_CLIENT_SECRET", "s3cr3t")
+	set := func(b string) { mu.Lock(); answer = b; mu.Unlock() }
+
+	const key = "sk-held-00000000000000000000000000000000"
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if u, err := GetUserByAccessKey(key); err != nil || u == nil || u.Name != "held" {
+				t.Errorf("resolved %+v, %v", u, err)
+			}
+		}()
+	}
+	wg.Wait()
+	a, err := GetUserByAccessKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := asks.Load(); n != 1 {
+		t.Fatalf("IAM asked %d times for one key, want 1", n)
+	}
+	a.Name = "changed"
+	if b, _ := GetUserByAccessKey(key); b.Name != "held" {
+		t.Fatalf("a caller's change reached another caller: %q", b.Name)
+	}
+
+	// A refusal of the key is held as the principal is.
+	const gone = "sk-gone-00000000000000000000000000000000"
+	set(`{"status":"error","msg":"the entity does not exist","code":"key_unknown","data":null}`)
+	for i := 0; i < 2; i++ {
+		if _, err := GetUserByAccessKey(gone); err == nil || !strings.Contains(err.Error(), "does not resolve") {
+			t.Fatalf("refusal = %v", err)
+		}
+	}
+	if n := asks.Load(); n != 2 {
+		t.Fatalf("IAM asked %d times, want 2: the refusal is held", n)
+	}
+
+	// A fault is not an answer about the key: it is asked again.
+	const flaky = "sk-flaky-0000000000000000000000000000000"
+	set("")
+	for i := 0; i < 2; i++ {
+		if _, err := GetUserByAccessKey(flaky); err == nil {
+			t.Fatal("a 502 must not resolve")
+		}
+	}
+	if n := asks.Load(); n != 4 {
+		t.Fatalf("IAM asked %d times, want 4: a fault is asked again", n)
+	}
+
+	// Past the minute IAM is asked again, so a revoked key stops resolving.
+	prev := keyTTL
+	keyTTL = 0
+	defer func() { keyTTL = prev }()
+	set(`{"status":"ok","msg":"","data":{"owner":"hanzo","name":"fresh"}}`)
+	const later = "sk-later-0000000000000000000000000000000"
+	_, _ = GetUserByAccessKey(later)
+	set(`{"status":"error","msg":"the entity does not exist","code":"key_unknown","data":null}`)
+	if _, err := GetUserByAccessKey(later); err == nil {
+		t.Fatal("a key revoked after its answer expired must not resolve")
 	}
 }

@@ -570,7 +570,23 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 		return nil, fmt.Errorf("IAM_URL is not configured")
 	}
 	iamEndpoint = strings.TrimRight(iamEndpoint, "/")
+	data, err := answerFor(iamEndpoint, accessKey, func() (json.RawMessage, bool, error) {
+		return askForKey(iamEndpoint, accessKey)
+	})
+	if err != nil {
+		return nil, err
+	}
+	var u iam.User
+	if err := json.Unmarshal(data, &u); err != nil {
+		return nil, fmt.Errorf("failed to parse IAM response: %w", err)
+	}
+	return &u, nil
+}
 
+// askForKey asks IAM which principal a secret key speaks for: the principal's JSON,
+// or IAM's refusal. final says the answer is about the key, so it may be held; a
+// fault in reaching or reading IAM is not.
+func askForKey(iamEndpoint, accessKey string) (json.RawMessage, bool, error) {
 	// Per global rule: /v1/ only, never /api/. A path under /api/ is intercepted
 	// by the @hanzo/id SPA ingress and returns HTML, which broke API-key
 	// resolution once ("invalid character '<'").
@@ -600,13 +616,13 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// cache is needed — there is no token.
 	clientId, clientSecret := iamClientCreds()
 	if clientId == "" || clientSecret == "" {
-		return nil, fmt.Errorf("IAM client credentials are not configured")
+		return nil, false, fmt.Errorf("IAM client credentials are not configured")
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("IAM request build failed: %w", err)
+		return nil, false, fmt.Errorf("IAM request build failed: %w", err)
 	}
 	req.SetBasicAuth(clientId, clientSecret)
 	resp, err := client.Do(req)
@@ -614,7 +630,7 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 		// The key travels in the query string, so a transport failure carries it:
 		// *url.Error prints the whole URL. Redacted before it becomes an error value,
 		// because from here it is logged and wrapped further.
-		return nil, fmt.Errorf("IAM request failed: %s", object.RedactKeys(err.Error()))
+		return nil, false, fmt.Errorf("IAM request failed: %s", object.RedactKeys(err.Error()))
 	}
 	defer resp.Body.Close()
 
@@ -627,22 +643,23 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// toward a contract break for hours when IAM had named the cause in the first
 	// reply. Decode first, judge second.
 	var result struct {
-		Status string    `json:"status"`
-		Msg    string    `json:"msg"`
-		Code   string    `json:"code"` // WHY, when IAM refused (iam store.KeyFailure)
-		Data   *iam.User `json:"data"`
+		Status string          `json:"status"`
+		Msg    string          `json:"msg"`
+		Code   string          `json:"code"` // WHY, when IAM refused (iam store.KeyFailure)
+		Data   json.RawMessage `json:"data"`
 	}
 	decodeErr := json.NewDecoder(resp.Body).Decode(&result)
 
-	// A refusal IAM named is a refusal we can relay, whatever the status line.
+	// A refusal IAM named is a refusal we can relay, whatever the status line. It is
+	// about the key only when it carries a code.
 	if decodeErr == nil && (result.Code != "" || result.Status != "ok") {
-		return nil, keyRefusal(result.Code, result.Msg, accessKey)
+		return nil, result.Code != "", keyRefusal(result.Code, result.Msg, accessKey)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("IAM returned status %d and named no reason", resp.StatusCode)
+		return nil, false, fmt.Errorf("IAM returned status %d and named no reason", resp.StatusCode)
 	}
 	if decodeErr != nil {
-		return nil, fmt.Errorf("failed to parse IAM response: %w", decodeErr)
+		return nil, false, fmt.Errorf("failed to parse IAM response: %w", decodeErr)
 	}
 
 	// ok-with-nobody. IAM said the request succeeded and named no user, which this
@@ -653,14 +670,17 @@ func getUserByAccessKey(accessKey string) (*iam.User, error) {
 	// who no longer exists. A key that resolves to nobody IS unusable, so refuse it
 	// — but say which of the two things happened, and keep the redacted prefix so
 	// the line names the credential without disclosing it.
-	if result.Data == nil {
-		return nil, authError(
+	if len(result.Data) == 0 || string(result.Data) == "null" {
+		return nil, true, authError(
 			"API key %s resolved to no user — IAM accepted the lookup and returned nothing. "+
 				"The key may have been deleted, or its owner removed. Mint a new one at "+KeysURL(""),
 			keyHint(accessKey))
 	}
-
-	return result.Data, nil
+	var u iam.User
+	if err := json.Unmarshal(result.Data, &u); err != nil {
+		return nil, false, fmt.Errorf("failed to parse IAM response: %w", err)
+	}
+	return result.Data, true, nil
 }
 
 // KeysURL is where a holder mints a key: the API-keys page on the console of the
