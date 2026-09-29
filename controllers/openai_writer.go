@@ -16,10 +16,12 @@
 package controllers
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/hanzoai/ai/util"
 	"github.com/hanzoai/go-openai"
@@ -298,4 +300,32 @@ func (w *OpenAIWriter) Close(promptTokens, completionTokens, totalTokens int) er
 	}
 
 	return nil
+}
+
+// streamOpenAIError ends a stream that failed after it began: one error event,
+// then the end marker. The status line went out with the first byte, so the event
+// is the only place left to say what went wrong. The body is OpenAI's error object.
+func streamOpenAIError(w *bufio.Writer, err error) {
+	body, merr := json.Marshal(map[string]map[string]string{"error": {
+		"message": err.Error(),
+		"type":    openAIErrorType(statusForModelError(err)),
+		"code":    codeOf(err),
+	}})
+	if merr != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", body)
+	_ = w.Flush()
+}
+
+// openAIErrorType is OpenAI's word for a failure with this status.
+func openAIErrorType(status int) string {
+	switch {
+	case status == http.StatusTooManyRequests:
+		return "rate_limit_error"
+	case status >= 400 && status < 500:
+		return "invalid_request_error"
+	default:
+		return "api_error"
+	}
 }

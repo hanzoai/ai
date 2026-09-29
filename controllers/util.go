@@ -218,6 +218,13 @@ func (c *ApiController) ResponseFailure(err error) {
 	c.JSON(statusOf(err), Response{Status: "error", Msg: err.Error(), Code: codeOf(err)})
 }
 
+// ResponseModelFailure renders a model call that nothing answered, with the
+// status a client should see for it (statusForModelError: an upstream 429 stays a
+// 429, a vendor's 402 is our 503) and the machine name it carries.
+func (c *ApiController) ResponseModelFailure(err error) {
+	c.JSON(statusForModelError(err), Response{Status: "error", Msg: err.Error(), Code: codeOf(err)})
+}
+
 // ResponseUnauthorized renders an authentication denial (no/invalid session or
 // credential) as a real HTTP 401 — never The router's default 200. Same body shape.
 func (c *ApiController) ResponseUnauthorized(error string, data ...any) {

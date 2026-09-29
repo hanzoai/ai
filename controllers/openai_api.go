@@ -2087,8 +2087,16 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// the request that named it.
 	billRaced := c.billRaced(request.Model, authUser, isPremium, request.Stream, requestId, requestStartTime)
 
+	// What the body reads from the request, read now. A streamed body is produced
+	// after this handler returns and fiber has released the request, so complete
+	// reads this and never the controller (base.go snapshot).
+	snap := c.takeSnapshot(authUser)
+
+	// complete produces the whole answer into out and returns what went wrong, if
+	// anything. It renders nothing itself: the caller knows whether a status can
+	// still be sent.
 	answered := false
-	complete := func(out io.Writer) {
+	complete := func(out io.Writer) error {
 		writer.out = out
 		var modelResult *model.ModelResult
 		var actualProvider served
@@ -2109,7 +2117,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 
 		if route != nil {
 			modelResult, actualProvider, tried, err = ask{
-				ctx:       c.Context(),
+				ctx:       snap.ctx,
 				route:     route,
 				org:       ledger,
 				model:     request.Model,
@@ -2117,7 +2125,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 				question:  question,
 				history:   history,
 				knowledge: knowledge,
-				lang:      c.GetAcceptLanguage(),
+				lang:      snap.lang,
 				writer:    writer,
 				prompt:    promptTokens,
 				fan:       race,
@@ -2127,12 +2135,11 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		} else {
 			// Model absent from the route table: call the provider auth resolved.
 			var modelProvider model.ModelProvider
-			modelProvider, err = provider.GetModelProvider(c.GetAcceptLanguage())
+			modelProvider, err = provider.GetModelProvider(snap.lang)
 			if err != nil {
-				c.ResponseError(fmt.Sprintf("Failed to get model provider: %s", err.Error()))
-				return
+				return serverError("Failed to get model provider: %s", err.Error())
 			}
-			modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, c.GetAcceptLanguage())
+			modelResult, err = modelProvider.QueryText(question, writer, history, "", knowledge, nil, snap.lang)
 			actualProvider = served{provider.Name, provider.Origin(), provider}
 		}
 
@@ -2140,7 +2147,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		// eventually served. A failover nobody can see leaves the empty account
 		// empty. The family's own refusal is already recorded above, so skip it here.
 		if n := len(familyRefused); len(tried) > n {
-			recordRefusals(c.takeSnapshot(authUser), request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
+			recordRefusals(snap, request.Model, tried[n:], authUser, isPremium, request.Stream, requestId, requestStartTime)
 		}
 
 		if err != nil {
@@ -2155,19 +2162,18 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 					Stream:    request.Stream,
 					Status:    "error",
 					ErrorMsg:  err.Error(),
-					ClientIP:  c.Fiber().IP(),
+					ClientIP:  snap.ip,
 					RequestID: requestId,
 				}
 				errRecord.PromptTokens, errRecord.CompletionTokens =
 					spent(modelResult, request.Model, promptTokens, writer.MessageString(), err)
 				errRecord.TotalTokens = errRecord.PromptTokens + errRecord.CompletionTokens
-				errRecord.bind(c.Context(), authUser)
+				errRecord.bind(snap.ctx, authUser)
 				errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
 				recordUsage(errRecord)
-				recordTrace(c.Context(), errRecord, requestStartTime)
+				recordTrace(snap.ctx, errRecord, requestStartTime)
 			}
-			c.ResponseError(err.Error())
-			return
+			return err
 		}
 
 		// Record successful usage (actualProvider reflects which provider served the request)
@@ -2187,10 +2193,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 				Premium:          isPremium,
 				Stream:           request.Stream,
 				Status:           "success",
-				ClientIP:         c.Fiber().IP(),
+				ClientIP:         snap.ip,
 				RequestID:        requestId,
 			}
-			successRecord.bind(c.Context(), authUser)
+			successRecord.bind(snap.ctx, authUser)
 			// Whether this call was "bring your own key" is a property of the row
 			// that SPENT a credential, not of the row auth resolved before failover
 			// moved the request. Reading the latter is how a call served on the
@@ -2198,7 +2204,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			// the platform eating the upstream.
 			successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 			recordUsage(successRecord)
-			recordTrace(c.Context(), successRecord, requestStartTime)
+			recordTrace(snap.ctx, successRecord, requestStartTime)
 			// Settle the reservation with the ACTUAL cost (this works identically for
 			// streaming and non-streaming non-tool responses — both have real token
 			// counts here from the QueryText pipeline).
@@ -2233,10 +2239,11 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 
 			jsonResponse, err := json.Marshal(response)
 			if err != nil {
-				c.ResponseError(err.Error())
-				return
+				return serverError("%s", err.Error())
 			}
 
+			// Only the non-streaming answer is written here, and it runs inside the
+			// handler, where the request is still ours.
 			c.answerBody(jsonResponse)
 		} else {
 			err = writer.Close(
@@ -2245,11 +2252,11 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 				modelResult.TotalTokenCount,
 			)
 			if err != nil {
-				c.ResponseError(err.Error())
-				return
+				return err
 			}
 		}
 		answered = true
+		return nil
 	}
 
 	// LLM-as-a-judge: score THIS served (prompt, response) into a dense quality reward
@@ -2268,21 +2275,47 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	}
 
 	if request.Stream {
+		// THE FIRST BYTE DECIDES THE STATUS. Handing zip the stream commits a 200, so
+		// the answer is produced into `unsent` first and this handler waits for its first
+		// byte. A request every provider refused before a byte was written is answered
+		// with the status that says so; one that has begun is handed to the stream with
+		// what it already said, and a failure after that goes out as an error event.
+		out := newUnsent()
+		var failed error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			failed = complete(out)
+			judge()
+		}()
+		select {
+		case <-out.first:
+		case <-done:
+		}
+		if !out.opened() && failed != nil {
+			c.ResponseModelFailure(failed)
+			return
+		}
 		// The headers go on before the callback: the first chunk commits the status
 		// line, and nothing can be added to it afterwards.
 		c.SetHeader("Content-Type", "text/event-stream")
 		c.SetHeader("Cache-Control", "no-cache")
 		c.SetHeader("Connection", "keep-alive")
 		_ = c.SendStreamWriter(func(bw *bufio.Writer) {
-			complete(bw)
-			judge()
+			attached := out.attach(bw)
+			<-done
+			if failed != nil && attached == nil {
+				streamOpenAIError(bw, failed)
+			}
 		})
 		return
 	}
 
 	// Nothing is streamed: OpenAIWriter accumulates into MessageBuf and the one JSON
 	// body is written by complete itself, so there is no stream to name.
-	complete(io.Discard)
+	if err := complete(io.Discard); err != nil {
+		c.ResponseModelFailure(err)
+	}
 	judge()
 }
 
@@ -2466,7 +2499,10 @@ func (c *ApiController) proxyToolRequest(
 	}
 
 	// WHAT AN ANSWER COST IS SETTLED IN ONE PLACE. Where the token counts come from
-	// differs between the two shapes; nothing after that does.
+	// differs between the two shapes; nothing after that does. A stream settles
+	// from its callback, after fiber has released the request, so settle reads the
+	// snapshot and never the controller.
+	snap := c.takeSnapshot(authUser)
 	settle := func(streamed bool, prompt, completion, total int) {
 		if total == 0 {
 			total = prompt + completion
@@ -2487,13 +2523,13 @@ func (c *ApiController) proxyToolRequest(
 				Premium:          isPremium,
 				Stream:           streamed,
 				Status:           "success",
-				ClientIP:         c.Fiber().IP(),
+				ClientIP:         snap.ip,
 				RequestID:        requestId,
 			}
-			successRecord.bind(c.Context(), authUser)
+			successRecord.bind(snap.ctx, authUser)
 			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 			recordUsage(successRecord)
-			recordTrace(c.Context(), successRecord, requestStartTime)
+			recordTrace(snap.ctx, successRecord, requestStartTime)
 		}
 		hold.settle(actualCents)
 	}
@@ -2522,8 +2558,7 @@ func (c *ApiController) proxyToolRequest(
 		//
 		// The upstream body travels in for the same reason: left to the defer above it
 		// would be closed before the relay read a byte, and the client would be sent
-		// nothing. The context is still the request's — fasthttp finishes writing the
-		// response before fiber releases it.
+		// nothing.
 		upstream := resp.Body
 		resp = nil
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {

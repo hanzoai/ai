@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hanzoai/ai/model"
@@ -173,7 +174,10 @@ func reserveCompletionTokens(maxTokens int) int {
 type budgetHold struct {
 	subject string
 	est     int64
-	settled bool
+	// settled is set by the one settle that runs. Atomic, because a streamed answer
+	// settles from the goroutine producing it while the handler's deferred settle
+	// may run at the same moment.
+	settled atomic.Bool
 }
 
 // reserveBudget holds est cents against the caller's spendable balance BEFORE a
@@ -205,11 +209,10 @@ func (h *budgetHold) settle(actualCents int64) {
 // settleNano is settle with the actual spend in nano-USD, for a call priced below a
 // cent: the ledger carries the fraction rather than rounding it away.
 func (h *budgetHold) settleNano(actualNano int64) {
-	if h == nil || h.settled || h.subject == "" {
+	if h == nil || h.subject == "" || !h.settled.CompareAndSwap(false, true) {
 		return
 	}
 	object.GlobalBalanceLedger.SettleNano(h.subject, h.est, actualNano)
-	h.settled = true
 }
 
 // estimatePromptTokens counts the prompt tokens for a chat request (tiktoken via
