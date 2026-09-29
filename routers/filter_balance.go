@@ -212,8 +212,13 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// is zero skips. A body we cannot read, a model we cannot name, or a price we had
 	// to synthesize all leave the gate in force.
 	//
-	// A decision body is decoded here, once its sender is known, and left plain.
+	// A decision body is decoded here, once its sender is known, and left plain —
+	// unless the ledger already holds the wallet empty and no decision model is free
+	// to it, when the refusal the decode would end in is given without it.
 	if controllers.DecisionPath(path) {
+		if avail, empty := balanceGate.empty(subject, namespace); empty && !decisionFree(namespace) {
+			return denied(c, object.InsufficientBalance(c.Host(), namespace, ""), subject, namespace, avail, path)
+		}
 		if _, err := controllers.DecisionBody(c); err != nil {
 			return err
 		}
@@ -279,15 +284,22 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	if sufficient {
 		return c.Continue()
 	}
+	return denied(c, deny, subject, namespace, balance, path)
+}
 
-	// Denied. checkBalance decided WHICH denial: a known-insufficient balance (402,
-	// add credits) or a balance it could not verify (503, retry) — both fail-CLOSED.
+// denied writes the gate's refusal. checkBalance decides WHICH: a known-insufficient
+// balance (402, add credits) or a balance it could not verify (503, retry) — both
+// fail-CLOSED.
+func denied(c *zip.Ctx, deny object.BillingNotice, subject, namespace string, balance int64, path string) error {
 	log.Info("balance_gate: deny subject=%s namespace=%s balance_cents=%d code=%s status=%d path=%s",
 		subject, namespace, balance, deny.Code, deny.Status, path)
-
 	c.SetHeader("Content-Type", "application/json")
 	return c.Bytes(deny.Status, deny.ErrorJSON())
 }
+
+// decisionFree reports whether a decision model costs namespace nothing
+// (controllers.DecisionFree), indirected so the gate's tests state the prices directly.
+var decisionFree = controllers.DecisionFree
 
 // depthRoute names the priced SKU a free default id is served at for a funded caller
 // (controllers.DepthRoute), indirected so the gate's tests state the table directly.
@@ -685,6 +697,21 @@ func (bg *BalanceGate) checkBalance(host, subject, namespace, userKey string) (s
 		return true, object.BillingNotice{}, avail
 	}
 	return false, object.InsufficientBalance(host, namespace, ""), avail
+}
+
+// empty reports a subject the ledger already holds with nothing to spend — the
+// answer checkBalance gives it without a fetch, a stale entry refreshed behind it
+// as there — and its spendable balance. A subject the ledger does not hold is not
+// empty: only a fetch can say.
+func (bg *BalanceGate) empty(subject, namespace string) (int64, bool) {
+	bal, reserved, fresh, known := bg.ledger.Snapshot(subject)
+	if !known || bal-reserved > 0 {
+		return 0, false
+	}
+	if !fresh {
+		bg.refreshAsync(subject, namespace)
+	}
+	return bal - reserved, true
 }
 
 // refreshAsync kicks off a background goroutine to refresh the ledger balance

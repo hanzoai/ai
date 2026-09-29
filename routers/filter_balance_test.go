@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -558,5 +559,53 @@ func TestTheGateDecodesADecisionBodyOnce(t *testing.T) {
 	}
 	if reached != 1 {
 		t.Fatalf("a refused body reached the handler %d time(s)", reached-1)
+	}
+}
+
+// A wallet the ledger already holds empty is refused on a decision path before its
+// body is decoded, when no decision model is free to it: 64 MiB of gzip costs what
+// its wire bytes cost, and the answer is the gate's 402 in the path's words, never
+// the handler. When a decision model is free the body is decoded, because only the
+// model it names says whether the call is one the wallet need not pay for.
+func TestAnEmptyWalletIsRefusedBeforeItsDecisionBodyIsDecoded(t *testing.T) {
+	bg := newTestGate("http://unused", "", balanceCacheTTL)
+	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
+	bg.ledger.SetBalance("acme", 0)
+	prev, prevFree := balanceGate, decisionFree
+	free := false
+	balanceGate, decisionFree = bg, func(string) bool { return free }
+	t.Cleanup(func() { balanceGate, decisionFree = prev, prevFree })
+
+	var zb bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&zb, gzip.BestCompression)
+	_, _ = zw.Write([]byte(`{"model":"kai","state":1,` + strings.Repeat(" ", 64<<20) + `"questions":{}}`))
+	_ = zw.Close()
+	var reached int
+	handler := func(c *zip.Ctx) error { reached++; return c.Continue() }
+	send := func(path string) probe {
+		return ask(http.MethodPost, path).body(zb.Bytes()).
+			with("Content-Encoding", "gzip").with("Authorization", "Bearer tok").
+			through(Dialect, BalanceGateFilter, handler)
+	}
+	for _, path := range []string{"/v1/decisions", "/v1/systemone"} {
+		var a, b runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&a)
+		p := send(path)
+		runtime.ReadMemStats(&b)
+		if p.status() != http.StatusPaymentRequired || p.replied("X-Request-Id") == "" {
+			t.Fatalf("%s: an empty wallet's gzip decision => %d %s", path, p.status(), p.said())
+		}
+		if alloc := b.TotalAlloc - a.TotalAlloc; alloc > 8<<20 {
+			t.Fatalf("%s: refusing an empty wallet's %d KiB of gzip allocated %d MiB: it was decoded", path, zb.Len()>>10, alloc>>20)
+		}
+	}
+
+	free = true
+	if p := send("/v1/decisions"); p.status() != http.StatusUnprocessableEntity || !strings.Contains(p.said(), `"code":"request_too_long"`) {
+		t.Fatalf("with a free decision model the body was not decoded: %d %s", p.status(), p.said())
+	}
+	if reached != 0 {
+		t.Fatalf("a refused decision reached the handler %d time(s)", reached)
 	}
 }

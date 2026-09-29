@@ -884,6 +884,24 @@ func TestDecodeCostsTheBound(t *testing.T) {
 	}
 }
 
+// A decision model is free to an org whose route prices it at zero, and to no other:
+// the balance gate refuses an empty wallet on a decision path before decoding its
+// body only when none is. The org is one no other test prices under, because routes
+// are cached per org for the process.
+func TestADecisionModelPricedAtZeroIsFree(t *testing.T) {
+	routeDB(t)
+	if DecisionFree("gratis") {
+		t.Fatal("a decision model is free with no route pricing one at zero")
+	}
+	addRoute(t, &object.ModelRoute{
+		Owner: "gratis", ModelName: "kai", Provider: object.KaiName,
+		Upstream: "kai", Priced: true, InputPrice: 0, OutputPrice: 0, Enabled: true,
+	})
+	if !DecisionFree("gratis") || DecisionFree("other") {
+		t.Fatalf("free to gratis %v, to other %v; want true, false", DecisionFree("gratis"), DecisionFree("other"))
+	}
+}
+
 // The settle loop tries a debit whose answer was lost again under the same Ref, so a
 // ledger that keys on it moves the money once however many tries it took.
 func TestSettleRetriesCarryOneRef(t *testing.T) {

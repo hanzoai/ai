@@ -404,6 +404,18 @@ func decisionModels() []string {
 	return ids
 }
 
+// DecisionFree reports whether a model the decision paths serve costs org nothing.
+// The balance gate refuses an empty wallet on those paths before decoding a body
+// only when none does, so a free decision route stays reachable at $0.
+func DecisionFree(org string) bool {
+	for _, id := range decisionModels() {
+		if costsNothing(id, org) {
+			return true
+		}
+	}
+	return false
+}
+
 // kaiUpstream reports whether a route reaches Kai itself, in the service's own
 // spelling: kai, or kai@<revision>. The Jev routes reach Jev.
 func kaiUpstream(up string) bool {
