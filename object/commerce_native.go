@@ -80,6 +80,11 @@ type UsageEvent struct {
 	// twice under one RequestID is charged twice. A caller that must not double
 	// charge has to make the call once itself; there is no dedup to fall back on.
 	RequestID string
+	// Ref names this DEBIT, and it is the one key a host may dedup it on. ai mints it
+	// once per usage record, from nothing a caller sent, so a debit re-sent after its
+	// answer was lost carries the same Ref and is charged once, while two debits —
+	// two records, a hedge's loser and its winner included — never share one.
+	Ref string
 }
 
 // TierReaderFunc returns the subject's commerce subscription-plan NAME

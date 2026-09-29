@@ -778,6 +778,10 @@ type usageRecord struct {
 	ErrorMsg         string  `json:"errorMsg"`
 	ClientIP         string  `json:"clientIp"`
 	RequestID        string  `json:"requestId"`
+	// ref names this record's debit for the ledger (object.UsageEvent.Ref): minted
+	// the first time the record is filed and kept, so filing it again — a retry after
+	// a lost answer — is the same debit.
+	ref string
 	// ClientRequestID is the X-Request-Id the caller was answered under, where the
 	// surface answers with one. It is what the row's request_id column shows, so a
 	// caller's id finds their bill; RequestID stays the row's own, minted here, and is
@@ -1319,6 +1323,9 @@ func recordUsage(record *usageRecord) error {
 	if rec := object.UsageRecorder(); rec != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), usageTimeout)
 		defer cancel()
+		if record.ref == "" {
+			record.ref = uuid.NewString()
+		}
 		if err := rec(ctx, object.UsageEvent{
 			Subject:   subject,
 			Namespace: org,
@@ -1329,6 +1336,7 @@ func recordUsage(record *usageRecord) error {
 			Actor:     record.User,
 			Allowance: free,
 			RequestID: record.RequestID,
+			Ref:       record.ref,
 		}); err != nil {
 			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
 			return err

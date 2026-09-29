@@ -520,3 +520,28 @@ func TestHandleCallHoldsWhatItsHandleBills(t *testing.T) {
 		t.Fatal("a handle's cost is not its own org's")
 	}
 }
+
+// A record's debit carries one Ref however many times it is filed, and two records
+// never share one: the key a host dedups a re-sent debit on, minted here.
+func TestDebitRefIsStablePerRecord(t *testing.T) {
+	_, _ = setupDecisions(t)
+	var refs []string
+	fail := true
+	object.SetUsageRecorder(func(_ context.Context, u object.UsageEvent) error {
+		refs = append(refs, u.Ref)
+		if fail {
+			fail = false
+			return errors.New("answer lost")
+		}
+		return nil
+	})
+	rec := &usageRecord{Owner: decisionsOrg, Model: "kai", Provider: object.KaiName, PromptTokens: 10, DecisionCount: 1, Status: "success", RequestID: "same"}
+	_ = recordUsage(rec)
+	_ = recordUsage(rec)
+	other := *rec
+	other.ref = ""
+	_ = recordUsage(&other)
+	if len(refs) != 3 || refs[0] == "" || refs[0] != refs[1] || refs[2] == refs[0] {
+		t.Fatalf("refs = %v; want one ref across a record's retries and another for another record", refs)
+	}
+}

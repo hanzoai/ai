@@ -543,7 +543,9 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
 - **The reply never waits on the books.** The debit goes to 16 settlers through a
   1024-deep queue (full: filed inline, never dropped). A debit the ledger refuses or
   does not answer in `usageTimeout` (5 s) is tried 3 times with backoff; a retry after
-  a lost ack can charge twice, because the ledger mints entry keys itself.
+  a lost ack is charged once: each usage record mints one `Ref` the first time it is
+  filed (`object.UsageEvent.Ref`), and the host keys the ledger on it. Not the
+  record's RequestID — a hedge's winner and its losers share that one.
   `controllers.Settled` waits `SettleBudget()`; cmd/aid stops taking requests first,
   and cloud's ai plugin runs it as its `Shutdown` hook after zip drains.
 - **Held answers are per org.** `decisioncache.go` is an LRU of Kai answers for an

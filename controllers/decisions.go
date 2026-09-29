@@ -970,10 +970,9 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 // A queue that is full files the debit on the request path instead: that answer
 // waits, and no debit is dropped.
 //
-// Trying again can charge twice when the ledger took a debit and its answer was
-// lost: the ledger mints each entry's key itself (object.UsageEvent.RequestID is
-// not one), so the retry is a second entry. The alternative is a served decision
-// nobody pays for, and a double charge is the one of the two a customer reports.
+// A retry after the ledger took a debit and its answer was lost is the same debit:
+// the record carries one Ref across every try (object.UsageEvent.Ref), and the host
+// keys the ledger on it.
 const (
 	settleWorkers = 16
 	settleDepth   = 1024
