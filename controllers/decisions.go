@@ -650,8 +650,12 @@ func invalid(field, msg, kind string) *decisionRefusal {
 // reach that org's states. The prefix is ai's, never the caller's: it is taken off
 // anything the service says back.
 
-// handles are the ids a body names, as the caller wrote them.
-type handles struct{ observe, handle string }
+// handles are the ids a body names, as the caller wrote them, and an observe's
+// questions as coarse tokens: what a decision over it bills.
+type handles struct {
+	observe, handle string
+	asked           int
+}
 
 // handleIDBytes is the longest id a caller may name a handle by.
 const handleIDBytes = 128
@@ -705,6 +709,9 @@ func scope(path string, body []byte, org string) ([]byte, handles, *decisionRefu
 	}
 	if !named {
 		return body, handles{}, nil
+	}
+	if h.observe != "" {
+		h.asked = coarseTokenEstimate(fields["questions"])
 	}
 	// An org with a slash in its name would make <org>/<id> ambiguous. IAM names
 	// never carry one; a principal whose does is refused rather than guessed at.
@@ -775,42 +782,53 @@ func unscope(status int, body []byte, org string, h handles) []byte {
 	return bytes.TrimRight(out.Bytes(), "\n")
 }
 
-// handled remembers, per org-scoped handle, the input tokens its last call billed —
-// the observe that made it, then each decision over it — so a decision over a handle
-// is held at what it will be billed rather than at its few-byte body. Each entry is
-// a fixed size, keyed by the SHA-256 of <org>/<id>. Bounded: past handledMax it
-// forgets an arbitrary handle, which then holds a cent again until its next call.
+// handled remembers, per org, what a decision over each of its handles bills: its
+// observed questions' coarse size, then each such decision's bill. Each org keeps at
+// most handledPerOrg, evicting its own; past handledOrgs orgs an arbitrary org's go.
 var handled handleCosts
 
-const handledMax = 1 << 16
+const (
+	handledOrgs   = 1 << 8
+	handledPerOrg = 1 << 8
+)
 
 type handleCosts struct {
-	mu sync.Mutex
-	m  map[[sha256.Size]byte]int
+	mu   sync.Mutex
+	orgs map[string]map[[sha256.Size]byte]int
 }
 
-func handleKey(org, id string) [sha256.Size]byte { return sha256.Sum256([]byte(org + "/" + id)) }
-
 func (h *handleCosts) cost(org, id string) int {
+	k := sha256.Sum256([]byte(id))
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.m[handleKey(org, id)]
+	return h.orgs[org][k]
 }
 
 func (h *handleCosts) note(org, id string, tokens int) {
-	k := handleKey(org, id)
+	k := sha256.Sum256([]byte(id))
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.m == nil {
-		h.m = make(map[[sha256.Size]byte]int)
+	if h.orgs == nil {
+		h.orgs = make(map[string]map[[sha256.Size]byte]int)
 	}
-	if _, known := h.m[k]; !known && len(h.m) >= handledMax {
-		for old := range h.m {
-			delete(h.m, old)
+	own, ok := h.orgs[org]
+	if !ok {
+		if len(h.orgs) >= handledOrgs {
+			for other := range h.orgs {
+				delete(h.orgs, other)
+				break
+			}
+		}
+		own = make(map[[sha256.Size]byte]int)
+		h.orgs[org] = own
+	}
+	if _, known := own[k]; !known && len(own) >= handledPerOrg {
+		for old := range own {
+			delete(own, old)
 			break
 		}
 	}
-	h.m[k] = tokens
+	own[k] = tokens
 }
 
 // decisionsClient carries every call to the decision service. A decision is one
@@ -997,7 +1015,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	// tokens its answer reports.
 	//
 	// A decision over a handle bills the questions it was observed with, which its
-	// own body does not carry: it holds what the last call on that handle billed.
+	// own body does not carry: it holds what handled remembers of them.
 	tokens := coarseTokenEstimate(body)
 	if h.handle != "" {
 		tokens = max(tokens, handled.cost(d.ledger, h.handle))
@@ -1022,10 +1040,11 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	out, _ = Restate(d.path, got.status, out, header, d.rid)
 	if got.status == http.StatusOK {
 		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens))
-		for _, id := range []string{h.observe, h.handle} {
-			if id != "" {
-				handled.note(d.ledger, id, got.usage.InputTokens)
-			}
+		if h.observe != "" {
+			handled.note(d.ledger, h.observe, min(h.asked, got.usage.InputTokens))
+		}
+		if h.handle != "" {
+			handled.note(d.ledger, h.handle, got.usage.InputTokens)
 		}
 		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
 		rec.ClientIP = d.ip

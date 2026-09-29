@@ -109,7 +109,7 @@ func setupDecisions(t *testing.T) (*fakeDecisions, *[]object.UsageEvent) {
 	forget()
 	t.Cleanup(forget)
 	handled.mu.Lock()
-	handled.m = nil
+	handled.orgs = nil
 	handled.mu.Unlock()
 	dsn := fmt.Sprintf("file:decisions_%d?mode=memory&cache=shared", decisionsSeq.Add(1))
 	restore, err := object.UseMemoryDB(dsn, &object.Provider{})

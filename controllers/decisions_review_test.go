@@ -497,29 +497,84 @@ func TestDecisionBodyIsCheapAndReadAfterAuth(t *testing.T) {
 	}
 }
 
+// bigAnswer is an answer billing 4M input tokens: 8.4¢ at Kai's price.
+const bigAnswer = `{"id":"dec_1","model":"kai","provider":"Hanzo","answers":{"q":{"type":"noul","noul":0.5}},"usage":{"input_tokens":4000000,"output_tokens":0},"routing":{"backend":"kai","checkpoint":"k","reason":"r"},"state_hash":"s","latency_ms":1}`
+
+// fund sets the paying org's balance, in cents.
+func fund(org string, cents int64) {
+	user, _ := providerKeyBillingUser(&object.Provider{Owner: org})
+	object.GlobalBalanceLedger.SetBalance(user.PayerSubject(org), cents)
+}
+
 // A decision over a handle bills the questions observed with it, not its few-byte
-// body, so it is held at what its handle last billed: a balance that cannot cover
-// that is refused before the service is asked.
+// body and not the state, so it is held at its observed questions' size, then at
+// what a decision over it last billed: a balance that cannot cover that is refused
+// before the service is asked.
 func TestHandleCallHoldsWhatItsHandleBills(t *testing.T) {
 	fake, events := setupDecisions(t)
-	fake.answer = `{"id":"dec_1","model":"kai","provider":"Hanzo","answers":{"q":{"type":"noul","noul":0.5}},"usage":{"input_tokens":4000000,"output_tokens":0},"routing":{"backend":"kai","checkpoint":"k","reason":"r"},"state_hash":"s","latency_ms":1}`
+	fake.answer = bigAnswer
+	// The observe bills 8.4¢, its state's and its questions'; the questions alone are
+	// a handful of tokens.
 	observe := strings.Replace(decisionBody, `}}}`, `}},"observe":"big"}`, 1)
 	if status, body := driveDecisions(t, "Bearer "+decisionsKey, observe); status != 200 {
 		t.Fatalf("observe => %d %s", status, body)
 	}
-	// 4M tokens at $0.021/M is 8.4¢; a 1¢ balance cannot hold a call on this handle.
-	user, _ := providerKeyBillingUser(&object.Provider{Owner: decisionsOrg})
-	object.GlobalBalanceLedger.SetBalance(user.PayerSubject(decisionsOrg), 1)
+	fund(decisionsOrg, 1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"model":"kai","handle":"big"}`); status != 200 {
+		t.Fatalf("the first decision over a handle held its state's cost: %d %s", status, body)
+	}
+	// That decision billed 8.4¢; the next is held at it, and a 1¢ balance cannot.
+	fund(decisionsOrg, 1)
 	calls, _, _ := fake.seen()
 	if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"model":"kai","handle":"big"}`); status != http.StatusPaymentRequired {
 		t.Fatalf("a handle billing 8.4¢ against a 1¢ balance => %d %s", status, body)
 	}
-	if now, _, _ := fake.seen(); now != calls || len(*events) != 1 {
+	if now, _, _ := fake.seen(); now != calls || len(*events) != 2 {
 		t.Fatalf("the refused handle call reached the service or was billed")
 	}
-	// Another org's handle of the same name is its own: it holds a cent.
+	// Another org's handle of the same name is its own.
 	if handled.cost(otherOrg, "big") != 0 || handled.cost(decisionsOrg, "big") != 4_000_000 {
 		t.Fatal("a handle's cost is not its own org's")
+	}
+}
+
+// Each org's handle costs are its own: another org remembering eight times the
+// per-org bound evicts none of them, an org past the bound evicts only its own, and
+// the table never holds more than handledOrgs × handledPerOrg entries.
+func TestHandleCostsAreEachOrgsOwn(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	fake.answer = bigAnswer
+	observe := strings.Replace(decisionBody, `}}}`, `}},"observe":"big"}`, 1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, observe); status != 200 {
+		t.Fatalf("observe => %d %s", status, body)
+	}
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"model":"kai","handle":"big"}`); status != 200 {
+		t.Fatalf("handle => %d %s", status, body)
+	}
+	for i := 0; i < 8*handledPerOrg; i++ {
+		handled.note(otherOrg, fmt.Sprintf("h%d", i), 1)
+	}
+	if handled.cost(decisionsOrg, "big") != 4_000_000 {
+		t.Fatal("another org's handles evicted this org's")
+	}
+	fund(decisionsOrg, 1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"model":"kai","handle":"big"}`); status != http.StatusPaymentRequired {
+		t.Fatalf("after another org's flood, a handle billing 8.4¢ against a 1¢ balance => %d %s", status, body)
+	}
+	handled.mu.Lock()
+	own := len(handled.orgs[otherOrg])
+	handled.mu.Unlock()
+	if own != handledPerOrg {
+		t.Fatalf("an org holds %d handle costs, want at most %d", own, handledPerOrg)
+	}
+	for i := 0; i < 2*handledOrgs; i++ {
+		handled.note(fmt.Sprintf("org%d", i), "h", 1)
+	}
+	handled.mu.Lock()
+	orgs := len(handled.orgs)
+	handled.mu.Unlock()
+	if orgs != handledOrgs {
+		t.Fatalf("the table holds %d orgs, want at most %d", orgs, handledOrgs)
 	}
 }
 
@@ -585,7 +640,7 @@ func TestHandleIDIsBounded(t *testing.T) {
 		t.Fatalf("ZAP: a 1 MiB id => %d", st)
 	}
 	handled.mu.Lock()
-	held := len(handled.m)
+	held := len(handled.orgs)
 	handled.mu.Unlock()
 	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 || held != 0 {
 		t.Fatalf("refused ids reached the service %d time(s), billed %d, remembered %d", calls, len(*events), held)
@@ -598,8 +653,8 @@ func TestHandleIDIsBounded(t *testing.T) {
 	if _, _, sent := fake.seen(); top(t, string(sent), "observe") != `"`+decisionsOrg+"/"+id+`"` {
 		t.Fatalf("the service was sent %s", sent)
 	}
-	if handled.cost(decisionsOrg, id) != 42 {
-		t.Fatal("an id at the bound was not remembered")
+	if handled.cost(decisionsOrg, id) != coarseTokenEstimate([]byte(top(t, decisionBody, "questions"))) {
+		t.Fatal("an id at the bound was not remembered at its questions' size")
 	}
 }
 
