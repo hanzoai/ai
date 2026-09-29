@@ -523,6 +523,9 @@ var decisionKeys = map[string]bool{
 	"provider": true, "session_id": true, "user": true, "trace": true,
 }
 
+// systemoneKeys are the fields Jev's request carries, the only ones /v1/systemone reads.
+var systemoneKeys = map[string]bool{"model": true, "state": true, "questions": true}
+
 // fieldsOf reads a decision body's top level exactly as written, and refuses a body
 // the service could read differently from the gateway: a field it does not know —
 // in any spelling, a case variant of one it does included — or a field given twice.
@@ -530,21 +533,29 @@ var decisionKeys = map[string]bool{
 // and no re-encoding downstream can fold a repeat into one value.
 //
 // It costs one pass over at most one more key than decisionKeys holds: an unknown or
-// repeated key ends the read the moment it is seen, before its value is decoded.
+// repeated key ends the read the moment it is seen, before its value is decoded. On
+// /v1/systemone an unknown key is FastAPI's 422 extra_forbidden, as Jev answers it.
 func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRefusal) {
 	bad := func(msg string) *decisionRefusal { return decline(path, http.StatusBadRequest, "body: "+msg) }
+	keys := decisionKeys
+	if path == systemonePath {
+		keys = systemoneKeys
+	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
 		return nil, bad("not a JSON object")
 	}
-	fields := make(map[string]json.RawMessage, len(decisionKeys))
+	fields := make(map[string]json.RawMessage, len(keys))
 	for dec.More() {
 		t, err := dec.Token()
 		if err != nil {
 			return nil, bad(err.Error())
 		}
 		key, _ := t.(string)
-		if !decisionKeys[key] {
+		if !keys[key] {
+			if path == systemonePath {
+				return nil, invalid(key, "Extra inputs are not permitted", "extra_forbidden")
+			}
 			for k := range decisionKeys {
 				if strings.EqualFold(k, key) {
 					return nil, bad(fmt.Sprintf("%q is spelled %q", k, key))
@@ -1343,8 +1354,9 @@ func (c *ApiController) Decisions() { c.decision(decisionsPath) }
 // /v1/decisions for a Jev client pointed at Hanzo: the same service, auth and
 // billing, on Jev's wire.
 //
-// Body: {"model": "kai", "state": ..., "questions": {...}}, all three required:
-// 1 to 100 questions, a choice of 2 to 255 labels, a score of 1 to 10 levels.
+// Body: {"model": "kai", "state": ..., "questions": {...}}, all three required and
+// nothing else: 1 to 100 questions, a choice of 2 to 255 labels, a score of 1 to 10
+// levels.
 // kai and its versioned id, kai-<12 hex of the weights' sha256>, are answered by
 // Kai, and the versioned id is sent as asked; typesafe/jev-1.13 and
 // ~typesafe/jev-latest, OpenRouter's names for Jev, reach Jev itself and bill at
@@ -1358,7 +1370,8 @@ func (c *ApiController) Decisions() { c.decision(decisionsPath) }
 // sent.
 //
 // Refusals are FastAPI's: 422 {"detail":[{"loc","msg","type"}]} for a field that
-// failed or a body past 16 MiB (type request_too_long), and {"detail": "..."} for
+// failed, a field Jev's request does not carry (type extra_forbidden) or a body past
+// 16 MiB (type request_too_long), and {"detail": "..."} for
 // everything else — 400, 401, 402, 403, 415 (any other Content-Encoding), 429, 502,
 // 503 and 529. 402, 429 and 529 carry Retry-After and Retry-After-Ms, and every
 // answer carries X-Request-Id.

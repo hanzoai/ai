@@ -274,7 +274,8 @@ func TestDecisionCaseVariantsPriceAsTheirRoute(t *testing.T) {
 
 // The gateway reads the body the way the service does, key for key: a second
 // spelling of a field, in any case, or a key given twice, is refused before
-// anything is priced or sent.
+// anything is priced or sent. On /v1/systemone a key Jev's request does not carry is
+// FastAPI's 422 extra_forbidden, as Jev and the service answer it.
 func TestDecisionBodyIsReadKeyForKey(t *testing.T) {
 	fake, events := setupDecisions(t)
 	seedOther(t)
@@ -288,10 +289,22 @@ func TestDecisionBodyIsReadKeyForKey(t *testing.T) {
 		`{"model":"kai","state":"x","questions":{"a":{"type":"noul"}},"questions":{"b":{"type":"noul"}}}`,
 		`{"model":"kai","state":"x","questions":{"q":{"type":"noul"}}} {"model":"typesafe/jev-1.13"}`,
 	} {
-		for _, p := range []string{decisionsPath, systemonePath} {
-			if status, out, _ := drive(t, p, "Bearer "+otherKey, body, nil); status != http.StatusBadRequest {
-				t.Errorf("%s %s => %d %s", p, body, status, out)
-			}
+		if status, out, _ := drive(t, decisionsPath, "Bearer "+otherKey, body, nil); status != http.StatusBadRequest {
+			t.Errorf("%s %s => %d %s", decisionsPath, body, status, out)
+		}
+		want := http.StatusBadRequest
+		if strings.Contains(strings.ToLower(body), "handle") || strings.Contains(body, "MODEL") || strings.Contains(body, "Model") || strings.Contains(body, "ſtate") {
+			want = http.StatusUnprocessableEntity
+		}
+		if status, out, _ := drive(t, systemonePath, "Bearer "+otherKey, body, nil); status != want {
+			t.Errorf("%s %s => %d %s, want %d", systemonePath, body, status, out, want)
+		}
+	}
+	for _, extra := range []string{"metadata", "observe", "provider", "session_id"} {
+		body := strings.Replace(decisionBody, `}}}`, `}},"`+extra+`":"x"}`, 1)
+		status, out, c := drive(t, systemonePath, "Bearer "+otherKey, body, nil)
+		if status != 422 || out != `{"detail":[{"loc":["body","`+extra+`"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}` || replied(c, "X-Request-Id") == "" {
+			t.Errorf("%s with %q => %d %s", systemonePath, extra, status, out)
 		}
 	}
 	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
@@ -466,10 +479,10 @@ func TestDecisionBodyIsCheapAndReadAfterAuth(t *testing.T) {
 	}
 	sb.WriteString(`}`)
 	many := sb.String()
-	for _, p := range []string{decisionsPath, systemonePath} {
+	for p, want := range map[string]int{decisionsPath: http.StatusBadRequest, systemonePath: http.StatusUnprocessableEntity} {
 		start := time.Now()
 		status, body, _ := drive(t, p, "Bearer "+decisionsKey, many, nil)
-		if took := time.Since(start); status != http.StatusBadRequest || took > 250*time.Millisecond {
+		if took := time.Since(start); status != want || took > 250*time.Millisecond {
 			t.Fatalf("%s: 100k unknown keys => %d in %v (%s)", p, status, took, body)
 		}
 	}
