@@ -17,6 +17,7 @@ package object
 import (
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hanzoai/ai/conf"
@@ -112,8 +113,20 @@ func familyRow(name string) *Provider {
 }
 
 // OpenRouterKeys names the OpenRouter credentials in the order a request tries
-// them. Each is a separate account; the first is the one kept funded.
-var OpenRouterKeys = []string{"OPENROUTER_API_KEY", "OPENROUTER_API_KEY_2", "OPENROUTER_API_KEY_3"}
+// them: OPENROUTER_API_KEY, the funded account, then OPENROUTER_API_KEY_2 through
+// _8. Each is a separate account. A name with no value is skipped (FamilyKeys) and
+// its absence is cached, so another account joins the pool by writing its key under
+// the next name at the provider keys path (PROVIDER_KEYS_PATH, hanzo/prod:/ai).
+var OpenRouterKeys = keySeries("OPENROUTER_API_KEY", 8)
+
+// keySeries is name, then name_2 through name_n.
+func keySeries(name string, n int) []string {
+	out := []string{name}
+	for i := 2; i <= n; i++ {
+		out = append(out, name+"_"+strconv.Itoa(i))
+	}
+	return out
+}
 
 // FamilyKeys returns the credentials a family's requests try, in order, each
 // resolved the way familyProvider resolves its one key (resolveKey).
