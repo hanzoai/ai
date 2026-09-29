@@ -1974,6 +1974,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			c.ResponseFailure(exhausted(request.Model, familyRefused))
 			return
 		}
+		if freeOnly() {
+			c.ResponseFailure(paidLaneOff(request.Model))
+			return
+		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
 		return
 	}
@@ -1988,6 +1992,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	if requestHasMedia(&request) {
 		if familyRefused != nil {
 			c.ResponseFailure(exhausted(request.Model, familyRefused))
+			return
+		}
+		if freeOnly() {
+			c.ResponseFailure(paidLaneOff(request.Model))
 			return
 		}
 		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)

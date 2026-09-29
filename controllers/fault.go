@@ -629,9 +629,13 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 		}
 		ready = append(ready, c)
 	}
-	add(route.providerName, route.upstreamModel)
-	for _, fb := range route.fallbacks {
-		add(fb.providerName, fb.upstreamModel)
+	// With the paid lane off, a route's own vendors — each sells its answers — are
+	// not asked; the free floor below is.
+	if !freeOnly() {
+		add(route.providerName, route.upstreamModel)
+		for _, fb := range route.fallbacks {
+			add(fb.providerName, fb.upstreamModel)
+		}
 	}
 	for _, c := range openrouterTail(route) {
 		add(c.provider, c.upstream)
@@ -692,10 +696,13 @@ func openrouterTail(route *modelRoute) []candidate {
 		return nil
 	}
 	var out []candidate
-	if id, ok := openrouterEquivalent(route.upstreamModel); ok {
+	// With the paid lane off, the priced copy of the model is not offered, and the
+	// free floor is offered to every route.
+	paid := !freeOnly()
+	if id, ok := openrouterEquivalent(route.upstreamModel); ok && paid {
 		out = append(out, candidate{freeFamily().name, id})
 	}
-	if route.premium {
+	if route.premium && paid {
 		return out
 	}
 	for _, sp := range freeRoutes() {
@@ -728,6 +735,13 @@ func openrouterEquivalent(upstream string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// paidLaneOff is the refusal for a model only its own vendor serves while the paid
+// lane is off: nothing free stands in for it on this path.
+func paidLaneOff(model string) error {
+	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
+		msg: fmt.Sprintf("model %q: the paid lane is off; choose an Enso or Zen model", model)}
 }
 
 // codeExhausted is the machine name of "we could not serve this". It is OUR

@@ -169,3 +169,19 @@ func ids(routes []spare) []string {
 	}
 	return out
 }
+
+// With the paid lane off, a routed model's own vendors and its priced OpenRouter
+// copy are never offered; only the free floor is.
+func TestWithThePaidLaneOffOnlyTheFreeFloorIsOffered(t *testing.T) {
+	cooled.forget()
+	freeOnly = func() bool { return true }
+	t.Cleanup(func() { freeOnly = object.FreeOnly })
+	fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "openai/gpt-4o")
+	_ = fam
+	route := &modelRoute{providerName: "do-ai", upstreamModel: "openai-gpt-4o", premium: true,
+		fallbacks: []modelRouteFallback{{providerName: "anthropic", upstreamModel: "claude"}}}
+	got := candidates("acme", route, nil)
+	if len(got) != 1 || got[0].upstream != "v/borrowed:free" {
+		t.Fatalf("candidates = %+v, want only the free floor", got)
+	}
+}
