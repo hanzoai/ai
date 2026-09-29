@@ -31,7 +31,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/zlib"
+	"github.com/klauspost/compress/zstd"
 	"github.com/valyala/fasthttp"
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
@@ -461,25 +465,13 @@ func DecisionBody(c *zip.Ctx) ([]byte, error) {
 		return nil, fasthttp.ErrBodyTooLarge
 	}
 	coding := strings.ToLower(strings.TrimSpace(string(req.Header.ContentEncoding())))
-	var (
-		body []byte
-		err  error
-	)
-	switch coding {
-	case "", "identity":
+	if coding == "" || coding == "identity" {
 		return req.Body(), nil
-	case "gzip", "x-gzip":
-		body, err = req.BodyGunzipWithLimit(decisionBodyBytes)
-	case "deflate":
-		body, err = req.BodyInflateWithLimit(decisionBodyBytes)
-	case "br":
-		body, err = req.BodyUnbrotliWithLimit(decisionBodyBytes)
-	case "zstd":
-		body, err = req.BodyUnzstdWithLimit(decisionBodyBytes)
-	default:
-		return nil, fiber.NewError(http.StatusUnsupportedMediaType, fmt.Sprintf("Content-Encoding %q is not gzip, deflate, br or zstd", coding))
 	}
+	body, err := decode(coding, req.Body(), decisionBodyBytes)
 	switch {
+	case errors.Is(err, errCoding):
+		return nil, fiber.NewError(http.StatusUnsupportedMediaType, fmt.Sprintf("Content-Encoding %q is not gzip, deflate, br or zstd", coding))
 	case errors.Is(err, fasthttp.ErrBodyTooLarge):
 		return nil, err
 	case err != nil:
@@ -488,6 +480,59 @@ func DecisionBody(c *zip.Ctx) ([]byte, error) {
 	req.SetBodyRaw(body)
 	req.Header.Del(fiber.HeaderContentEncoding)
 	return body, nil
+}
+
+// errCoding is a Content-Encoding decode does not read.
+var errCoding = errors.New("unsupported Content-Encoding")
+
+// decode is body decoded from coding by decoders configured here, never past limit
+// bytes: every coding's output is read to limit+1 and refused there, and a zstd
+// frame whose header declares a window past limit is refused at the header, before
+// the window is allocated. fasthttp's pooled decoders run at the libraries'
+// defaults, which grant a zstd frame any window up to 512 MiB on its header's word.
+// Brotli's window is at most 16 MiB by its format; this reader does not accept the
+// large-window extension. Past the bound is fasthttp.ErrBodyTooLarge, a coding it
+// does not read is errCoding, and any other error is a body that is not valid in
+// its coding.
+func decode(coding string, body []byte, limit int) ([]byte, error) {
+	src := bytes.NewReader(body)
+	var (
+		r   io.Reader
+		err error
+	)
+	switch coding {
+	case "gzip", "x-gzip":
+		r, err = gzip.NewReader(src)
+	case "deflate":
+		r, err = zlib.NewReader(src)
+	case "br":
+		r = brotli.NewReader(src)
+	case "zstd":
+		var d *zstd.Decoder
+		d, err = zstd.NewReader(src,
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxWindow(uint64(limit)),
+			zstd.WithDecoderMaxMemory(uint64(limit)))
+		if err == nil {
+			defer d.Close()
+			r = d
+		}
+	default:
+		return nil, errCoding
+	}
+	var out []byte
+	if err == nil {
+		out, err = io.ReadAll(io.LimitReader(r, int64(limit)+1))
+	}
+	switch {
+	case errors.Is(err, zstd.ErrWindowSizeExceeded), errors.Is(err, zstd.ErrDecoderSizeExceeded):
+		return nil, fasthttp.ErrBodyTooLarge
+	case err != nil:
+		return nil, err
+	case len(out) > limit:
+		return nil, fasthttp.ErrBodyTooLarge
+	}
+	return out, nil
 }
 
 // Refusing is a decision path's answer to an error a layer RETURNED rather than

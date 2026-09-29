@@ -17,6 +17,7 @@ package controllers
 import (
 	"bytes"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,7 +34,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 	"github.com/luxfi/zap"
+	"github.com/valyala/fasthttp"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -748,6 +752,135 @@ func TestDecisionBodyIsDecodedOnceAfterItsCredential(t *testing.T) {
 	}
 	if _, _, sent := fake.seen(); string(sent) != decisionBody || len(*events) != 1 {
 		t.Fatalf("the service was sent %q, billed %d", sent, len(*events))
+	}
+}
+
+// coded is s in coding as a client sends it, under a window of 1<<log bytes where
+// the coding has one to choose.
+func coded(t *testing.T, coding, s string, log int) string {
+	t.Helper()
+	var b bytes.Buffer
+	var w io.WriteCloser
+	switch coding {
+	case "gzip":
+		w, _ = gzip.NewWriterLevel(&b, gzip.BestSpeed)
+	case "deflate":
+		w, _ = zlib.NewWriterLevel(&b, zlib.BestSpeed)
+	case "br":
+		w = brotli.NewWriterOptions(&b, brotli.WriterOptions{Quality: brotli.BestSpeed, LGWin: log})
+	case "zstd":
+		zw, err := zstd.NewWriter(&b, zstd.WithWindowSize(1<<log))
+		if err != nil {
+			t.Fatal(err)
+		}
+		w = zw
+	}
+	if _, err := io.WriteString(w, s); err != nil || w.Close() != nil {
+		t.Fatalf("%s: %v", coding, err)
+	}
+	return b.String()
+}
+
+// windowed is a zstd frame holding s in one raw block, under a header that declares a
+// window of 1<<log bytes.
+func windowed(log int, s string) string {
+	f := []byte{0x28, 0xb5, 0x2f, 0xfd, 0x00, byte(log-10) << 3}
+	h := 1 | len(s)<<3 // the last block, raw, len(s) bytes
+	return string(append(append(f, byte(h), byte(h>>8), byte(h>>16)), s...))
+}
+
+// allocated is the heap run allocates.
+func allocated(run func()) uint64 {
+	var a, b runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&a)
+	run()
+	runtime.ReadMemStats(&b)
+	return b.TotalAlloc - a.TotalAlloc
+}
+
+// Every coding a decision body arrives in is read by a decoder bounded at 16 MiB,
+// never at a library's defaults. A zstd frame whose header declares a window past
+// the bound is refused before the window is allocated, however little it holds; at
+// the bound it is served. A gzip, deflate, brotli or zstd body inflating past the
+// bound is 422 request_too_long in the path's words. Nothing refused reaches the
+// service, and each coding's small body is served as the JSON it decodes to.
+func TestDecisionBodyDecodersAreBounded(t *testing.T) {
+	fake, events := setupDecisions(t)
+	zst := map[string]string{"Content-Encoding": "zstd"}
+	tooLong := func(p string, status int, body string) bool {
+		var out struct {
+			Error  struct{ Code string }   `json:"error"`
+			Detail []struct{ Type string } `json:"detail"`
+		}
+		if status != 422 || json.Unmarshal([]byte(body), &out) != nil {
+			return false
+		}
+		if p == systemonePath {
+			return len(out.Detail) == 1 && out.Detail[0].Type == "request_too_long"
+		}
+		return out.Error.Code == "request_too_long"
+	}
+
+	for _, p := range []string{decisionsPath, systemonePath} {
+		for _, log := range []int{28, 41} {
+			var status int
+			var body string
+			n := allocated(func() { status, body, _ = drive(t, p, "Bearer "+decisionsKey, windowed(log, decisionBody), zst) })
+			if !tooLong(p, status, body) {
+				t.Fatalf("%s: a zstd frame declaring a 2^%d-byte window => %d %s", p, log, status, body)
+			}
+			if n > 4<<20 {
+				t.Fatalf("%s: refusing a zstd frame declaring a 2^%d-byte window allocated %d MiB", p, log, n>>20)
+			}
+		}
+	}
+
+	over := `{"model":"kai","state":"` + strings.Repeat("x", decisionBodyBytes) + `","questions":{"q":{"type":"noul"}}}`
+	for _, coding := range []string{"gzip", "deflate", "br", "zstd"} {
+		sent := coded(t, coding, over, 22)
+		for _, p := range []string{decisionsPath, systemonePath} {
+			status, body, _ := drive(t, p, "Bearer "+decisionsKey, sent, map[string]string{"Content-Encoding": coding})
+			if !tooLong(p, status, body) {
+				t.Fatalf("%s: %s inflating past the bound => %d %s", p, coding, status, body)
+			}
+		}
+	}
+	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
+		t.Fatalf("a refused body reached the service %d time(s), billed %d", calls, len(*events))
+	}
+
+	for _, coding := range []string{"gzip", "deflate", "br", "zstd"} {
+		if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, coded(t, coding, decisionBody, 22), map[string]string{"Content-Encoding": coding}); status != 200 {
+			t.Fatalf("a %s decision => %d %s", coding, status, body)
+		}
+		if _, _, sent := fake.seen(); string(sent) != decisionBody {
+			t.Fatalf("%s: the service was sent %q", coding, sent)
+		}
+	}
+	if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, windowed(24, decisionBody), zst); status != 200 {
+		t.Fatalf("a zstd frame declaring a window at the bound => %d %s", status, body)
+	}
+}
+
+// Refusing a body that inflates past the bound costs what reading to the bound
+// costs, whatever it inflates to: a body inflating to 32 times its bound, in each
+// coding under a window within that bound, is refused having allocated under a
+// quarter of what it inflates to — the window, and the bound read twice over, in
+// chunks and then at its final size.
+func TestDecodeCostsTheBound(t *testing.T) {
+	const limit = 1 << 20
+	bomb := strings.Repeat("x", 32*limit)
+	for _, coding := range []string{"gzip", "deflate", "br", "zstd"} {
+		sent := []byte(coded(t, coding, bomb, 20))
+		var err error
+		n := allocated(func() { _, err = decode(coding, sent, limit) })
+		if !errors.Is(err, fasthttp.ErrBodyTooLarge) {
+			t.Fatalf("%s inflating to %d MiB under a %d MiB bound: %v", coding, len(bomb)>>20, limit>>20, err)
+		}
+		if n > uint64(len(bomb))/4 {
+			t.Fatalf("%s: refusing %d MiB under a %d MiB bound allocated %d KiB", coding, len(bomb)>>20, limit>>20, n>>10)
+		}
 	}
 }
 
