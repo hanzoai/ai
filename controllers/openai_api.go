@@ -1466,6 +1466,12 @@ func recordTrace(ctx context.Context, record *usageRecord, startTime time.Time) 
 // request the resolver would have taken — never admit one it would have refused —
 // which is the direction a credential check is allowed to be wrong in.
 func (c *ApiController) authenticate(token string) error {
+	return authenticateToken(token, c.GetAcceptLanguage())
+}
+
+// authenticateToken is authenticate with the request's language passed in, for a
+// caller that holds no controller (a ZAP handler).
+func authenticateToken(token, lang string) error {
 	switch {
 	case isJwtToken(token):
 		// Signature + issuer/audience validation (R3): a foreign-aud or
@@ -1477,7 +1483,7 @@ func (c *ApiController) authenticate(token string) error {
 	default:
 		// A secret key — see authResolveProvider for why the STORE that owns it,
 		// not its spelling, decides what it is.
-		provider, err := object.GetProviderByProviderKey(token, c.GetAcceptLanguage())
+		provider, err := object.GetProviderByProviderKey(token, lang)
 		if err != nil {
 			return authError("invalid API key: %s", err.Error())
 		}

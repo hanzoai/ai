@@ -379,8 +379,8 @@ func TestRecordUsageReturnsTheLedgersRefusal(t *testing.T) {
 }
 
 // A body past the bound the gateway and the service share is refused by the gateway
-// in the path's words — 422 request_too_long, under a request id — once the caller
-// has authenticated, and nothing is sent.
+// in the path's words — 422 request_too_long, under a request id — and nothing is
+// sent.
 func TestDecisionBodyPastTheBound(t *testing.T) {
 	fake, events := setupDecisions(t)
 	big := `{"model":"kai","state":"` + strings.Repeat("x", decisionBodyBytes) + `","questions":{"q":{"type":"noul"}}}`
@@ -398,8 +398,9 @@ func TestDecisionBodyPastTheBound(t *testing.T) {
 	if status != 422 || json.Unmarshal([]byte(body), &jev) != nil || len(jev.Detail) != 1 || jev.Detail[0].Type != "request_too_long" || replied(c, "X-Request-Id") == "" {
 		t.Fatalf("/v1/systemone => %d %s", status, body)
 	}
-	if status, _, _ := drive(t, systemonePath, "Bearer sk-nobody-issued-this", big, nil); status != http.StatusUnauthorized {
-		t.Fatalf("an unauthenticated oversized body => %d, want 401", status)
+	// The bound costs a length and is the one thing asked before the credential.
+	if status, _, _ := drive(t, systemonePath, "Bearer sk-nobody-issued-this", big, nil); status != 422 {
+		t.Fatalf("an unauthenticated oversized body => %d, want 422", status)
 	}
 	gw, _ := lookupGatewayHandler(systemonePath)
 	msg, _ := gw(context.Background(), "Bearer "+decisionsKey, []byte(big))
@@ -443,5 +444,79 @@ func TestKaiVersionedID(t *testing.T) {
 	}
 	if now, _, _ := fake.seen(); now != calls {
 		t.Fatalf("a malformed versioned id reached the service %d time(s)", now-calls)
+	}
+}
+
+// A body is read only once its sender is known, and reading it costs one pass over
+// the handful of fields a decision has: a hundred thousand keys are refused at the
+// first one the service does not know, and a body behind a refused credential is
+// never read at all.
+func TestDecisionBodyIsCheapAndReadAfterAuth(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	var sb strings.Builder
+	sb.WriteString(`{`)
+	for i := 0; i < 100_000; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, `"k%d":1`, i)
+	}
+	sb.WriteString(`}`)
+	many := sb.String()
+	for _, p := range []string{decisionsPath, systemonePath} {
+		start := time.Now()
+		status, body, _ := drive(t, p, "Bearer "+decisionsKey, many, nil)
+		if took := time.Since(start); status != http.StatusBadRequest || took > 250*time.Millisecond {
+			t.Fatalf("%s: 100k unknown keys => %d in %v (%s)", p, status, took, body)
+		}
+	}
+
+	var reads atomic.Int32
+	prev := readModel
+	readModel = func(path string, body []byte) (string, string, *decisionRefusal) {
+		reads.Add(1)
+		return prev(path, body)
+	}
+	t.Cleanup(func() { readModel = prev })
+	for _, p := range []string{decisionsPath, systemonePath} {
+		if status, _, _ := drive(t, p, "Bearer sk-nobody-issued-this", many, nil); status != http.StatusUnauthorized {
+			t.Fatalf("%s: unauthenticated => %d, want 401", p, status)
+		}
+	}
+	gw, _ := lookupGatewayHandler(decisionsPath)
+	if msg, _ := gw(context.Background(), "Bearer sk-nobody-issued-this", []byte(many)); msg.Root().Uint32(object.GatewayRespStatus) != 401 {
+		t.Fatal("ZAP: unauthenticated was not 401")
+	}
+	if n := reads.Load(); n != 0 {
+		t.Fatalf("a body behind a refused credential was read %d time(s)", n)
+	}
+	if calls, _, _ := fake.seen(); calls != 0 {
+		t.Fatalf("the service saw %d call(s)", calls)
+	}
+}
+
+// A decision over a handle bills the questions observed with it, not its few-byte
+// body, so it is held at what its handle last billed: a balance that cannot cover
+// that is refused before the service is asked.
+func TestHandleCallHoldsWhatItsHandleBills(t *testing.T) {
+	fake, events := setupDecisions(t)
+	fake.answer = `{"id":"dec_1","model":"kai","provider":"Hanzo","answers":{"q":{"type":"noul","noul":0.5}},"usage":{"input_tokens":4000000,"output_tokens":0},"routing":{"backend":"kai","checkpoint":"k","reason":"r"},"state_hash":"s","latency_ms":1}`
+	observe := strings.Replace(decisionBody, `}}}`, `}},"observe":"big"}`, 1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, observe); status != 200 {
+		t.Fatalf("observe => %d %s", status, body)
+	}
+	// 4M tokens at $0.021/M is 8.4¢; a 1¢ balance cannot hold a call on this handle.
+	user, _ := providerKeyBillingUser(&object.Provider{Owner: decisionsOrg})
+	object.GlobalBalanceLedger.SetBalance(user.PayerSubject(decisionsOrg), 1)
+	calls, _, _ := fake.seen()
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"model":"kai","handle":"big"}`); status != http.StatusPaymentRequired {
+		t.Fatalf("a handle billing 8.4¢ against a 1¢ balance => %d %s", status, body)
+	}
+	if now, _, _ := fake.seen(); now != calls || len(*events) != 1 {
+		t.Fatalf("the refused handle call reached the service or was billed")
+	}
+	// Another org's handle of the same name is its own: it holds a cent.
+	if handled.cost(otherOrg+"/big") != 0 || handled.cost(decisionsOrg+"/big") != 4_000_000 {
+		t.Fatal("a handle's cost is not its own org's")
 	}
 }

@@ -526,10 +526,15 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
   `controllers.Refusing`. A transport-level refusal (zip's raw fasthttp server,
   above the socket's own limit — or the cloud edge's `GATEWAY_BODY_LIMIT` in front
   of ai) is written by fasthttp before any handler and cannot be worded here.
-- **The body is read key for key** (`fieldsOf`): a repeated top-level key, two keys
-  equal under case folding, or a known field in another case is 400, so the gateway
-  prices and scopes exactly what the service reads. The forwarded `model` is always
+- **The body is read key for key, and only after the credential** (`fieldsOf`): the
+  size bound is the one thing asked before `vouched` accepts the credential; then an
+  unknown top-level field (a case variant of a known one included) or a repeated one
+  is 400 the moment it is seen, so the read is one pass over at most ten keys and the
+  gateway prices and scopes exactly what the service reads. The forwarded `model` is always
   the priced route's upstream id; a model asked in any case is filed as its route id.
+- **A handle call holds what its handle bills.** `handled` remembers, per org-scoped
+  handle, the input tokens its observe and each later call billed, and a decision
+  over it holds at least that — its own body is a few bytes.
 - **A hold is at least a cent, spend is carried in nano.** The ledger holds cents and
   a decision costs a fraction of one: `decide` holds `max(1¢, estimate)` and settles
   with `settleNano`; `BalanceLedger` carries the sub-cent remainder, which counts

@@ -480,45 +480,47 @@ func Refusing(path string, err error, rid string) (int, []byte, map[string]strin
 
 // decisionKeys are the fields a decision body carries at its top level, as the
 // service spells them.
-var decisionKeys = []string{"model", "state", "questions", "observe", "handle", "provider", "session_id", "user", "trace"}
+var decisionKeys = map[string]bool{
+	"model": true, "state": true, "questions": true, "observe": true, "handle": true,
+	"provider": true, "session_id": true, "user": true, "trace": true,
+}
 
 // fieldsOf reads a decision body's top level exactly as written, and refuses a body
-// the service could read differently from the gateway: a key given twice, two keys
-// that differ only in case, or a field the service knows spelled in another case.
+// the service could read differently from the gateway: a field it does not know —
+// in any spelling, a case variant of one it does included — or a field given twice.
 // What the gateway prices, gates and scopes is what the service reads, key for key,
 // and no re-encoding downstream can fold a repeat into one value.
+//
+// It costs one pass over at most one more key than decisionKeys holds: an unknown or
+// repeated key ends the read the moment it is seen, before its value is decoded.
 func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRefusal) {
 	bad := func(msg string) *decisionRefusal { return decline(path, http.StatusBadRequest, "body: "+msg) }
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
 		return nil, bad("not a JSON object")
 	}
-	fields := map[string]json.RawMessage{}
-	var keys []string
+	fields := make(map[string]json.RawMessage, len(decisionKeys))
 	for dec.More() {
 		t, err := dec.Token()
 		if err != nil {
 			return nil, bad(err.Error())
 		}
 		key, _ := t.(string)
+		if !decisionKeys[key] {
+			for k := range decisionKeys {
+				if strings.EqualFold(k, key) {
+					return nil, bad(fmt.Sprintf("%q is spelled %q", k, key))
+				}
+			}
+			return nil, bad(fmt.Sprintf("unknown field %q", key))
+		}
+		if _, again := fields[key]; again {
+			return nil, bad(fmt.Sprintf("%q is given twice", key))
+		}
 		var v json.RawMessage
 		if err := dec.Decode(&v); err != nil {
 			return nil, bad(err.Error())
 		}
-		for _, k := range keys {
-			if strings.EqualFold(k, key) {
-				if k == key {
-					return nil, bad(fmt.Sprintf("%q is given twice", key))
-				}
-				return nil, bad(fmt.Sprintf("%q and %q name one field", k, key))
-			}
-		}
-		for _, k := range decisionKeys {
-			if k != key && strings.EqualFold(k, key) {
-				return nil, bad(fmt.Sprintf("%q is spelled %q", k, key))
-			}
-		}
-		keys = append(keys, key)
 		fields[key] = v
 	}
 	if _, err := dec.Token(); err != nil {
@@ -530,6 +532,24 @@ func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRe
 	return fields, nil
 }
 
+// vouched checks that token is one this service accepts before anything reads
+// the body it came with: the body is the caller's to spend our time on only once we
+// know who the caller is. A run key answers to the run table; every other credential
+// as authenticate does.
+func vouched(token, lang string) error {
+	if isRunKey(token) {
+		if _, ok := resolveRun(token); !ok {
+			return authError("invalid or expired run key")
+		}
+		return nil
+	}
+	return authenticateToken(token, lang)
+}
+
+// readModel is how a handler reads a decision body's model: decisionModel, named so
+// a test can count the reads a refused credential never reaches.
+var readModel = decisionModel
+
 // decisionModel reads the model a body names on path, and refuses — in that path's
 // words — a body with none, or a model the path does not serve. Both paths serve
 // every route to the decision service: Kai, and Jev under OpenRouter's vendor ids,
@@ -539,9 +559,6 @@ func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRe
 // so it is never forwarded. The model comes back as its route's id, the one it is
 // priced and filed under, whatever case it was asked in.
 func decisionModel(path string, body []byte) (model, version string, _ *decisionRefusal) {
-	if len(body) > decisionBodyBytes {
-		return "", "", tooLong(path, len(body))
-	}
 	fields, bad := fieldsOf(path, body)
 	if bad != nil {
 		return "", "", bad
@@ -685,6 +702,41 @@ func unscope(status int, body []byte, org string, h handles) []byte {
 		return body
 	}
 	return bytes.TrimRight(out.Bytes(), "\n")
+}
+
+// handled remembers, per org-scoped handle, the input tokens its last call billed —
+// the observe that made it, then each decision over it — so a decision over a handle
+// is held at what it will be billed rather than at its few-byte body. Bounded: past
+// handledMax it forgets an arbitrary handle, which then holds a cent again until its
+// next call.
+var handled handleCosts
+
+const handledMax = 1 << 16
+
+type handleCosts struct {
+	mu sync.Mutex
+	m  map[string]int
+}
+
+func (h *handleCosts) cost(id string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.m[id]
+}
+
+func (h *handleCosts) note(id string, tokens int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.m == nil {
+		h.m = make(map[string]int)
+	}
+	if _, known := h.m[id]; !known && len(h.m) >= handledMax {
+		for k := range h.m {
+			delete(h.m, k)
+			break
+		}
+	}
+	h.m[id] = tokens
 }
 
 // decisionsClient carries every call to the decision service. A decision is one
@@ -869,7 +921,14 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	// covers a whole wire's worth of state at either model's price. Whatever way this
 	// ends, the hold is released; a served call settles it first, in nano, at the
 	// tokens its answer reports.
-	est := (decisionCostNano(d.model, coarseTokenEstimate(body)) + nanoPerCent - 1) / nanoPerCent
+	//
+	// A decision over a handle bills the questions it was observed with, which its
+	// own body does not carry: it holds what the last call on that handle billed.
+	tokens := coarseTokenEstimate(body)
+	if h.handle != "" {
+		tokens = max(tokens, handled.cost(d.ledger+"/"+h.handle))
+	}
+	est := (decisionCostNano(d.model, tokens) + nanoPerCent - 1) / nanoPerCent
 	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), max(est, 1))
 	if !admitted {
 		return refused(d.path, d.rid, decline(d.path, http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
@@ -889,6 +948,11 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	out, _ = Restate(d.path, got.status, out, header, d.rid)
 	if got.status == http.StatusOK {
 		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens))
+		for _, id := range []string{h.observe, h.handle} {
+			if id != "" {
+				handled.note(d.ledger+"/"+id, got.usage.InputTokens)
+			}
+		}
 		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
 		rec.ClientIP = d.ip
 		// The row carries the id the caller was answered under, so a bill and the
@@ -1216,14 +1280,18 @@ func (c *ApiController) decision(path string) {
 		return
 	}
 
-	model, version, bad := decisionModel(path, c.Body())
+	// The size bound is the one thing asked of a body before its sender is known:
+	// it costs a length. Everything that reads the body waits on the credential.
+	if n := len(c.Body()); n > decisionBodyBytes {
+		c.decisionReply(refused(path, rid, tooLong(path, n)))
+		return
+	}
+	if err := vouched(token, c.GetAcceptLanguage()); err != nil {
+		c.decisionReply(refused(path, rid, decline(path, statusOf(err), err.Error())))
+		return
+	}
+	model, version, bad := readModel(path, c.Body())
 	if bad != nil {
-		// Authenticate before reporting the client error: an invalid credential is
-		// 401 regardless of body validity (never a probe-able 400).
-		if authErr := c.authenticate(token); authErr != nil {
-			c.decisionReply(refused(path, rid, decline(path, statusOf(authErr), authErr.Error())))
-			return
-		}
 		c.decisionReply(refused(path, rid, bad))
 		return
 	}

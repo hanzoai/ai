@@ -90,21 +90,20 @@ func zapDecision(ctx context.Context, path, auth string, body []byte) decisionRe
 		return refused(path, rid, decline(path, http.StatusForbidden,
 			"Publishable keys (pk-) can only access read-only endpoints. Use a secret key (sk-) for this endpoint."))
 	}
-	model, version, bad := decisionModel(path, body)
-
-	// Authentication comes first, as on HTTP: an invalid credential is 401 whatever
-	// the body says. A body naming no model this path serves is resolved as kai, and
-	// once the credential holds, the body's own error is the answer.
-	asked := model
-	if bad != nil {
-		asked = "kai"
+	// The size bound first, then who is asking, and only then the body — as on HTTP.
+	if n := len(body); n > decisionBodyBytes {
+		return refused(path, rid, tooLong(path, n))
 	}
-	user, ledger, premium, err := zapDecisionPrincipal(token, asked, gatewayHeader(ctx, "X-Org-Id"))
-	if err != nil && (bad == nil || statusOf(err) == http.StatusUnauthorized || statusOf(err) == http.StatusForbidden) {
+	if err := vouched(token, "en"); err != nil {
 		return refused(path, rid, decline(path, statusOf(err), err.Error()))
 	}
+	model, version, bad := readModel(path, body)
 	if bad != nil {
 		return refused(path, rid, bad)
+	}
+	user, ledger, premium, err := zapDecisionPrincipal(token, model, gatewayHeader(ctx, "X-Org-Id"))
+	if err != nil {
+		return refused(path, rid, decline(path, statusOf(err), err.Error()))
 	}
 	return decide(ctx, decisionCall{
 		path: path, model: model, version: version, body: body,
