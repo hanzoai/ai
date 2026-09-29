@@ -518,6 +518,14 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
 - **A handle belongs to the org that observed it.** `observe`/`handle` are sent as
   `<org>/<id>`; `unscope` takes the prefix off anything said back. An answer with no
   handle in it goes back byte for byte.
+- **One body bound, shared with the service.** `decisionBodyBytes` (16 MiB) is the
+  decision service's `BODY_BYTES`; change both together. A body past it is 422
+  `request_too_long` in the path's shape, after authentication. ai's socket admits
+  more (26 MiB), so the handler sees it; a refusal a layer RETURNS (the framework
+  reading an over-limit body included) is worded by `Dialect` via
+  `controllers.Refusing`. A transport-level refusal (zip's raw fasthttp server,
+  above the socket's own limit — or the cloud edge's `GATEWAY_BODY_LIMIT` in front
+  of ai) is written by fasthttp before any handler and cannot be worded here.
 - **The body is read key for key** (`fieldsOf`): a repeated top-level key, two keys
   equal under case folding, or a known field in another case is 400, so the gateway
   prices and scopes exactly what the service reads. The forwarded `model` is always

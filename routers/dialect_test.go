@@ -15,6 +15,7 @@
 package routers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/valyala/fasthttp"
+	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/controllers"
@@ -247,6 +250,30 @@ func TestDialectCoversPanicsAndEverySpelling(t *testing.T) {
 		pr := ask(http.MethodPost, p).through(Dialect, limited)
 		if pr.said() != `{"detail":"Rate limit exceeded. Retry after 3 seconds."}` || pr.replied("X-Request-Id") == "" || pr.replied("Retry-After-Ms") != "3000" {
 			t.Errorf("%s => %s id=%q ms=%q", p, pr.said(), pr.replied("X-Request-Id"), pr.replied("Retry-After-Ms"))
+		}
+	}
+}
+
+// A layer that RETURNS its refusal — the framework reading a body over the socket's
+// limit, a typed error, or an error that chose nothing — is answered in the path's
+// words with a request id, never by the framework's own renderer.
+func TestDialectWordsReturnedRefusals(t *testing.T) {
+	cases := []struct {
+		path string
+		err  error
+		code int
+		body string
+	}{
+		{"/v1/systemone", fasthttp.ErrBodyTooLarge, 422, `{"detail":[{"loc":["body"],"msg":"the request body is over the limit of 16777216 bytes","type":"request_too_long"}]}`},
+		{"/v1/decisions", fiber.ErrRequestEntityTooLarge, 422, `{"error":{"code":"request_too_long","message":"the request body is over the limit of 16777216 bytes"}}`},
+		{"/v1/decisions", zip.ErrBadRequest("unreadable body"), 400, `{"error":{"code":400,"message":"unreadable body"}}`},
+		{"/v1/systemone", errors.New("dial tcp 10.0.0.7:8080: refused"), 500, `{"detail":"internal error"}`},
+	}
+	for _, tc := range cases {
+		err := tc.err
+		p := ask(http.MethodPost, tc.path).through(Dialect, func(*zip.Ctx) error { return err })
+		if p.status() != tc.code || p.said() != tc.body || p.replied("X-Request-Id") == "" {
+			t.Errorf("%s %v => %d %s id=%q", tc.path, tc.err, p.status(), p.said(), p.replied("X-Request-Id"))
 		}
 	}
 }

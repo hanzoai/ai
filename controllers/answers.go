@@ -172,7 +172,7 @@ func decisionRefusals(path string) map[int]Refusal {
 		401: "No credential, or one this service does not accept.",
 		402: "The balance cannot cover the call. Retry-After is when a top-up is read.",
 		403: "A credential whose kind may not call this, such as a publishable (pk-) key.",
-		422: "A question that is not valid, or a state beyond what the checkpoint reads (code state_too_long).",
+		422: "A question that is not valid, a state beyond what the checkpoint reads (code state_too_long), or a body past the bound both the gateway and the service hold (code request_too_long).",
 		429: "Rate limited, or the queue is full.",
 		502: "The decision service failed.",
 		503: "The model is known and not served.",

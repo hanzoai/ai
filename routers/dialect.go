@@ -21,7 +21,7 @@ import (
 )
 
 // Dialect answers the two decision paths in their own words, whichever layer
-// answers. A rate limit, a quota, a balance gate and an authorization filter each
+// answers — one that wrote its refusal, and one that returned it. A rate limit, a quota, a balance gate and an authorization filter each
 // write a refusal of their own before the handler runs; on /v1/decisions every one
 // of them leaves as {"error":{"code","message"}}, on /v1/systemone as FastAPI's
 // {"detail": ...}, a 402, 429 or 529 carries Retry-After and Retry-After-Ms, and
@@ -36,7 +36,14 @@ func Dialect(c *zip.Ctx) error {
 	rid := controllers.RequestID(c.Header("X-Request-Id"))
 	c.Fiber().Request().Header.Set("X-Request-Id", rid)
 	if err := c.Continue(); err != nil {
-		return err
+		// A layer that returned its refusal instead of writing it is answered here,
+		// in the path's words, rather than by the framework's own renderer.
+		status, body, header := controllers.Refusing(path, err, rid)
+		for k, v := range header {
+			c.SetHeader(k, v)
+		}
+		c.SetHeader("Content-Type", "application/json")
+		return c.Bytes(status, body)
 	}
 	resp := c.Fiber().Response()
 	header := map[string]string{}

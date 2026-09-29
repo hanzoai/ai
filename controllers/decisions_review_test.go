@@ -377,3 +377,36 @@ func TestRecordUsageReturnsTheLedgersRefusal(t *testing.T) {
 		t.Fatalf("recordUsage = %v, want the recorder's refusal", err)
 	}
 }
+
+// A body past the bound the gateway and the service share is refused by the gateway
+// in the path's words — 422 request_too_long, under a request id — once the caller
+// has authenticated, and nothing is sent.
+func TestDecisionBodyPastTheBound(t *testing.T) {
+	fake, events := setupDecisions(t)
+	big := `{"model":"kai","state":"` + strings.Repeat("x", decisionBodyBytes) + `","questions":{"q":{"type":"noul"}}}`
+	status, body, c := drive(t, decisionsPath, "Bearer "+decisionsKey, big, nil)
+	var native struct {
+		Error struct{ Code, Message string } `json:"error"`
+	}
+	if status != 422 || json.Unmarshal([]byte(body), &native) != nil || native.Error.Code != "request_too_long" || replied(c, "X-Request-Id") == "" {
+		t.Fatalf("/v1/decisions => %d %s", status, body)
+	}
+	status, body, c = drive(t, systemonePath, "Bearer "+decisionsKey, big, nil)
+	var jev struct {
+		Detail []struct{ Type string } `json:"detail"`
+	}
+	if status != 422 || json.Unmarshal([]byte(body), &jev) != nil || len(jev.Detail) != 1 || jev.Detail[0].Type != "request_too_long" || replied(c, "X-Request-Id") == "" {
+		t.Fatalf("/v1/systemone => %d %s", status, body)
+	}
+	if status, _, _ := drive(t, systemonePath, "Bearer sk-nobody-issued-this", big, nil); status != http.StatusUnauthorized {
+		t.Fatalf("an unauthenticated oversized body => %d, want 401", status)
+	}
+	gw, _ := lookupGatewayHandler(systemonePath)
+	msg, _ := gw(context.Background(), "Bearer "+decisionsKey, []byte(big))
+	if st := msg.Root().Uint32(object.GatewayRespStatus); st != 422 {
+		t.Fatalf("ZAP => %d", st)
+	}
+	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
+		t.Fatalf("an oversized body reached the service %d time(s), billed %d", calls, len(*events))
+	}
+}

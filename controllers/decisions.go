@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/valyala/fasthttp"
+	fiber "github.com/zap-proto/fiber/v3"
+	"github.com/zap-proto/zip"
+
 	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/log"
@@ -404,6 +409,59 @@ func jevNamed(id string) bool {
 	return strings.Contains(strings.ToLower(id), "jev")
 }
 
+// decisionBodyBytes is the largest decision body the gateway forwards, and it is the
+// decision service's own BODY_BYTES (hanzoai/decision): the service derives it from
+// its ceilings — 128k tokens of state, 100 questions, options bounded by the token
+// budget — and the two change together, so a caller meets one bound, refused with
+// one code, whichever of the two refuses. The socket admits more (ai.App's
+// BodyLimit), so a body past this reaches the handler and is refused in the path's
+// words rather than by the transport.
+const decisionBodyBytes = 16 << 20
+
+// tooLong refuses a body past decisionBodyBytes in path's words: 422
+// request_too_long. size is the body's length, or 0 when the transport stopped
+// reading it.
+func tooLong(path string, size int) *decisionRefusal {
+	msg := fmt.Sprintf("the request body is over the limit of %d bytes", decisionBodyBytes)
+	if size > 0 {
+		msg = fmt.Sprintf("the request body is %d bytes; the limit is %d", size, decisionBodyBytes)
+	}
+	if decisionPath(path) == systemonePath {
+		b, _ := json.Marshal(systemoneInvalid{Detail: []systemoneViolation{{
+			Loc: []decisionPlace{decisionPlace(`"body"`)}, Msg: msg, Type: "request_too_long",
+		}}})
+		return &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
+	}
+	b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": "request_too_long", "message": msg}})
+	return &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
+}
+
+// Refusing is a decision path's answer to an error a layer RETURNED rather than
+// wrote — a refusal the framework raised reading the request included: its status
+// and sentence in the path's shape, a body over the limit as request_too_long, and
+// anything that chose no status as a 500 that says nothing of what failed.
+func Refusing(path string, err error, rid string) (int, []byte, map[string]string) {
+	status, msg := http.StatusInternalServerError, "internal error"
+	var he *zip.HTTPError
+	var fe *fiber.Error
+	switch {
+	case errors.Is(err, fasthttp.ErrBodyTooLarge):
+		status = http.StatusRequestEntityTooLarge
+	case errors.As(err, &he) && he.Status != 0:
+		status, msg = he.Status, he.Msg
+	case errors.As(err, &fe):
+		status, msg = fe.Code, fe.Message
+	default:
+		log.Error("decisions: %s failed request_id=%s: %v", path, rid, err)
+	}
+	r := decline(path, status, msg)
+	if status == http.StatusRequestEntityTooLarge {
+		r = tooLong(path, 0)
+	}
+	out := refused(path, rid, r)
+	return out.status, out.body, out.header
+}
+
 // decisionKeys are the fields a decision body carries at its top level, as the
 // service spells them.
 var decisionKeys = []string{"model", "state", "questions", "observe", "handle", "provider", "session_id", "user", "trace"}
@@ -465,6 +523,9 @@ func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRe
 // so it is never forwarded. The model comes back as its route's id, the one it is
 // priced and filed under, whatever case it was asked in.
 func decisionModel(path string, body []byte) (string, *decisionRefusal) {
+	if len(body) > decisionBodyBytes {
+		return "", tooLong(path, len(body))
+	}
 	fields, bad := fieldsOf(path, body)
 	if bad != nil {
 		return "", bad
@@ -1078,8 +1139,9 @@ func remint(body []byte) []byte {
 //
 // Refusals are {"error":{"code","message"}}: 400 malformed JSON or unknown model,
 // 401 no valid credential, 402 insufficient balance, 403 a key kind that may not
-// call this (pk-), 422 an invalid question or a state beyond the checkpoint's reach
-// (code state_too_long), 429 rate limited or queue full, 502 the service failed,
+// call this (pk-), 422 an invalid question, a state beyond the checkpoint's reach
+// (code state_too_long) or a body past 16 MiB (code request_too_long), 429 rate
+// limited or queue full, 502 the service failed,
 // 503 the model is known and not served, 529 overloaded. 402, 429 and 529 carry
 // Retry-After and Retry-After-Ms, and every answer carries X-Request-Id. Billed on
 // the answer's input tokens at the model's price.
@@ -1100,7 +1162,8 @@ func (c *ApiController) Decisions() { c.decision(decisionsPath) }
 // shape and nothing beside it; model is the versioned id that answered.
 //
 // Refusals are FastAPI's: 422 {"detail":[{"loc","msg","type"}]} for a field that
-// failed, and {"detail": "..."} for everything else — 400, 401, 402, 403, 429,
+// failed or a body past 16 MiB (type request_too_long), and {"detail": "..."} for
+// everything else — 400, 401, 402, 403, 429,
 // 502, 503 and 529. 402, 429 and 529 carry Retry-After and Retry-After-Ms, and
 // every answer carries X-Request-Id.
 func (c *ApiController) Systemone() { c.decision(systemonePath) }
