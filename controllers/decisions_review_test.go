@@ -410,3 +410,38 @@ func TestDecisionBodyPastTheBound(t *testing.T) {
 		t.Fatalf("an oversized body reached the service %d time(s), billed %d", calls, len(*events))
 	}
 }
+
+// Kai's versioned id — kai- and the first 12 lowercase hex of the served weights'
+// sha256 — is Kai on both paths: priced and filed as kai, sent to the service as
+// asked. Anything else of that shape is an unknown model and is sent nowhere.
+func TestKaiVersionedID(t *testing.T) {
+	fake, events := setupDecisions(t)
+	const version = "kai-0834a74f2d14"
+	for _, p := range []string{decisionsPath, systemonePath} {
+		asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+version+`"`, 1)
+		status, body, _ := drive(t, p, "Bearer "+decisionsKey, asked, nil)
+		if status != 200 {
+			t.Fatalf("%s %s => %d %s", p, version, status, body)
+		}
+		_, _, sent := fake.seen()
+		if string(sent) != asked {
+			t.Fatalf("%s: the service was sent %s, want the body as asked", p, sent)
+		}
+		e := (*events)[len(*events)-1]
+		if e.Model != "kai" || e.USD != nanoToUSD(42*21) {
+			t.Fatalf("%s: debit %s at $%s, want kai at 42 tokens × $0.021/M", p, e.Model, e.USD)
+		}
+	}
+	calls, _, _ := fake.seen()
+	for _, model := range []string{"kai-0834a74f2d1", "kai-0834a74f2d145", "kai-0834A74F2D14", "kai-zzzzzzzzzzzz", "KAI-0834a74f2d14", "kai-", "kai-0834a74f2d1g"} {
+		for _, p := range []string{decisionsPath, systemonePath} {
+			body := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1)
+			if status, out, _ := drive(t, p, "Bearer "+decisionsKey, body, nil); status != http.StatusBadRequest {
+				t.Errorf("%s %s => %d %s", p, model, status, out)
+			}
+		}
+	}
+	if now, _, _ := fake.seen(); now != calls {
+		t.Fatalf("a malformed versioned id reached the service %d time(s)", now-calls)
+	}
+}

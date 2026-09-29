@@ -553,6 +553,10 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
   its replies carry status, body and error text only, never headers folded into a
   body. The usage row's `request_id` column is the id the caller saw
   (`ClientRequestID`); the row's own `id` stays minted here. A 502 names no address.
+- **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is
+  Kai on both paths with no route of its own: priced and filed as `kai`, sent to the
+  service as asked (the service checks it names the weights it serves). Any other
+  `kai-…` no route names is 400.
 - **Nothing named Jev reaches Kai**: a route or a models.yaml `alias_of` that would
   send a Jev-named id to a Kai upstream is refused where it resolves (`Canonical`,
   `decisionModel`).

@@ -90,7 +90,7 @@ func zapDecision(ctx context.Context, path, auth string, body []byte) decisionRe
 		return refused(path, rid, decline(path, http.StatusForbidden,
 			"Publishable keys (pk-) can only access read-only endpoints. Use a secret key (sk-) for this endpoint."))
 	}
-	model, bad := decisionModel(path, body)
+	model, version, bad := decisionModel(path, body)
 
 	// Authentication comes first, as on HTTP: an invalid credential is 401 whatever
 	// the body says. A body naming no model this path serves is resolved as kai, and
@@ -107,7 +107,7 @@ func zapDecision(ctx context.Context, path, auth string, body []byte) decisionRe
 		return refused(path, rid, bad)
 	}
 	return decide(ctx, decisionCall{
-		path: path, model: model, body: body,
+		path: path, model: model, version: version, body: body,
 		user: user, ledger: ledger, premium: premium,
 		rid: rid, start: time.Now().UTC(), ctx: context.WithoutCancel(ctx),
 	})

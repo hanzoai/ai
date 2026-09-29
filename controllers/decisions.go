@@ -104,7 +104,8 @@ func (c *decisionOption) UnmarshalJSON(b []byte) error { return (*json.RawMessag
 // forwards. A request over a handle carries neither state nor questions: they are
 // the ones observed.
 type decisionsRequest struct {
-	// Model is kai, typesafe/jev-1.13 or ~typesafe/jev-latest.
+	// Model is kai, kai-<12 hex> (Kai's versioned id), typesafe/jev-1.13 or
+	// ~typesafe/jev-latest.
 	Model string `json:"model" validate:"required"`
 	// State is what the questions are about: a string, an object or an array.
 	State decisionContent `json:"state,omitempty"`
@@ -404,6 +405,21 @@ func kaiUpstream(up string) bool {
 	return up == "kai" || strings.HasPrefix(up, "kai@")
 }
 
+// kaiVersion reports whether id is Kai's versioned id: kai- and the first 12
+// lowercase hex digits of the served weights' sha256.
+func kaiVersion(id string) bool {
+	hex, ok := strings.CutPrefix(id, "kai-")
+	if !ok || len(hex) != 12 {
+		return false
+	}
+	for _, c := range hex {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // jevNamed reports whether an id names Jev.
 func jevNamed(id string) bool {
 	return strings.Contains(strings.ToLower(id), "jev")
@@ -522,36 +538,43 @@ func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRe
 // has no route. A model the service knows and does not publish is unknown on both,
 // so it is never forwarded. The model comes back as its route's id, the one it is
 // priced and filed under, whatever case it was asked in.
-func decisionModel(path string, body []byte) (string, *decisionRefusal) {
+func decisionModel(path string, body []byte) (model, version string, _ *decisionRefusal) {
 	if len(body) > decisionBodyBytes {
-		return "", tooLong(path, len(body))
+		return "", "", tooLong(path, len(body))
 	}
 	fields, bad := fieldsOf(path, body)
 	if bad != nil {
-		return "", bad
+		return "", "", bad
 	}
 	raw, named := fields["model"]
-	var model string
 	if named && json.Unmarshal(raw, &model) != nil {
 		if path == systemonePath {
-			return "", invalid("model", "Input should be a valid string", "string_type")
+			return "", "", invalid("model", "Input should be a valid string", "string_type")
 		}
-		return "", refuseDecision(http.StatusBadRequest, "'model' must be a string")
+		return "", "", refuseDecision(http.StatusBadRequest, "'model' must be a string")
 	}
 	if !named {
 		if path == systemonePath {
-			return "", invalid("model", "Field required", "missing")
+			return "", "", invalid("model", "Field required", "missing")
 		}
-		return "", refuseDecision(http.StatusBadRequest, "the request needs a 'model'")
+		return "", "", refuseDecision(http.StatusBadRequest, "the request needs a 'model'")
 	}
 	r := resolveModelRoute(model)
+	// Kai's versioned id names the weights it is asked of: it is Kai, priced and
+	// filed as kai, and the service is sent the id as asked, to check it names the
+	// weights it serves. Anything else spelled kai-… that no route names is unknown.
+	if r == nil && strings.HasPrefix(strings.ToLower(model), "kai-") {
+		if k := resolveModelRoute("kai"); k != nil && k.providerName == object.KaiName && kaiUpstream(k.upstreamModel) && kaiVersion(model) {
+			return "kai", model, nil
+		}
+	}
 	if r == nil || r.providerName != object.KaiName || (jevNamed(model) && kaiUpstream(r.upstreamModel)) {
 		if path == systemonePath {
-			return "", decline(path, http.StatusBadRequest, "Unknown model: "+model)
+			return "", "", decline(path, http.StatusBadRequest, "Unknown model: "+model)
 		}
-		return "", refuseDecision(http.StatusBadRequest, "unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", "))
+		return "", "", refuseDecision(http.StatusBadRequest, "unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", "))
 	}
-	return strings.ToLower(model), nil
+	return strings.ToLower(model), "", nil
 }
 
 // invalid is FastAPI's 422 for one body field that failed.
@@ -687,13 +710,17 @@ type decided struct {
 // route names upstream, and returns what the service said: a 200 on /v1/decisions
 // names the model asked for, with the usage that answer reports. A refusal is ai's
 // own: the service is not configured, or could not be reached.
-func consult(ctx context.Context, kai *object.Provider, path, model, org, rid string, body []byte) decided {
+func consult(ctx context.Context, kai *object.Provider, path, model, version, org, rid string, body []byte) decided {
 	if kai == nil {
 		return decided{fault: decline(path, http.StatusServiceUnavailable, "the decision service is not configured")}
 	}
 	up := model
 	if r := resolveModelRoute(model); r != nil && r.upstreamModel != "" {
 		up = r.upstreamModel
+	}
+	if version != "" {
+		// A versioned id reaches the service as asked, and its answer names it.
+		up, model = version, version
 	}
 	// The service reads the model the call was priced for, whatever spelling it was
 	// asked in: the body's model is set to that id unless it already is it, byte for
@@ -792,8 +819,11 @@ func decisionRecord(ctx context.Context, ledger string, authUser *iam.User, mode
 // model, the body as written, who is asking, and the org that pays — the one org
 // the reservation, the debit and every handle name.
 type decisionCall struct {
-	path    string
-	model   string
+	path  string
+	model string
+	// version is Kai's versioned id when the call asked by one: the call is priced
+	// and filed as model (kai), and the service is sent this.
+	version string
 	body    []byte
 	user    *iam.User
 	ledger  string
@@ -847,7 +877,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	defer hold.settle(0)
 
 	kai := object.KaiProvider()
-	got := consult(ctx, kai, d.path, d.model, d.ledger, d.rid, body)
+	got := consult(ctx, kai, d.path, d.model, d.version, d.ledger, d.rid, body)
 	if got.fault != nil {
 		return refused(d.path, d.rid, got.fault)
 	}
@@ -1122,6 +1152,8 @@ func remint(body []byte) []byte {
 //
 // Body: {"model": "kai", "state": "..."|{...}|[...], "questions": {"<name>":
 // {"type": "choice"|"noul"|"score", "instructions": ..., "criteria": ...}}}.
+// model is kai, Kai's versioned id kai-<12 hex of the weights' sha256> — priced as
+// kai and sent as asked — or a Jev id.
 // model is required; state and questions are required unless the request names a
 // handle, which carries neither. instructions is optional and any JSON. A choice
 // names at least 2 labels and a score at least 1 level, bounded by the token
@@ -1153,7 +1185,8 @@ func (c *ApiController) Decisions() { c.decision(decisionsPath) }
 //
 // Body: {"model": "kai", "state": ..., "questions": {...}}, all three required:
 // 1 to 100 questions, a choice of 2 to 255 labels, a score of 1 to 10 levels.
-// kai and its versioned id are answered by Kai; typesafe/jev-1.13 and
+// kai and its versioned id, kai-<12 hex of the weights' sha256>, are answered by
+// Kai, and the versioned id is sent as asked; typesafe/jev-1.13 and
 // ~typesafe/jev-latest, OpenRouter's names for Jev, reach Jev itself and bill at
 // Jev's list price. No Jev id is ever answered by Kai: a bare one, such as
 // jev-latest, is 400 {"detail": "Unknown model: <id>"}.
@@ -1183,7 +1216,7 @@ func (c *ApiController) decision(path string) {
 		return
 	}
 
-	model, bad := decisionModel(path, c.Body())
+	model, version, bad := decisionModel(path, c.Body())
 	if bad != nil {
 		// Authenticate before reporting the client error: an invalid credential is
 		// 401 regardless of body validity (never a probe-able 400).
@@ -1202,7 +1235,7 @@ func (c *ApiController) decision(path string) {
 		return
 	}
 	c.decisionReply(decide(c.Context(), decisionCall{
-		path: path, model: model, body: c.Body(),
+		path: path, model: model, version: version, body: c.Body(),
 		user: authUser, ledger: c.billingOrg(authUser), premium: isPremium,
 		host: c.Host(), ip: strings.Clone(c.Fiber().IP()), rid: rid, start: start,
 		ctx: context.WithoutCancel(c.Context()),
