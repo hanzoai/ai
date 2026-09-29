@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -734,5 +735,33 @@ func TestDecisionBodyIsDecodedOnceAfterItsCredential(t *testing.T) {
 	}
 	if _, _, sent := fake.seen(); string(sent) != decisionBody || len(*events) != 1 {
 		t.Fatalf("the service was sent %q, billed %d", sent, len(*events))
+	}
+}
+
+// The settle loop tries a debit whose answer was lost again under the same Ref, so a
+// ledger that keys on it moves the money once however many tries it took.
+func TestSettleRetriesCarryOneRef(t *testing.T) {
+	_, _ = setupDecisions(t)
+	prev := settleBackoff
+	settleBackoff = time.Millisecond
+	t.Cleanup(func() { settleBackoff = prev })
+	var mu sync.Mutex
+	var refs []string
+	object.SetUsageRecorder(func(_ context.Context, u object.UsageEvent) error {
+		mu.Lock()
+		defer mu.Unlock()
+		refs = append(refs, u.Ref)
+		if len(refs) < settleTries {
+			return errors.New("answer lost")
+		}
+		return nil
+	})
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, decisionBody); status != 200 {
+		t.Fatalf("decision => %d %s", status, body)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(refs) != settleTries || refs[0] == "" || slices.ContainsFunc(refs, func(r string) bool { return r != refs[0] }) {
+		t.Fatalf("tries carried refs %v; want %d tries under one ref", refs, settleTries)
 	}
 }
