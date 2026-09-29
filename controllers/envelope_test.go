@@ -106,6 +106,8 @@ const embeddingsBody = `{"object":"list","provider":"` + subProvider + `",` +
 var upstreamStream = strings.Join([]string{
 	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null,"native_finish_reason":null}]}`,
 	``,
+	`: OPENROUTER PROCESSING`,
+	``,
 	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[{"index":0,"delta":{"content":"2 + 2 "},"native_finish_reason":null}]}`,
 	``,
 	`data: {"id":"` + upstreamID + `","provider":"` + subProvider + `","model":"` + sku + `","object":"chat.completion.chunk","created":1786649556,"x_groq":{"id":"req_01jabc"},"choices":[{"index":0,"delta":{"content":"= 4","reasoning":"adding"},"native_finish_reason":null}]}`,
@@ -125,7 +127,7 @@ func ourMark() *mark { return &mark{id: ourID, model: sku, seller: "hanzo"} }
 // to parse is still a leak.
 func discloses(t *testing.T, what string, out []byte) {
 	t.Helper()
-	for _, tell := range []string{subProvider, "gen-1786649556", "native_finish_reason",
+	for _, tell := range []string{subProvider, "OPENROUTER", "gen-1786649556", "native_finish_reason",
 		"x_groq", "req_01jabc", "citations", "reasoning_details",
 		// Our side of the trade. A customer reading their own receipt must not be
 		// able to read what we paid for it.

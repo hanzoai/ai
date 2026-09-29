@@ -1733,6 +1733,11 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (t tokens, served
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
+		// An SSE comment is a vendor keeping its connection open in its own words
+		// (": OPENROUTER PROCESSING"). The keep-alive goes on; the words do not.
+		if bytes.HasPrefix(line, []byte(":")) {
+			line = []byte(":")
+		}
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {

@@ -66,6 +66,11 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		// An SSE comment is a vendor keeping its connection open in its own words
+		// (": OPENROUTER PROCESSING"). The keep-alive goes on; the words do not.
+		if strings.HasPrefix(line, ":") {
+			line = ":"
+		}
 
 		if after, ok := strings.CutPrefix(line, "data: "); ok {
 			raw := after

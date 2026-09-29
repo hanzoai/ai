@@ -653,6 +653,11 @@ func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (prompt
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
+		// An SSE comment is a vendor keeping its connection open in its own words.
+		// The keep-alive goes on; the words do not.
+		if strings.HasPrefix(line, ":") {
+			line = ":"
+		}
 		if after, ok := strings.CutPrefix(line, "data:"); ok {
 			raw := strings.TrimSpace(after)
 			if raw != "" && raw != "[DONE]" {
