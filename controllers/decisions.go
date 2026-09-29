@@ -49,8 +49,8 @@ import (
 // the body under the id the model's route names upstream, answers, and files the
 // debit once the answer has gone. The models are the routes to that service
 // (conf/models.yaml, provider kai): kai, and the Jev ids the service forwards to
-// OpenRouter, which /v1/decisions serves and /v1/systemone does not. A decision
-// bills its input tokens at the model's price (decisionCostNano).
+// OpenRouter. A decision bills its input tokens at the model's price
+// (decisionCostNano): Kai at $0.021 per million, Jev at its list price, $0.042.
 
 const (
 	decisionsPath = "/v1/decisions"
@@ -244,7 +244,7 @@ func (c *decisionCode) UnmarshalJSON(b []byte) error { return (*json.RawMessage)
 
 // systemoneRequest is the body POST /v1/systemone reads: Jev's request.
 type systemoneRequest struct {
-	// Model is kai, or its versioned id.
+	// Model is kai or its versioned id, or Jev by its vendor id.
 	Model     string                       `json:"model" validate:"required"`
 	State     decisionContent              `json:"state" validate:"required"`
 	Questions map[string]systemoneQuestion `json:"questions" validate:"required,min=1,max=100"`
@@ -398,11 +398,18 @@ func kaiUpstream(up string) bool {
 	return up == "kai" || strings.HasPrefix(up, "kai@")
 }
 
+// jevNamed reports whether an id names Jev.
+func jevNamed(id string) bool {
+	return strings.Contains(strings.ToLower(id), "jev")
+}
+
 // decisionModel reads the model a body names on path, and refuses — in that path's
-// words — a body with none, or a model the path does not serve. /v1/decisions
-// serves every route to the decision service. /v1/systemone serves Kai alone: a Jev
-// id is never mapped to Kai, so every Jev spelling is unknown there. A model the
-// service knows and does not publish is unknown on both, so it is never forwarded.
+// words — a body with none, or a model the path does not serve. Both paths serve
+// every route to the decision service: Kai, and Jev under OpenRouter's vendor ids,
+// which reach Jev itself. An id that names Jev is never answered by Kai, so a route
+// that would send one there is unknown, and so is every bare Jev spelling, which
+// has no route. A model the service knows and does not publish is unknown on both,
+// so it is never forwarded.
 func decisionModel(path string, body []byte) (string, *decisionRefusal) {
 	var head struct {
 		Model *string `json:"model"`
@@ -421,13 +428,10 @@ func decisionModel(path string, body []byte) (string, *decisionRefusal) {
 	}
 	model := *head.Model
 	r := resolveModelRoute(model)
-	if path == systemonePath {
-		if r == nil || r.providerName != object.KaiName || !kaiUpstream(r.upstreamModel) {
+	if r == nil || r.providerName != object.KaiName || (jevNamed(model) && kaiUpstream(r.upstreamModel)) {
+		if path == systemonePath {
 			return "", decline(path, http.StatusBadRequest, "Unknown model: "+model)
 		}
-		return model, nil
-	}
-	if r == nil || r.providerName != object.KaiName {
 		return "", refuseDecision(http.StatusBadRequest, "unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", "))
 	}
 	return model, nil
@@ -691,9 +695,10 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		return refused(d.path, d.rid, bad)
 	}
 
-	// Reserve the call's price, as the rerank media pipe does. Whatever way this
-	// ends, the hold is released; a served call settles it at the price first.
-	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), decisionCostCents(d.model, 1))
+	// Reserve the call's price on the body's size, as the rerank media pipe does.
+	// Whatever way this ends, the hold is released; a served call settles it at the
+	// price of the tokens its answer reports first.
+	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), nanoToCents(decisionCostNano(d.model, coarseTokenEstimate(body))))
 	if !admitted {
 		return refused(d.path, d.rid, decline(d.path, http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
 	}
@@ -706,7 +711,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	}
 	out := unscope(got.status, got.body, d.ledger, h)
 	if got.status == http.StatusOK {
-		hold.settle(nanoToCents(decisionCostNano(d.model, got.usage.InputTokens, 1)))
+		hold.settle(nanoToCents(decisionCostNano(d.model, got.usage.InputTokens)))
 		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
 		rec.ClientIP = d.ip
 		settleAfter(d.ctx, rec, d.start)
@@ -931,8 +936,10 @@ func (c *ApiController) Decisions() { c.decision(decisionsPath) }
 //
 // Body: {"model": "kai", "state": ..., "questions": {...}}, all three required:
 // 1 to 100 questions, a choice of 2 to 255 labels, a score of 1 to 10 levels.
-// Only kai and its versioned id are served; every Jev id is 400 {"detail":
-// "Unknown model: <id>"}.
+// kai and its versioned id are answered by Kai; typesafe/jev-1.13 and
+// ~typesafe/jev-latest, OpenRouter's names for Jev, reach Jev itself and bill at
+// Jev's list price. No Jev id is ever answered by Kai: a bare one, such as
+// jev-latest, is 400 {"detail": "Unknown model: <id>"}.
 //
 // Response: {"model","answers","usage":{"input_tokens","output_tokens"}}, Jev's
 // shape and nothing beside it; model is the versioned id that answered.

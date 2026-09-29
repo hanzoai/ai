@@ -102,7 +102,7 @@ func usageCostNano(record *usageRecord) int64 {
 	case record.ImageCount > 0:
 		return imageCostCents(record.Model, record.ImageCount) * 10_000_000
 	case record.DecisionCount > 0:
-		return decisionCostNano(record.Model, record.PromptTokens, record.DecisionCount)
+		return decisionCostNano(record.Model, record.PromptTokens)
 	case recordIsAudio(record):
 		return audioCostCents(record) * 10_000_000
 	default:

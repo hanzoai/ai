@@ -503,10 +503,13 @@ fails returns 500 rather than free access. To verify premium/zen, credit the org
 `controllers/decisions.go`. Both paths reach the decision service (`KAI_URL`) and
 share one core, `decide`, which the HTTP handlers and the ZAP twins
 (`zap_decisions.go`) call after resolving the principal. `/v1/systemone` is Jev's
-wire (request, answer, FastAPI `{"detail": ...}` refusals) and serves Kai only:
-every Jev id, bare or `typesafe/`-prefixed, is 400 `Unknown model: <id>` there.
-`/v1/decisions` keeps serving the hidden Jev routes. The service's own path is
-the one called, so it answers in the path's shape.
+wire (request, answer, FastAPI `{"detail": ...}` refusals). Both paths serve Kai
+and Jev by OpenRouter's vendor ids (`typesafe/jev-1.13`, `~typesafe/jev-latest`),
+which reach Jev itself; nothing named Jev is ever answered by Kai (`jevNamed`), and
+a bare `jev-*` has no route, so it is 400. The service's own path is the one
+called, so it answers in the path's shape. Kai bills $0.021 and Jev its list
+$0.042 per million input tokens — the same row in `model_pricing.go`,
+`conf/models.yaml` and hanzoai/pricing's `decisionCatalog`.
 
 - **One principal pays.** The ledger org (`billingOrg` on HTTP, the principal's
   own org on ZAP) is what the reservation, the debit and every handle name. A

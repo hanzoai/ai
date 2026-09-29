@@ -324,14 +324,14 @@ func TestDecisionRecordMetersUsage(t *testing.T) {
 	}
 }
 
-// Kai is priced from the model price table like every model: the row the loaded
-// config states, a live catalog refresh included, sets the decision's price. Jev's
-// ids stay per call.
+// A decision is priced from the model price table like every model: the row the
+// loaded config states, a live catalog refresh included, sets the price. Jev is a
+// row like Kai's, at its list price.
 func TestDecisionPriceIsTheTableRow(t *testing.T) {
 	prev := globalModelConfig
 	globalModelConfig = &ModelConfig{
 		routes:   map[string]modelRoute{},
-		pricing:  map[string]modelPrice{"kai": {InputPerMillion: 0.042}},
+		pricing:  map[string]modelPrice{"kai": {InputPerMillion: 0.042}, "typesafe/jev-1.13": {InputPerMillion: 0.084}},
 		defaults: modelPrice{InputPerMillion: 1, OutputPerMillion: 4},
 		stopCh:   make(chan struct{}),
 	}
@@ -345,15 +345,36 @@ func TestDecisionPriceIsTheTableRow(t *testing.T) {
 		t.Fatal("kai has a row in the table; it must not read as unpriced")
 	}
 	rec.Model = "typesafe/jev-1.13"
-	if got := usageCostNano(rec); got != 3*10_000_000 {
-		t.Fatalf("jev = %d nano, want its 3¢ per call", got)
+	if got := usageCostNano(rec); got != 1000*84 {
+		t.Fatalf("jev = %d nano, want 1000 input tokens at the table's $0.084/M", got)
 	}
 	if recordUnpriced(rec) {
-		t.Fatal("jev's per-call rate is a price; it must not read as unpriced")
+		t.Fatal("jev has a row in the table; it must not read as unpriced")
 	}
 	rec.Model = "laya"
 	if !recordUnpriced(rec) {
 		t.Fatal("a decision model with no row reads as unpriced")
+	}
+}
+
+// The shipped catalog and the static table say one price each: Kai $0.021 and Jev
+// its list $0.042 per million input tokens, output free.
+func TestDecisionPricesAgree(t *testing.T) {
+	want := map[string]float64{"kai": 0.021, "typesafe/jev-1.13": 0.042, "~typesafe/jev-latest": 0.042}
+	for model, in := range want {
+		if p := modelPricing[model]; p.InputPerMillion != in || p.OutputPerMillion != 0 {
+			t.Errorf("static %s = %+v, want $%v/M in, free out", model, p, in)
+		}
+	}
+	useCatalog(t, "../conf/models.yaml")
+	for model, in := range want {
+		if p := getModelPrice(model); p.InputPerMillion != in || p.OutputPerMillion != 0 {
+			t.Errorf("models.yaml %s = %+v, want $%v/M in, free out", model, p, in)
+		}
+		rec := &usageRecord{Model: model, Provider: object.KaiName, PromptTokens: 1_000_000, DecisionCount: 1}
+		if got := usageCostNano(rec); got != int64(in*1e9) {
+			t.Errorf("%s: a million input tokens bill %d nano, want $%v", model, got, in)
+		}
 	}
 }
 

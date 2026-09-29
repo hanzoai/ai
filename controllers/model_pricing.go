@@ -203,9 +203,13 @@ var modelPricing = map[string]modelPrice{
 	"openai-direct/o3":          {InputPerMillion: 10.00, OutputPerMillion: 40.00},
 	"openai-direct/o3-mini":     {InputPerMillion: 1.10, OutputPerMillion: 4.40},
 
-	// ── Hanzo Decision (POST /v1/decisions) ─────────────────────────
-	// Half of Jev's $0.042 per million input tokens; output is free.
-	"kai": {InputPerMillion: 0.021},
+	// ── Hanzo Decision (POST /v1/decisions, POST /v1/systemone) ─────
+	// Kai is half of Jev's $0.042 per million input tokens, and Jev — reached
+	// through OpenRouter under its vendor ids — is billed at that list price on the
+	// input tokens its answer reports. Output is free for both.
+	"kai":                  {InputPerMillion: 0.021},
+	"typesafe/jev-1.13":    {InputPerMillion: 0.042},
+	"~typesafe/jev-latest": {InputPerMillion: 0.042},
 }
 
 // imagePricePerImageCents maps an image model (user-facing name OR upstream
@@ -405,30 +409,10 @@ func videoCostCents(model string, n int) int64 {
 	return per * int64(n)
 }
 
-// decisionPricePerCallCents is the pass-through rate for Jev, in cents. Those
-// calls leave the cluster, so they stay at the previous per-call rate. Every
-// other decision model is priced per token from the model price table.
-var decisionPricePerCallCents = map[string]int64{
-	"typesafe/jev-1.13":    3,
-	"~typesafe/jev-latest": 3,
-}
-
 // decisionCostNano is the billed price of a decision in nano-USD: its input
-// tokens at the model's price, as every model is priced; Jev's ids per call.
-func decisionCostNano(model string, inputTokens, n int) int64 {
-	if per, ok := decisionPricePerCallCents[strings.ToLower(model)]; ok {
-		if n <= 0 {
-			return 0
-		}
-		return per * 10_000_000 * int64(n)
-	}
+// tokens at the model's price, as every model is priced.
+func decisionCostNano(model string, inputTokens int) int64 {
 	return tokenCostNano(model, inputTokens, 0, 0, 0)
-}
-
-// decisionCostCents is decisionCostNano rounded to the nearest cent, for the
-// cent-precision surfaces. Kai rounds to zero; the nano path is the charge.
-func decisionCostCents(model string, n int) int64 {
-	return nanoToCents(decisionCostNano(model, 0, n))
 }
 
 // DO-AI alias pricing (same as their base model)
@@ -563,9 +547,6 @@ func recordUnpriced(record *usageRecord) bool {
 		return false
 	}
 	if record.ImageCount > 0 || record.VideoCount > 0 {
-		return false
-	}
-	if _, perCall := decisionPricePerCallCents[strings.ToLower(record.Model)]; perCall && record.DecisionCount > 0 {
 		return false
 	}
 	// Audio is priced per minute / per million characters, not per token, so the

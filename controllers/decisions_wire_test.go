@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -193,27 +194,70 @@ func TestSystemoneForwardsAndMeters(t *testing.T) {
 	}
 }
 
-// No Jev id is ever mapped to Kai: every Jev spelling is an unknown model on
-// /v1/systemone, in FastAPI's words, and nothing is sent or billed.
-func TestSystemoneRefusesJevIds(t *testing.T) {
+// Jev by its vendor ids reaches Jev itself on /v1/systemone as on /v1/decisions,
+// forwarded to the service's /v1/systemone and billed at Jev's list price. Every
+// bare Jev spelling is an unknown model, in FastAPI's words, and nothing is sent.
+func TestSystemoneServesJevByItsVendorIds(t *testing.T) {
 	fake, events := setupDecisions(t)
-	for _, model := range []string{"jev-latest", "jev-preview", "jev-1.13.0", "jev-1.13", "typesafe/jev-1.13", "~typesafe/jev-latest", "laya"} {
+	fake.answer = joneAnswer
+	for _, model := range []string{"typesafe/jev-1.13", "~typesafe/jev-latest"} {
+		asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1)
+		status, body, _ := drive(t, systemonePath, "Bearer "+decisionsKey, asked, nil)
+		if status != http.StatusOK || body != joneAnswer {
+			t.Fatalf("%s => %d %s", model, status, body)
+		}
+		_, path, sent := fake.seen()
+		if path != systemonePath || top(t, string(sent), "model") != `"`+model+`"` {
+			t.Fatalf("%s reached %s as %s", model, path, top(t, string(sent), "model"))
+		}
+	}
+	if len(*events) != 2 || (*events)[0].USD != nanoToUSD(42*42) || (*events)[1].USD != nanoToUSD(42*42) {
+		t.Fatalf("debits = %+v, want two at 42 input tokens × Jev's $0.042/M", *events)
+	}
+
+	calls, _, _ := fake.seen()
+	for _, model := range []string{"jev-latest", "jev-preview", "jev-1.13.0", "jev-1.13", "laya"} {
 		status, body, _ := drive(t, systemonePath, "Bearer "+decisionsKey,
 			`{"model":"`+model+`","state":"x","questions":{"q":{"type":"noul"}}}`, nil)
 		if status != http.StatusBadRequest || body != `{"detail":"Unknown model: `+model+`"}` {
 			t.Errorf("%s => %d %s", model, status, body)
 		}
 	}
-	// The hidden Jev routes keep reaching Jev on /v1/decisions.
-	if status, body := driveDecisions(t, "Bearer "+decisionsKey,
-		strings.Replace(decisionBody, `"model":"kai"`, `"model":"typesafe/jev-1.13"`, 1)); status != http.StatusOK {
-		t.Fatalf("typesafe/jev-1.13 on /v1/decisions => %d %s", status, body)
+	if now, _, _ := fake.seen(); now != calls || len(*events) != 2 {
+		t.Fatalf("a bare Jev id reached the service (%d calls) or was billed (%d debits)", now-calls, len(*events)-2)
 	}
-	if calls, path, _ := fake.seen(); calls != 1 || path != decisionsPath {
-		t.Fatalf("service saw %d call(s), last at %q; want only the /v1/decisions one", calls, path)
+}
+
+// Nothing named Jev is ever answered by Kai: a route that would send a Jev id to
+// Kai is an unknown model on both paths.
+func TestJevIsNeverKai(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	path := t.TempDir() + "/models.yaml"
+	if err := os.WriteFile(path, []byte(`version: 1
+models:
+  kai:
+    provider: kai
+    upstream: kai
+  jev-latest:
+    provider: kai
+    upstream: kai
+  typesafe/jev-9:
+    provider: kai
+    upstream: kai@abc
+`), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if len(*events) != 1 {
-		t.Fatalf("debits = %d, want only the served /v1/decisions call", len(*events))
+	useCatalog(t, path)
+	for _, p := range []string{decisionsPath, systemonePath} {
+		for _, model := range []string{"jev-latest", "typesafe/jev-9"} {
+			status, body, _ := drive(t, p, "Bearer "+decisionsKey, strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1), nil)
+			if status != http.StatusBadRequest {
+				t.Errorf("%s %s => %d %s; a Jev id reached Kai", p, model, status, body)
+			}
+		}
+	}
+	if calls, _, _ := fake.seen(); calls != 0 {
+		t.Fatalf("the service saw %d call(s) for Jev ids routed to Kai", calls)
 	}
 }
 
