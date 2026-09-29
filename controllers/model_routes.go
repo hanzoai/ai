@@ -47,6 +47,15 @@ type modelRoute struct {
 	vision        bool                 // Accepts image input (OpenAI image_url parts) — set only from a live probe
 	tools         bool                 // Supports function/tool calling — set only from a live probe
 	outputs       []string             // Kinds of answer the model produces (e.g. "decision"); nil = not advertised
+	created       int64                // When the model was released (Unix seconds); 0 = not recorded
+}
+
+// releasedOr is the route's release time, or now when nothing records one.
+func (r modelRoute) releasedOr(now int64) int64 {
+	if r.created > 0 {
+		return r.created
+	}
+	return now
 }
 
 // modelRoutes is the static routing table. Keys are user-facing model names
@@ -152,9 +161,11 @@ var modelRoutes = map[string]modelRoute{
 	// Kai is Hanzo's decision model; the Jev ids are forwarded by the same service
 	// to OpenRouter, so they stay callable and leave the listing. A decision answers
 	// typed questions, not a chat turn, and `outputs` says so to every catalog.
-	"kai":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}},
-	"typesafe/jev-1.13":    {providerName: object.KaiName, upstreamModel: "typesafe/jev-1.13", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true},
-	"~typesafe/jev-latest": {providerName: object.KaiName, upstreamModel: "~typesafe/jev-latest", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true},
+	// Released: kai when api.hanzo.ai first served it (cloud f80ce7a0a, ai v1.833.242),
+	// the Jev ids when OpenRouter listed them (its `created`).
+	"kai":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}, created: 1790550362},
+	"typesafe/jev-1.13":    {providerName: object.KaiName, upstreamModel: "typesafe/jev-1.13", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true, created: 1789689684},
+	"~typesafe/jev-latest": {providerName: object.KaiName, upstreamModel: "~typesafe/jev-latest", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true, created: 1789689685},
 }
 
 // modelCountByProvider returns, per provider name, how many user-facing model
@@ -492,7 +503,7 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 		models = append(models, modelInfo{
 			ID:              name,
 			Object:          "model",
-			Created:         now,
+			Created:         route.releasedOr(now),
 			OwnedBy:         owner,
 			Premium:         route.premium,
 			Provider:        publicProvider(route),

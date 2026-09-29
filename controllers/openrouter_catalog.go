@@ -112,8 +112,11 @@ func openrouterMargin() decimal.Decimal {
 // route, and bill a SKU. Prices are JSON strings in USD per TOKEN, decoded straight
 // into decimal so the conversion to $/MTok stays exact and never passes through float.
 type openrouterWireModel struct {
-	ID            string `json:"id"`
-	ContextLength int    `json:"context_length"`
+	ID string `json:"id"`
+	// Created is when OpenRouter listed the model (Unix seconds): the release time the
+	// catalog knows, which /v1/models reports as `created`.
+	Created       int64 `json:"created"`
+	ContextLength int   `json:"context_length"`
 	Pricing       struct {
 		Prompt     decimal.Decimal `json:"prompt"`
 		Completion decimal.Decimal `json:"completion"`
@@ -155,6 +158,7 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 	}
 	m := zenModel{
 		ID:      w.ID,
+		Created: w.Created,
 		OwnedBy: openrouterOwner(w.ID),
 		MaxCtx:  w.ContextLength,
 		Vision:  w.vision(),

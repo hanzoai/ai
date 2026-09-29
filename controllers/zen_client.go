@@ -513,7 +513,10 @@ func (t tokens) prompt() int { return t.fresh + t.cached }
 // public contract (id, context, price ladder, vision). Not its upstream, which the
 // family does not disclose (hip-00NN).
 type zenModel struct {
-	ID      string
+	ID string
+	// Created is when the model was released (Unix seconds), where the family's
+	// catalog records it; 0 = not recorded, and the listing's own time is used.
+	Created int64
 	OwnedBy string
 	MaxCtx  int
 	Vision  bool
@@ -537,6 +540,14 @@ type zenModel struct {
 	// the retail it publishes is this cost times a margin, never below it.
 	CostIn  decimal.Decimal
 	CostOut decimal.Decimal
+}
+
+// releasedOr is the model's release time, or now when the catalog records none.
+func (m zenModel) releasedOr(now int64) int64 {
+	if m.Created > 0 {
+		return m.Created
+	}
+	return now
 }
 
 // gated reports whether the family SKU is access-controlled (a limited-preview SKU
@@ -1005,7 +1016,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			// a SKU the family charges for is premium, and one it charges nothing
 			// for is not. A free route reported as premium reads to a client as a
 			// SKU their plan cannot afford, which is the opposite of true.
-			ID: z.ID, Object: "model", Created: now, OwnedBy: owner, Premium: z.priced(),
+			ID: z.ID, Object: "model", Created: z.releasedOr(now), OwnedBy: owner, Premium: z.priced(),
 			Pricing: pricingInfo(z.price()), ContextWindow: window, Outputs: z.Outputs,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing

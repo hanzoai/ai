@@ -365,18 +365,22 @@ models:
   # Decisions API: callable on both paths, not listed, billed at Jev's list price
   # per input token. outputs: [decision] keeps every catalog from offering these
   # for a chat turn.
+  # released: kai when api.hanzo.ai first served it (cloud f80ce7a0a, ai
+  # v1.833.242); the Jev ids when OpenRouter listed them (its `created`).
   kai:
     provider: kai
     upstream: kai
     owned_by: hanzo
     outputs: [decision]
     pricing: {input: 0.021, output: 0.00}
+    released: 2026-09-27T23:06:02Z
   typesafe/jev-1.13:
     provider: kai
     upstream: typesafe/jev-1.13
     owned_by: typesafe
     outputs: [decision]
     pricing: {input: 0.042, output: 0.00}
+    released: 2026-09-18T00:01:24Z
     hidden: true
   "~typesafe/jev-latest":
     provider: kai
@@ -384,6 +388,7 @@ models:
     owned_by: typesafe
     outputs: [decision]
     pricing: {input: 0.042, output: 0.00}
+    released: 2026-09-18T00:01:25Z
     hidden: true
 
   # ── DO upstream leaves ──────────────────────────────────────────────

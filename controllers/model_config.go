@@ -162,6 +162,10 @@ type ModelDef struct {
 	// as `outputs` — "decision" for a model served at /v1/decisions — so a
 	// catalog never offers it for a chat turn. Absent ⇒ not advertised.
 	Outputs []string `yaml:"outputs,omitempty"`
+	// Released is when the model was released, RFC 3339, surfaced in /v1/models as
+	// `created`. Absent ⇒ the listing's own time, as for every model whose release
+	// nothing here records.
+	Released string `yaml:"released,omitempty"`
 }
 
 // ── Singleton ───────────────────────────────────────────────────────────
@@ -266,7 +270,16 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 
 		// Build route (skip pricing-only entries)
 		if !def.PricingOnly {
+			var created int64
+			if def.Released != "" {
+				at, err := time.Parse(time.RFC3339, def.Released)
+				if err != nil {
+					return fmt.Errorf("model %s: released %q is not RFC 3339: %w", name, def.Released, err)
+				}
+				created = at.Unix()
+			}
 			r := modelRoute{
+				created:       created,
 				providerName:  def.Provider,
 				upstreamModel: def.Upstream,
 				premium:       def.Premium,
@@ -598,7 +611,7 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 		models = append(models, modelInfo{
 			ID:              name,
 			Object:          "model",
-			Created:         now,
+			Created:         route.releasedOr(now),
 			OwnedBy:         owner,
 			Premium:         route.premium,
 			Provider:        publicProvider(route),

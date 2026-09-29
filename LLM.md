@@ -553,6 +553,10 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
   its replies carry status, body and error text only, never headers folded into a
   body. The usage row's `request_id` column is the id the caller saw
   (`ClientRequestID`); the row's own `id` stays minted here. A 502 names no address.
+- **`created` on `/v1/models` is a release time where one is recorded**: a
+  models.yaml `released:` (RFC 3339; kai and the Jev ids carry theirs) or an
+  OpenRouter SKU's own `created`. A model nothing records keeps the listing's time;
+  none is invented. The shape is unchanged (Codex decodes it).
 - **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is
   Kai on both paths with no route of its own: priced and filed as `kai`, sent to the
   service as asked (the service checks it names the weights it serves). Any other
