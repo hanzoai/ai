@@ -25,9 +25,12 @@ import (
 // AutoRouteFilter resolves a completion that names the virtual `auto`/`zen-router`
 // model to the SKU that will serve it, before BalanceGateFilter reads the request.
 // The gate and the plan limits then price and admit that SKU, never the virtual id.
-// See controllers.RouteAuto.
+// See controllers.RouteAuto. A body with a Content-Encoding is left as sent, as
+// AliasFilter leaves it: the handler resolves its `auto` once it has authenticated
+// the sender, and the gate meanwhile prices the virtual id, which has no price and
+// so is never free.
 func AutoRouteFilter(c *zip.Ctx) error {
-	if c.Method() == http.MethodPost && completes(c.Path()) {
+	if c.Method() == http.MethodPost && completes(c.Path()) && !coded(c) {
 		routeAuto(c)
 	}
 	return c.Continue()

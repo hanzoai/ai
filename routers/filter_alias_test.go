@@ -137,3 +137,69 @@ func TestADecisionBodyIsNotReadBeforeItsCredential(t *testing.T) {
 		t.Fatalf("the alias rewrite parsed %d decision body(ies) before the credential", n)
 	}
 }
+
+// The filters ahead of the credential leave a body with a Content-Encoding as sent:
+// neither the alias rewrite nor the auto route reads its model, so 20 MiB of gzip
+// reaches the handler coded, having cost what its wire bytes cost, and the handler
+// reads it once it has authenticated the sender. A plain body naming an alias is
+// rewritten as before, and "identity" is plain.
+func TestACodedBodyIsNotDecodedAheadOfTheCredential(t *testing.T) {
+	var seen, routed atomic.Int32
+	prev, prevRoute := canonical, routeAuto
+	canonical = func(m string) (string, bool) {
+		seen.Add(1)
+		if strings.EqualFold(m, "hanzoai/enso") {
+			return "hanzo/enso", true
+		}
+		return "", false
+	}
+	routeAuto = func(*zip.Ctx) { routed.Add(1) }
+	t.Cleanup(func() { canonical, routeAuto = prev, prevRoute })
+
+	var coding, arrived string
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10, BodyLimit: controllers.MaxTranscribeUpload + 1<<20})
+	app.Use(zip.H(AliasFilter))
+	app.Use(zip.H(AutoRouteFilter))
+	app.Raw(zip.MethodAll, "/*", func(c *zip.Ctx) error {
+		coding, arrived = c.Header("Content-Encoding"), string(c.Fiber().Request().Body())
+		return nil
+	})
+	send := func(body []byte, enc string) uint64 {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if enc != "" {
+			req.Header.Set("Content-Encoding", enc)
+		}
+		var a, b runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&a)
+		resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second})
+		runtime.ReadMemStats(&b)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("Content-Encoding %q => %v %v", enc, resp, err)
+		}
+		return b.TotalAlloc - a.TotalAlloc
+	}
+
+	var zb bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&zb, gzip.BestCompression)
+	_, _ = zw.Write([]byte(`{"model":"hanzoai/enso",` + strings.Repeat(" ", 20<<20) + `"messages":[]}`))
+	_ = zw.Close()
+	if alloc := send(zb.Bytes(), "gzip"); alloc > 4<<20 {
+		t.Fatalf("passing %d KiB of gzip on allocated %d MiB: it was decoded", zb.Len()>>10, alloc>>20)
+	}
+	if coding != "gzip" || arrived != zb.String() || seen.Load() != 0 || routed.Load() != 0 {
+		t.Fatalf("a gzip body reached the handler as %q, changed %v; the alias table was read %d time(s), the auto route %d",
+			coding, arrived != zb.String(), seen.Load(), routed.Load())
+	}
+
+	for _, enc := range []string{"", "identity"} {
+		send([]byte(`{"model":"HanzoAI/Enso","messages":[]}`), enc)
+		if !strings.Contains(arrived, `"model":"hanzo/enso"`) {
+			t.Fatalf("Content-Encoding %q: a plain alias reached the handler as %s", enc, arrived)
+		}
+	}
+	if seen.Load() != 2 || routed.Load() != 2 {
+		t.Fatalf("plain bodies: the alias table was read %d time(s), the auto route %d; want 2 each", seen.Load(), routed.Load())
+	}
+}

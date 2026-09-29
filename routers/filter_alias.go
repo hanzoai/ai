@@ -16,6 +16,7 @@ package routers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/hanzoai/ai/controllers"
 	"github.com/zap-proto/zip"
@@ -25,9 +26,11 @@ import (
 // the id the alias stands for, before anything reads the model: routing, the gate,
 // the plan limits, the handler and the ledger all see that id, so an alias is
 // served and billed as it. A decision path is left alone: its handler resolves an
-// alias after the credential.
+// alias after the credential. So is a body with a Content-Encoding: this runs ahead
+// of every credential, and reading a coded body's model means decoding it for a
+// sender nobody has authenticated. Its model reaches the handler as sent.
 func AliasFilter(c *zip.Ctx) error {
-	if c.Method() != http.MethodPost || controllers.DecisionPath(c.Path()) {
+	if c.Method() != http.MethodPost || controllers.DecisionPath(c.Path()) || coded(c) {
 		return c.Continue()
 	}
 	if id, ok := canonical(requestedModel(c)); ok {
@@ -38,6 +41,12 @@ func AliasFilter(c *zip.Ctx) error {
 		}
 	}
 	return c.Continue()
+}
+
+// coded reports a request body sent with a Content-Encoding other than identity.
+func coded(c *zip.Ctx) bool {
+	e := strings.TrimSpace(string(c.Fiber().Request().Header.ContentEncoding()))
+	return e != "" && !strings.EqualFold(e, "identity")
 }
 
 // canonical is controllers.Canonical, indirected so the filter's tests state the
