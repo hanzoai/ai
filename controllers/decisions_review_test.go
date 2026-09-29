@@ -516,7 +516,7 @@ func TestHandleCallHoldsWhatItsHandleBills(t *testing.T) {
 		t.Fatalf("the refused handle call reached the service or was billed")
 	}
 	// Another org's handle of the same name is its own: it holds a cent.
-	if handled.cost(otherOrg+"/big") != 0 || handled.cost(decisionsOrg+"/big") != 4_000_000 {
+	if handled.cost(otherOrg, "big") != 0 || handled.cost(decisionsOrg, "big") != 4_000_000 {
 		t.Fatal("a handle's cost is not its own org's")
 	}
 }
@@ -543,5 +543,60 @@ func TestDebitRefIsStablePerRecord(t *testing.T) {
 	_ = recordUsage(&other)
 	if len(refs) != 3 || refs[0] == "" || refs[0] != refs[1] || refs[2] == refs[0] {
 		t.Fatalf("refs = %v; want one ref across a record's retries and another for another record", refs)
+	}
+}
+
+// A handle id is 1 to 128 characters of A-Z, a-z, 0-9, '.', '_' and '-'. Anything
+// else, a megabyte of id included, is refused 422 in the path's words under a request
+// id on both doors, before the service is asked, billed or remembered; an id at the
+// bound is served and remembered under a fixed-size key.
+func TestHandleIDIsBounded(t *testing.T) {
+	fake, events := setupDecisions(t)
+	observe := func(id string) string {
+		q, _ := json.Marshal(id)
+		return strings.Replace(decisionBody, `}}}`, `}},"observe":`+string(q)+`}`, 1)
+	}
+	var native struct {
+		Error struct {
+			Code    int
+			Message string
+		} `json:"error"`
+	}
+	for i := 0; i < 48; i++ {
+		status, body, c := drive(t, decisionsPath, "Bearer "+decisionsKey, observe(fmt.Sprintf("%d-", i)+strings.Repeat("A", 1<<20)), nil)
+		if status != 422 || json.Unmarshal([]byte(body), &native) != nil || native.Error.Code != 422 || replied(c, "X-Request-Id") == "" {
+			t.Fatalf("a 1 MiB id => %d %.200s", status, body)
+		}
+	}
+	for _, id := range []string{"", strings.Repeat("a", handleIDBytes+1), "acme/s1", "a b", "é", "a\x00b", "a%2Fb", "a\nb"} {
+		if status, body := driveDecisions(t, "Bearer "+decisionsKey, observe(id)); status != 422 {
+			t.Errorf("observe %q => %d %.200s", id, status, body)
+		}
+		q, _ := json.Marshal(id)
+		if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"model":"kai","handle":`+string(q)+`}`); status != 422 {
+			t.Errorf("handle %q => %d %.200s", id, status, body)
+		}
+	}
+	gw, _ := lookupGatewayHandler(decisionsPath)
+	msg, _ := gw(context.Background(), "Bearer "+decisionsKey, []byte(observe(strings.Repeat("A", 1<<20))))
+	if st := msg.Root().Uint32(object.GatewayRespStatus); st != 422 {
+		t.Fatalf("ZAP: a 1 MiB id => %d", st)
+	}
+	handled.mu.Lock()
+	held := len(handled.m)
+	handled.mu.Unlock()
+	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 || held != 0 {
+		t.Fatalf("refused ids reached the service %d time(s), billed %d, remembered %d", calls, len(*events), held)
+	}
+
+	id := strings.Repeat("Az09._-", handleIDBytes/7) + "xy"
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, observe(id)); status != 200 {
+		t.Fatalf("an id of %d bytes => %d %s", len(id), status, body)
+	}
+	if _, _, sent := fake.seen(); top(t, string(sent), "observe") != `"`+decisionsOrg+"/"+id+`"` {
+		t.Fatalf("the service was sent %s", sent)
+	}
+	if handled.cost(decisionsOrg, id) != 42 {
+		t.Fatal("an id at the bound was not remembered")
 	}
 }

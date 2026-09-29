@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -612,8 +613,36 @@ func invalid(field, msg, kind string) *decisionRefusal {
 // handles are the ids a body names, as the caller wrote them.
 type handles struct{ observe, handle string }
 
+// handleIDBytes is the longest id a caller may name a handle by.
+const handleIDBytes = 128
+
+// handleID reports whether id is one a caller may name a handle by: 1 to
+// handleIDBytes of A-Z, a-z, 0-9, '.', '_' and '-'.
+func handleID(id string) bool {
+	if len(id) == 0 || len(id) > handleIDBytes {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '.' && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// badHandle refuses an id handleID does not accept: 422, in path's words.
+func badHandle(path, key string) *decisionRefusal {
+	msg := fmt.Sprintf("'%s' must be 1 to %d characters of A-Z, a-z, 0-9, '.', '_' and '-'", key, handleIDBytes)
+	if path == systemonePath {
+		return invalid(key, msg, "string_pattern_mismatch")
+	}
+	return decline(path, http.StatusUnprocessableEntity, msg)
+}
+
 // scope names the body's handles by org. A body naming none goes out byte for
-// byte; a handle that is not a string is refused.
+// byte; a handle that is not a string is refused, and so is one handleID does
+// not accept.
 func scope(path string, body []byte, org string) ([]byte, handles, *decisionRefusal) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(body, &fields) != nil || fields == nil {
@@ -628,6 +657,9 @@ func scope(path string, body []byte, org string) ([]byte, handles, *decisionRefu
 		}
 		if err := json.Unmarshal(raw, id); err != nil {
 			return nil, handles{}, decline(path, http.StatusBadRequest, fmt.Sprintf("'%s' must be a string", key))
+		}
+		if !handleID(*id) {
+			return nil, handles{}, badHandle(path, key)
 		}
 		fields[key], _ = json.Marshal(org + "/" + *id)
 		named = true
@@ -706,37 +738,40 @@ func unscope(status int, body []byte, org string, h handles) []byte {
 
 // handled remembers, per org-scoped handle, the input tokens its last call billed —
 // the observe that made it, then each decision over it — so a decision over a handle
-// is held at what it will be billed rather than at its few-byte body. Bounded: past
-// handledMax it forgets an arbitrary handle, which then holds a cent again until its
-// next call.
+// is held at what it will be billed rather than at its few-byte body. Each entry is
+// a fixed size, keyed by the SHA-256 of <org>/<id>. Bounded: past handledMax it
+// forgets an arbitrary handle, which then holds a cent again until its next call.
 var handled handleCosts
 
 const handledMax = 1 << 16
 
 type handleCosts struct {
 	mu sync.Mutex
-	m  map[string]int
+	m  map[[sha256.Size]byte]int
 }
 
-func (h *handleCosts) cost(id string) int {
+func handleKey(org, id string) [sha256.Size]byte { return sha256.Sum256([]byte(org + "/" + id)) }
+
+func (h *handleCosts) cost(org, id string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.m[id]
+	return h.m[handleKey(org, id)]
 }
 
-func (h *handleCosts) note(id string, tokens int) {
+func (h *handleCosts) note(org, id string, tokens int) {
+	k := handleKey(org, id)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.m == nil {
-		h.m = make(map[string]int)
+		h.m = make(map[[sha256.Size]byte]int)
 	}
-	if _, known := h.m[id]; !known && len(h.m) >= handledMax {
-		for k := range h.m {
-			delete(h.m, k)
+	if _, known := h.m[k]; !known && len(h.m) >= handledMax {
+		for old := range h.m {
+			delete(h.m, old)
 			break
 		}
 	}
-	h.m[id] = tokens
+	h.m[k] = tokens
 }
 
 // decisionsClient carries every call to the decision service. A decision is one
@@ -926,7 +961,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	// own body does not carry: it holds what the last call on that handle billed.
 	tokens := coarseTokenEstimate(body)
 	if h.handle != "" {
-		tokens = max(tokens, handled.cost(d.ledger+"/"+h.handle))
+		tokens = max(tokens, handled.cost(d.ledger, h.handle))
 	}
 	est := (decisionCostNano(d.model, tokens) + nanoPerCent - 1) / nanoPerCent
 	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), max(est, 1))
@@ -950,7 +985,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens))
 		for _, id := range []string{h.observe, h.handle} {
 			if id != "" {
-				handled.note(d.ledger+"/"+id, got.usage.InputTokens)
+				handled.note(d.ledger, id, got.usage.InputTokens)
 			}
 		}
 		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
@@ -1223,8 +1258,9 @@ func remint(body []byte) []byte {
 // budget rather than a count; questions holds 1 to 100.
 //
 // observe holds the state under an id, and a later request naming that id as its
-// handle decides over it again. A handle belongs to the org that observed it: no
-// other org's request can name it.
+// handle decides over it again. An id is 1 to 128 characters of A-Z, a-z, 0-9, '.',
+// '_' and '-'. A handle belongs to the org that observed it: no other org's request
+// can name it.
 //
 // Response: {"id","model","provider","answers":{"<name>":{"type",...}},
 // "usage":{"input_tokens","output_tokens"},"routing","state_hash","latency_ms"}.
@@ -1234,8 +1270,9 @@ func remint(body []byte) []byte {
 //
 // Refusals are {"error":{"code","message"}}: 400 malformed JSON or unknown model,
 // 401 no valid credential, 402 insufficient balance, 403 a key kind that may not
-// call this (pk-), 422 an invalid question, a state beyond the checkpoint's reach
-// (code state_too_long) or a body past 16 MiB (code request_too_long), 429 rate
+// call this (pk-), 422 an invalid question or handle id, a state beyond the
+// checkpoint's reach (code state_too_long) or a body past 16 MiB (code
+// request_too_long), 429 rate
 // limited or queue full, 502 the service failed,
 // 503 the model is known and not served, 529 overloaded. 402, 429 and 529 carry
 // Retry-After and Retry-After-Ms, and every answer carries X-Request-Id. Billed on

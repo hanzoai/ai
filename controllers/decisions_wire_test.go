@@ -98,15 +98,15 @@ func TestDecisionHandlesBelongToTheirOrg(t *testing.T) {
 	if strings.Contains(body, otherOrg) || !strings.Contains(body, `\"s1\"`) {
 		t.Fatalf("the refusal names the org, or not the id asked for: %s", body)
 	}
-	// Naming the other org in the id reaches nothing of theirs either.
-	if status, body := driveDecisions(t, "Bearer "+otherKey, `{"model":"kai","handle":"acme/s1"}`); status != http.StatusBadRequest {
-		t.Fatalf("an id spelling another org's name reached its state: %d %s", status, body)
+	// An id cannot spell another org's name: a slash is outside the id's alphabet.
+	if status, body := driveDecisions(t, "Bearer "+otherKey, `{"model":"kai","handle":"acme/s1"}`); status != http.StatusUnprocessableEntity {
+		t.Fatalf("an id spelling another org's name was not refused: %d %s", status, body)
 	}
 	if status, body := driveDecisions(t, "Bearer "+decisionsKey, `{"model":"kai","handle":"s1"}`); status != http.StatusOK {
 		t.Fatalf("the org that observed s1 could not decide over it: %d %s", status, body)
 	}
 
-	want := []string{"observe acme/s1", "handle globex/s1", "handle globex/acme/s1", "handle acme/s1"}
+	want := []string{"observe acme/s1", "handle globex/s1", "handle acme/s1"}
 	mu.Lock()
 	defer mu.Unlock()
 	if strings.Join(sent, "; ") != strings.Join(want, "; ") {
