@@ -16,11 +16,13 @@ package controllers
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/decimal"
 )
 
 // modelPrice defines per-model economics in dollars per 1M tokens. Input/Output/Cache*
@@ -58,26 +60,51 @@ func (p modelPrice) costInputPerMillion() float64 { return p.CostInPerMillion }
 // costOutputPerMillion is the provider COGS for output tokens. Ask costed first.
 func (p modelPrice) costOutputPerMillion() float64 { return p.CostOutPerMillion }
 
-// modelPricingInfo is the public, omitempty pricing block embedded in the
-// /v1/models response (modelInfo.Pricing). It is expressed in US dollars per
-// one million tokens and is emitted ONLY when ai holds real pricing for the
-// model — never synthesized from defaults.
+// modelPricingInfo is the pricing block of a /v1/models row (modelInfo.Pricing),
+// emitted ONLY when ai holds real pricing for the model — never synthesized from
+// defaults.
+//
+// Every key names its unit. Prompt and Completion are OpenRouter's keys in
+// OpenRouter's unit, US dollars per ONE token as a decimal string, which is what a
+// reader of an OpenAI-compatible catalog takes `pricing` to mean. InputPerMillion
+// and OutputPerMillion are the same two rates per million tokens, the unit every
+// price table here and hanzoai/pricing keep. No per-million figure sits under a
+// bare `input`/`output`: Vercel-style catalogs use those keys per token, so a
+// reader would price the model a million times over.
 type modelPricingInfo struct {
-	Input  float64 `json:"input"`  // USD per 1M input tokens
-	Output float64 `json:"output"` // USD per 1M output tokens
+	Prompt           string  `json:"prompt"`             // USD per input token, decimal string
+	Completion       string  `json:"completion"`         // USD per output token, decimal string
+	InputPerMillion  float64 `json:"input_per_million"`  // USD per 1M input tokens
+	OutputPerMillion float64 `json:"output_per_million"` // USD per 1M output tokens
 }
 
 // pricingInfo projects an internal modelPrice into the public pricing block, or
 // returns nil (→ dropped by omitempty) when nobody stated a price. ok is the whole
 // question: it reports that a real per-model entry was FOUND, and a found price of
 // zero is a price — the one a caller most needs to see, since it says the route is
-// free. Only a model no source names has its pricing block dropped.
+// free. Only a model no source names has its pricing block dropped, and so does one
+// whose rate is not a number (a YAML `.inf`), which states no price at all.
 func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
-	if !ok {
+	if !ok || !finite(p.InputPerMillion) || !finite(p.OutputPerMillion) {
 		return nil
 	}
-	return &modelPricingInfo{Input: p.InputPerMillion, Output: p.OutputPerMillion}
+	return &modelPricingInfo{
+		Prompt:           perToken(p.InputPerMillion),
+		Completion:       perToken(p.OutputPerMillion),
+		InputPerMillion:  p.InputPerMillion,
+		OutputPerMillion: p.OutputPerMillion,
+	}
 }
+
+// perToken is a per-million rate as US dollars per token, exactly: the rate is read
+// at its shortest round-tripping decimal and its point moved six places, so $0.80/M
+// is "0.0000008" and never the float quotient 7.999999999999999e-07.
+func perToken(perMillion float64) string {
+	d := decimal.MustParse(strconv.FormatFloat(perMillion, 'f', -1, 64))
+	return decimal.NewFromBig(d.Coef(), d.Scale()+6).String()
+}
+
+func finite(f float64) bool { return !math.IsNaN(f) && !math.IsInf(f, 0) }
 
 // staticModelPrice looks up real per-model pricing from the static tables only.
 // Unlike getModelPrice it neither queries the DB nor falls back to a default

@@ -966,7 +966,7 @@ func TestTheFreeIdIsListedOnlyWhileThePoolCanServeIt(t *testing.T) {
 	if !ok {
 		t.Fatal("the family's free id is not listed while the pool can serve it")
 	}
-	if got.Premium || got.Pricing == nil || got.Pricing.Input != 0 || got.Pricing.Output != 0 {
+	if got.Premium || got.Pricing == nil || got.Pricing.InputPerMillion != 0 || got.Pricing.OutputPerMillion != 0 {
 		t.Errorf("the free id lists as premium=%v pricing=%+v", got.Premium, got.Pricing)
 	}
 	if got.ContextWindow != 128000 {
@@ -1090,7 +1090,7 @@ func TestThePlatformPublishesOneUnbrandedFreeId(t *testing.T) {
 	if got.OwnedBy != "hanzo" {
 		t.Errorf("owned_by = %q, want hanzo — it is our product, not the vendor's", got.OwnedBy)
 	}
-	if got.Premium || got.Pricing == nil || got.Pricing.Input != 0 {
+	if got.Premium || got.Pricing == nil || got.Pricing.InputPerMillion != 0 {
 		t.Errorf("the platform free id lists premium=%v pricing=%+v", got.Premium, got.Pricing)
 	}
 

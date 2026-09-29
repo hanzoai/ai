@@ -16,11 +16,14 @@ package controllers
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/decimal"
 )
 
 // These tests pin the ADDITIVE enrichment of the /v1/models response shape
@@ -145,12 +148,160 @@ func TestPricingInfoPublishesWhatWasFound(t *testing.T) {
 		t.Error("absent pricing must project to nil")
 	}
 	free := pricingInfo(modelPrice{InputPerMillion: 0, OutputPerMillion: 0}, true)
-	if free == nil || free.Input != 0 || free.Output != 0 {
+	if free == nil || *free != (modelPricingInfo{Prompt: "0", Completion: "0"}) {
 		t.Errorf("a stated price of zero must project as zero, got %+v", free)
 	}
 	got := pricingInfo(modelPrice{InputPerMillion: 1.25, OutputPerMillion: 5.00}, true)
-	if got == nil || got.Input != 1.25 || got.Output != 5.00 {
-		t.Errorf("real pricing must project faithfully, got %+v", got)
+	want := modelPricingInfo{Prompt: "0.00000125", Completion: "0.000005", InputPerMillion: 1.25, OutputPerMillion: 5.00}
+	if got == nil || *got != want {
+		t.Errorf("real pricing must project faithfully, got %+v, want %+v", got, want)
+	}
+	if pricingInfo(modelPrice{InputPerMillion: math.Inf(1)}, true) != nil {
+		t.Error("a rate that is not a number states no price")
+	}
+}
+
+// TestPricingKeysNameTheirUnit pins the wire keys. The standard keys are OpenRouter's,
+// per token, as strings; the per-million figures sit only under keys that say so. A
+// bare `input`/`output` is what an OpenRouter or Vercel reader takes to be per token,
+// so its reappearance would reprice every model a million times over.
+func TestPricingKeysNameTheirUnit(t *testing.T) {
+	raw, err := json.Marshal(pricingInfo(modelPrice{InputPerMillion: 0.8, OutputPerMillion: 4}, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"prompt":"0.0000008","completion":"0.000004","input_per_million":0.8,"output_per_million":4}`
+	if string(raw) != want {
+		t.Errorf("pricing block\n got %s\nwant %s", raw, want)
+	}
+}
+
+// TestListedPricePerTokenIsCatalogPricePerMillion reads the listing the way an
+// OpenRouter client does: for every priced row, the per-token string times 1e6 is the
+// per-1M price the catalog bills, exactly. It runs over the real models.yaml and a
+// discovered OpenRouter lineup, and names one known model outright.
+func TestListedPricePerTokenIsCatalogPricePerMillion(t *testing.T) {
+	useCatalog(t, "../conf/models.yaml")
+	withOpenRouter(t, orBody)
+
+	million := decimal.New(1_000_000, 0)
+	priced := 0
+	for _, m := range listAvailableModels() {
+		if m.Pricing == nil {
+			continue
+		}
+		priced++
+		catalog, ok := GetModelConfig().GetPriceOK(m.ID)
+		if !ok {
+			catalog, ok = familyModelPrice(m.ID)
+		}
+		if !ok {
+			t.Errorf("%s lists a price the catalog does not hold", m.ID)
+			continue
+		}
+		for _, leg := range []struct {
+			name     string
+			perToken string
+			million  float64
+		}{
+			{"prompt", m.Pricing.Prompt, catalog.InputPerMillion},
+			{"completion", m.Pricing.Completion, catalog.OutputPerMillion},
+		} {
+			per, err := decimal.Parse(leg.perToken)
+			if err != nil {
+				t.Errorf("%s %s = %q is not a decimal: %v", m.ID, leg.name, leg.perToken, err)
+				continue
+			}
+			want := decimal.MustParse(strconv.FormatFloat(leg.million, 'f', -1, 64))
+			if !per.Mul(million).Equal(want) {
+				t.Errorf("%s %s = %s per token, want catalog %v per 1M / 1e6", m.ID, leg.name, per, leg.million)
+			}
+		}
+	}
+	if priced == 0 {
+		t.Fatal("no priced rows listed")
+	}
+
+	haiku := indexModels(listAvailableModels())["claude-3-5-haiku"]
+	if haiku.Pricing == nil || haiku.Pricing.Prompt != "0.0000008" || haiku.Pricing.Completion != "0.000004" ||
+		haiku.Pricing.InputPerMillion != 0.80 || haiku.Pricing.OutputPerMillion != 4.00 {
+		t.Errorf("claude-3-5-haiku ($0.80/$4.00 per 1M) lists %+v", haiku.Pricing)
+	}
+}
+
+// TestBothIdsRoute: a row's listed id routes, a bare id and the vendor-qualified SKU it
+// aliases route to the same place, and the canonical slug names the maker without
+// changing the id a caller sends.
+func TestBothIdsRoute(t *testing.T) {
+	useCatalog(t, "../conf/models.yaml")
+	withOpenRouter(t, orBody)
+
+	bare, qualified := resolveModelRoute("claude-sonnet-4"), resolveModelRoute("anthropic/claude-sonnet-4")
+	if bare == nil || qualified == nil {
+		t.Fatalf("bare %+v, qualified %+v: both spellings must route", bare, qualified)
+	}
+	if bare.providerName != qualified.providerName || bare.upstreamModel != qualified.upstreamModel {
+		t.Errorf("bare routes to %s/%s, qualified to %s/%s", bare.providerName, bare.upstreamModel, qualified.providerName, qualified.upstreamModel)
+	}
+
+	byID := indexModels(listAvailableModels())
+	for id, slug := range map[string]string{
+		"anthropic/claude-sonnet-4": "anthropic/claude-sonnet-4", // already qualified
+		"kai":                       "hanzo/kai",                 // branded: owned_by is the maker
+		"text-embedding-3-small":    "openai/text-embedding-3-small",
+		"claude-3-5-haiku":          "", // passthrough: owned_by is the server, not the maker
+	} {
+		m, ok := byID[id]
+		if !ok {
+			t.Errorf("%s is not listed under its own id", id)
+			continue
+		}
+		if m.CanonicalSlug != slug {
+			t.Errorf("%s canonical_slug = %q, want %q", id, m.CanonicalSlug, slug)
+		}
+		if resolveModelRoute(id) == nil {
+			t.Errorf("listed id %s does not route", id)
+		}
+	}
+}
+
+// TestCatalogDecodesUnderCodex decodes the real /v1/models body the way Codex does
+// (codex-rs/codex-api/src/endpoint/models.rs → protocol ModelsResponse): the one field
+// it reads is `models`, required, an array of ModelInfo whose every entry must carry
+// Codex's required keys. It reads nothing in `data`, which is why the pricing keys and
+// the slug are free to live there.
+func TestCatalogDecodesUnderCodex(t *testing.T) {
+	useCatalog(t, "../conf/models.yaml")
+	withOpenRouter(t, orBody)
+
+	body, err := modelListing(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := top["models"]
+	if !ok {
+		t.Fatal("Codex requires `models`; serde fails on a missing field")
+	}
+	var models []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &models); err != nil || models == nil {
+		t.Fatalf("`models` must be a JSON array (serde refuses null): %s", raw)
+	}
+	for i, m := range models {
+		for _, k := range []string{"slug", "display_name", "supported_reasoning_levels", "shell_type", "visibility",
+			"supported_in_api", "priority", "support_verbosity", "truncation_policy", "experimental_supported_tools"} {
+			if _, ok := m[k]; !ok {
+				t.Errorf("models[%d] lacks Codex's required %q", i, k)
+			}
+		}
+	}
+
+	var list modelList
+	if err := json.Unmarshal(body, &list); err != nil || len(list.Data) == 0 {
+		t.Fatalf("OpenAI `data` list: %v, %d rows", err, len(list.Data))
 	}
 }
 
@@ -229,7 +380,7 @@ models:
 	if gpt.Provider != "do-ai" {
 		t.Errorf("unbranded gpt-4o should expose provider do-ai, got %q", gpt.Provider)
 	}
-	if gpt.Pricing == nil || gpt.Pricing.Input != 2.50 || gpt.Pricing.Output != 10.00 {
+	if gpt.Pricing == nil || gpt.Pricing.InputPerMillion != 2.50 || gpt.Pricing.OutputPerMillion != 10.00 {
 		t.Errorf("gpt-4o pricing want {2.50,10.00}, got %+v", gpt.Pricing)
 	}
 	assertCoreUnchanged(t, gpt)
@@ -258,7 +409,7 @@ models:
 	if zen.OwnedBy != "hanzo" {
 		t.Errorf("zen4 owned_by want hanzo, got %q", zen.OwnedBy)
 	}
-	if zen.Pricing == nil || zen.Pricing.Input != 3.00 || zen.Pricing.Output != 9.60 {
+	if zen.Pricing == nil || zen.Pricing.InputPerMillion != 3.00 || zen.Pricing.OutputPerMillion != 9.60 {
 		t.Errorf("zen4 pricing want {3.00,9.60}, got %+v", zen.Pricing)
 	}
 	zenKeys := jsonKeys(t, zen)
@@ -314,7 +465,7 @@ func TestListModelsRichStaticPath(t *testing.T) {
 	if bge.Provider != "do-ai" {
 		t.Errorf("unbranded bge-m3 should expose provider do-ai, got %q", bge.Provider)
 	}
-	if bge.Pricing == nil || bge.Pricing.Input != 0.02 || bge.Pricing.Output != 0 {
+	if bge.Pricing == nil || bge.Pricing.InputPerMillion != 0.02 || bge.Pricing.OutputPerMillion != 0 {
 		t.Errorf("bge-m3 static pricing want {0.02,0}, got %+v", bge.Pricing)
 	}
 

@@ -617,6 +617,16 @@ million input tokens — the same row in `model_pricing.go`,
   models.yaml `released:` (RFC 3339; kai and the Jev ids carry theirs) or an
   OpenRouter SKU's own `created`. A model nothing records keeps the listing's time;
   none is invented. The shape is unchanged (Codex decodes it).
+- **`pricing` on `/v1/models` names its unit in every key**: `prompt`/`completion`
+  are USD per token as decimal strings (OpenRouter's keys and unit);
+  `input_per_million`/`output_per_million` are the same rates per 1M. A bare
+  `input`/`output` is per token to OpenRouter- and Vercel-style readers, so no
+  per-million figure goes there (hanzoai/pricing's own document keeps `input` per
+  1M; it is not an OpenAI-compatible catalog). `canonical_slug` is `owned_by/id` (`hanzo/kai`),
+  the id itself when already qualified, absent for an unbranded passthrough.
+  `id` stays what callers send: Codex reads only `models`, but every entry path
+  bills and gates on the raw id, so a qualified spelling needs canonicalizing at
+  the entry first.
 - **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is
   Kai with no route of its own: priced and filed as `kai`, sent to the
   service as asked (the service checks it names the weights it serves). Any other

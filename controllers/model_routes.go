@@ -340,13 +340,14 @@ type modelInfo struct {
 	Premium bool   `json:"premium"`
 
 	// Additive enrichment (omitempty — present only when ai has the datum).
+	CanonicalSlug   string            `json:"canonical_slug,omitempty"`    // the id qualified by its maker, OpenRouter's field and form ("hanzo/kai", "anthropic/claude-sonnet-4"); see canonicalSlug
 	Provider        string            `json:"provider,omitempty"`          // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
 	ContextWindow   int               `json:"context_window,omitempty"`    // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
 	MaxOutputTokens int               `json:"max_output_tokens,omitempty"` // max completion tokens (upstream catalog); lets clients cap output honestly
 	Outputs         []string          `json:"outputs,omitempty"`           // kinds of answer the model produces ("text", "audio", "image"); absent ⇒ not advertised. A caller choosing a model for a chat turn needs it: the free lineup carries music models and a classifier beside the chat models, and a price alone cannot tell them apart
 	SupportsVision  bool              `json:"supports_vision,omitempty"`   // model accepts image input (verified via a live probe); absent ⇒ not advertised, never a fabricated yes
 	SupportsTools   bool              `json:"supports_tools,omitempty"`    // model supports function/tool calling (verified via a live probe)
-	Pricing         *modelPricingInfo `json:"pricing,omitempty"`           // USD per 1M tokens; only when ai holds real pricing
+	Pricing         *modelPricingInfo `json:"pricing,omitempty"`           // per-token and per-1M USD, each key naming its unit; only when ai holds real pricing
 	Access          *modelAccessInfo  `json:"access,omitempty"`            // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
 }
 
@@ -479,16 +480,47 @@ func (c *modelCatalog) get() ([]modelInfo, []byte, error) {
 }
 
 // build renders the catalogue from the config's routing table, or from the static
-// table when no config is loaded, overlaid in both cases with every family's
-// discovered lineup and sorted by name. Hidden models (provider-prefixed aliases,
-// upstream-named routes) are excluded from the listing but remain callable via the
-// completions endpoint.
+// table when no config is loaded, overlaid in the config case with every family's
+// discovered lineup and sorted by name, and stamps each row's canonical slug. Hidden
+// models (provider-prefixed aliases, upstream-named routes) are excluded from the
+// listing but remain callable via the completions endpoint.
 func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
+	var models []modelInfo
 	if cfg != nil {
-		return mergeFamilyModels(cfg.ListModels())
+		models = mergeFamilyModels(cfg.ListModels())
+	} else {
+		models = staticModels()
 	}
+	for i := range models {
+		models[i].CanonicalSlug = canonicalSlug(models[i])
+	}
+	return models
+}
 
-	// Static fallback
+// canonicalSlug is the row's id qualified by the maker `owned_by` names, the form
+// OpenRouter lists ids in: "hanzo/kai", "openai/text-embedding-3-small". An id that
+// already carries a vendor segment ("anthropic/claude-sonnet-4") is its own slug.
+//
+// An unbranded passthrough gets none. Its owned_by is the provider that SERVES it
+// (the row says so in `provider`), so qualifying by it would name DigitalOcean as the
+// maker of Claude; ai holds no maker for it and publishes none.
+//
+// The slug identifies; `id` is what a caller sends, and two rows may share a slug when
+// two routes serve one model. The id itself stays bare because every entry path bills,
+// gates and meters on the raw id string: a second spelling is only safe once those
+// paths canonicalize it first.
+func canonicalSlug(m modelInfo) string {
+	switch {
+	case strings.Contains(m.ID, "/"):
+		return m.ID
+	case m.Provider != "" || m.OwnedBy == "":
+		return ""
+	}
+	return strings.ToLower(m.OwnedBy) + "/" + m.ID
+}
+
+// staticModels lists the static routing table, for when no config is loaded.
+func staticModels() []modelInfo {
 	now := time.Now().Unix()
 	models := make([]modelInfo, 0, len(modelRoutes))
 

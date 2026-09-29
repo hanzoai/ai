@@ -1133,7 +1133,7 @@ func (f *modelFamily) freeInfo(now int64) []modelInfo {
 		out = append(out, modelInfo{
 			ID: n.id, Object: "model", Created: now, OwnedBy: n.owner,
 			Premium: false, ContextWindow: window, Outputs: []string{"text"},
-			Pricing: &modelPricingInfo{Input: 0, Output: 0},
+			Pricing: pricingInfo(modelPrice{}, true),
 		})
 	}
 	return out
