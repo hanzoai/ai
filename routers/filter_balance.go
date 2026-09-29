@@ -211,6 +211,13 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// Fails closed the same way its twin does: only a model whose price is FOUND and
 	// is zero skips. A body we cannot read, a model we cannot name, or a price we had
 	// to synthesize all leave the gate in force.
+	//
+	// A decision body is decoded here, once its sender is known, and left plain.
+	if controllers.DecisionPath(path) {
+		if _, err := controllers.DecisionBody(c); err != nil {
+			return err
+		}
+	}
 	model := requestedModel(c)
 	if sku, ok := depthRoute(model, c.Body()); ok && balanceGate.funds(c, subject, namespace, userKey, sku) {
 		// The default free id, asked by a caller whose plan or bought credit pays for

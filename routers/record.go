@@ -16,6 +16,7 @@
 package routers
 
 import (
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -23,7 +24,8 @@ import (
 )
 
 // unrecorded are the paths that carry no principal worth attributing: signing in
-// happens before there is one, and assets are static.
+// happens before there is one, and assets are static. Decision paths are skipped too: a
+// served decision files its own row, and its body is a state of up to 16 MiB.
 var unrecorded = map[string]struct{}{
 	"/v1/ai/signin": {},
 	"/v1/ai/assets": {},
@@ -37,7 +39,7 @@ var unrecorded = map[string]struct{}{
 // way to share. One middleware holds it in a local across the handler: nothing to
 // name, nothing to look up, nothing to lose.
 func Record(c *zip.Ctx) error {
-	if _, skip := unrecorded[c.Path()]; skip {
+	if _, skip := unrecorded[c.Path()]; skip || controllers.DecisionPath(c.Path()) {
 		return c.Continue()
 	}
 	userId := getUsername(c)

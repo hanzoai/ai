@@ -15,12 +15,16 @@
 package routers
 
 import (
+	"bytes"
+	"compress/gzip"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/object"
 )
@@ -501,5 +505,58 @@ func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
 	}
 	if code := post(`not json`); code != http.StatusPaymentRequired {
 		t.Errorf("an unreadable body returned %d, want 402 — fail closed", code)
+	}
+}
+
+// The gate reads a decision body's model once its sender is known, so it is where a
+// compressed decision body is decoded: once, bounded, and left plain on the request
+// with no coding, so the handler after it reads JSON and decodes nothing. One that
+// inflates past the bound is refused here as request_too_long in the path's words,
+// and a coding nobody decodes as 415; neither reaches the handler.
+func TestTheGateDecodesADecisionBodyOnce(t *testing.T) {
+	bg := newTestGate("http://unused", "", balanceCacheTTL)
+	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
+	bg.ledger.SetBalance("acme", 100)
+	prev := balanceGate
+	balanceGate = bg
+	t.Cleanup(func() { balanceGate = prev })
+
+	gz := func(s string) []byte {
+		var b bytes.Buffer
+		w, _ := gzip.NewWriterLevel(&b, gzip.BestCompression)
+		_, _ = w.Write([]byte(s))
+		_ = w.Close()
+		return b.Bytes()
+	}
+	var coding, raw string
+	var reached int
+	handler := func(c *zip.Ctx) error {
+		reached++
+		coding, raw = c.Header("Content-Encoding"), string(c.Fiber().Request().Body())
+		return c.Continue()
+	}
+	const plain = `{"model":"kai","state":"x","questions":{"q":{"type":"noul"}}}`
+	p := ask(http.MethodPost, "/v1/decisions").body(gz(plain)).
+		with("Content-Encoding", "gzip").with("Authorization", "Bearer tok").
+		through(Dialect, BalanceGateFilter, handler)
+	if p.status() != http.StatusOK || reached != 1 || coding != "" || raw != plain {
+		t.Fatalf("a gzip decision => %d %s; the handler saw coding %q and %q", p.status(), p.said(), coding, raw)
+	}
+
+	over := gz(`{"model":"kai","state":"` + strings.Repeat("x", 16<<20) + `","questions":{"q":{"type":"noul"}}}`)
+	p = ask(http.MethodPost, "/v1/systemone").body(over).
+		with("Content-Encoding", "gzip").with("Authorization", "Bearer tok").
+		through(Dialect, BalanceGateFilter, handler)
+	if p.status() != 422 || !strings.Contains(p.said(), `"type":"request_too_long"`) || p.replied("X-Request-Id") == "" {
+		t.Fatalf("gzip past the bound => %d %s", p.status(), p.said())
+	}
+	p = ask(http.MethodPost, "/v1/decisions").body([]byte(plain)).
+		with("Content-Encoding", "compress").with("Authorization", "Bearer tok").
+		through(Dialect, BalanceGateFilter, handler)
+	if p.status() != http.StatusUnsupportedMediaType || !strings.Contains(p.said(), `"code":415`) {
+		t.Fatalf("Content-Encoding compress => %d %s", p.status(), p.said())
+	}
+	if reached != 1 {
+		t.Fatalf("a refused body reached the handler %d time(s)", reached-1)
 	}
 }

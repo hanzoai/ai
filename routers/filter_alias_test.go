@@ -15,15 +15,30 @@
 package routers
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	fiber "github.com/zap-proto/fiber/v3"
+	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/object"
 )
 
 // A request naming an alias reaches everything after the filter naming the id the
-// alias stands for, every other field as sent, on every path that names a model.
-// Any other id passes byte for byte.
+// alias stands for, every other field as sent, on every path that names a model but
+// the decision paths, which resolve an alias after the credential. Any other id
+// passes byte for byte.
 func TestAnAliasIsNamedAsTheIDItStandsFor(t *testing.T) {
 	prev := canonical
 	canonical = func(model string) (string, bool) {
@@ -34,7 +49,7 @@ func TestAnAliasIsNamedAsTheIDItStandsFor(t *testing.T) {
 	}
 	t.Cleanup(func() { canonical = prev })
 
-	for _, path := range []string{"/v1/chat/completions", "/v1/messages", "/v1/responses", "/v1/decisions"} {
+	for _, path := range []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"} {
 		p := ask(http.MethodPost, path).
 			body([]byte(`{"model":"HanzoAI/Enso","stream":true,"messages":[{"role":"user","content":"hi"}]}`)).
 			through(AliasFilter)
@@ -51,6 +66,13 @@ func TestAnAliasIsNamedAsTheIDItStandsFor(t *testing.T) {
 		}
 	}
 
+	for _, path := range []string{"/v1/decisions", "/v1/systemone", "/V1/Decisions/"} {
+		sent := `{"model":"HanzoAI/Enso","state":"x","questions":{"q":{"type":"noul"}}}`
+		if p := ask(http.MethodPost, path).body([]byte(sent)).through(AliasFilter); p.handed() != sent {
+			t.Fatalf("%s: %s was rewritten to %s", path, sent, p.handed())
+		}
+	}
+
 	for _, sent := range []string{
 		`{"model":"hanzo/enso","messages":[]}`,
 		`{"model":"enso-auto","messages":[]}`,
@@ -60,5 +82,58 @@ func TestAnAliasIsNamedAsTheIDItStandsFor(t *testing.T) {
 		if p := ask(http.MethodPost, "/v1/chat/completions").body([]byte(sent)).through(AliasFilter); p.handed() != sent {
 			t.Fatalf("%s was rewritten to %s", sent, p.handed())
 		}
+	}
+}
+
+// Through the whole router, a decision body behind a credential nobody issued is
+// refused 401 in the path's words without being parsed or decoded: the alias rewrite
+// never reads it, and 64 MiB of gzip costs what its wire bytes cost.
+func TestADecisionBodyIsNotReadBeforeItsCredential(t *testing.T) {
+	var seen atomic.Int32
+	prev := canonical
+	canonical = func(m string) (string, bool) { seen.Add(1); return prev(m) }
+	t.Cleanup(func() { canonical = prev })
+	restore, err := object.UseMemoryDB(fmt.Sprintf("file:routers_preauth_%d?mode=memory&cache=shared", time.Now().UnixNano()), &object.Provider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(restore)
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10, BodyLimit: controllers.MaxTranscribeUpload + 1<<20})
+	Register(app)
+
+	var zb bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&zb, gzip.BestCompression)
+	_, _ = zw.Write([]byte(`{"state":1,` + strings.Repeat(" ", 64<<20) + `"model":"kai"}`))
+	_ = zw.Close()
+	for _, path := range []string{"/v1/decisions", "/v1/systemone"} {
+		for _, gz := range []bool{false, true} {
+			body := []byte(`{"model":"kai","state":"x","questions":{"q":{"type":"noul"}}}`)
+			if gz {
+				body = zb.Bytes()
+			}
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer sk-nobody-issued-this-000000000000")
+			if gz {
+				req.Header.Set("Content-Encoding", "gzip")
+			}
+			var a, b runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&a)
+			resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second})
+			runtime.ReadMemStats(&b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("X-Request-Id") == "" {
+				t.Fatalf("%s gzip=%v unauthenticated => %d %s", path, gz, resp.StatusCode, out)
+			}
+			if alloc := b.TotalAlloc - a.TotalAlloc; gz && alloc > 8<<20 {
+				t.Fatalf("%s: refusing %d KiB of unauthenticated gzip allocated %d MiB: it was decoded", path, zb.Len()>>10, alloc>>20)
+			}
+		}
+	}
+	if n := seen.Load(); n != 0 {
+		t.Fatalf("the alias rewrite parsed %d decision body(ies) before the credential", n)
 	}
 }

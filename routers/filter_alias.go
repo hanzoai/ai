@@ -24,9 +24,10 @@ import (
 // AliasFilter rewrites a request that names an alias (models.yaml alias_of) to name
 // the id the alias stands for, before anything reads the model: routing, the gate,
 // the plan limits, the handler and the ledger all see that id, so an alias is
-// served and billed as it.
+// served and billed as it. A decision path is left alone: its handler resolves an
+// alias after the credential.
 func AliasFilter(c *zip.Ctx) error {
-	if c.Method() != http.MethodPost {
+	if c.Method() != http.MethodPost || controllers.DecisionPath(c.Path()) {
 		return c.Continue()
 	}
 	if id, ok := canonical(requestedModel(c)); ok {

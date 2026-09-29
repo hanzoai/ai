@@ -15,6 +15,8 @@
 package controllers
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -598,5 +600,84 @@ func TestHandleIDIsBounded(t *testing.T) {
 	}
 	if handled.cost(decisionsOrg, id) != 42 {
 		t.Fatal("an id at the bound was not remembered")
+	}
+}
+
+// gzipped is s as a gzip body.
+func gzipped(s string) string {
+	var b bytes.Buffer
+	w, _ := gzip.NewWriterLevel(&b, gzip.BestCompression)
+	_, _ = w.Write([]byte(s))
+	_ = w.Close()
+	return b.String()
+}
+
+// A compressed decision body is decoded once, after its credential, and never past
+// the bound: an unauthenticated caller's 64 MiB of gzip is refused 401 without being
+// decoded, an authenticated one inflating past 16 MiB is 422 request_too_long in
+// the path's words, a coding nobody decodes is 415, and a small one is served as the
+// JSON it decodes to.
+func TestDecisionBodyIsDecodedOnceAfterItsCredential(t *testing.T) {
+	fake, events := setupDecisions(t)
+	gz := map[string]string{"Content-Encoding": "gzip"}
+
+	var reads atomic.Int32
+	prev := readModel
+	readModel = func(path string, body []byte) (string, string, *decisionRefusal) {
+		reads.Add(1)
+		return prev(path, body)
+	}
+	t.Cleanup(func() { readModel = prev })
+	bomb := gzipped(`{"state":1,` + strings.Repeat(" ", 64<<20) + `"model":"kai"}`)
+	for _, p := range []string{decisionsPath, systemonePath} {
+		var a, b runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&a)
+		status, body, _ := drive(t, p, "Bearer sk-nobody-issued-this", bomb, gz)
+		runtime.ReadMemStats(&b)
+		if status != http.StatusUnauthorized {
+			t.Fatalf("%s: unauthenticated gzip => %d %s", p, status, body)
+		}
+		if alloc := b.TotalAlloc - a.TotalAlloc; alloc > 2<<20 {
+			t.Fatalf("%s: refusing %d KiB of unauthenticated gzip allocated %d MiB: it was decoded", p, len(bomb)>>10, alloc>>20)
+		}
+	}
+	if n := reads.Load(); n != 0 {
+		t.Fatalf("a body behind a refused credential was read %d time(s)", n)
+	}
+
+	over := gzipped(`{"model":"kai","state":"` + strings.Repeat("x", decisionBodyBytes+1024) + `","questions":{"q":{"type":"noul"}}}`)
+	status, body, c := drive(t, decisionsPath, "Bearer "+decisionsKey, over, gz)
+	var native struct {
+		Error struct{ Code, Message string } `json:"error"`
+	}
+	if status != 422 || json.Unmarshal([]byte(body), &native) != nil || native.Error.Code != "request_too_long" || replied(c, "X-Request-Id") == "" {
+		t.Fatalf("/v1/decisions gzip past the bound => %d %s", status, body)
+	}
+	status, body, c = drive(t, systemonePath, "Bearer "+decisionsKey, over, gz)
+	var jev struct {
+		Detail []struct{ Type string } `json:"detail"`
+	}
+	if status != 422 || json.Unmarshal([]byte(body), &jev) != nil || len(jev.Detail) != 1 || jev.Detail[0].Type != "request_too_long" || replied(c, "X-Request-Id") == "" {
+		t.Fatalf("/v1/systemone gzip past the bound => %d %s", status, body)
+	}
+	for coding, want := range map[string]int{"compress": 415, "gzip, gzip": 415, "gzip": 400} {
+		sent := gzipped(decisionBody)
+		if coding == "gzip" {
+			sent = "not gzip at all"
+		}
+		if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, sent, map[string]string{"Content-Encoding": coding}); status != want {
+			t.Errorf("Content-Encoding %q => %d %s, want %d", coding, status, body, want)
+		}
+	}
+	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
+		t.Fatalf("a refused body reached the service %d time(s), billed %d", calls, len(*events))
+	}
+
+	if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, gzipped(decisionBody), gz); status != 200 {
+		t.Fatalf("a gzip decision => %d %s", status, body)
+	}
+	if _, _, sent := fake.seen(); string(sent) != decisionBody || len(*events) != 1 {
+		t.Fatalf("the service was sent %q, billed %d", sent, len(*events))
 	}
 }

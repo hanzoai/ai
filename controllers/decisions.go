@@ -453,6 +453,43 @@ func tooLong(path string, size int) *decisionRefusal {
 	return &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
 }
 
+// DecisionBody reads a decision body as sent, or decoded from its one Content-Encoding,
+// neither past decisionBodyBytes, and leaves the request holding it with no coding.
+func DecisionBody(c *zip.Ctx) ([]byte, error) {
+	req := c.Fiber().Request()
+	if len(req.Body()) > decisionBodyBytes {
+		return nil, fasthttp.ErrBodyTooLarge
+	}
+	coding := strings.ToLower(strings.TrimSpace(string(req.Header.ContentEncoding())))
+	var (
+		body []byte
+		err  error
+	)
+	switch coding {
+	case "", "identity":
+		return req.Body(), nil
+	case "gzip", "x-gzip":
+		body, err = req.BodyGunzipWithLimit(decisionBodyBytes)
+	case "deflate":
+		body, err = req.BodyInflateWithLimit(decisionBodyBytes)
+	case "br":
+		body, err = req.BodyUnbrotliWithLimit(decisionBodyBytes)
+	case "zstd":
+		body, err = req.BodyUnzstdWithLimit(decisionBodyBytes)
+	default:
+		return nil, fiber.NewError(http.StatusUnsupportedMediaType, fmt.Sprintf("Content-Encoding %q is not gzip, deflate, br or zstd", coding))
+	}
+	switch {
+	case errors.Is(err, fasthttp.ErrBodyTooLarge):
+		return nil, err
+	case err != nil:
+		return nil, fiber.NewError(http.StatusBadRequest, "body: not valid "+coding)
+	}
+	req.SetBodyRaw(body)
+	req.Header.Del(fiber.HeaderContentEncoding)
+	return body, nil
+}
+
 // Refusing is a decision path's answer to an error a layer RETURNED rather than
 // wrote — a refusal the framework raised reading the request included: its status
 // and sentence in the path's shape, a body over the limit as request_too_long, and
@@ -558,7 +595,7 @@ var readModel = decisionModel
 // that would send one there is unknown, and so is every bare Jev spelling, which
 // has no route. A model the service knows and does not publish is unknown on both,
 // so it is never forwarded. The model comes back as its route's id, the one it is
-// priced and filed under, whatever case it was asked in.
+// priced and filed under, whatever case or alias it was asked by.
 func decisionModel(path string, body []byte) (model, version string, _ *decisionRefusal) {
 	fields, bad := fieldsOf(path, body)
 	if bad != nil {
@@ -576,6 +613,9 @@ func decisionModel(path string, body []byte) (model, version string, _ *decision
 			return "", "", invalid("model", "Field required", "missing")
 		}
 		return "", "", refuseDecision(http.StatusBadRequest, "the request needs a 'model'")
+	}
+	if id, ok := Canonical(model); ok {
+		model = id
 	}
 	r := resolveModelRoute(model)
 	// Kai's versioned id names the weights it is asked of: it is Kai, priced and
@@ -616,8 +656,7 @@ type handles struct{ observe, handle string }
 // handleIDBytes is the longest id a caller may name a handle by.
 const handleIDBytes = 128
 
-// handleID reports whether id is one a caller may name a handle by: 1 to
-// handleIDBytes of A-Z, a-z, 0-9, '.', '_' and '-'.
+// handleID reports whether id is 1 to handleIDBytes of A-Z, a-z, 0-9, '.', '_' and '-'.
 func handleID(id string) bool {
 	if len(id) == 0 || len(id) > handleIDBytes {
 		return false
@@ -1268,15 +1307,17 @@ func remint(body []byte) []byte {
 // state once and each question's instructions and options once; a decision over a
 // handle bills the state once, when it was observed.
 //
+// The body may be sent gzip, deflate, br or zstd encoded; decoded, it is bounded as
+// sent.
+//
 // Refusals are {"error":{"code","message"}}: 400 malformed JSON or unknown model,
 // 401 no valid credential, 402 insufficient balance, 403 a key kind that may not
-// call this (pk-), 422 an invalid question or handle id, a state beyond the
-// checkpoint's reach (code state_too_long) or a body past 16 MiB (code
-// request_too_long), 429 rate
-// limited or queue full, 502 the service failed,
-// 503 the model is known and not served, 529 overloaded. 402, 429 and 529 carry
-// Retry-After and Retry-After-Ms, and every answer carries X-Request-Id. Billed on
-// the answer's input tokens at the model's price.
+// call this (pk-), 415 any other Content-Encoding, 422 an invalid question or handle
+// id, a state beyond the checkpoint's reach (code state_too_long) or a body past 16
+// MiB (code request_too_long), 429 rate limited or queue full, 502 the service
+// failed, 503 the model is known and not served, 529 overloaded. 402, 429 and 529
+// carry Retry-After and Retry-After-Ms, and every answer carries X-Request-Id.
+// Billed on the answer's input tokens at the model's price.
 func (c *ApiController) Decisions() { c.decision(decisionsPath) }
 
 // Systemone implements POST /v1/systemone, the Jev-compatible spelling of POST
@@ -1294,11 +1335,14 @@ func (c *ApiController) Decisions() { c.decision(decisionsPath) }
 // Response: {"model","answers","usage":{"input_tokens","output_tokens"}}, Jev's
 // shape and nothing beside it; model is the versioned id that answered.
 //
+// The body may be sent gzip, deflate, br or zstd encoded; decoded, it is bounded as
+// sent.
+//
 // Refusals are FastAPI's: 422 {"detail":[{"loc","msg","type"}]} for a field that
 // failed or a body past 16 MiB (type request_too_long), and {"detail": "..."} for
-// everything else — 400, 401, 402, 403, 429,
-// 502, 503 and 529. 402, 429 and 529 carry Retry-After and Retry-After-Ms, and
-// every answer carries X-Request-Id.
+// everything else — 400, 401, 402, 403, 415 (any other Content-Encoding), 429, 502,
+// 503 and 529. 402, 429 and 529 carry Retry-After and Retry-After-Ms, and every
+// answer carries X-Request-Id.
 func (c *ApiController) Systemone() { c.decision(systemonePath) }
 
 // decision answers a decision path over HTTP: authenticate, resolve who pays, and
@@ -1317,8 +1361,9 @@ func (c *ApiController) decision(path string) {
 	}
 
 	// The size bound is the one thing asked of a body before its sender is known:
-	// it costs a length. Everything that reads the body waits on the credential.
-	if n := len(c.Body()); n > decisionBodyBytes {
+	// it costs the length of the bytes as sent. Everything that decodes or reads the
+	// body waits on the credential.
+	if n := len(c.Fiber().Request().Body()); n > decisionBodyBytes {
 		c.decisionReply(refused(path, rid, tooLong(path, n)))
 		return
 	}
@@ -1326,7 +1371,13 @@ func (c *ApiController) decision(path string) {
 		c.decisionReply(refused(path, rid, decline(path, statusOf(err), err.Error())))
 		return
 	}
-	model, version, bad := readModel(path, c.Body())
+	body, err := DecisionBody(c.Ctx)
+	if err != nil {
+		status, out, header := Refusing(path, err, rid)
+		c.decisionReply(decisionReply{status: status, body: out, header: header})
+		return
+	}
+	model, version, bad := readModel(path, body)
 	if bad != nil {
 		c.decisionReply(refused(path, rid, bad))
 		return
@@ -1339,7 +1390,7 @@ func (c *ApiController) decision(path string) {
 		return
 	}
 	c.decisionReply(decide(c.Context(), decisionCall{
-		path: path, model: model, version: version, body: c.Body(),
+		path: path, model: model, version: version, body: body,
 		user: authUser, ledger: c.billingOrg(authUser), premium: isPremium,
 		host: c.Host(), ip: strings.Clone(c.Fiber().IP()), rid: rid, start: start,
 		ctx: context.WithoutCancel(c.Context()),
