@@ -36,8 +36,8 @@
 // meter on this group — these are security/infra CRUD, so STEP 6 does not apply
 // (the router path meters nothing either). Query params (pageSize, p, field,
 // value, sortField, sortOrder, id, owner, provider, …) are decoded from the JSON
-// body — the same pattern zapBalanceHandler / zap_application-deploy.go use —
-// NEVER trusted for identity.
+// body — the same pattern zap_application-deploy.go uses — NEVER trusted for
+// identity.
 //
 // REGISTRATION: this file self-registers from its own init() via the shared
 // registry seam (registerCloud / registerGatewayPath, defined once in

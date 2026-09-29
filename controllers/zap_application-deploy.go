@@ -35,8 +35,8 @@
 // target another owner). GetK8sStatus mirrors RequireSuperAdmin. There is no LLM
 // call and no meter on this group — these are infra CRUD, so STEP 6 does not
 // apply (the router path meters nothing either). Query params (pageSize, p, field,
-// value, sortField, sortOrder, id, owner) are decoded from the JSON body — the
-// same pattern zapBalanceHandler uses — NEVER trusted for identity.
+// value, sortField, sortOrder, id, owner) are decoded from the JSON body, NEVER
+// trusted for identity.
 
 package controllers
 

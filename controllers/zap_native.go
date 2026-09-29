@@ -95,7 +95,7 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (res
 		}
 		return zapListModelsHandler()
 	case "balance":
-		return zapBalanceHandler(auth, body)
+		return zapBalanceHandler(auth)
 	case "chat.completions", "chat.messages":
 		return zapChatHandler(ctx, auth, body)
 	}
@@ -158,7 +158,7 @@ func gateway(router http.Handler) zap.Handler {
 			}
 			return zapListModelsHandler()
 		case strings.HasPrefix(path, "/v1/balance"):
-			return zapBalanceHandler(auth, body)
+			return zapBalanceHandler(auth)
 		}
 		// Migrated route-groups self-register their gateway path prefixes into the
 		// dispatch registry (zap_registry.go). A miss is not a hole: the same request
@@ -383,19 +383,12 @@ func zapListModelsHandler() (*zap.Message, error) {
 
 // ── balance ─────────────────────────────────────────────────────────────
 
-func zapBalanceHandler(auth string, body []byte) (*zap.Message, error) {
+// zapBalanceHandler answers the caller's own balance: the payer is the identity
+// the credential resolves to, and nothing in the request names another.
+func zapBalanceHandler(auth string) (*zap.Message, error) {
 	userId, err := zapResolveUser(auth)
 	if err != nil {
 		return object.BuildCloudResponse(401, nil, err.Error())
-	}
-
-	if len(body) > 0 {
-		var params struct {
-			User string `json:"user"`
-		}
-		if json.Unmarshal(body, &params) == nil && params.User != "" {
-			userId = params.User
-		}
 	}
 
 	// The balance lives under the billing SUBJECT within the org NAMESPACE.

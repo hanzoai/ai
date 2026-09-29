@@ -33,7 +33,7 @@
 //
 // Query/context parity: params (scope, org, hours, since, window) are decoded from
 // the JSON body — native cloud (MsgType 100) and the body-only gateway path carry
-// only method+auth+body (the zapBalanceHandler pattern); the HTTP-shaped policy
+// only method+auth+body; the HTTP-shaped policy
 // route additionally has the real HTTP method. Identity is ALWAYS the resolved
 // credential (auth), NEVER a body field.
 

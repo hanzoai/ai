@@ -36,7 +36,7 @@
 //   - Query params (owner, id, store, pageSize, p, field, value, sortField,
 //     sortOrder, key, filename, isLeaf, prefix) and the former multipart file /
 //     Host header have no ZAP carrier, so they are decoded from the ONE JSON
-//     body — the same pattern zapBalanceHandler / zap_router-policy-stats use.
+//     body — the same pattern zap_router-policy-stats uses.
 //     Identity is ALWAYS the resolved credential (auth), NEVER a body field.
 //   - The gateway table below is EMPTY, on purpose: these resources live at
 //     /v1/ai/{stores,files,tree-files,vectors}, where a member answers four verbs
