@@ -301,12 +301,14 @@ func TestProviderKeysReadTheNamedPath(t *testing.T) {
 	bind(t, &fakeStore{vals: map[string]string{
 		"orgs/hanzo/ai/OPENROUTER_API_KEY@prod":   "k-path",
 		"orgs/hanzo/ai/OPENROUTER_API_KEY_3@prod": "k-path-3",
+		"orgs/hanzo/ai/OPENROUTER_API_KEY_5@prod": "k-path-5",
 		"OPENROUTER_API_KEY":                      "k-bare",
 	}})
 	t.Setenv("OPENROUTER_API_KEY_2", "k-env-2")
 	t.Setenv(ProviderKeysPath, "orgs/hanzo/ai@prod")
-	if got := FamilyKeys("openrouter", OpenRouterKeys); strings.Join(got, ",") != "k-path,k-env-2,k-path-3" {
-		t.Fatalf("keys = %v, want [k-path k-env-2 k-path-3]", got)
+	// A key written under a later name joins the pool; an unset name between is skipped.
+	if got := FamilyKeys("openrouter", OpenRouterKeys); strings.Join(got, ",") != "k-path,k-env-2,k-path-3,k-path-5" {
+		t.Fatalf("keys = %v, want [k-path k-env-2 k-path-3 k-path-5]", got)
 	}
 	t.Setenv(ProviderKeysPath, "")
 	if got := resolveKey("OPENROUTER_API_KEY"); got != "k-bare" {

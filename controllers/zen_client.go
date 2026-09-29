@@ -1363,13 +1363,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// transport needs to replay a body across a redirect or an HTTP/2 refusal.
 		// Setting the body by hand without it silently drops that.
 		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
-		resp, sErr := f.send(r, p, f.free(s))
-		if sErr != nil || !stream {
-			return resp, sErr
-		}
-		// A stream's 200 arrives before its answer; its opening frames say whether
-		// there is one (family_open.go).
-		return opening(resp), nil
+		// A stream's 200 arrives before its answer; send judges its opening frames
+		// on each key (family_open.go).
+		return f.send(r, p, f.free(s), stream)
 	}
 
 	send := func(s string) (*http.Response, error) { return dispatch(fam, s) }

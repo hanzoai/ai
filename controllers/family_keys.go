@@ -198,13 +198,25 @@ func (f *modelFamily) ring(p *object.Provider) []string {
 }
 
 // send issues r to the family's upstream. free says the route is one the vendor
-// charges nothing for.
-func (f *modelFamily) send(r *http.Request, p *object.Provider, free bool) (*http.Response, error) {
+// charges nothing for. A streamed request is judged by its opening frames on each
+// key (family_open.go), so a refusal that arrives inside a 200 stream moves to the
+// next key exactly as one in the status does.
+func (f *modelFamily) send(r *http.Request, p *object.Provider, free, stream bool) (*http.Response, error) {
+	do := zenPipeClient.Do
+	if stream {
+		do = func(r *http.Request) (*http.Response, error) {
+			resp, err := zenPipeClient.Do(r)
+			if err != nil {
+				return nil, err
+			}
+			return opening(resp), nil
+		}
+	}
 	keys := f.keys()
 	if len(keys) == 0 {
-		return zenPipeClient.Do(r)
+		return do(r)
 	}
-	return sendKeyed(r, p, keys, free, zenPipeClient.Do)
+	return sendKeyed(r, p, keys, free, do)
 }
 
 // order is the sequence one request tries the keys in: from the first for a

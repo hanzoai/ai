@@ -245,3 +245,82 @@ func TestAnErrorFrameStatesItsStatus(t *testing.T) {
 		}
 	}
 }
+
+// keyStreams is an upstream that answers every request 200 with a stream: the
+// refusal a key is given as its opening frame, or an answer.
+func keyStreams(t *testing.T, refusal map[string]string, asked *[]string) *httptest.Server {
+	t.Helper()
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		*asked = append(*asked, key)
+		w.Header().Set("Content-Type", "text/event-stream")
+		if e, ok := refusal[key]; ok {
+			_, _ = io.WriteString(w, ": OPENROUTER PROCESSING\n\ndata: "+e+"\n\ndata: [DONE]\n\n")
+			return
+		}
+		_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"content":"answered by `+key+`"}}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	t.Cleanup(s.Close)
+	return s
+}
+
+// A KEY WHOSE STREAM OPENS WITH ITS ACCOUNT'S FREE QUOTA SPENT hands the request to
+// the next key and sits out free routes, exactly as the same 429 in the status does.
+func TestAKeyWhoseStreamOpensWithItsQuotaSpentHandsOnToTheNextKey(t *testing.T) {
+	forgetKeys()
+	t.Cleanup(forgetKeys)
+	var asked []string
+	s := keyStreams(t, map[string]string{
+		"k1": `{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-min. "}}`,
+	}, &asked)
+	send := func() string {
+		resp, err := sendKeyed(keyedRequest(t, s.URL), orProvider, threeKeys, false, func(r *http.Request) (*http.Response, error) {
+			resp, err := http.DefaultClient.Do(r)
+			if err != nil {
+				return nil, err
+			}
+			return opening(resp), nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
+	}
+	if got := send(); !strings.Contains(got, "answered by k2") {
+		t.Fatalf("answer %q, want k2's", got)
+	}
+	if strings.Join(asked, ",") != "k1,k2" {
+		t.Fatalf("asked %v, want k1 then k2", asked)
+	}
+	if !cooling("k1", true) {
+		t.Fatal("k1 is not sitting out free routes after its stream said its free quota was spent")
+	}
+}
+
+// Every key's stream opening with the model limited upstream is the model's
+// refusal, not the accounts': on a free route it is answered after one key, and the
+// pool moves it to another route.
+func TestAModelLimitedInsideTheStreamIsAnsweredAsTheRoutes(t *testing.T) {
+	forgetKeys()
+	t.Cleanup(forgetKeys)
+	var asked []string
+	busy := `{"error":{"code":429,"message":"Upstream error from Vendor: ResourceExhausted: Worker local total request limit reached (16/16)"}}`
+	s := keyStreams(t, map[string]string{"k1": busy, "k2": busy, "k3": busy}, &asked)
+	resp, err := sendKeyed(keyedRequest(t, s.URL), orProvider, threeKeys, true, func(r *http.Request) (*http.Response, error) {
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			return nil, err
+		}
+		return opening(resp), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests || len(asked) != 1 {
+		t.Fatalf("status %d after %v, want the route's 429 after one key", resp.StatusCode, asked)
+	}
+}
