@@ -21,12 +21,12 @@ package controllers
 // the ring below; every other family sends exactly as it did.
 //
 // A PRICED route tries the accounts with the most credit first, and skips an
-// account with creditReserve or less left. A FREE route starts one account further round
-// the ring on every request, because the vendor's free allowance is per account:
-// turning the ring is what makes three accounts serve three accounts' worth of
-// free requests, where starting at the first would spend one and leave two idle.
-// It skips an account whose balance is below zero, which OpenRouter refuses even
-// for its free models.
+// account with creditReserve or less left. A FREE route starts one account further
+// round the ring on every request, because the vendor's free allowance is per
+// account: turning the ring is what makes three accounts serve three accounts'
+// worth of free requests, where starting at the first would spend one and leave
+// two idle. A balance below zero does not stop an account serving free models.
+
 //
 // What each account holds is read from the vendor (credits) at boot and every
 // creditEvery after. An account never read keeps its declared place, after the
@@ -221,17 +221,16 @@ func setCredit(key string, usd float64) {
 const creditReserve = 1.0
 
 // spends reports whether the vendor's last word on key's account lets it serve a
-// route of this price: a priced route needs more than creditReserve left, and a
-// free one a balance that is not below zero. An account never read may.
+// route of this price. A priced route needs more than creditReserve left. A free
+// route needs nothing: OpenRouter serves its free models on an account whatever its
+// balance, up to the account's daily and per-minute counts, which rest the key
+// when the vendor says they are spent (freeQuota). An account never read may.
 func spends(key string, free bool) bool {
-	c, ok := creditOf(key)
-	if !ok {
+	if free {
 		return true
 	}
-	if free {
-		return c >= 0
-	}
-	return c > creditReserve
+	c, ok := creditOf(key)
+	return !ok || c > creditReserve
 }
 
 // readCredits asks the vendor what each of keys has left and files the answers.

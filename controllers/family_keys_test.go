@@ -286,8 +286,8 @@ func TestThePipeServesOnTheNextAccountAndNeverBillsTheCaller(t *testing.T) {
 }
 
 // Accounts are asked in the order of what they hold: a priced route skips any with
-// creditReserve or less and asks the richest first, and a free route skips only an
-// account below zero, which the vendor refuses even for free models.
+// creditReserve or less and asks the richest first, and a free route asks every
+// account whatever its balance.
 func TestKeysGoByTheCreditTheirAccountsHold(t *testing.T) {
 	forgetKeys()
 	setCredit("k1", -0.21)
@@ -296,8 +296,10 @@ func TestKeysGoByTheCreditTheirAccountsHold(t *testing.T) {
 	if got := order(threeKeys, false); !slices.Equal(got, []string{"k3"}) {
 		t.Fatalf("priced order %v, want [k3] — the overdrawn accounts are skipped", got)
 	}
-	if got := order(threeKeys, true); !slices.Equal(got, []string{"k3"}) {
-		t.Fatalf("free order %v, want [k3] — an account below zero cannot serve free models either", got)
+	got := order(threeKeys, true)
+	slices.Sort(got)
+	if !slices.Equal(got, threeKeys) {
+		t.Fatalf("free order %v, want every key — an account below zero still serves free models", got)
 	}
 
 	forgetKeys()
@@ -313,29 +315,25 @@ func TestKeysGoByTheCreditTheirAccountsHold(t *testing.T) {
 	if got := order(threeKeys, false); !slices.Equal(got, []string{"k3"}) {
 		t.Fatalf("priced order %v, want [k3] — an account at or under the reserve is left alone", got)
 	}
-	got := order(threeKeys, true)
-	slices.Sort(got)
-	if !slices.Equal(got, threeKeys) {
-		t.Fatalf("free order %v, want every key — a balance of zero still serves free models", got)
+	if got := order(threeKeys, true); len(got) != 3 {
+		t.Fatalf("free order %v, want every key", got)
 	}
 }
 
-// A request never reaches an account the vendor says is overdrawn.
-func TestAnOverdrawnAccountIsNeverAsked(t *testing.T) {
+// A priced request never reaches an account the vendor says is overdrawn.
+func TestAnOverdrawnAccountIsNeverAskedForAPricedRoute(t *testing.T) {
 	forgetKeys()
 	setCredit("k1", -0.21)
 	setCredit("k2", -43.50)
 	setCredit("k3", 17)
 	a := &accounts{}
 	s := a.serve(t)
-	for _, free := range []bool{false, true} {
-		a.reset()
-		if st := sendOnce(t, a, s.URL, threeKeys, free); st != http.StatusOK {
-			t.Fatalf("free=%v status %d", free, st)
-		}
-		if got := a.calls(); !slices.Equal(got, []string{"k3"}) {
-			t.Fatalf("free=%v asked %v, want [k3]", free, got)
-		}
+	a.reset()
+	if st := sendOnce(t, a, s.URL, threeKeys, false); st != http.StatusOK {
+		t.Fatalf("status %d", st)
+	}
+	if got := a.calls(); !slices.Equal(got, []string{"k3"}) {
+		t.Fatalf("priced request asked %v, want [k3]", got)
 	}
 }
 
