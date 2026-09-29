@@ -1974,7 +1974,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			c.ResponseFailure(exhausted(request.Model, familyRefused))
 			return
 		}
-		if freeOnly() {
+		if FreeOnly() {
 			c.ResponseFailure(paidLaneOff(request.Model))
 			return
 		}
@@ -1994,7 +1994,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			c.ResponseFailure(exhausted(request.Model, familyRefused))
 			return
 		}
-		if freeOnly() {
+		if FreeOnly() {
 			c.ResponseFailure(paidLaneOff(request.Model))
 			return
 		}

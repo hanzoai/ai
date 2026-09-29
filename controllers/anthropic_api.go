@@ -570,6 +570,11 @@ func (c *ApiController) AnthropicMessages() {
 			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
 			return
 		}
+		if FreeOnly() {
+			err := paidLaneOff(request.Model)
+			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
+			return
+		}
 		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
 		return
 	}
@@ -582,6 +587,11 @@ func (c *ApiController) AnthropicMessages() {
 		// would discard produces an answer about nothing.
 		if familyRefused != nil {
 			err := exhausted(request.Model, familyRefused)
+			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
+			return
+		}
+		if FreeOnly() {
+			err := paidLaneOff(request.Model)
 			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
 			return
 		}

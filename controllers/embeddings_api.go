@@ -89,6 +89,10 @@ func (c *ApiController) Embeddings() {
 		c.ResponseAuthError(err)
 		return
 	}
+	if paying(provider) {
+		c.ResponseAuthError(paidLaneOff(head.Model))
+		return
+	}
 	if upstreamModel != "" {
 		provider.SubType = upstreamModel
 	} else if head.Model != "" {
@@ -207,6 +211,10 @@ func (c *ApiController) Rerank() {
 	provider, authUser, upstreamModel, isPremium, err := c.authResolveProvider(token, raw.Model, orgId)
 	if err != nil {
 		c.ResponseAuthError(err)
+		return
+	}
+	if paying(provider) {
+		c.ResponseAuthError(paidLaneOff(raw.Model))
 		return
 	}
 	if upstreamModel != "" {

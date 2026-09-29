@@ -865,6 +865,19 @@ so its difference was always exactly zero and it could neither fire honestly nor
 quiet honestly. It now has a cost to compare against, or a flag saying there is none.
 
 
+## The paid lane has ONE switch — the zen catalog's `paid` line
+
+`controllers.FreeOnly` is the only switch, and ai does not own it: the host sets it
+to the loaded zen catalog's (cloud: `aicontrollers.FreeOnly = z.Free`), which is free
+unless the catalog, universe `charts/app/files/zen/catalog.yaml`, says `paid: true`.
+Spending is an opt-in: unset by a host, the paid lane is off. GitOps is the source of
+truth; there is no settings row, no `FREE_ONLY` env and no second line (the enso service
+reads the same line through `ZEN_SWITCH`). While it is off, no chat request reaches a
+priced route, and the routes that stand in for it answer, named as what they are; a
+tool or media request for one, and every embeddings, rerank, image, audio and video call
+to a provider that is not a family's own service (`paying`), is refused, and so is a
+decision that names Jev. Only zen and enso, whose catalogs decide for themselves, serve.
+
 ## The free pool — every OpenRouter account, spent as one
 
 The Free plan is limited usage from ONE pool every free user shares: the

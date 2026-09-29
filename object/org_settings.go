@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/util"
 
 	"github.com/hanzoai/dbx"
@@ -140,14 +139,6 @@ type OrgSettings struct {
 	//   RouterMeanFieldBeta    — congestion coefficient β >= 0 (0 → default). Higher ⇒ more load-spreading.
 	RouterMeanFieldEnabled string  `json:"routerMeanFieldEnabled"`
 	RouterMeanFieldBeta    float64 `json:"routerMeanFieldBeta"`
-
-	// FreeOnly is the paid-lane switch. PLATFORM-GLOBAL like the Judge* knobs: read
-	// ONLY from the "*" GlobalDefaultOwner row, live-tunable at admin.hanzo.ai via
-	// /v1/ai/org/settings. Three-state "" (unset → the FREE_ONLY configuration,
-	// "true" or not) / "enabled" / "disabled". While it is on, no chat request is
-	// sent to a priced route: the free routes that stand in for it answer, and the
-	// answer names the model that wrote it (FreeOnly).
-	FreeOnly string `json:"freeOnly"`
 }
 
 // TrainingContribution values for OrgSettings.TrainingContribution. The empty
@@ -270,21 +261,6 @@ func GetCachedMeanFieldConfig() MeanFieldConfig {
 		out.Beta = s.RouterMeanFieldBeta
 	}
 	return out
-}
-
-// FreeOnly reports whether the paid lane is off: the "*" row's FreeOnly when it is
-// set, else the FREE_ONLY configuration. Read from the 60s-cached row, so a change
-// at admin.hanzo.ai takes effect within a minute, with no restart.
-func FreeOnly() bool {
-	if s, err := GetCachedOrgSettings(GlobalDefaultOwner); err == nil && s != nil {
-		switch s.FreeOnly {
-		case JudgeConfigEnabled:
-			return true
-		case JudgeConfigDisabled:
-			return false
-		}
-	}
-	return strings.EqualFold(strings.TrimSpace(conf.GetConfigString("FREE_ONLY")), "true")
 }
 
 func GetOrgSettingsList(owner string) ([]*OrgSettings, error) {

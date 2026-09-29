@@ -631,7 +631,7 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 	}
 	// With the paid lane off, a route's own vendors — each sells its answers — are
 	// not asked; the free floor below is.
-	if !freeOnly() {
+	if !FreeOnly() {
 		add(route.providerName, route.upstreamModel)
 		for _, fb := range route.fallbacks {
 			add(fb.providerName, fb.upstreamModel)
@@ -698,7 +698,7 @@ func openrouterTail(route *modelRoute) []candidate {
 	var out []candidate
 	// With the paid lane off, the priced copy of the model is not offered, and the
 	// free floor is offered to every route.
-	paid := !freeOnly()
+	paid := !FreeOnly()
 	if id, ok := openrouterEquivalent(route.upstreamModel); ok && paid {
 		out = append(out, candidate{freeFamily().name, id})
 	}
@@ -739,6 +739,13 @@ func openrouterEquivalent(upstream string) (string, bool) {
 
 // paidLaneOff is the refusal for a model only its own vendor serves while the paid
 // lane is off: nothing free stands in for it on this path.
+// paying reports whether a call to provider spends Hanzo's money while the paid lane
+// is off: every provider but a family's own service (zen, enso), whose catalog
+// decides for itself what it spends.
+func paying(p *object.Provider) bool {
+	return FreeOnly() && p != nil && p.Type != "Zen" && p.Type != "Enso"
+}
+
 func paidLaneOff(model string) error {
 	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
 		msg: fmt.Sprintf("model %q: the paid lane is off; choose an Enso or Zen model", model)}

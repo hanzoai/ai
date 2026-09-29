@@ -102,6 +102,10 @@ func (c *ApiController) ImagesGenerations() {
 		c.ResponseAuthError(err)
 		return
 	}
+	if paying(provider) {
+		c.ResponseAuthError(paidLaneOff(req.Model))
+		return
+	}
 	if provider.Category != "Model" {
 		c.ResponseError(fmt.Sprintf("Provider %s is not a model provider", provider.Name))
 		return

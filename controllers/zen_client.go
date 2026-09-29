@@ -384,8 +384,10 @@ func standIn(fam *modelFamily, sku string) []spare {
 	return freeRoutes()
 }
 
-// freeOnly reports whether the paid lane is off (object.FreeOnly); tests replace it.
-var freeOnly = object.FreeOnly
+// FreeOnly reports whether the paid lane is off. The host sets it to the loaded zen
+// catalog's (zen Zen.Free): off only where the catalog says `paid`. Spending is an
+// opt-in, so unset it is on.
+var FreeOnly = func() bool { return true }
 
 // unserved reports that a vendor could not serve a request at all: its account is
 // spent, it answered with its own failure, it was never reached, or it answered
@@ -1597,7 +1599,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
 		sku, requested, resp, by = alt.id, model, r, alt.fam
-	} else if !lane && freeOnly() {
+	} else if !lane && FreeOnly() {
 		// The paid lane is off: a priced route is never sent, and the routes that
 		// stand in for it answer in its place, named as what they are.
 		r, alt := pool(standIn(fam, sku), sku)

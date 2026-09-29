@@ -174,8 +174,8 @@ func ids(routes []spare) []string {
 // copy are never offered; only the free floor is.
 func TestWithThePaidLaneOffOnlyTheFreeFloorIsOffered(t *testing.T) {
 	cooled.forget()
-	freeOnly = func() bool { return true }
-	t.Cleanup(func() { freeOnly = object.FreeOnly })
+	FreeOnly = func() bool { return true }
+	t.Cleanup(func() { FreeOnly = func() bool { return false } })
 	fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "openai/gpt-4o")
 	_ = fam
 	route := &modelRoute{providerName: "do-ai", upstreamModel: "openai-gpt-4o", premium: true,

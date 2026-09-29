@@ -1280,6 +1280,12 @@ func (c *ApiController) decision() {
 		c.decisionReply(refused(rid, decline(statusOf(err), err.Error())))
 		return
 	}
+	// Jev is bought per call; Kai is ours. With the paid lane off, Jev is not asked.
+	if FreeOnly() && jevNamed(model) {
+		err := paidLaneOff(model)
+		c.decisionReply(refused(rid, decline(statusOf(err), err.Error())))
+		return
+	}
 	c.decisionReply(decide(c.Context(), decisionCall{
 		model: model, version: version, body: body,
 		user: authUser, ledger: c.billingOrg(authUser), premium: isPremium,

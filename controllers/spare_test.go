@@ -1541,8 +1541,8 @@ func TestAnUnreachableFamilyIsAskedOnceAndItsCallerStillAnswered(t *testing.T) {
 func TestWithThePaidLaneOffAPricedRouteIsNeverSent(t *testing.T) {
 	cooled.forget()
 	forgetKeys()
-	freeOnly = func() bool { return true }
-	t.Cleanup(func() { freeOnly = object.FreeOnly })
+	FreeOnly = func() bool { return true }
+	t.Cleanup(func() { FreeOnly = func() bool { return false } })
 	const free = "vendor/big:free"
 	const paid = "vendor/paid-a"
 	t.Setenv("OPENROUTER_API_KEY", "k1")
