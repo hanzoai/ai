@@ -67,14 +67,18 @@ const flagshipWindow = 1_000_000
 // TTL. All of zen's original machinery is a method on this value; zen and enso are
 // two instances.
 type modelFamily struct {
-	name       string                  // "zen" | "enso" | "openrouter" — the brand label
-	typ        string                  // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
-	prefix     string                  // public brand prefix for cold-start ownership (before first discovery)
-	owner      string                  // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
-	urlKey     string                  // config key for the base URL ("ZEN_URL" | "ENSO_URL")
-	keyKey     string                  // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
-	keyNames   []string                // the vendor accounts a request tries in order (family_keys.go); nil = the provider's one key
-	providerFn func() *object.Provider // the virtual provider ai forwards through
+	name     string   // "zen" | "enso" | "openrouter" — the brand label
+	typ      string   // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
+	prefix   string   // public brand prefix for cold-start ownership (before first discovery)
+	owner    string   // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
+	urlKey   string   // config key for the base URL ("ZEN_URL" | "ENSO_URL")
+	keyKey   string   // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
+	keyNames []string // the vendor accounts a request tries in order (family_keys.go); nil = the provider's one key
+	// credits reads what one vendor account has left, in USD, from the body of GET
+	// base + creditsPath (family_keys.go). nil for a family whose vendor states none.
+	credits     func([]byte) (float64, error)
+	creditsPath string
+	providerFn  func() *object.Provider // the virtual provider ai forwards through
 	// windows is the served context window ai guarantees for a DISCOVERED SKU,
 	// keyed by SKU id — a flagship reports its real 1M window even when a given
 	// discovery snapshot advertises less. It cannot add a SKU: a model appears in
@@ -162,9 +166,8 @@ var (
 		name: "enso", typ: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		freeName:   "enso-free",
 		providerFn: object.EnsoProvider,
-		// enso-pro is deliberately absent: the enso service serves enso, enso-flash
-		// and enso-ultra and answers 404 for enso-pro (probed directly — the balance
-		// gate returns 402 before model resolution, so only a direct probe can tell).
+		// The flagship windows. Every other SKU, enso-pro among them, is listed and
+		// served from discovery.
 		windows: map[string]int{
 			"enso":       flagshipWindow,
 			"enso-ultra": flagshipWindow,
@@ -352,31 +355,57 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 	if billingNotice(body) {
 		return nil
 	}
-	// Only a vendor that cannot serve AT ALL moves a request — its account with us
-	// spent, or its own failure. A malformed body (400), a model it has not got
-	// (404), refused content (422) and a rate limit (429) all stay where they are,
-	// so none of them can quietly hand the caller a smaller model in place of an
-	// error.
-	//
-	// EXCEPT A RATE LIMIT ON A FREE ROUTE. Nobody chose a free route's model — it
-	// is the free lane, and a free lane that answers one account's per-minute limit
-	// with an error, while the other accounts in the pool sit idle, has turned a
-	// shared pool into a queue for one key. So a free route that is busy moves to
-	// the pool, which spends every account in turn.
-	if err == nil {
+	// A vendor that cannot serve this request moves it: its account with us is
+	// spent, it failed, it could not be reached, or every account it holds is rate
+	// limited. A malformed body (400), a model it has not got (404) and refused
+	// content (422) stay where they are: every vendor would answer them the same.
+	if err == nil || !unserved(err) {
 		return nil
 	}
-	if !down(err, strings.ToLower(err.Error())) && !(upstreamHTTPStatus(err) == http.StatusTooManyRequests && freeLane(fam, sku)) {
-		return nil
-	}
-	// A priced route is answered by the model the caller paid for, or refused as
-	// supply. Any free route in its place — a vendor's, which keeps what it
-	// carried, or our own compute — is a different model standing in for the one
-	// they are paying for.
+	// A priced route is answered by the model closest to the one asked for: the
+	// Enso SKU nearest it, whose service walks every account it holds, and then
+	// our own compute. The answer names the model that wrote it (pipeToFamily),
+	// so the caller always knows which one did.
 	if word, _ := fam.collection(sku); word == collectionDeny {
-		return nil
+		// A route bought under `deny` never reaches a borrowed free route, which
+		// keeps what it carries: its stand-ins are ours.
+		out := standIns(fam, sku)
+		if engineFam.enabled() {
+			out = append(out, spare{engineFam, engineModel})
+		}
+		return out
 	}
 	return freeRoutes()
+}
+
+// unserved reports that a vendor could not serve a request at all: its account is
+// spent, it answered with its own failure, it was never reached, or it answered
+// 429 after every account it holds was asked.
+func unserved(err error) bool {
+	st := upstreamHTTPStatus(err)
+	return st == 0 || st == http.StatusTooManyRequests || down(err, strings.ToLower(err.Error()))
+}
+
+// frontierOut is the output price, in USD per million tokens, from which a
+// model is answered by enso-pro rather than enso-flash when it stands in.
+const frontierOut = 10.0
+
+// standIns are the Enso SKUs that answer a priced route its vendor cannot serve,
+// closest first: enso-pro and then enso-flash for a frontier model, enso-flash
+// for any other.
+func standIns(fam *modelFamily, sku string) []spare {
+	if fam == ensoFam || !ensoFam.enabled() {
+		return nil
+	}
+	ids := []string{"enso-flash"}
+	if p, ok := fam.modelPrice(sku); ok && p.OutputPerMillion >= frontierOut {
+		ids = []string{"enso-pro", "enso-flash"}
+	}
+	out := make([]spare, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, spare{ensoFam, id})
+	}
+	return out
 }
 
 // freeLane reports that sku is a route of the free lane: one its family charges
@@ -823,12 +852,22 @@ func (f *modelFamily) warm() {
 }
 
 // WarmFamilies reads every family's catalog once, in the background, so a pod that
-// has just started prices family SKUs from discovery on its first request.
+// has just started prices family SKUs from discovery on its first request, and
+// starts reading the balance of every account a family spends.
 func WarmFamilies() {
 	for _, f := range modelFamilies {
 		go f.warm()
 	}
+	watching.Do(func() {
+		for _, f := range modelFamilies {
+			if f.credits != nil {
+				go f.watchCredits()
+			}
+		}
+	})
 }
+
+var watching sync.Once
 
 // fresh refreshes the snapshot if stale (or never loaded) and reports the address
 // the family resolved to — empty when it is not configured. Errors are logged, not
@@ -1350,6 +1389,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return nil, rErr
 		}
 		r.Header = req.Header.Clone()
+		if f != fam {
+			// The credential is the family's own: another family's never travels.
+			r.Header.Del("Authorization")
+		}
 		upstream.Authorize(r, p)
 		// The vendor is sent its own id for the SKU. An alias is ours, so it goes
 		// upstream as the SKU it names while the answer still wears the alias.
@@ -1379,17 +1422,24 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// answer — and bounded because every try is a round trip the caller waits
 	// through, so worst-case latency is a property of spareTries rather than of how
 	// many free routes a vendor happens to advertise.
-	pool := func(routes []spare, skip string) (*http.Response, string) {
+	pool := func(routes []spare, skip string) (*http.Response, spare) {
 		// The pool holds routes that hold a CONVERSATION. An embeddings request has
 		// no free chat route to fall to, and offering it three anyway spends three
 		// round trips of the caller's time to be told three times that a chat model
 		// does not embed.
 		if apiPath == "embeddings" {
-			return nil, ""
+			return nil, spare{}
 		}
 		tried := 0
+		// unreached holds the families a dispatch could not reach: their other
+		// routes sit behind the same address, so they are not asked again.
+		unreached := map[*modelFamily]bool{}
 		for _, alt := range routes {
-			if strings.EqualFold(alt.id, skip) || c.Context().Err() != nil {
+			if strings.EqualFold(alt.id, skip) || c.Context().Err() != nil || unreached[alt.fam] {
+				continue
+			}
+			// A stand-in answers only a caller its own gate admits.
+			if c.familyRefusal(alt.fam, alt.id, orgId, authUser) != "" {
 				continue
 			}
 			// A SECOND bound, on the caller's clock rather than on the count.
@@ -1416,22 +1466,26 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// is the last thing asked, so it is always asked: one more local call is
 			// the difference between an answer and a refusal, and it is the only
 			// route here that cannot be withdrawn by a vendor.
-			if alt.fam != engineFam && tried == spareTries {
+			// Our own families — our compute, and the Enso SKUs that stand in for a
+			// priced route — are not borrowed either.
+			borrowed := alt.fam != engineFam && alt.fam != ensoFam
+			if borrowed && tried == spareTries {
 				continue
 			}
-			if alt.fam != engineFam {
+			if borrowed {
 				tried++
 			}
 			r, e := dispatch(alt.fam, alt.id)
 			if e != nil {
+				unreached[alt.fam] = true
 				continue
 			}
 			if r.StatusCode == http.StatusOK {
-				return r, alt.id
+				return r, alt
 			}
 			r.Body.Close()
 		}
-		return nil, ""
+		return nil, spare{}
 	}
 
 	// spared offers the SAME request to a free route once this vendor cannot serve
@@ -1458,10 +1512,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// to answer — and bounded because every try is a round trip the caller waits
 	// through, so worst-case latency stays a property of spareTries rather than of
 	// how many free routes a vendor happens to advertise.
-	spared := func(err error, body []byte) (*http.Response, string, bool) {
+	spared := func(err error, body []byte) (*http.Response, spare, bool) {
 		routes := fallback(fam, sku, err, body)
 		if len(routes) == 0 || c.Context().Err() != nil {
-			return nil, "", false
+			return nil, spare{}, false
 		}
 		r, alt := pool(routes, sku)
 		return r, alt, true
@@ -1517,7 +1571,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// different route answered, and the pair (Requested, Model) is what lets the
 	// ledger be read against the answer the customer holds. Without it the envelope
 	// would say the free id, the row would say the route, and nothing would join them.
+	// stood is whether a route stood in for the one named after it could not serve,
+	// and by is the family that answered.
 	var resp *http.Response
+	stood, by := false, fam
 	if fam.frontDoor(sku) {
 		r, alt := pool(freeRoutes(), "")
 		if r == nil {
@@ -1530,13 +1587,25 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return refused(&apiError{status: http.StatusServiceUnavailable,
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
-		sku, requested, resp = alt, model, r
+		sku, requested, resp, by = alt.id, model, r, alt.fam
 	} else if resp, err = send(sku); err != nil {
 		// Never reached the family at all. Nothing is written and nothing is
 		// billed — deliberately no recordFamilyUsage here, because its
 		// hold.settle would release the reservation one-shot and leave the cost
 		// of whichever provider ends up serving this request uncharged.
-		return refused(err)
+		r, alt, tried := spared(err, nil)
+		if r == nil {
+			if tried && lane && c.Context().Err() == nil {
+				if p, ok := pooled(); ok {
+					note(err)
+					return poolRefused(p)
+				}
+			}
+			return refused(err)
+		}
+		note(err)
+		resp, requested, sku, stood, by = r, model, alt.id, true, alt.fam
+		log.Warn("family=%s could not be reached for %s (%v) — served by %s", fam.name, model, err, alt.id)
 	}
 	// Closed by whoever consumes it. That is this function for an answer read whole,
 	// and the stream callback for one that is relayed — the callback outlives this
@@ -1583,9 +1652,20 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// caller nothing it was told about.
 		note(err)
 		resp.Body.Close()
-		resp, requested, sku = r, model, alt
-		log.Warn("family=%s refused %s (%d) — served by the free route %s",
-			fam.name, model, err.status, alt)
+		resp, requested, sku, stood, by = r, model, alt.id, true, alt.fam
+		log.Warn("family=%s refused %s (%d) — served by %s",
+			fam.name, model, err.status, alt.id)
+	}
+
+	// A model somebody named from the resale catalog that another model answered
+	// is answered in that model's name: the envelope and X-Hanzo-Served say which
+	// one wrote it. A Hanzo family's own SKU keeps its name, since what serves it is
+	// the family's to say.
+	if stood && fam == freeFamily() {
+		mk.model = sku
+		if resp.Header.Get(servedHeader) == "" {
+			c.SetHeader(servedHeader, sku)
+		}
 	}
 
 	// The client is told the terms its answer was served under, because a free route
@@ -1630,7 +1710,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// request's own goroutine, and travel by value. recordFamilyUsage takes no
 	// receiver for the same reason: with no `c` in scope it cannot reach a request
 	// at all, which is a compile-time property rather than a rule to remember.
-	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context()}
+	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam}
 
 	settle := func(t tokens, served, respID string, first time.Time) {
 		if mk.id != "" {
@@ -1645,7 +1725,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if !first.IsZero() {
 			sv.first = first.Sub(start)
 		}
-		cents := recordFamilyUsage(w, fam, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, hold, "success", "")
+		cents := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, hold, "success", "")
 		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, cents, start)
 	}
 
@@ -1897,6 +1977,7 @@ type whence struct {
 	ledger string          // billingOrg: X-Org-Id, the bearer, the session cookie
 	ip     string          // the peer, fiber's own read
 	ctx    context.Context // what the usage row and its span hang off
+	asked  *modelFamily    // the family of the model the caller named
 }
 
 // recordFamilyUsage takes NO RECEIVER, deliberately. It is called from inside a
@@ -1917,6 +1998,14 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 			cents = zm.costCents(t.fresh, t.cached, t.completion)
 		} else {
 			cents = calculateCostCentsWithCache(model, t.fresh, t.completion, t.cached, 0)
+		}
+		// A model that stood in for the one named costs no more than the named one
+		// would have for the same tokens: the caller pays for an answer, never for
+		// our outage.
+		if requested != "" && w.asked != nil {
+			if zm, ok := w.asked.lookup(requested); ok && zm.priced() {
+				cents = min(cents, zm.costCents(t.fresh, t.cached, t.completion))
+			}
 		}
 	}
 	hold.settle(cents)

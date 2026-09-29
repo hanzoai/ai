@@ -121,8 +121,8 @@ func TestAStreamThatEndsEmptyIsNotAnAnswer(t *testing.T) {
 	}
 }
 
-// A PRICED ROUTE WHOSE STREAM OPENS WITH AN ERROR is not swapped for a free model,
-// and not relayed as a 200 with nothing in it either.
+// A PRICED ROUTE WHOSE STREAM OPENS WITH AN ERROR is answered by the pool rather
+// than relayed as a 200 with nothing in it.
 func TestAPricedStreamThatOpensWithAnErrorIsNeverAnEmptyAnswer(t *testing.T) {
 	poolAnswers(t)
 	fam := otherFamily(t, streaming(t, busyStream).URL)
@@ -133,14 +133,11 @@ func TestAPricedStreamThatOpensWithAnErrorIsNeverAnEmptyAnswer(t *testing.T) {
 
 	c, out := streamTurn(t, fam, "enso-flash")
 	got := sent(c)
-	if strings.Contains(got, `"content":"ok"`) {
-		t.Fatalf("a priced route was answered by the free pool:\n%s", got)
+	if out != nil || answered(c) != http.StatusOK || !strings.Contains(got, `"content":"ok"`) {
+		t.Fatalf("attempts=%+v status %d body %s, want the pool's streamed answer", out, answered(c), got)
 	}
-	if len(out) == 0 && answered(c) == http.StatusOK {
-		t.Fatalf("status 200 body %q, want the refusal handed back or answered as one", got)
-	}
-	if len(out) > 0 && out[0].status != http.StatusTooManyRequests {
-		t.Fatalf("attempt status %d, want the 429 the frame stated", out[0].status)
+	if strings.Contains(got, "rate-limited upstream") {
+		t.Fatalf("the refused stream reached the caller:\n%s", got)
 	}
 }
 

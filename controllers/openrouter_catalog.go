@@ -43,6 +43,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 
@@ -57,19 +58,42 @@ import (
 // public id OpenRouter itself brands ("openrouter/auto"); every other SKU is served
 // because discovery resolved it, never because its name looked a certain way.
 var openrouterFam = &modelFamily{
-	name:       "openrouter",
-	typ:        "OpenRouter",
-	prefix:     "openrouter/",
-	owner:      "openrouter",
-	urlKey:     "OPENROUTER_URL",
-	keyKey:     "OPENROUTER_API_KEY",
-	keyNames:   object.OpenRouterKeys,
-	providerFn: object.OpenRouterProvider,
-	decode:     openrouterCatalog,
-	terms:      openrouterTerms,
-	spare:      openrouterSpare,
-	aliases:    openrouterAliases,
+	name:        "openrouter",
+	typ:         "OpenRouter",
+	prefix:      "openrouter/",
+	owner:       "openrouter",
+	urlKey:      "OPENROUTER_URL",
+	keyKey:      "OPENROUTER_API_KEY",
+	keyNames:    object.OpenRouterKeys,
+	credits:     openrouterCredits,
+	creditsPath: "/v1/credits",
+	providerFn:  object.OpenRouterProvider,
+	decode:      openrouterCatalog,
+	terms:       openrouterTerms,
+	spare:       openrouterSpare,
+	aliases:     openrouterAliases,
 }
+
+// openrouterCredits reads GET /v1/credits: {"data":{"total_credits":20,
+// "total_usage":20.21}}, lifetime totals whose difference is what the account has
+// left. It goes below zero when usage overruns what was bought.
+func openrouterCredits(b []byte) (float64, error) {
+	var r struct {
+		Data *struct {
+			Credits float64 `json:"total_credits"`
+			Usage   float64 `json:"total_usage"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return 0, err
+	}
+	if r.Data == nil {
+		return 0, errNoCredits
+	}
+	return r.Data.Credits - r.Data.Usage, nil
+}
+
+var errNoCredits = errors.New("credits answer carries no data")
 
 // openrouterMarginDefault is the retail multiple applied to the upstream price when
 // the deployment configures none: a 20% spread over what OpenRouter charges us.

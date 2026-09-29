@@ -420,13 +420,14 @@ func TestABusyFreeRouteIsServedByThePool(t *testing.T) {
 		t.Fatalf("status %d body %s, want the pool's answer", st, sent(c))
 	}
 
-	// A PRICED route that is busy stays busy: the caller paid for that model.
+	// A PRICED route every account of which is busy moves to the pool too: an
+	// answer from another model beats a refusal.
 	priced := otherFamily(t, busy.URL)
 	flash := zenModel{ID: "enso-flash"}
 	flash.Base.In, flash.Base.Out = decimal.New(3, 0), decimal.New(15, 0)
 	priced.byID = map[string]zenModel{"enso-flash": flash}
-	if got := fallback(priced, "enso-flash", &apiError{status: http.StatusTooManyRequests, msg: "rate limited"}, nil); len(got) != 0 {
-		t.Fatalf("routes=%v, want none — a busy priced route is waited out, not swapped", ids(got))
+	if got := fallback(priced, "enso-flash", &apiError{status: http.StatusTooManyRequests, msg: "rate limited"}, nil); len(got) == 0 {
+		t.Fatal("routes=[], want the pool — a busy priced route is answered by another model")
 	}
 }
 

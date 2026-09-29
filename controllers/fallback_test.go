@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hanzoai/ai/object"
 )
 
 // `down` is the whole of "may this request be moved at all", and it is a
@@ -89,17 +91,46 @@ func TestFallbackNamesWhereARefusalMayGo(t *testing.T) {
 	})
 
 	for _, ourOwn := range []bool{true, false} {
-		t.Run(fmt.Sprintf("a deny route stands (compute of our own: %v)", ourOwn), func(t *testing.T) {
+		t.Run(fmt.Sprintf("a deny route never reaches a borrowed free route (compute of our own: %v)", ourOwn), func(t *testing.T) {
 			stage(t, ourOwn)
 			fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "v/paid")
 			if word, stated := fam.collection("v/paid"); !stated || word != collectionDeny {
 				t.Fatalf("v/paid is bought under (%q, %v), want %q", word, stated, collectionDeny)
 			}
-			if got := fallback(fam, "v/paid", spent, nil); len(got) != 0 {
-				t.Errorf("routes=%v, want none — a priced route is its own model or a supply refusal", ids(got))
+			var want []string
+			if ourOwn {
+				want = []string{engineModel}
+			}
+			got := ids(fallback(fam, "v/paid", spent, nil))
+			if strings.Join(got, ",") != strings.Join(want, ",") {
+				t.Errorf("routes=%v, want %v — with enso unconfigured only our own compute stands in", got, want)
 			}
 		})
 	}
+
+	t.Run("a priced route is answered first by the Enso SKU closest to it", func(t *testing.T) {
+		stage(t, false)
+		restore(t, ensoFam)
+		ensoFam.providerFn = func() *object.Provider {
+			return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: "http://enso.invalid"}
+		}
+		fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "v/paid")
+		// v/paid lists at 3/15 (spareFamily) and retails above frontierOut: enso-pro leads.
+		for _, tc := range []struct {
+			err  error
+			what string
+		}{
+			{spent, "spent"},
+			{&apiError{status: http.StatusTooManyRequests, msg: "rate limit exceeded"}, "every account busy"},
+			{&apiError{status: http.StatusBadGateway, msg: "bad gateway"}, "down"},
+			{errors.New("dial tcp: connection refused"), "unreachable"},
+		} {
+			got := strings.Join(ids(fallback(fam, "v/paid", tc.err, nil)), ",")
+			if got != "enso-pro,enso-flash" {
+				t.Errorf("%s: routes=%s, want enso-pro,enso-flash — never a borrowed free route", tc.what, got)
+			}
+		}
+	})
 
 	t.Run("a refusal that is not the vendor's stands", func(t *testing.T) {
 		stage(t, true)

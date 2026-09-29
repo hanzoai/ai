@@ -284,3 +284,110 @@ func TestThePipeServesOnTheNextAccountAndNeverBillsTheCaller(t *testing.T) {
 		t.Fatalf("caller answer = %+v, want a 503 supply refusal, never insufficient_balance", ae)
 	}
 }
+
+// Accounts are asked in the order of what they hold: a priced route skips any with
+// creditReserve or less and asks the richest first, and a free route skips only an
+// account below zero, which the vendor refuses even for free models.
+func TestKeysGoByTheCreditTheirAccountsHold(t *testing.T) {
+	forgetKeys()
+	setCredit("k1", -0.21)
+	setCredit("k2", -43.50)
+	setCredit("k3", 17)
+	if got := order(threeKeys, false); !slices.Equal(got, []string{"k3"}) {
+		t.Fatalf("priced order %v, want [k3] — the overdrawn accounts are skipped", got)
+	}
+	if got := order(threeKeys, true); !slices.Equal(got, []string{"k3"}) {
+		t.Fatalf("free order %v, want [k3] — an account below zero cannot serve free models either", got)
+	}
+
+	forgetKeys()
+	setCredit("k2", 5)
+	setCredit("k3", 12)
+	if got := order(threeKeys, false); !slices.Equal(got, []string{"k3", "k2", "k1"}) {
+		t.Fatalf("priced order %v, want [k3 k2 k1] — most credit first, the unread account after", got)
+	}
+
+	forgetKeys()
+	setCredit("k1", 0.40)
+	setCredit("k2", 0)
+	if got := order(threeKeys, false); !slices.Equal(got, []string{"k3"}) {
+		t.Fatalf("priced order %v, want [k3] — an account at or under the reserve is left alone", got)
+	}
+	got := order(threeKeys, true)
+	slices.Sort(got)
+	if !slices.Equal(got, threeKeys) {
+		t.Fatalf("free order %v, want every key — a balance of zero still serves free models", got)
+	}
+}
+
+// A request never reaches an account the vendor says is overdrawn.
+func TestAnOverdrawnAccountIsNeverAsked(t *testing.T) {
+	forgetKeys()
+	setCredit("k1", -0.21)
+	setCredit("k2", -43.50)
+	setCredit("k3", 17)
+	a := &accounts{}
+	s := a.serve(t)
+	for _, free := range []bool{false, true} {
+		a.reset()
+		if st := sendOnce(t, a, s.URL, threeKeys, free); st != http.StatusOK {
+			t.Fatalf("free=%v status %d", free, st)
+		}
+		if got := a.calls(); !slices.Equal(got, []string{"k3"}) {
+			t.Fatalf("free=%v asked %v, want [k3]", free, got)
+		}
+	}
+}
+
+// Balances are read from the vendor with each account's own key and filed by key;
+// an account whose balance cannot be read is filed as unread.
+func TestCreditsAreReadFromTheVendor(t *testing.T) {
+	forgetKeys()
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/credits" {
+			http.NotFound(w, r)
+			return
+		}
+		switch strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		case "k1":
+			_, _ = w.Write([]byte(`{"data":{"total_credits":20,"total_usage":20.21}}`))
+		case "k2":
+			_, _ = w.Write([]byte(`{"data":{"total_credits":17,"total_usage":0.5}}`))
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	t.Cleanup(vendor.Close)
+	p := &object.Provider{Owner: "admin", Name: "openrouter", Type: "OpenRouter", ProviderUrl: vendor.URL}
+	openrouterFam.readCredits(p, threeKeys)
+
+	if c, ok := creditOf("k1"); !ok || c > -0.20 || c < -0.22 {
+		t.Fatalf("k1 = %v (read %v), want -0.21", c, ok)
+	}
+	if c, ok := creditOf("k2"); !ok || c != 16.5 {
+		t.Fatalf("k2 = %v (read %v), want 16.5", c, ok)
+	}
+	if _, ok := creditOf("k3"); ok {
+		t.Fatal("k3 was filed from a refused read")
+	}
+	if got := order(threeKeys, false); !slices.Equal(got, []string{"k2", "k3"}) {
+		t.Fatalf("priced order %v, want [k2 k3]", got)
+	}
+}
+
+// A balance nobody has re-read for three reads is treated as unread, so an account
+// that was overdrawn once is asked again after reads start failing.
+func TestAnOldBalanceIsTreatedAsUnread(t *testing.T) {
+	forgetKeys()
+	now := time.Now()
+	keyNow = func() time.Time { return now }
+	t.Cleanup(func() { keyNow = time.Now })
+	setCredit("k1", -1)
+	if got := order(threeKeys, false); slices.Contains(got, "k1") {
+		t.Fatalf("priced order %v includes the overdrawn k1", got)
+	}
+	now = now.Add(3*creditEvery + time.Second)
+	if got := order(threeKeys, false); !slices.Equal(got, threeKeys) {
+		t.Fatalf("priced order %v, want every key once the balance is stale", got)
+	}
+}

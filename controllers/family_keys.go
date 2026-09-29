@@ -20,11 +20,17 @@ package controllers
 // modelFamily.send. A family that names more than one credential (keyNames) gets
 // the ring below; every other family sends exactly as it did.
 //
-// A PRICED route tries the accounts in order, because the first is the one kept
-// funded. A FREE route starts one account further round the ring on every request,
-// because the vendor's free allowance is per account: turning the ring is what
-// makes three accounts serve three accounts' worth of free requests, where
-// starting at the first would spend one and leave two idle.
+// A PRICED route tries the accounts with the most credit first, and skips an
+// account with creditReserve or less left. A FREE route starts one account further round
+// the ring on every request, because the vendor's free allowance is per account:
+// turning the ring is what makes three accounts serve three accounts' worth of
+// free requests, where starting at the first would spend one and leave two idle.
+// It skips an account whose balance is below zero, which OpenRouter refuses even
+// for its free models.
+//
+// What each account holds is read from the vendor (credits) at boot and every
+// creditEvery after. An account never read keeps its declared place, after the
+// ones read with credit.
 //
 // An account-level refusal moves the SAME request to the next account:
 //
@@ -48,17 +54,20 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/upstream"
 )
@@ -168,7 +177,126 @@ func forgetKeys() {
 	keyCoolMu.Lock()
 	keyCooled = map[keyCooling]time.Time{}
 	keyCoolMu.Unlock()
+	creditMu.Lock()
+	credits = map[string]credit{}
+	creditMu.Unlock()
 	keyTurn.Store(0)
+}
+
+// creditEvery is how often each account's balance is read from its vendor.
+const creditEvery = 5 * time.Minute
+
+// credit is what one account had left when it was read.
+type credit struct {
+	usd float64
+	at  time.Time
+}
+
+var (
+	creditMu sync.Mutex
+	credits  = map[string]credit{} // keyID → the account's last read balance
+)
+
+// creditOf is what the account behind key has left, and whether a read recent
+// enough to go by says so: a balance three reads old is treated as unread.
+func creditOf(key string) (float64, bool) {
+	creditMu.Lock()
+	defer creditMu.Unlock()
+	c, ok := credits[keyID(key)]
+	if !ok || keyNow().Sub(c.at) > 3*creditEvery {
+		return 0, false
+	}
+	return c.usd, true
+}
+
+func setCredit(key string, usd float64) {
+	creditMu.Lock()
+	credits[keyID(key)] = credit{usd, keyNow()}
+	creditMu.Unlock()
+}
+
+// creditReserve is the credit, in USD, a priced route leaves in an account. A
+// request can cost more than an account has left, and an account below zero is
+// refused even for its vendor's free models, so priced routes stop short of it.
+const creditReserve = 1.0
+
+// spends reports whether the vendor's last word on key's account lets it serve a
+// route of this price: a priced route needs more than creditReserve left, and a
+// free one a balance that is not below zero. An account never read may.
+func spends(key string, free bool) bool {
+	c, ok := creditOf(key)
+	if !ok {
+		return true
+	}
+	if free {
+		return c >= 0
+	}
+	return c > creditReserve
+}
+
+// readCredits asks the vendor what each of keys has left and files the answers.
+// A key whose balance cannot be read files nothing: an unread account neither
+// loses its place nor gains one.
+func (f *modelFamily) readCredits(p *object.Provider, keys []string) {
+	if f.credits == nil || p == nil || strings.TrimSpace(p.ProviderUrl) == "" {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, k := range keys {
+		wg.Add(1)
+		go func(k string) {
+			defer wg.Done()
+			usd, err := f.creditFor(p, k)
+			if err != nil {
+				log.Warn("%s key %s: balance unread: %v", f.name, keyID(k), err)
+				return
+			}
+			setCredit(k, usd)
+			log.Info("%s key %s: $%.2f left", f.name, keyID(k), usd)
+		}(k)
+	}
+	wg.Wait()
+}
+
+// creditFor reads one account's balance with the account's own key.
+func (f *modelFamily) creditFor(p *object.Provider, key string) (float64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.ProviderUrl, "/")+f.creditsPath, nil)
+	if err != nil {
+		return 0, err
+	}
+	upstream.Authorize(r, withKey(p, key))
+	resp, err := zenDiscoveryClient.Do(r)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, &apiError{status: resp.StatusCode, msg: "balance read refused"}
+	}
+	return f.credits(b)
+}
+
+// withKey is p speaking with one account's key.
+func withKey(p *object.Provider, key string) *object.Provider {
+	pk := *p
+	pk.ClientSecret = key
+	return &pk
+}
+
+// watchCredits reads every account's balance now and every creditEvery after, for
+// the life of the process.
+func (f *modelFamily) watchCredits() {
+	for {
+		p := f.provider()
+		f.readCredits(p, f.ring(p))
+		time.Sleep(creditEvery)
+	}
 }
 
 // keys returns the credentials this family's requests try, in order, or nil
@@ -219,14 +347,32 @@ func (f *modelFamily) send(r *http.Request, p *object.Provider, free, stream boo
 	return sendKeyed(r, p, keys, free, do)
 }
 
-// order is the sequence one request tries the keys in: from the first for a
-// priced route, from the next turn of the ring for a free one.
+// order is the sequence one request tries the keys in, leaving out every account
+// its vendor says cannot spend on a route of this price: the most credit first for
+// a priced route, from the next turn of the ring for a free one.
 func order(keys []string, free bool) []string {
-	if !free || len(keys) < 2 {
-		return keys
+	ready := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if spends(k, free) {
+			ready = append(ready, k)
+		}
 	}
-	start := int((keyTurn.Add(1) - 1) % uint64(len(keys)))
-	return append(append([]string(nil), keys[start:]...), keys[:start]...)
+	if !free {
+		sort.SliceStable(ready, func(i, j int) bool {
+			ci, iok := creditOf(ready[i])
+			cj, jok := creditOf(ready[j])
+			if iok != jok {
+				return iok
+			}
+			return iok && ci > cj
+		})
+		return ready
+	}
+	if len(ready) < 2 {
+		return ready
+	}
+	start := int((keyTurn.Add(1) - 1) % uint64(len(ready)))
+	return append(append([]string(nil), ready[start:]...), ready[:start]...)
 }
 
 // sendKeyed issues r on each key in turn until an upstream gives an answer
