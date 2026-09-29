@@ -145,7 +145,7 @@ func TestAStreamThatFailsAfterItBeganSaysWhy(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[0], "data: ")), &ev); err != nil {
 		t.Fatalf("not JSON: %q", frames[0])
 	}
-	if !strings.Contains(ev.Error.Message, "enso (402)") || ev.Error.Type != "api_error" || ev.Error.Code != codeExhausted {
+	if strings.Contains(ev.Error.Message, "enso (402)") || !strings.Contains(ev.Error.Message, "unavailable") || ev.Error.Type != "api_error" || ev.Error.Code != codeExhausted {
 		t.Fatalf("error event = %+v", ev.Error)
 	}
 	if got := openAIErrorType(http.StatusTooManyRequests); got != "rate_limit_error" {

@@ -194,8 +194,8 @@ func TestGPT4oIsServedByTheOpenRouterFamily(t *testing.T) {
 	if got := string(c.Fiber().Response().Header.Peek(headerCollection)); got != collectionDeny {
 		t.Errorf("%s = %q, want %q — a priced route keeps nothing", headerCollection, got, collectionDeny)
 	}
-	if got := string(c.Fiber().Response().Header.Peek(servedHeader)); got != "openai/gpt-4o" {
-		t.Errorf("%s = %q, want openai/gpt-4o — the arm the family named reaches the caller", servedHeader, got)
+	if got := string(c.Fiber().Response().Header.Peek(servedHeader)); got != "gpt-4o" {
+		t.Errorf("%s = %q, want gpt-4o — the model the caller named, never what serves it", servedHeader, got)
 	}
 
 	alias, sku := getModelPrice("gpt-4o"), getModelPrice("openai/gpt-4o")

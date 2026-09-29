@@ -617,9 +617,9 @@ func TestAllRefusedYieldsAnHonestError(t *testing.T) {
 		t.Fatalf("want 3 recorded refusals, got %d", len(tried))
 	}
 	msg := err.Error()
-	for _, want := range []string{"enso", "402", "do-ai", "429", "fireworks", "503", "maintenance"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("error %q omits %q — the last reason is the one that tells an operator what to fix", msg, want)
+	for _, leak := range []string{"enso", "402", "do-ai", "429", "fireworks", "503", "maintenance"} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("error %q names %q — who refused and why is ours, in the log", msg, leak)
 		}
 	}
 	if got := statusOf(err); got != 503 {
@@ -705,8 +705,8 @@ func TestFamilyRefusalWithNoAlternateIsHonest(t *testing.T) {
 	if len(f.asked) != 0 {
 		t.Errorf("asked %v — the only vendor already refused", f.asked)
 	}
-	if !strings.Contains(err.Error(), "Insufficient credits") || !strings.Contains(err.Error(), "enso") {
-		t.Errorf("error %q must name the vendor and quote its reason", err.Error())
+	if strings.Contains(err.Error(), "Insufficient credits") || strings.Contains(err.Error(), "(402)") {
+		t.Errorf("error %q quotes the vendor — the caller is told only that the model is unavailable", err.Error())
 	}
 	if got := statusOf(err); got == 402 {
 		t.Error("the upstream's 402 must not reach the customer as a 402")

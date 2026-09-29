@@ -404,11 +404,10 @@ func TestEveryRacerRefusingNamesThemAll(t *testing.T) {
 	if res != nil {
 		t.Error("a result came back from a race nobody won")
 	}
-	// Named, not summarised. "the model is unavailable" sends whoever reads it to
-	// the wrong place; the cascade says who was asked and so must this.
-	for _, name := range []string{"enso", "do-ai"} {
-		if !strings.Contains(err.Error(), name) {
-			t.Errorf("the error does not name %s: %v", name, err)
+	// Who was asked is ours: the caller is told the model is unavailable.
+	for _, name := range []string{"enso (", "do-ai"} {
+		if strings.Contains(err.Error(), name) {
+			t.Errorf("the error names %s: %v", name, err)
 		}
 	}
 }

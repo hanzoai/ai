@@ -1685,24 +1685,27 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// is answered in that model's name: the envelope and X-Hanzo-Served say which
 	// one wrote it. A Hanzo family's own SKU keeps its name, since what serves it is
 	// the family's to say.
-	if stood && fam == freeFamily() {
-		mk.model = sku
-		if resp.Header.Get(servedHeader) == "" {
-			c.SetHeader(servedHeader, sku)
+	//
+	// X-Hanzo-Served names the Hanzo SKU that answered and nothing behind it: the
+	// family's own word when it is one of the family's SKUs (a priced SKU answered
+	// by its free fallback says so), the stand-in's public name, else the model asked.
+	name := model
+	if stood {
+		name = publicName(fam, by, sku)
+		if fam == freeFamily() {
+			mk.model = name
+		}
+	} else if said := resp.Header.Get(servedHeader); said != "" && fam != freeFamily() {
+		if _, ok := fam.lookup(said); ok {
+			name = said
 		}
 	}
+	c.SetHeader(servedHeader, name)
 
 	// The client is told the terms its answer was served under, because a free route
 	// is free in exchange for what the vendor keeps and somebody has to be able to
 	// say so — in a consent notice, in a log, in a policy page. Set before any byte
 	// of a stream goes out, which is the last moment a header can be set at all.
-	// Which arm of the family actually answered, as the family named it. An
-	// adaptive SKU picks among several models per request, and this header is the
-	// only way an operator can tell which one wrote a given answer; it carries a
-	// model id and never a provider, key or address.
-	if served := resp.Header.Get(servedHeader); served != "" {
-		c.SetHeader(servedHeader, served)
-	}
 	// The rest of what the family said about this answer is for our records only:
 	// the vendor and the failed arms never reach the client.
 	sv := servingOf(resp.Header)
@@ -1823,7 +1826,27 @@ type serving struct {
 
 // servingOf reads a family response's headers into a serving.
 func servingOf(h http.Header) serving {
-	return serving{arm: h.Get(servedHeader), vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true"}
+	arm := h.Get(armHeader)
+	if arm == "" {
+		arm = h.Get(servedHeader)
+	}
+	return serving{arm: arm, vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true"}
+}
+
+// armHeader is the upstream model a family says answered, for our records only.
+const armHeader = "X-Hanzo-Arm"
+
+// publicName is the Hanzo name an answer from route sku of family by goes by: an
+// Enso or Zen SKU is its own name; any other route — a borrowed free model, our own
+// compute — is the free tier of the family that was asked, and Enso's for the rest.
+func publicName(asked, by *modelFamily, sku string) string {
+	if by == ensoFam || by == zenFam {
+		return sku
+	}
+	if asked != nil && asked.freeName != "" {
+		return asked.freeName
+	}
+	return ensoFam.freeName
 }
 
 // relayZenStream copies a family's SSE response to the client and captures the final

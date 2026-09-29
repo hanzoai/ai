@@ -400,9 +400,12 @@ func TestExhausted(t *testing.T) {
 			"they owe money, which is false and sends them to fix a bill that is not theirs", got)
 	}
 	msg := err.Error()
-	for _, want := range []string{"enso-flash", "enso", "402", "do-ai", "429", "Platform overloaded"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("message %q is missing %q — an error that names nobody sends the reader nowhere", msg, want)
+	if !strings.Contains(msg, `"enso-flash"`) || !strings.Contains(msg, "unavailable") {
+		t.Errorf("message %q, want the model named and said to be unavailable", msg)
+	}
+	for _, leak := range []string{"(402)", "do-ai", "429", "Platform overloaded"} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("message %q names %q — who refused and why stays in the log", msg, leak)
 		}
 	}
 }
@@ -461,8 +464,8 @@ func TestExhaustedWithNobodyToAsk(t *testing.T) {
 	if got := statusOf(err); got != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", got)
 	}
-	if !strings.Contains(err.Error(), "no provider is configured") {
-		t.Errorf("message = %q, want it to say no provider is configured", err.Error())
+	if !strings.Contains(err.Error(), "not available") {
+		t.Errorf("message = %q, want it to say the model is not available", err.Error())
 	}
 }
 

@@ -495,8 +495,8 @@ func TestTermsAreNotTradedForAnAnswer(t *testing.T) {
 		if len(fake.asked) != 2 {
 			t.Fatalf("asked=%v — a route under %q was not offered the spare", fake.asked, collectionAllow)
 		}
-		if h := string(c.Fiber().Response().Header.Peek(servedHeader)); h != free {
-			t.Errorf("%s = %q, want %q", servedHeader, h, free)
+		if h := string(c.Fiber().Response().Header.Peek(servedHeader)); h != "enso-free" {
+			t.Errorf("%s = %q, want enso-free — the free tier, never the model behind it", servedHeader, h)
 		}
 	})
 }
@@ -581,8 +581,8 @@ func TestAnAnswerNamesTheModelThatWroteIt(t *testing.T) {
 	if len(fake.asked) != 2 || fake.asked[1] != free {
 		t.Fatalf("asked=%v — the spare did not serve this request", fake.asked)
 	}
-	if got["model"] != free {
-		t.Errorf("model = %v, want %q — a resale model answered by another names the one that wrote it", got["model"], free)
+	if got["model"] != "enso-free" {
+		t.Errorf("model = %v, want enso-free — the Hanzo tier that answered, never the model behind it", got["model"])
 	}
 }
 

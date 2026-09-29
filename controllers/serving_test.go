@@ -45,8 +45,8 @@ func TestTheFamilyServingIsReadAndOnlyTheArmIsRelayed(t *testing.T) {
 		t.Fatalf("the family refused: %+v", refused)
 	}
 	h := &c.Fiber().Response().Header
-	if got := string(h.Peek(servedHeader)); got != "z-ai/glm-5.3" {
-		t.Errorf("%s = %q, want the arm", servedHeader, got)
+	if got := string(h.Peek(servedHeader)); got != "enso" {
+		t.Errorf("%s = %q, want the SKU enso — the arm is never relayed", servedHeader, got)
 	}
 	for _, k := range []string{providerHeader, failoverHeader} {
 		if got := string(h.Peek(k)); got != "" {

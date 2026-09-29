@@ -771,18 +771,10 @@ const codeExhausted = "providers_exhausted"
 func exhausted(model string, tried []attempt) error {
 	if len(tried) == 0 {
 		return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
-			msg: fmt.Sprintf("model %q: no provider is configured to serve it", model)}
+			msg: fmt.Sprintf("model %q is not available", model)}
 	}
-	names := make([]string, 0, len(tried))
-	for _, a := range tried {
-		if a.status != 0 {
-			names = append(names, fmt.Sprintf("%s (%d)", a.provider, a.status))
-			continue
-		}
-		names = append(names, a.provider)
-	}
-	last := tried[len(tried)-1]
-	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted, msg: fmt.Sprintf(
-		"model %q: every provider refused — tried %s; last was %s: %s",
-		model, strings.Join(names, ", "), last.provider, last.err)}
+	// Who refused and why is ours (announce logged each refusal); the caller is
+	// told only that the model could not answer.
+	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
+		msg: fmt.Sprintf("model %q is temporarily unavailable; try again shortly", model)}
 }
