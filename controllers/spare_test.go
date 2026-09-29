@@ -1535,3 +1535,65 @@ func TestAnUnreachableFamilyIsAskedOnceAndItsCallerStillAnswered(t *testing.T) {
 		t.Fatalf("body %s, want the pool's answer", sent(c2))
 	}
 }
+
+// With the paid lane off, a priced route is never sent: the Enso SKU that stands in
+// for it answers, named as itself, and a free route is sent as ever.
+func TestWithThePaidLaneOffAPricedRouteIsNeverSent(t *testing.T) {
+	cooled.forget()
+	forgetKeys()
+	freeOnly = func() bool { return true }
+	t.Cleanup(func() { freeOnly = object.FreeOnly })
+	const free = "vendor/big:free"
+	const paid = "vendor/paid-a"
+	t.Setenv("OPENROUTER_API_KEY", "k1")
+	t.Setenv("OPENROUTER_API_KEY_2", "")
+	t.Setenv("OPENROUTER_API_KEY_3", "")
+
+	fake := &refuses{status: http.StatusOK, body: `{}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+	fam := spareFamily(t, vendor.URL, free, paid)
+
+	var asked []string
+	enso := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Model string `json:"model"`
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &in)
+		asked = append(asked, in.Model)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(servedHeader, "vendor/big:free")
+		_, _ = w.Write([]byte(`{"id":"1","model":"` + in.Model + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer enso.Close()
+	restore(t, ensoFam)
+	ensoFam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: enso.URL}
+	}
+	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
+
+	c, out := fake.pipe(t, fam, paid)
+	if out != nil {
+		t.Fatalf("attempts=%+v, want the stand-in to answer", out)
+	}
+	for _, m := range fake.asked {
+		if m == paid {
+			t.Fatalf("the priced route was sent with the paid lane off: %v", fake.asked)
+		}
+	}
+	if len(asked) != 1 || asked[0] != "enso-pro" {
+		t.Fatalf("enso asked %v, want [enso-pro]", asked)
+	}
+	var got map[string]any
+	_ = json.Unmarshal([]byte(sent(c)), &got)
+	if got["model"] != "enso-pro" {
+		t.Errorf("model = %v, want enso-pro", got["model"])
+	}
+
+	// A free route is sent as ever.
+	fake.asked = nil
+	if _, out := fake.pipe(t, fam, free); out != nil || len(fake.asked) != 1 || fake.asked[0] != free {
+		t.Fatalf("free route: attempts=%+v asked=%v, want it sent once", out, fake.asked)
+	}
+}

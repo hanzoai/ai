@@ -362,10 +362,16 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 	if err == nil || !unserved(err) {
 		return nil
 	}
-	// A priced route is answered by the model closest to the one asked for: the
-	// Enso SKU nearest it, whose service walks every account it holds, and then
-	// our own compute. The answer names the model that wrote it (pipeToFamily),
-	// so the caller always knows which one did.
+	return standIn(fam, sku)
+}
+
+// standIn names the routes that answer for sku when its own vendor does not.
+//
+// A priced route is answered by the model closest to the one asked for: the Enso
+// SKU nearest it, whose service walks every account it holds, and then our own
+// compute. The answer names the model that wrote it (pipeToFamily), so the caller
+// always knows which one did. Any other route falls to the free pool.
+func standIn(fam *modelFamily, sku string) []spare {
 	if word, _ := fam.collection(sku); word == collectionDeny {
 		// A route bought under `deny` never reaches a borrowed free route, which
 		// keeps what it carries: its stand-ins are ours.
@@ -377,6 +383,9 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 	}
 	return freeRoutes()
 }
+
+// freeOnly reports whether the paid lane is off (object.FreeOnly); tests replace it.
+var freeOnly = object.FreeOnly
 
 // unserved reports that a vendor could not serve a request at all: its account is
 // spent, it answered with its own failure, it was never reached, or it answered
@@ -1588,6 +1597,19 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
 		sku, requested, resp, by = alt.id, model, r, alt.fam
+	} else if !lane && freeOnly() {
+		// The paid lane is off: a priced route is never sent, and the routes that
+		// stand in for it answer in its place, named as what they are.
+		r, alt := pool(standIn(fam, sku), sku)
+		if r == nil {
+			if c.Context().Err() != nil {
+				return done()
+			}
+			return refused(&apiError{status: http.StatusServiceUnavailable,
+				msg: fmt.Sprintf("model %q: the paid lane is off and no free route answered", model)})
+		}
+		resp, requested, sku, stood, by = r, model, alt.id, true, alt.fam
+		log.Info("family=%s free only: %s served by %s", fam.name, model, alt.id)
 	} else if resp, err = send(sku); err != nil {
 		// Never reached the family at all. Nothing is written and nothing is
 		// billed — deliberately no recordFamilyUsage here, because its
