@@ -662,6 +662,24 @@ func TestASpareRouteIsBilledAtNothing(t *testing.T) {
 	}
 }
 
+// A priced family SKU the family says it answered from a free rung bills nothing;
+// the same SKU answered by its own arm bills its price.
+func TestAFamilySKUServedByTheFreeLaneIsBilledAtNothing(t *testing.T) {
+	enso := otherFamily(t, "http://enso.invalid")
+	enso.byID = map[string]zenModel{"enso-flash": {ID: "enso-flash", Base: zenTier{In: decimal.New(1, 0), Out: decimal.New(2, 0)}}}
+	enso.ids = []string{"enso-flash"}
+	c := visit(http.MethodPost, "/v1/x")
+	w := whence{ledger: c.billingOrg(nil), ip: c.Fiber().IP(), ctx: c.Context()}
+	use := tokens{fresh: 1_000_000, completion: 1_000_000}
+
+	if cents := recordFamilyUsage(w, enso, "enso-flash", "", nil, &mark{}, nil, true, false, "r1", use, servingOf(http.Header{servedHeader: {"vendor/big:free"}, freeHeader: {"true"}}), time.Now(), nil, "success", ""); cents != 0 {
+		t.Errorf("an answer the free lane wrote billed %d cents", cents)
+	}
+	if cents := recordFamilyUsage(w, enso, "enso-flash", "", nil, &mark{}, nil, true, false, "r2", use, serving{arm: "vendor/flash"}, time.Now(), nil, "success", ""); cents != 300 {
+		t.Errorf("an answer the SKU's own arm wrote billed %d cents, want 300", cents)
+	}
+}
+
 // The ledger and the span each carry the fallback, and they carry it as data a
 // query can filter on rather than as a sentence in a log line.
 func TestAFallbackIsVisibleInTheLedgerAndTheSpan(t *testing.T) {

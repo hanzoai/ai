@@ -1704,19 +1704,22 @@ const servedHeader = "X-Hanzo-Served"
 const (
 	providerHeader = "X-Hanzo-Provider"
 	failoverHeader = "X-Hanzo-Failover"
+	// freeHeader is set when the rung that answered bills nothing.
+	freeHeader = "X-Hanzo-Free"
 )
 
 // serving is what a family said about an answer beyond its body: the arm that
-// wrote it, the vendor that ran that arm, the arms that failed first, and the
-// time to its first token.
+// wrote it, the vendor that ran that arm, the arms that failed first, the time to
+// its first token, and whether that arm bills nothing.
 type serving struct {
 	arm, vendor, failover string
 	first                 time.Duration
+	free                  bool
 }
 
 // servingOf reads a family response's headers into a serving.
 func servingOf(h http.Header) serving {
-	return serving{arm: h.Get(servedHeader), vendor: h.Get(providerHeader), failover: h.Get(failoverHeader)}
+	return serving{arm: h.Get(servedHeader), vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true"}
 }
 
 // relayZenStream copies a family's SSE response to the client and captures the final
@@ -1900,8 +1903,9 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	// answer while the account is empty — so it is billed at nothing. Charging
 	// retail for a downgrade the customer did not choose would be taking money for
 	// the outage. Stated once, on the record, so the hold, the debit, the warehouse
-	// row and the span all read the same zero (see usageCostNano).
-	free := fam.isSpare(model) || inPool(model)
+	// row and the span all read the same zero (see usageCostNano). A priced SKU the
+	// family says it answered from a free rung costs the caller what that rung costs.
+	free := fam.isSpare(model) || inPool(model) || sv.free
 	var cents int64
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
