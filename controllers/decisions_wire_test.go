@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -47,8 +48,8 @@ func seedOther(t *testing.T) {
 // heldAnswer is an answer Kai gave in process: routing names the weights.
 const heldAnswer = `{"id":"dec_1","model":"kai","provider":"Hanzo","answers":{"is_bug":{"type":"noul","noul":0.96,"answer_confidence":0.96}},"usage":{"input_tokens":42,"output_tokens":0},"routing":{"backend":"kai","checkpoint":"hanzoai/kai","sha256":"abc","reason":"explicit model='kai'"},"state_hash":"sha256:00","latency_ms":1.5}`
 
-// The Jev answer the service writes on /v1/systemone.
-const joneAnswer = `{"model":"kai-2026-09","answers":{"is_bug":{"type":"noul","noul":0.96}},"usage":{"input_tokens":42,"output_tokens":0}}`
+// jevAnswer is an answer Jev gave, as the service relays it.
+const jevAnswer = `{"id":"dec_2","model":"typesafe/jev-1.13","provider":"OpenRouter","answers":{"is_bug":{"type":"noul","noul":0.96}},"usage":{"input_tokens":42,"output_tokens":0}}`
 
 // top reads one top-level field of a JSON body.
 func top(t *testing.T, body, key string) string {
@@ -169,45 +170,20 @@ func TestDecisionSettlesAfterReply(t *testing.T) {
 	t.Logf("reply after %v; debit landed %v after the request began (settle %v)", replied, at.Sub(start), slow)
 }
 
-// POST /v1/systemone is the same call on Jev's wire: the body reaches the service's
-// /v1/systemone unchanged, Jev's answer comes back unchanged, and it bills exactly
-// as /v1/decisions does.
-func TestSystemoneForwardsAndMeters(t *testing.T) {
+// Jev by its vendor ids reaches Jev itself on /v1/decisions, forwarded under the id
+// asked and billed at Jev's list price. Every bare Jev spelling is an unknown model,
+// and nothing is sent.
+func TestDecisionsServeJevByItsVendorIds(t *testing.T) {
 	fake, events := setupDecisions(t)
-	fake.answer = joneAnswer
-	status, body, c := drive(t, systemonePath, "Bearer "+decisionsKey, decisionBody, nil)
-	if status != http.StatusOK || body != joneAnswer {
-		t.Fatalf("systemone => %d %s", status, body)
-	}
-	calls, path, sentBody := fake.seen()
-	if calls != 1 || path != systemonePath || string(sentBody) != decisionBody {
-		t.Fatalf("service saw %d call(s) at %q with %s", calls, path, sentBody)
-	}
-	if replied(c, "X-Request-Id") == "" {
-		t.Fatal("the answer carries no X-Request-Id")
-	}
-	if len(*events) != 1 {
-		t.Fatalf("debits = %d, want 1", len(*events))
-	}
-	if e := (*events)[0]; e.Model != "kai" || e.Namespace != decisionsOrg || e.USD != nanoToUSD(42*21) {
-		t.Fatalf("debit = %+v, want kai on acme at 42 input tokens × $0.021/M", e)
-	}
-}
-
-// Jev by its vendor ids reaches Jev itself on /v1/systemone as on /v1/decisions,
-// forwarded to the service's /v1/systemone and billed at Jev's list price. Every
-// bare Jev spelling is an unknown model, in FastAPI's words, and nothing is sent.
-func TestSystemoneServesJevByItsVendorIds(t *testing.T) {
-	fake, events := setupDecisions(t)
-	fake.answer = joneAnswer
+	fake.answer = jevAnswer
 	for _, model := range []string{"typesafe/jev-1.13", "~typesafe/jev-latest"} {
 		asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1)
-		status, body, _ := drive(t, systemonePath, "Bearer "+decisionsKey, asked, nil)
-		if status != http.StatusOK || body != joneAnswer {
+		status, body := driveDecisions(t, "Bearer "+decisionsKey, asked)
+		if status != http.StatusOK || body != jevAnswer {
 			t.Fatalf("%s => %d %s", model, status, body)
 		}
 		_, path, sent := fake.seen()
-		if path != systemonePath || top(t, string(sent), "model") != `"`+model+`"` {
+		if path != decisionsPath || top(t, string(sent), "model") != `"`+model+`"` {
 			t.Fatalf("%s reached %s as %s", model, path, top(t, string(sent), "model"))
 		}
 	}
@@ -217,9 +193,10 @@ func TestSystemoneServesJevByItsVendorIds(t *testing.T) {
 
 	calls, _, _ := fake.seen()
 	for _, model := range []string{"jev-latest", "jev-preview", "jev-1.13.0", "jev-1.13", "laya"} {
-		status, body, _ := drive(t, systemonePath, "Bearer "+decisionsKey,
-			`{"model":"`+model+`","state":"x","questions":{"q":{"type":"noul"}}}`, nil)
-		if status != http.StatusBadRequest || body != `{"detail":"Unknown model: `+model+`"}` {
+		status, body := driveDecisions(t, "Bearer "+decisionsKey,
+			`{"model":"`+model+`","state":"x","questions":{"q":{"type":"noul"}}}`)
+		want := string(decisionsFailure(400, fmt.Sprintf("unknown model %q; use one of kai, typesafe/jev-1.13, ~typesafe/jev-latest", model)))
+		if status != http.StatusBadRequest || body != want {
 			t.Errorf("%s => %d %s", model, status, body)
 		}
 	}
@@ -229,7 +206,7 @@ func TestSystemoneServesJevByItsVendorIds(t *testing.T) {
 }
 
 // Nothing named Jev is ever answered by Kai: a route that would send a Jev id to
-// Kai is an unknown model on both paths.
+// Kai is an unknown model.
 func TestJevIsNeverKai(t *testing.T) {
 	fake, _ := setupDecisions(t)
 	path := t.TempDir() + "/models.yaml"
@@ -248,12 +225,10 @@ models:
 		t.Fatal(err)
 	}
 	useCatalog(t, path)
-	for _, p := range []string{decisionsPath, systemonePath} {
-		for _, model := range []string{"jev-latest", "typesafe/jev-9"} {
-			status, body, _ := drive(t, p, "Bearer "+decisionsKey, strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1), nil)
-			if status != http.StatusBadRequest {
-				t.Errorf("%s %s => %d %s; a Jev id reached Kai", p, model, status, body)
-			}
+	for _, model := range []string{"jev-latest", "typesafe/jev-9"} {
+		status, body := driveDecisions(t, "Bearer "+decisionsKey, strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1))
+		if status != http.StatusBadRequest {
+			t.Errorf("%s => %d %s; a Jev id reached Kai", model, status, body)
 		}
 	}
 	if calls, _, _ := fake.seen(); calls != 0 {
@@ -261,43 +236,20 @@ models:
 	}
 }
 
-// Every refusal on /v1/systemone is FastAPI's: a missing field is a 422 naming it,
-// and the rest are {"detail": "..."}.
-func TestSystemoneRefusalsAreFastAPIs(t *testing.T) {
-	setupDecisions(t)
-	status, body, _ := drive(t, systemonePath, "Bearer "+decisionsKey, `{"state":"x"}`, nil)
-	if status != http.StatusUnprocessableEntity || body != `{"detail":[{"loc":["body","model"],"msg":"Field required","type":"missing"}]}` {
-		t.Fatalf("no model => %d %s", status, body)
-	}
-	for auth, want := range map[string]int{"": 401, "Bearer sk-nobody-issued-this": 401, "Bearer pk-publishable": 403} {
-		status, body, _ := drive(t, systemonePath, auth, decisionBody, nil)
-		var r struct{ Detail string }
-		if status != want || json.Unmarshal([]byte(body), &r) != nil || r.Detail == "" {
-			t.Errorf("%q => %d %s, want %d {\"detail\": ...}", auth, status, body, want)
-		}
-	}
-}
-
-// A 402 asks the caller to wait until a top-up is read, in both headers, on both
-// paths, each in its own words.
+// A 402 asks the caller to wait until a top-up is read, in both headers, in the
+// service's error shape.
 func TestDecisionPaymentRequiredSaysWhen(t *testing.T) {
 	fake, events := setupDecisions(t)
 	object.SetBalanceReader(balReader(0, nil))
-	for _, path := range []string{decisionsPath, systemonePath} {
-		status, body, c := drive(t, path, "Bearer "+decisionsKey, decisionBody, nil)
-		if status != http.StatusPaymentRequired {
-			t.Fatalf("%s with no balance => %d %s", path, status, body)
-		}
-		if replied(c, "Retry-After") != "30" || replied(c, "Retry-After-Ms") != "30000" {
-			t.Errorf("%s 402 Retry-After=%q Retry-After-Ms=%q, want 30 and 30000", path, replied(c, "Retry-After"), replied(c, "Retry-After-Ms"))
-		}
-		key := "error"
-		if path == systemonePath {
-			key = "detail"
-		}
-		if top(t, body, key) == "" || replied(c, "X-Request-Id") == "" {
-			t.Errorf("%s 402 = %s (request id %q)", path, body, replied(c, "X-Request-Id"))
-		}
+	status, body, c := drive(t, "Bearer "+decisionsKey, decisionBody, nil)
+	if status != http.StatusPaymentRequired {
+		t.Fatalf("no balance => %d %s", status, body)
+	}
+	if replied(c, "Retry-After") != "30" || replied(c, "Retry-After-Ms") != "30000" {
+		t.Errorf("402 Retry-After=%q Retry-After-Ms=%q, want 30 and 30000", replied(c, "Retry-After"), replied(c, "Retry-After-Ms"))
+	}
+	if top(t, body, "error") == "" || replied(c, "X-Request-Id") == "" {
+		t.Errorf("402 = %s (request id %q)", body, replied(c, "X-Request-Id"))
 	}
 	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
 		t.Fatalf("an unfunded call reached the service %d time(s) and was debited %d", calls, len(*events))
@@ -310,14 +262,14 @@ func TestDecisionWaitsPassThrough(t *testing.T) {
 	fake, _ := setupDecisions(t)
 	fake.status, fake.answer = http.StatusTooManyRequests, `{"error":{"code":429,"message":"queue full"}}`
 	fake.header = map[string]string{"Retry-After": "2"}
-	status, body, c := drive(t, decisionsPath, "Bearer "+decisionsKey, decisionBody, nil)
+	status, body, c := drive(t, "Bearer "+decisionsKey, decisionBody, nil)
 	if status != 429 || body != fake.answer || replied(c, "Retry-After") != "2" || replied(c, "Retry-After-Ms") != "2000" {
 		t.Fatalf("429 => %d %s Retry-After=%q ms=%q", status, body, replied(c, "Retry-After"), replied(c, "Retry-After-Ms"))
 	}
 
-	fake.status, fake.answer = 529, `{"detail":"overloaded"}`
+	fake.status, fake.answer = 529, `{"error":{"code":529,"message":"overloaded"}}`
 	fake.header = map[string]string{"Retry-After-Ms": "1500"}
-	status, body, c = drive(t, systemonePath, "Bearer "+decisionsKey, decisionBody, nil)
+	status, body, c = drive(t, "Bearer "+decisionsKey, decisionBody, nil)
 	if status != 529 || body != fake.answer || replied(c, "Retry-After") != "2" || replied(c, "Retry-After-Ms") != "1500" {
 		t.Fatalf("529 => %d %s Retry-After=%q ms=%q", status, body, replied(c, "Retry-After"), replied(c, "Retry-After-Ms"))
 	}
@@ -327,16 +279,16 @@ func TestDecisionWaitsPassThrough(t *testing.T) {
 // service's own, when it states one, is the answer's; with neither, a fresh one.
 func TestDecisionRequestID(t *testing.T) {
 	fake, _ := setupDecisions(t)
-	_, _, c := drive(t, decisionsPath, "Bearer "+decisionsKey, decisionBody, map[string]string{"X-Request-Id": "req-abc"})
+	_, _, c := drive(t, "Bearer "+decisionsKey, decisionBody, map[string]string{"X-Request-Id": "req-abc"})
 	if fake.rid != "req-abc" || replied(c, "X-Request-Id") != "req-abc" {
 		t.Fatalf("caller's id: service saw %q, answer carries %q", fake.rid, replied(c, "X-Request-Id"))
 	}
 	fake.header = map[string]string{"X-Request-Id": "svc-1"}
-	if _, _, c = drive(t, decisionsPath, "Bearer "+decisionsKey, decisionBody, nil); replied(c, "X-Request-Id") != "svc-1" {
+	if _, _, c = drive(t, "Bearer "+decisionsKey, decisionBody, nil); replied(c, "X-Request-Id") != "svc-1" {
 		t.Fatalf("service's id: answer carries %q", replied(c, "X-Request-Id"))
 	}
 	// An id no header should carry back is replaced, never echoed.
-	if _, _, c = drive(t, decisionsPath, "", decisionBody, map[string]string{"X-Request-Id": strings.Repeat("x", 300)}); len(replied(c, "X-Request-Id")) != 36 {
+	if _, _, c = drive(t, "", decisionBody, map[string]string{"X-Request-Id": strings.Repeat("x", 300)}); len(replied(c, "X-Request-Id")) != 36 {
 		t.Fatalf("an oversized id was echoed: %q", replied(c, "X-Request-Id"))
 	}
 }
@@ -372,8 +324,7 @@ func TestDecisionDoorsAgreeOnWhoPays(t *testing.T) {
 
 	// With no balance the ZAP door refuses as the HTTP one does.
 	object.SetBalanceReader(balReader(0, nil))
-	systemone, _ := lookupGatewayHandler(systemonePath)
-	msg, _ = systemone(context.Background(), "Bearer "+decisionsKey, []byte(decisionBody))
+	msg, _ = gateway(context.Background(), "Bearer "+decisionsKey, []byte(decisionBody))
 	root = msg.Root()
 	_ = json.Unmarshal(root.Bytes(object.GatewayRespHeaders), &h)
 	if root.Uint32(object.GatewayRespStatus) != 402 || h["Retry-After"] != "30" || h["Retry-After-Ms"] != "30000" {
@@ -423,35 +374,32 @@ func TestDecisionHeldAnswers(t *testing.T) {
 	}
 }
 
-// Restate words any refusal in the path's own shape, and leaves one already in it
-// alone.
+// Restate words any refusal in the service's error shape, and leaves one already in
+// it alone.
 func TestRestate(t *testing.T) {
 	cases := []struct {
-		path   string
 		status int
 		in     string
 		out    string
 	}{
-		{decisionsPath, 401, `{"status":"error","msg":"invalid API key"}`, `{"error":{"code":401,"message":"invalid API key"}}`},
-		{decisionsPath, 429, `{"error":{"message":"Rate limit exceeded.","type":"rate_limit_error","code":429}}`, `{"error":{"message":"Rate limit exceeded.","type":"rate_limit_error","code":429}}`},
-		{systemonePath, 429, `{"error":{"message":"Rate limit exceeded.","type":"rate_limit_error","code":429}}`, `{"detail":"Rate limit exceeded."}`},
-		{systemonePath, 503, `{"status":"error","msg":"identity is unavailable"}`, `{"detail":"identity is unavailable"}`},
-		{systemonePath, 422, `{"detail":[{"loc":["body"],"msg":"m","type":"t"}]}`, `{"detail":[{"loc":["body"],"msg":"m","type":"t"}]}`},
-		{systemonePath, 502, `upstream went away`, `{"detail":"upstream went away"}`},
-		{decisionsPath, 200, `{"id":"dec_1"}`, `{"id":"dec_1"}`},
+		{401, `{"status":"error","msg":"invalid API key"}`, `{"error":{"code":401,"message":"invalid API key"}}`},
+		{429, `{"error":{"message":"Rate limit exceeded.","type":"rate_limit_error","code":429}}`, `{"error":{"message":"Rate limit exceeded.","type":"rate_limit_error","code":429}}`},
+		{503, `{"status":"error","msg":"identity is unavailable"}`, `{"error":{"code":503,"message":"identity is unavailable"}}`},
+		{502, `upstream went away`, `{"error":{"code":502,"message":"upstream went away"}}`},
+		{200, `{"id":"dec_1"}`, `{"id":"dec_1"}`},
 	}
 	for _, c := range cases {
 		header := map[string]string{}
-		got, _ := Restate(c.path, c.status, []byte(c.in), header, "rid-1")
+		got, _ := Restate(c.status, []byte(c.in), header, "rid-1")
 		if string(got) != c.out {
-			t.Errorf("%s %d %s:\n got %s\nwant %s", c.path, c.status, c.in, got, c.out)
+			t.Errorf("%d %s:\n got %s\nwant %s", c.status, c.in, got, c.out)
 		}
 		if header["X-Request-Id"] != "rid-1" {
-			t.Errorf("%s %d: no request id", c.path, c.status)
+			t.Errorf("%d: no request id", c.status)
 		}
 		_, waits := pause(c.status)
 		if waits != (header["Retry-After"] != "" && header["Retry-After-Ms"] != "") {
-			t.Errorf("%s %d: retry headers %v", c.path, c.status, header)
+			t.Errorf("%d: retry headers %v", c.status, header)
 		}
 	}
 }

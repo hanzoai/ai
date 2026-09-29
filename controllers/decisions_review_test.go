@@ -48,11 +48,9 @@ import (
 func TestDecisionRefusalNamesNoAddress(t *testing.T) {
 	setupDecisions(t)
 	t.Setenv("KAI_URL", "http://127.0.0.1:1")
-	for _, p := range []string{decisionsPath, systemonePath} {
-		status, body, _ := drive(t, p, "Bearer "+decisionsKey, decisionBody, nil)
-		if status != http.StatusBadGateway || strings.Contains(body, "127.0.0.1") || strings.Contains(body, "http") {
-			t.Fatalf("%s => %d %s", p, status, body)
-		}
+	status, body := driveDecisions(t, "Bearer "+decisionsKey, decisionBody)
+	if status != http.StatusBadGateway || strings.Contains(body, "127.0.0.1") || strings.Contains(body, "http") {
+		t.Fatalf("unreachable => %d %s", status, body)
 	}
 }
 
@@ -63,14 +61,14 @@ func TestDecisionCacheKeepsEachOrgsShare(t *testing.T) {
 	fake.answer = heldAnswer
 	kai := object.KaiProvider()
 	ctx := context.Background()
-	recall(ctx, kai, decisionsPath, "kai", "acme", "r", []byte(decisionBody))
-	recall(ctx, kai, decisionsPath, "kai", "acme", "r", []byte(decisionBody))
+	recall(ctx, kai, "kai", "acme", "r", []byte(decisionBody))
+	recall(ctx, kai, "kai", "acme", "r", []byte(decisionBody))
 	for i := 0; i < decisionMax; i++ {
 		b := strings.Replace(decisionBody, "twice", fmt.Sprintf("twice %d", i), 1)
-		recall(ctx, kai, decisionsPath, "kai", "globex", "r", []byte(b))
+		recall(ctx, kai, "kai", "globex", "r", []byte(b))
 	}
 	before, _, _ := fake.seen()
-	recall(ctx, kai, decisionsPath, "kai", "acme", "r", []byte(decisionBody))
+	recall(ctx, kai, "kai", "acme", "r", []byte(decisionBody))
 	if after, _, _ := fake.seen(); after != before {
 		t.Fatalf("globex's %d requests evicted acme's held answer", decisionMax)
 	}
@@ -116,7 +114,7 @@ func TestDecisionDoorsAgreeUnderOrgSwitch(t *testing.T) {
 	}
 	tok := mintUsageJWTWithOrgs(t, "beta", "bob", "beta", "acme")
 	observe := strings.Replace(decisionBody, `}}}`, `}},"observe":"s1"}`, 1)
-	if status, body, _ := drive(t, decisionsPath, "Bearer "+tok, observe, map[string]string{"X-Org-Id": "acme"}); status != 200 {
+	if status, body, _ := drive(t, "Bearer "+tok, observe, map[string]string{"X-Org-Id": "acme"}); status != 200 {
 		t.Fatalf("HTTP => %d %s", status, body)
 	}
 	msg, err := gateway(nil)(context.Background(), "", gatewayCall(t, decisionsPath,
@@ -172,7 +170,7 @@ func TestDecisionDebitOutlivesAFailingLedger(t *testing.T) {
 		landed.Add(1)
 		return nil
 	})
-	if status, _, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, decisionBody, nil); status != 200 {
+	if status, _, _ := drive(t, "Bearer "+decisionsKey, decisionBody, nil); status != 200 {
 		t.Fatalf("status %d", status)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), SettleBudget())
@@ -243,7 +241,7 @@ func TestJevCannotOverdrawACent(t *testing.T) {
 	asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"typesafe/jev-1.13"`, 1)
 	ok := 0
 	for i := 0; i < 20; i++ {
-		if status, _, _ := drive(t, systemonePath, "Bearer "+decisionsKey, asked, nil); status == http.StatusOK {
+		if status, _ := driveDecisions(t, "Bearer "+decisionsKey, asked); status == http.StatusOK {
 			ok++
 		}
 	}
@@ -265,7 +263,7 @@ func TestDecisionCaseVariantsPriceAsTheirRoute(t *testing.T) {
 	want := map[string]string{"KAI": "0.021", "Kai": "0.021", "TYPESAFE/JEV-1.13": "0.042", "~TypeSafe/Jev-Latest": "0.042"}
 	for model, usd := range want {
 		body := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1)
-		if status, out, _ := drive(t, systemonePath, "Bearer "+decisionsKey, body, nil); status != 200 {
+		if status, out := driveDecisions(t, "Bearer "+decisionsKey, body); status != 200 {
 			t.Fatalf("%s => %d %s", model, status, out)
 		}
 		_, _, sent := fake.seen()
@@ -278,8 +276,7 @@ func TestDecisionCaseVariantsPriceAsTheirRoute(t *testing.T) {
 
 // The gateway reads the body the way the service does, key for key: a second
 // spelling of a field, in any case, or a key given twice, is refused before
-// anything is priced or sent. On /v1/systemone a key Jev's request does not carry is
-// FastAPI's 422 extra_forbidden, as Jev and the service answer it.
+// anything is priced or sent.
 func TestDecisionBodyIsReadKeyForKey(t *testing.T) {
 	fake, events := setupDecisions(t)
 	seedOther(t)
@@ -293,43 +290,12 @@ func TestDecisionBodyIsReadKeyForKey(t *testing.T) {
 		`{"model":"kai","state":"x","questions":{"a":{"type":"noul"}},"questions":{"b":{"type":"noul"}}}`,
 		`{"model":"kai","state":"x","questions":{"q":{"type":"noul"}}} {"model":"typesafe/jev-1.13"}`,
 	} {
-		if status, out, _ := drive(t, decisionsPath, "Bearer "+otherKey, body, nil); status != http.StatusBadRequest {
-			t.Errorf("%s %s => %d %s", decisionsPath, body, status, out)
-		}
-		want := http.StatusBadRequest
-		if strings.Contains(strings.ToLower(body), "handle") || strings.Contains(body, "MODEL") || strings.Contains(body, "Model") || strings.Contains(body, "ſtate") {
-			want = http.StatusUnprocessableEntity
-		}
-		if status, out, _ := drive(t, systemonePath, "Bearer "+otherKey, body, nil); status != want {
-			t.Errorf("%s %s => %d %s, want %d", systemonePath, body, status, out, want)
-		}
-	}
-	for _, extra := range []string{"metadata", "observe", "provider", "session_id"} {
-		body := strings.Replace(decisionBody, `}}}`, `}},"`+extra+`":"x"}`, 1)
-		status, out, c := drive(t, systemonePath, "Bearer "+otherKey, body, nil)
-		if status != 422 || out != `{"detail":[{"loc":["body","`+extra+`"],"msg":"Extra inputs are not permitted","type":"extra_forbidden"}]}` || replied(c, "X-Request-Id") == "" {
-			t.Errorf("%s with %q => %d %s", systemonePath, extra, status, out)
+		if status, out := driveDecisions(t, "Bearer "+otherKey, body); status != http.StatusBadRequest {
+			t.Errorf("%s => %d %s", body, status, out)
 		}
 	}
 	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
 		t.Fatalf("an ambiguous body reached the service %d time(s) and was billed %d", calls, len(*events))
-	}
-}
-
-// Jev's own request id header crosses with the rest, on HTTP and on the gateway.
-func TestDecisionRelaysJevsRequestID(t *testing.T) {
-	fake, _ := setupDecisions(t)
-	fake.answer = joneAnswer
-	fake.header = map[string]string{"X-Typesafe-Request-Id": "ts-1"}
-	if _, _, c := drive(t, systemonePath, "Bearer "+decisionsKey, decisionBody, nil); replied(c, "X-Typesafe-Request-Id") != "ts-1" {
-		t.Fatalf("HTTP X-Typesafe-Request-Id = %q", replied(c, "X-Typesafe-Request-Id"))
-	}
-	gw, _ := lookupGatewayHandler(systemonePath)
-	msg, _ := gw(context.Background(), "Bearer "+decisionsKey, []byte(decisionBody))
-	var h map[string]string
-	_ = json.Unmarshal(msg.Root().Bytes(object.GatewayRespHeaders), &h)
-	if h["X-Typesafe-Request-Id"] != "ts-1" {
-		t.Fatalf("gateway headers = %v", h)
 	}
 }
 
@@ -354,7 +320,7 @@ func TestDecisionRowCarriesTheCallersRequestID(t *testing.T) {
 	billingQueue = util.NewBillingQueue(commerce.URL, "t")
 	t.Cleanup(func() { billingQueue.Shutdown(); billingQueue = prevQueue })
 
-	if status, _, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, decisionBody, map[string]string{"X-Request-Id": "req-42"}); status != 200 {
+	if status, _, _ := drive(t, "Bearer "+decisionsKey, decisionBody, map[string]string{"X-Request-Id": "req-42"}); status != 200 {
 		t.Fatalf("status %d", status)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -399,30 +365,23 @@ func TestRecordUsageReturnsTheLedgersRefusal(t *testing.T) {
 }
 
 // A body past the bound the gateway and the service share is refused by the gateway
-// in the path's words — 422 request_too_long, under a request id — and nothing is
+// in the service's shape — 422 request_too_long, under a request id — and nothing is
 // sent.
 func TestDecisionBodyPastTheBound(t *testing.T) {
 	fake, events := setupDecisions(t)
 	big := `{"model":"kai","state":"` + strings.Repeat("x", decisionBodyBytes) + `","questions":{"q":{"type":"noul"}}}`
-	status, body, c := drive(t, decisionsPath, "Bearer "+decisionsKey, big, nil)
+	status, body, c := drive(t, "Bearer "+decisionsKey, big, nil)
 	var native struct {
 		Error struct{ Code, Message string } `json:"error"`
 	}
 	if status != 422 || json.Unmarshal([]byte(body), &native) != nil || native.Error.Code != "request_too_long" || replied(c, "X-Request-Id") == "" {
 		t.Fatalf("/v1/decisions => %d %s", status, body)
 	}
-	status, body, c = drive(t, systemonePath, "Bearer "+decisionsKey, big, nil)
-	var jev struct {
-		Detail []struct{ Type string } `json:"detail"`
-	}
-	if status != 422 || json.Unmarshal([]byte(body), &jev) != nil || len(jev.Detail) != 1 || jev.Detail[0].Type != "request_too_long" || replied(c, "X-Request-Id") == "" {
-		t.Fatalf("/v1/systemone => %d %s", status, body)
-	}
 	// The bound costs a length and is the one thing asked before the credential.
-	if status, _, _ := drive(t, systemonePath, "Bearer sk-nobody-issued-this", big, nil); status != 422 {
+	if status, _ := driveDecisions(t, "Bearer sk-nobody-issued-this", big); status != 422 {
 		t.Fatalf("an unauthenticated oversized body => %d, want 422", status)
 	}
-	gw, _ := lookupGatewayHandler(systemonePath)
+	gw, _ := lookupGatewayHandler(decisionsPath)
 	msg, _ := gw(context.Background(), "Bearer "+decisionsKey, []byte(big))
 	if st := msg.Root().Uint32(object.GatewayRespStatus); st != 422 {
 		t.Fatalf("ZAP => %d", st)
@@ -433,33 +392,28 @@ func TestDecisionBodyPastTheBound(t *testing.T) {
 }
 
 // Kai's versioned id — kai- and the first 12 lowercase hex of the served weights'
-// sha256 — is Kai on both paths: priced and filed as kai, sent to the service as
-// asked. Anything else of that shape is an unknown model and is sent nowhere.
+// sha256 — is Kai: priced and filed as kai, sent to the service as asked. Anything
+// else of that shape is an unknown model and is sent nowhere.
 func TestKaiVersionedID(t *testing.T) {
 	fake, events := setupDecisions(t)
 	const version = "kai-0834a74f2d14"
-	for _, p := range []string{decisionsPath, systemonePath} {
-		asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+version+`"`, 1)
-		status, body, _ := drive(t, p, "Bearer "+decisionsKey, asked, nil)
-		if status != 200 {
-			t.Fatalf("%s %s => %d %s", p, version, status, body)
-		}
-		_, _, sent := fake.seen()
-		if string(sent) != asked {
-			t.Fatalf("%s: the service was sent %s, want the body as asked", p, sent)
-		}
-		e := (*events)[len(*events)-1]
-		if e.Model != "kai" || e.USD != nanoToUSD(42*21) {
-			t.Fatalf("%s: debit %s at $%s, want kai at 42 tokens × $0.021/M", p, e.Model, e.USD)
-		}
+	asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+version+`"`, 1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, asked); status != 200 {
+		t.Fatalf("%s => %d %s", version, status, body)
+	}
+	_, _, sent := fake.seen()
+	if string(sent) != asked {
+		t.Fatalf("the service was sent %s, want the body as asked", sent)
+	}
+	e := (*events)[len(*events)-1]
+	if e.Model != "kai" || e.USD != nanoToUSD(42*21) {
+		t.Fatalf("debit %s at $%s, want kai at 42 tokens × $0.021/M", e.Model, e.USD)
 	}
 	calls, _, _ := fake.seen()
 	for _, model := range []string{"kai-0834a74f2d1", "kai-0834a74f2d145", "kai-0834A74F2D14", "kai-zzzzzzzzzzzz", "KAI-0834a74f2d14", "kai-", "kai-0834a74f2d1g"} {
-		for _, p := range []string{decisionsPath, systemonePath} {
-			body := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1)
-			if status, out, _ := drive(t, p, "Bearer "+decisionsKey, body, nil); status != http.StatusBadRequest {
-				t.Errorf("%s %s => %d %s", p, model, status, out)
-			}
+		body := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1)
+		if status, out := driveDecisions(t, "Bearer "+decisionsKey, body); status != http.StatusBadRequest {
+			t.Errorf("%s => %d %s", model, status, out)
 		}
 	}
 	if now, _, _ := fake.seen(); now != calls {
@@ -483,25 +437,21 @@ func TestDecisionBodyIsCheapAndReadAfterAuth(t *testing.T) {
 	}
 	sb.WriteString(`}`)
 	many := sb.String()
-	for p, want := range map[string]int{decisionsPath: http.StatusBadRequest, systemonePath: http.StatusUnprocessableEntity} {
-		start := time.Now()
-		status, body, _ := drive(t, p, "Bearer "+decisionsKey, many, nil)
-		if took := time.Since(start); status != want || took > 250*time.Millisecond {
-			t.Fatalf("%s: 100k unknown keys => %d in %v (%s)", p, status, took, body)
-		}
+	start := time.Now()
+	status, body := driveDecisions(t, "Bearer "+decisionsKey, many)
+	if took := time.Since(start); status != http.StatusBadRequest || took > 250*time.Millisecond {
+		t.Fatalf("100k unknown keys => %d in %v (%s)", status, took, body)
 	}
 
 	var reads atomic.Int32
 	prev := readModel
-	readModel = func(path string, body []byte) (string, string, *decisionRefusal) {
+	readModel = func(body []byte) (string, string, *decisionRefusal) {
 		reads.Add(1)
-		return prev(path, body)
+		return prev(body)
 	}
 	t.Cleanup(func() { readModel = prev })
-	for _, p := range []string{decisionsPath, systemonePath} {
-		if status, _, _ := drive(t, p, "Bearer sk-nobody-issued-this", many, nil); status != http.StatusUnauthorized {
-			t.Fatalf("%s: unauthenticated => %d, want 401", p, status)
-		}
+	if status, _ := driveDecisions(t, "Bearer sk-nobody-issued-this", many); status != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated => %d, want 401", status)
 	}
 	gw, _ := lookupGatewayHandler(decisionsPath)
 	if msg, _ := gw(context.Background(), "Bearer sk-nobody-issued-this", []byte(many)); msg.Root().Uint32(object.GatewayRespStatus) != 401 {
@@ -622,8 +572,8 @@ func TestDebitRefIsStablePerRecord(t *testing.T) {
 }
 
 // A handle id is 1 to 128 characters of A-Z, a-z, 0-9, '.', '_' and '-'. Anything
-// else, a megabyte of id included, is refused 422 in the path's words under a request
-// id on both doors, before the service is asked, billed or remembered; an id at the
+// else, a megabyte of id included, is refused 422 in the service's shape under a
+// request id on both doors, before the service is asked, billed or remembered; an id at the
 // bound is served and remembered under a fixed-size key.
 func TestHandleIDIsBounded(t *testing.T) {
 	fake, events := setupDecisions(t)
@@ -638,7 +588,7 @@ func TestHandleIDIsBounded(t *testing.T) {
 		} `json:"error"`
 	}
 	for i := 0; i < 48; i++ {
-		status, body, c := drive(t, decisionsPath, "Bearer "+decisionsKey, observe(fmt.Sprintf("%d-", i)+strings.Repeat("A", 1<<20)), nil)
+		status, body, c := drive(t, "Bearer "+decisionsKey, observe(fmt.Sprintf("%d-", i)+strings.Repeat("A", 1<<20)), nil)
 		if status != 422 || json.Unmarshal([]byte(body), &native) != nil || native.Error.Code != 422 || replied(c, "X-Request-Id") == "" {
 			t.Fatalf("a 1 MiB id => %d %.200s", status, body)
 		}
@@ -687,8 +637,8 @@ func gzipped(s string) string {
 
 // A compressed decision body is decoded once, after its credential, and never past
 // the bound: an unauthenticated caller's 64 MiB of gzip is refused 401 without being
-// decoded, an authenticated one inflating past 16 MiB is 422 request_too_long in
-// the path's words, a coding nobody decodes is 415, and a small one is served as the
+// decoded, an authenticated one inflating past 16 MiB is 422 request_too_long, a
+// coding nobody decodes is 415, and a small one is served as the
 // JSON it decodes to.
 func TestDecisionBodyIsDecodedOnceAfterItsCredential(t *testing.T) {
 	fake, events := setupDecisions(t)
@@ -696,50 +646,41 @@ func TestDecisionBodyIsDecodedOnceAfterItsCredential(t *testing.T) {
 
 	var reads atomic.Int32
 	prev := readModel
-	readModel = func(path string, body []byte) (string, string, *decisionRefusal) {
+	readModel = func(body []byte) (string, string, *decisionRefusal) {
 		reads.Add(1)
-		return prev(path, body)
+		return prev(body)
 	}
 	t.Cleanup(func() { readModel = prev })
 	bomb := gzipped(`{"state":1,` + strings.Repeat(" ", 64<<20) + `"model":"kai"}`)
-	for _, p := range []string{decisionsPath, systemonePath} {
-		var a, b runtime.MemStats
-		runtime.GC()
-		runtime.ReadMemStats(&a)
-		status, body, _ := drive(t, p, "Bearer sk-nobody-issued-this", bomb, gz)
-		runtime.ReadMemStats(&b)
-		if status != http.StatusUnauthorized {
-			t.Fatalf("%s: unauthenticated gzip => %d %s", p, status, body)
-		}
-		if alloc := b.TotalAlloc - a.TotalAlloc; alloc > 2<<20 {
-			t.Fatalf("%s: refusing %d KiB of unauthenticated gzip allocated %d MiB: it was decoded", p, len(bomb)>>10, alloc>>20)
-		}
+	var a, b runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&a)
+	status, body, _ := drive(t, "Bearer sk-nobody-issued-this", bomb, gz)
+	runtime.ReadMemStats(&b)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated gzip => %d %s", status, body)
+	}
+	if alloc := b.TotalAlloc - a.TotalAlloc; alloc > 2<<20 {
+		t.Fatalf("refusing %d KiB of unauthenticated gzip allocated %d MiB: it was decoded", len(bomb)>>10, alloc>>20)
 	}
 	if n := reads.Load(); n != 0 {
 		t.Fatalf("a body behind a refused credential was read %d time(s)", n)
 	}
 
 	over := gzipped(`{"model":"kai","state":"` + strings.Repeat("x", decisionBodyBytes+1024) + `","questions":{"q":{"type":"noul"}}}`)
-	status, body, c := drive(t, decisionsPath, "Bearer "+decisionsKey, over, gz)
+	status, body, c := drive(t, "Bearer "+decisionsKey, over, gz)
 	var native struct {
 		Error struct{ Code, Message string } `json:"error"`
 	}
 	if status != 422 || json.Unmarshal([]byte(body), &native) != nil || native.Error.Code != "request_too_long" || replied(c, "X-Request-Id") == "" {
-		t.Fatalf("/v1/decisions gzip past the bound => %d %s", status, body)
-	}
-	status, body, c = drive(t, systemonePath, "Bearer "+decisionsKey, over, gz)
-	var jev struct {
-		Detail []struct{ Type string } `json:"detail"`
-	}
-	if status != 422 || json.Unmarshal([]byte(body), &jev) != nil || len(jev.Detail) != 1 || jev.Detail[0].Type != "request_too_long" || replied(c, "X-Request-Id") == "" {
-		t.Fatalf("/v1/systemone gzip past the bound => %d %s", status, body)
+		t.Fatalf("gzip past the bound => %d %s", status, body)
 	}
 	for coding, want := range map[string]int{"compress": 415, "gzip, gzip": 415, "gzip": 400} {
 		sent := gzipped(decisionBody)
 		if coding == "gzip" {
 			sent = "not gzip at all"
 		}
-		if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, sent, map[string]string{"Content-Encoding": coding}); status != want {
+		if status, body, _ := drive(t, "Bearer "+decisionsKey, sent, map[string]string{"Content-Encoding": coding}); status != want {
 			t.Errorf("Content-Encoding %q => %d %s, want %d", coding, status, body, want)
 		}
 	}
@@ -747,7 +688,7 @@ func TestDecisionBodyIsDecodedOnceAfterItsCredential(t *testing.T) {
 		t.Fatalf("a refused body reached the service %d time(s), billed %d", calls, len(*events))
 	}
 
-	if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, gzipped(decisionBody), gz); status != 200 {
+	if status, body, _ := drive(t, "Bearer "+decisionsKey, gzipped(decisionBody), gz); status != 200 {
 		t.Fatalf("a gzip decision => %d %s", status, body)
 	}
 	if _, _, sent := fake.seen(); string(sent) != decisionBody || len(*events) != 1 {
@@ -803,47 +744,35 @@ func allocated(run func()) uint64 {
 // never at a library's defaults. A zstd frame whose header declares a window past
 // the bound is refused before the window is allocated, however little it holds; at
 // the bound it is served. A gzip, deflate, brotli or zstd body inflating past the
-// bound is 422 request_too_long in the path's words. Nothing refused reaches the
-// service, and each coding's small body is served as the JSON it decodes to.
+// bound is 422 request_too_long. Nothing refused reaches the service, and each
+// coding's small body is served as the JSON it decodes to.
 func TestDecisionBodyDecodersAreBounded(t *testing.T) {
 	fake, events := setupDecisions(t)
 	zst := map[string]string{"Content-Encoding": "zstd"}
-	tooLong := func(p string, status int, body string) bool {
+	past := func(status int, body string) bool {
 		var out struct {
-			Error  struct{ Code string }   `json:"error"`
-			Detail []struct{ Type string } `json:"detail"`
+			Error struct{ Code string } `json:"error"`
 		}
-		if status != 422 || json.Unmarshal([]byte(body), &out) != nil {
-			return false
-		}
-		if p == systemonePath {
-			return len(out.Detail) == 1 && out.Detail[0].Type == "request_too_long"
-		}
-		return out.Error.Code == "request_too_long"
+		return status == 422 && json.Unmarshal([]byte(body), &out) == nil && out.Error.Code == "request_too_long"
 	}
 
-	for _, p := range []string{decisionsPath, systemonePath} {
-		for _, log := range []int{28, 41} {
-			var status int
-			var body string
-			n := allocated(func() { status, body, _ = drive(t, p, "Bearer "+decisionsKey, windowed(log, decisionBody), zst) })
-			if !tooLong(p, status, body) {
-				t.Fatalf("%s: a zstd frame declaring a 2^%d-byte window => %d %s", p, log, status, body)
-			}
-			if n > 4<<20 {
-				t.Fatalf("%s: refusing a zstd frame declaring a 2^%d-byte window allocated %d MiB", p, log, n>>20)
-			}
+	for _, log := range []int{28, 41} {
+		var status int
+		var body string
+		n := allocated(func() { status, body, _ = drive(t, "Bearer "+decisionsKey, windowed(log, decisionBody), zst) })
+		if !past(status, body) {
+			t.Fatalf("a zstd frame declaring a 2^%d-byte window => %d %s", log, status, body)
+		}
+		if n > 4<<20 {
+			t.Fatalf("refusing a zstd frame declaring a 2^%d-byte window allocated %d MiB", log, n>>20)
 		}
 	}
 
 	over := `{"model":"kai","state":"` + strings.Repeat("x", decisionBodyBytes) + `","questions":{"q":{"type":"noul"}}}`
 	for _, coding := range []string{"gzip", "deflate", "br", "zstd"} {
-		sent := coded(t, coding, over, 22)
-		for _, p := range []string{decisionsPath, systemonePath} {
-			status, body, _ := drive(t, p, "Bearer "+decisionsKey, sent, map[string]string{"Content-Encoding": coding})
-			if !tooLong(p, status, body) {
-				t.Fatalf("%s: %s inflating past the bound => %d %s", p, coding, status, body)
-			}
+		status, body, _ := drive(t, "Bearer "+decisionsKey, coded(t, coding, over, 22), map[string]string{"Content-Encoding": coding})
+		if !past(status, body) {
+			t.Fatalf("%s inflating past the bound => %d %s", coding, status, body)
 		}
 	}
 	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
@@ -851,14 +780,14 @@ func TestDecisionBodyDecodersAreBounded(t *testing.T) {
 	}
 
 	for _, coding := range []string{"gzip", "deflate", "br", "zstd"} {
-		if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, coded(t, coding, decisionBody, 22), map[string]string{"Content-Encoding": coding}); status != 200 {
+		if status, body, _ := drive(t, "Bearer "+decisionsKey, coded(t, coding, decisionBody, 22), map[string]string{"Content-Encoding": coding}); status != 200 {
 			t.Fatalf("a %s decision => %d %s", coding, status, body)
 		}
 		if _, _, sent := fake.seen(); string(sent) != decisionBody {
 			t.Fatalf("%s: the service was sent %q", coding, sent)
 		}
 	}
-	if status, body, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, windowed(24, decisionBody), zst); status != 200 {
+	if status, body, _ := drive(t, "Bearer "+decisionsKey, windowed(24, decisionBody), zst); status != 200 {
 		t.Fatalf("a zstd frame declaring a window at the bound => %d %s", status, body)
 	}
 }

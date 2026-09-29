@@ -36,7 +36,6 @@ var takes = map[string]any{
 	// OpenAI embedding request it forwards.
 	"Embeddings": openai.EmbeddingRequest{},
 	// Forwarded to the decision service with its handles named by the paying org;
-	// this is the Decisions request, and Jev's.
+	// this is the Decisions request.
 	"Decisions": decisionsRequest{},
-	"Systemone": systemoneRequest{},
 }

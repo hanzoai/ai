@@ -132,9 +132,6 @@ func Document(app *zip.App) map[string]any {
 				// loses whole products with the path count unchanged.
 				if t := product(path); t != "" {
 					o["tags"] = []any{t}
-					if compat[path] {
-						o["tags"] = []any{t, "compat"}
-					}
 				}
 				// A templated segment NAMES a parameter, and an operation that
 				// leaves it undeclared reaches a client with the value in its
@@ -188,12 +185,6 @@ func Document(app *zip.App) map[string]any {
 		"components": map[string]any{"schemas": schemas},
 	}
 }
-
-// compat are the addresses served as another vendor's spelling of one of ours, and
-// tagged so: hanzoai/cloud keeps a compat operation out of the published contract
-// and in the internal document. /v1/systemone is Jev's spelling of /v1/decisions,
-// documented in the Jev migration guide and nowhere a customer starts.
-var compat = map[string]bool{"/v1/systemone": true}
 
 // expand is the verbs one registration publishes.
 //

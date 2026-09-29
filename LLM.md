@@ -498,17 +498,16 @@ comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. No
 principal bypasses it: the gate always consults the balance, and a lookup that
 fails returns 500 rather than free access. To verify premium/zen, credit the org.
 
-## Decisions — `/v1/decisions` and `/v1/systemone`, one call on two wires
+## Decisions — `/v1/decisions`, the one decision path
 
-`controllers/decisions.go`. Both paths reach the decision service (`KAI_URL`) and
-share one core, `decide`, which the HTTP handlers and the ZAP twins
-(`zap_decisions.go`) call after resolving the principal. `/v1/systemone` is Jev's
-wire (request, answer, FastAPI `{"detail": ...}` refusals). Both paths serve Kai
-and Jev by OpenRouter's vendor ids (`typesafe/jev-1.13`, `~typesafe/jev-latest`),
-which reach Jev itself; nothing named Jev is ever answered by Kai (`jevNamed`), and
-a bare `jev-*` has no route, so it is 400. The service's own path is the one
-called, so it answers in the path's shape. Kai bills $0.021 and Jev its list
-$0.042 per million input tokens — the same row in `model_pricing.go`,
+`controllers/decisions.go`. It reaches the decision service (`KAI_URL`) through one
+core, `decide`, which the HTTP handler and the ZAP twins (`zap_decisions.go`) call
+after resolving the principal. It serves Kai (`kai`, `kai-<12 hex>`) and Jev by
+OpenRouter's vendor ids (`typesafe/jev-1.13`, `~typesafe/jev-latest`), selected by
+`model`; the vendor ids reach Jev itself. Nothing named Jev is ever answered by Kai
+(`jevNamed`), and a bare `jev-*` has no route, so it is 400. Every refusal is
+`{"error":{"code","message"}}`. Kai bills $0.021 and Jev its list $0.042 per
+million input tokens — the same row in `model_pricing.go`,
 `conf/models.yaml` and hanzoai/pricing's `decisionCatalog`.
 
 - **One principal pays.** The ledger org is what the reservation, the debit and
@@ -520,7 +519,7 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
   handle in it goes back byte for byte.
 - **One body bound, shared with the service.** `decisionBodyBytes` (16 MiB) is the
   decision service's `BODY_BYTES`; change both together. A body past it is 422
-  `request_too_long` in the path's shape, after authentication. ai's socket admits
+  `request_too_long`, after authentication. ai's socket admits
   more (26 MiB), so the handler sees it; a refusal a layer RETURNS (the framework
   reading an over-limit body included) is worded by `Dialect` via
   `controllers.Refusing`. A transport-level refusal (zip's raw fasthttp server,
@@ -552,11 +551,11 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
   identical body (whitespace-insensitive, order kept) from the same org within a
   minute, under a fresh `id`, billed like a miss. Each org holds at most an eighth of
   it and evicts its own. Never across orgs. Handle requests are never held.
-- **`Restate` is the wording rule**: refusal shape per path, `Retry-After` +
-  `Retry-After-Ms` on 402/429/529, `X-Request-Id` on everything; the service's
-  `X-Request-Id` and `X-Typesafe-Request-Id` pass through. The `Dialect` filter sits
-  OUTSIDE `Recovered`, so a panic's 500 is worded too, and matches the paths any
-  case, trailing slash or not. The ZAP cloud wire (MsgType 100) has no header slot:
+- **`Restate` is the wording rule**: every refusal in the service's shape,
+  `Retry-After` + `Retry-After-Ms` on 402/429/529, `X-Request-Id` on everything; the
+  service's `X-Request-Id` passes through. The `Dialect` filter sits OUTSIDE
+  `Recovered`, so a panic's 500 is worded too, and matches the path in any case,
+  trailing slash or not. The ZAP cloud wire (MsgType 100) has no header slot:
   its replies carry status, body and error text only, never headers folded into a
   body. The usage row's `request_id` column is the id the caller saw
   (`ClientRequestID`); the row's own `id` stays minted here. A 502 names no address.
@@ -565,7 +564,7 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
   OpenRouter SKU's own `created`. A model nothing records keeps the listing's time;
   none is invented. The shape is unchanged (Codex decodes it).
 - **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is
-  Kai on both paths with no route of its own: priced and filed as `kai`, sent to the
+  Kai with no route of its own: priced and filed as `kai`, sent to the
   service as asked (the service checks it names the weights it serves). Any other
   `kai-…` no route names is 400.
 - **Nothing named Jev reaches Kai**: a route or a models.yaml `alias_of` that would
@@ -574,8 +573,7 @@ $0.042 per million input tokens — the same row in `model_pricing.go`,
 - **The spec is derived.** `routers/shape.go` reads `validate:"required,min=,max="`
   and `enum:"..."` tags, a type's `Schema()` (Content kinds) and `Variants()`
   (a question is one of three, by `type`); `controllers.Answer.Refusals` states
-  each refusal and its headers. `/v1/systemone` is tagged `compat`, so cloud keeps
-  it out of `openapi.yaml` and in `private.yaml`.
+  each refusal and its headers.
 
 ## AI Login Manager — universal metering + connected accounts + 1% BYO fee
 

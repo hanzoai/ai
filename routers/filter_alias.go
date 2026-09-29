@@ -25,7 +25,7 @@ import (
 // AliasFilter rewrites a request that names an alias (models.yaml alias_of) to name
 // the id the alias stands for, before anything reads the model: routing, the gate,
 // the plan limits, the handler and the ledger all see that id, so an alias is
-// served and billed as it. A decision path is left alone: its handler resolves an
+// served and billed as it. /v1/decisions is left alone: its handler resolves an
 // alias after the credential. So is a body with a Content-Encoding: this runs ahead
 // of every credential, and reading a coded body's model means decoding it for a
 // sender nobody has authenticated. Its model reaches the handler as sent.

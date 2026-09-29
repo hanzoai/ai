@@ -20,25 +20,24 @@ import (
 	"github.com/hanzoai/ai/controllers"
 )
 
-// Dialect answers the two decision paths in their own words, whichever layer
-// answers — one that wrote its refusal, and one that returned it. A rate limit, a quota, a balance gate and an authorization filter each
-// write a refusal of their own before the handler runs; on /v1/decisions every one
-// of them leaves as {"error":{"code","message"}}, on /v1/systemone as FastAPI's
-// {"detail": ...}, a 402, 429 or 529 carries Retry-After and Retry-After-Ms, and
-// every answer carries X-Request-Id — the caller's own, or a fresh one the handler
-// also forwards to the service. controllers.Restate is the rule; the handler and
-// the ZAP twins apply the same one.
+// Dialect answers /v1/decisions in the decision service's words, whichever layer
+// answers — one that wrote its refusal, and one that returned it. A rate limit, a
+// quota, a balance gate and an authorization filter each write a refusal of their
+// own before the handler runs; every one of them leaves as
+// {"error":{"code","message"}}, a 402, 429 or 529 carries Retry-After and
+// Retry-After-Ms, and every answer carries X-Request-Id — the caller's own, or a
+// fresh one the handler also forwards to the service. controllers.Restate is the
+// rule; the handler and the ZAP twins apply the same one.
 func Dialect(c *zip.Ctx) error {
-	path := c.Path()
-	if !controllers.DecisionPath(path) {
+	if !controllers.DecisionPath(c.Path()) {
 		return c.Continue()
 	}
 	rid := controllers.RequestID(c.Header("X-Request-Id"))
 	c.Fiber().Request().Header.Set("X-Request-Id", rid)
 	if err := c.Continue(); err != nil {
 		// A layer that returned its refusal instead of writing it is answered here,
-		// in the path's words, rather than by the framework's own renderer.
-		status, body, header := controllers.Refusing(path, err, rid)
+		// in the service's words, rather than by the framework's own renderer.
+		status, body, header := controllers.Refusing(err, rid)
 		for k, v := range header {
 			c.SetHeader(k, v)
 		}
@@ -52,7 +51,7 @@ func Dialect(c *zip.Ctx) error {
 			header[k] = string(v)
 		}
 	}
-	if body, changed := controllers.Restate(path, resp.StatusCode(), resp.Body(), header, rid); changed {
+	if body, changed := controllers.Restate(resp.StatusCode(), resp.Body(), header, rid); changed {
 		resp.SetBody(body)
 		resp.Header.SetContentType("application/json")
 	}

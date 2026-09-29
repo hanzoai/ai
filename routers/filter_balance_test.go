@@ -512,8 +512,8 @@ func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
 // The gate reads a decision body's model once its sender is known, so it is where a
 // compressed decision body is decoded: once, bounded, and left plain on the request
 // with no coding, so the handler after it reads JSON and decodes nothing. One that
-// inflates past the bound is refused here as request_too_long in the path's words,
-// and a coding nobody decodes as 415; neither reaches the handler.
+// inflates past the bound is refused here as request_too_long in the service's
+// words, and a coding nobody decodes as 415; neither reaches the handler.
 func TestTheGateDecodesADecisionBodyOnce(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
@@ -545,10 +545,10 @@ func TestTheGateDecodesADecisionBodyOnce(t *testing.T) {
 	}
 
 	over := gz(`{"model":"kai","state":"` + strings.Repeat("x", 16<<20) + `","questions":{"q":{"type":"noul"}}}`)
-	p = ask(http.MethodPost, "/v1/systemone").body(over).
+	p = ask(http.MethodPost, "/v1/decisions").body(over).
 		with("Content-Encoding", "gzip").with("Authorization", "Bearer tok").
 		through(Dialect, BalanceGateFilter, handler)
-	if p.status() != 422 || !strings.Contains(p.said(), `"type":"request_too_long"`) || p.replied("X-Request-Id") == "" {
+	if p.status() != 422 || !strings.Contains(p.said(), `"code":"request_too_long"`) || p.replied("X-Request-Id") == "" {
 		t.Fatalf("gzip past the bound => %d %s", p.status(), p.said())
 	}
 	p = ask(http.MethodPost, "/v1/decisions").body([]byte(plain)).
@@ -562,10 +562,10 @@ func TestTheGateDecodesADecisionBodyOnce(t *testing.T) {
 	}
 }
 
-// A wallet the ledger already holds empty is refused on a decision path before its
+// A wallet the ledger already holds empty is refused on /v1/decisions before its
 // body is decoded, when no decision model is free to it: 64 MiB of gzip costs what
-// its wire bytes cost, and the answer is the gate's 402 in the path's words, never
-// the handler. When a decision model is free the body is decoded, because only the
+// its wire bytes cost, and the answer is the gate's 402 in the service's words,
+// never the handler. When a decision model is free the body is decoded, because only the
 // model it names says whether the call is one the wallet need not pay for.
 func TestAnEmptyWalletIsRefusedBeforeItsDecisionBodyIsDecoded(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
@@ -582,27 +582,25 @@ func TestAnEmptyWalletIsRefusedBeforeItsDecisionBodyIsDecoded(t *testing.T) {
 	_ = zw.Close()
 	var reached int
 	handler := func(c *zip.Ctx) error { reached++; return c.Continue() }
-	send := func(path string) probe {
-		return ask(http.MethodPost, path).body(zb.Bytes()).
+	send := func() probe {
+		return ask(http.MethodPost, "/v1/decisions").body(zb.Bytes()).
 			with("Content-Encoding", "gzip").with("Authorization", "Bearer tok").
 			through(Dialect, BalanceGateFilter, handler)
 	}
-	for _, path := range []string{"/v1/decisions", "/v1/systemone"} {
-		var a, b runtime.MemStats
-		runtime.GC()
-		runtime.ReadMemStats(&a)
-		p := send(path)
-		runtime.ReadMemStats(&b)
-		if p.status() != http.StatusPaymentRequired || p.replied("X-Request-Id") == "" {
-			t.Fatalf("%s: an empty wallet's gzip decision => %d %s", path, p.status(), p.said())
-		}
-		if alloc := b.TotalAlloc - a.TotalAlloc; alloc > 8<<20 {
-			t.Fatalf("%s: refusing an empty wallet's %d KiB of gzip allocated %d MiB: it was decoded", path, zb.Len()>>10, alloc>>20)
-		}
+	var a, b runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&a)
+	p := send()
+	runtime.ReadMemStats(&b)
+	if p.status() != http.StatusPaymentRequired || p.replied("X-Request-Id") == "" {
+		t.Fatalf("an empty wallet's gzip decision => %d %s", p.status(), p.said())
+	}
+	if alloc := b.TotalAlloc - a.TotalAlloc; alloc > 8<<20 {
+		t.Fatalf("refusing an empty wallet's %d KiB of gzip allocated %d MiB: it was decoded", zb.Len()>>10, alloc>>20)
 	}
 
 	free = true
-	if p := send("/v1/decisions"); p.status() != http.StatusUnprocessableEntity || !strings.Contains(p.said(), `"code":"request_too_long"`) {
+	if p := send(); p.status() != http.StatusUnprocessableEntity || !strings.Contains(p.said(), `"code":"request_too_long"`) {
 		t.Fatalf("with a free decision model the body was not decoded: %d %s", p.status(), p.said())
 	}
 	if reached != 0 {

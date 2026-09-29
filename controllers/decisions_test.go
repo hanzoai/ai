@@ -157,24 +157,20 @@ func setupDecisions(t *testing.T) (*fakeDecisions, *[]object.UsageEvent) {
 // after replying, and returns its status and body.
 func driveDecisions(t *testing.T, authorization, body string) (int, string) {
 	t.Helper()
-	status, body, _ := drive(t, decisionsPath, authorization, body, nil)
+	status, body, _ := drive(t, authorization, body, nil)
 	return status, body
 }
 
-// drive runs the handler for path with the given request headers, waits for the
+// drive runs the Decisions handler with the given request headers, waits for the
 // debit it filed after replying, and returns its status, body and reply.
-func drive(t *testing.T, path, authorization, body string, header map[string]string) (int, string, *ApiController) {
+func drive(t *testing.T, authorization, body string, header map[string]string) (int, string, *ApiController) {
 	t.Helper()
-	c := presenting(visit(http.MethodPost, path), authorization)
+	c := presenting(visit(http.MethodPost, decisionsPath), authorization)
 	for k, v := range header {
 		c.Fiber().Request().Header.Set(k, v)
 	}
 	c.Fiber().Request().SetBody([]byte(body))
-	handler := c.Decisions
-	if path == systemonePath {
-		handler = c.Systemone
-	}
-	status := answering(t, c, handler)
+	status := answering(t, c, c.Decisions)
 	settled(t)
 	return status, sent(c), c
 }

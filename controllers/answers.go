@@ -87,8 +87,7 @@ var answers = map[string]Answer{
 	"AudioTranscriptions":   whole(openai.AudioResponse{}),
 	"ListModels":            whole(modelList{}),
 	"Rerank":                whole(ranking{}),
-	"Decisions":             {Shape: decisionsResponse{}, Refusals: decisionRefusals(decisionsPath), Traced: true},
-	"Systemone":             {Shape: systemoneResponse{}, Refusals: decisionRefusals(systemonePath), Traced: true},
+	"Decisions":             {Shape: decisionsResponse{}, Refusals: decisionRefusals(), Traced: true},
 	"VideosGenerations":     whole(videoStatus{}),
 	"RetrieveVideo":         whole(videoStatus{}),
 
@@ -163,10 +162,9 @@ var answers = map[string]Answer{
 	"GetTrafficGlobe":     data(object.TrafficGlobe{}),
 }
 
-// decisionRefusals are the refusals a decision path answers with, in that path's
-// words: {"error":{"code","message"}} on /v1/decisions, FastAPI's {"detail": ...}
-// on /v1/systemone.
-func decisionRefusals(path string) map[int]Refusal {
+// decisionRefusals are the refusals /v1/decisions answers with, each in the
+// service's error shape, {"error":{"code","message"}}.
+func decisionRefusals() map[int]Refusal {
 	says := map[int]string{
 		400: "Malformed JSON, or a model this path does not serve.",
 		401: "No credential, or one this service does not accept.",
@@ -180,15 +178,8 @@ func decisionRefusals(path string) map[int]Refusal {
 	}
 	out := make(map[int]Refusal, len(says))
 	for status, s := range says {
-		var shape any = decisionsRefused{}
-		if path == systemonePath {
-			shape = systemoneRefused{}
-			if status == 422 {
-				shape = systemoneInvalid{}
-			}
-		}
 		_, wait := pause(status)
-		out[status] = Refusal{Says: s, Shape: shape, Wait: wait}
+		out[status] = Refusal{Says: s, Shape: decisionsRefused{}, Wait: wait}
 	}
 	return out
 }

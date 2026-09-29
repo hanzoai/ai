@@ -37,8 +37,8 @@ import (
 
 // A request naming an alias reaches everything after the filter naming the id the
 // alias stands for, every other field as sent, on every path that names a model but
-// the decision paths, which resolve an alias after the credential. Any other id
-// passes byte for byte.
+// /v1/decisions, which resolves an alias after the credential. Any other id passes
+// byte for byte.
 func TestAnAliasIsNamedAsTheIDItStandsFor(t *testing.T) {
 	prev := canonical
 	canonical = func(model string) (string, bool) {
@@ -66,7 +66,7 @@ func TestAnAliasIsNamedAsTheIDItStandsFor(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{"/v1/decisions", "/v1/systemone", "/V1/Decisions/"} {
+	for _, path := range []string{"/v1/decisions", "/V1/Decisions/"} {
 		sent := `{"model":"HanzoAI/Enso","state":"x","questions":{"q":{"type":"noul"}}}`
 		if p := ask(http.MethodPost, path).body([]byte(sent)).through(AliasFilter); p.handed() != sent {
 			t.Fatalf("%s: %s was rewritten to %s", path, sent, p.handed())
@@ -86,7 +86,7 @@ func TestAnAliasIsNamedAsTheIDItStandsFor(t *testing.T) {
 }
 
 // Through the whole router, a decision body behind a credential nobody issued is
-// refused 401 in the path's words without being parsed or decoded: the alias rewrite
+// refused 401 in the service's words without being parsed or decoded: the alias rewrite
 // never reads it, and 64 MiB of gzip costs what its wire bytes cost.
 func TestADecisionBodyIsNotReadBeforeItsCredential(t *testing.T) {
 	var seen atomic.Int32
@@ -105,32 +105,30 @@ func TestADecisionBodyIsNotReadBeforeItsCredential(t *testing.T) {
 	zw, _ := gzip.NewWriterLevel(&zb, gzip.BestCompression)
 	_, _ = zw.Write([]byte(`{"state":1,` + strings.Repeat(" ", 64<<20) + `"model":"kai"}`))
 	_ = zw.Close()
-	for _, path := range []string{"/v1/decisions", "/v1/systemone"} {
-		for _, gz := range []bool{false, true} {
-			body := []byte(`{"model":"kai","state":"x","questions":{"q":{"type":"noul"}}}`)
-			if gz {
-				body = zb.Bytes()
-			}
-			req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-			req.Header.Set("Authorization", "Bearer sk-nobody-issued-this-000000000000")
-			if gz {
-				req.Header.Set("Content-Encoding", "gzip")
-			}
-			var a, b runtime.MemStats
-			runtime.GC()
-			runtime.ReadMemStats(&a)
-			resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second})
-			runtime.ReadMemStats(&b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			out, _ := io.ReadAll(resp.Body)
-			if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("X-Request-Id") == "" {
-				t.Fatalf("%s gzip=%v unauthenticated => %d %s", path, gz, resp.StatusCode, out)
-			}
-			if alloc := b.TotalAlloc - a.TotalAlloc; gz && alloc > 8<<20 {
-				t.Fatalf("%s: refusing %d KiB of unauthenticated gzip allocated %d MiB: it was decoded", path, zb.Len()>>10, alloc>>20)
-			}
+	for _, gz := range []bool{false, true} {
+		body := []byte(`{"model":"kai","state":"x","questions":{"q":{"type":"noul"}}}`)
+		if gz {
+			body = zb.Bytes()
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/decisions", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer sk-nobody-issued-this-000000000000")
+		if gz {
+			req.Header.Set("Content-Encoding", "gzip")
+		}
+		var a, b runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&a)
+		resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second})
+		runtime.ReadMemStats(&b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("X-Request-Id") == "" {
+			t.Fatalf("gzip=%v unauthenticated => %d %s", gz, resp.StatusCode, out)
+		}
+		if alloc := b.TotalAlloc - a.TotalAlloc; gz && alloc > 8<<20 {
+			t.Fatalf("refusing %d KiB of unauthenticated gzip allocated %d MiB: it was decoded", zb.Len()>>10, alloc>>20)
 		}
 	}
 	if n := seen.Load(); n != 0 {

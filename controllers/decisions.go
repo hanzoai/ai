@@ -49,22 +49,19 @@ import (
 
 // POST /v1/decisions is Hanzo Decision's public API, on the Decisions API wire: a
 // request names a model, a state and typed questions about it, and the answer is
-// one typed answer per question with calibrated probabilities. POST /v1/systemone
-// is the same call on Jev's wire, for a Jev client moved to Kai by its base URL:
-// Jev's request and answer shapes, and refusals in FastAPI's {"detail": ...}.
+// one typed answer per question with calibrated probabilities.
 //
-// ai does not decide. The decision service (object.KaiProvider, KAI_URL) answers
-// both paths; ai authenticates on the one auth + routing policy, reserves the
-// call's price against the org that pays, names every handle by that org, forwards
-// the body under the id the model's route names upstream, answers, and files the
-// debit once the answer has gone. The models are the routes to that service
+// ai does not decide. The decision service (object.KaiProvider, KAI_URL) answers;
+// ai authenticates on the one auth + routing policy, reserves the call's price
+// against the org that pays, names every handle by that org, forwards the body
+// under the id the model's route names upstream, answers, and files the debit once
+// the answer has gone. The models are the routes to that service
 // (conf/models.yaml, provider kai): kai, and the Jev ids the service forwards to
 // OpenRouter. A decision bills its input tokens at the model's price
 // (decisionCostNano): Kai at $0.021 per million, Jev at its list price, $0.042.
 
 const (
 	decisionsPath = "/v1/decisions"
-	systemonePath = "/v1/systemone"
 	nanoPerCent   = 10_000_000
 )
 
@@ -254,99 +251,6 @@ func (decisionCode) Schema() map[string]any {
 func (c decisionCode) MarshalJSON() ([]byte, error)  { return json.RawMessage(c).MarshalJSON() }
 func (c *decisionCode) UnmarshalJSON(b []byte) error { return (*json.RawMessage)(c).UnmarshalJSON(b) }
 
-// systemoneRequest is the body POST /v1/systemone reads: Jev's request.
-type systemoneRequest struct {
-	// Model is kai or its versioned id, or Jev by its vendor id.
-	Model     string                       `json:"model" validate:"required"`
-	State     decisionContent              `json:"state" validate:"required"`
-	Questions map[string]systemoneQuestion `json:"questions" validate:"required,min=1,max=100"`
-}
-
-// systemoneQuestion is one of Jev's three questions.
-type systemoneQuestion struct{}
-
-// Variants are the three kinds of question, at Jev's limits.
-func (systemoneQuestion) Variants() (string, []any) {
-	return "type", []any{systemoneNoul{}, systemoneChoice{}, systemoneScore{}}
-}
-
-// systemoneNoul asks whether a statement holds.
-type systemoneNoul struct {
-	Type         string          `json:"type" validate:"required" enum:"noul"`
-	Instructions decisionContent `json:"instructions,omitempty"`
-	Criteria     *decisionSides  `json:"criteria,omitempty"`
-}
-
-// systemoneChoice picks one of 2 to 255 labels.
-type systemoneChoice struct {
-	Type         string                    `json:"type" validate:"required" enum:"choice"`
-	Instructions decisionContent           `json:"instructions,omitempty"`
-	Criteria     map[string]decisionOption `json:"criteria" validate:"required,min=2,max=255"`
-}
-
-// systemoneScore picks one of 1 to 10 levels; level i scores i.
-type systemoneScore struct {
-	Type         string            `json:"type" validate:"required" enum:"score"`
-	Instructions decisionContent   `json:"instructions,omitempty"`
-	Criteria     []decisionContent `json:"criteria" validate:"required,min=1,max=10"`
-}
-
-// systemoneResponse is Jev's answer, and nothing beside it.
-type systemoneResponse struct {
-	// Model is the versioned id of the model that answered.
-	Model   string                     `json:"model" validate:"required"`
-	Answers map[string]systemoneAnswer `json:"answers" validate:"required"`
-	Usage   systemoneUsage             `json:"usage" validate:"required"`
-}
-
-// systemoneAnswer is one of Jev's answers. Type names which of noul, choice or
-// score is set.
-type systemoneAnswer struct {
-	Type   string   `json:"type" validate:"required" enum:"noul,choice,score"`
-	Noul   *float64 `json:"noul,omitempty"`
-	Choice string   `json:"choice,omitempty"`
-	Score  *float64 `json:"score,omitempty"`
-	// Confidence is (n·p_max − 1)/(n − 1) for a choice, and Jev's
-	// 1 − E|i − mode| / MAD(uniform) for a score.
-	Confidence    *float64                   `json:"confidence,omitempty"`
-	Legend        map[string]decisionContent `json:"legend,omitempty"`
-	Probabilities map[string]float64         `json:"probabilities,omitempty"`
-}
-
-// systemoneUsage is the billed count, as decisionsUsage counts it.
-type systemoneUsage struct {
-	InputTokens  int `json:"input_tokens" validate:"required"`
-	OutputTokens int `json:"output_tokens" validate:"required"`
-}
-
-// systemoneRefused is a refusal on /v1/systemone: FastAPI's {"detail": "..."}.
-type systemoneRefused struct {
-	Detail string `json:"detail" validate:"required"`
-}
-
-// systemoneInvalid is FastAPI's 422: each field that failed, where, and why.
-type systemoneInvalid struct {
-	Detail []systemoneViolation `json:"detail" validate:"required"`
-}
-
-// systemoneViolation is one failed field.
-type systemoneViolation struct {
-	Loc  []decisionPlace `json:"loc" validate:"required"`
-	Msg  string          `json:"msg" validate:"required"`
-	Type string          `json:"type" validate:"required"`
-}
-
-// decisionPlace is one step of a location: a field name or an index.
-type decisionPlace json.RawMessage
-
-// Schema is a string or an integer.
-func (decisionPlace) Schema() map[string]any {
-	return map[string]any{"anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "integer"}}}
-}
-
-func (c decisionPlace) MarshalJSON() ([]byte, error)  { return json.RawMessage(c).MarshalJSON() }
-func (c *decisionPlace) UnmarshalJSON(b []byte) error { return (*json.RawMessage)(c).UnmarshalJSON(b) }
-
 // decisionsFailure is the decision service's error body, {"error":{"code","message"}}.
 // ai answers its own refusals on /v1/decisions in it, so a caller reads one shape
 // whoever refused.
@@ -355,29 +259,14 @@ func decisionsFailure(code int, message string) []byte {
 	return b
 }
 
-// systemoneFailure is FastAPI's error body, {"detail": "..."}: ai's refusals on
-// /v1/systemone.
-func systemoneFailure(message string) []byte {
-	b, _ := json.Marshal(map[string]string{"detail": message})
-	return b
-}
-
-// decisionRefusal is a status and a body in the path's own words.
+// decisionRefusal is a status and a body in the service's error shape.
 type decisionRefusal struct {
 	status int
 	body   []byte
 }
 
-// refuseDecision is ai's refusal on /v1/decisions.
-func refuseDecision(code int, format string, args ...any) *decisionRefusal {
-	return &decisionRefusal{status: code, body: decisionsFailure(code, fmt.Sprintf(format, args...))}
-}
-
-// decline is ai's refusal on path, in that path's words.
-func decline(path string, code int, message string) *decisionRefusal {
-	if path == systemonePath {
-		return &decisionRefusal{status: code, body: systemoneFailure(message)}
-	}
+// decline is ai's refusal on /v1/decisions.
+func decline(code int, message string) *decisionRefusal {
 	return &decisionRefusal{status: code, body: decisionsFailure(code, message)}
 }
 
@@ -404,8 +293,8 @@ func decisionModels() []string {
 	return ids
 }
 
-// DecisionFree reports whether a model the decision paths serve costs org nothing.
-// The balance gate refuses an empty wallet on those paths before decoding a body
+// DecisionFree reports whether a model /v1/decisions serves costs org nothing.
+// The balance gate refuses an empty wallet on it before decoding a body
 // only when none does, so a free decision route stays reachable at $0.
 func DecisionFree(org string) bool {
 	for _, id := range decisionModels() {
@@ -447,23 +336,16 @@ func jevNamed(id string) bool {
 // its ceilings — 128k tokens of state, 100 questions, options bounded by the token
 // budget — and the two change together, so a caller meets one bound, refused with
 // one code, whichever of the two refuses. The socket admits more (ai.App's
-// BodyLimit), so a body past this reaches the handler and is refused in the path's
-// words rather than by the transport.
+// BodyLimit), so a body past this reaches the handler and is refused in the
+// service's shape rather than by the transport.
 const decisionBodyBytes = 16 << 20
 
-// tooLong refuses a body past decisionBodyBytes in path's words: 422
-// request_too_long. size is the body's length, or 0 when the transport stopped
-// reading it.
-func tooLong(path string, size int) *decisionRefusal {
+// tooLong refuses a body past decisionBodyBytes: 422 request_too_long. size is the
+// body's length, or 0 when the transport stopped reading it.
+func tooLong(size int) *decisionRefusal {
 	msg := fmt.Sprintf("the request body is over the limit of %d bytes", decisionBodyBytes)
 	if size > 0 {
 		msg = fmt.Sprintf("the request body is %d bytes; the limit is %d", size, decisionBodyBytes)
-	}
-	if decisionPath(path) == systemonePath {
-		b, _ := json.Marshal(systemoneInvalid{Detail: []systemoneViolation{{
-			Loc: []decisionPlace{decisionPlace(`"body"`)}, Msg: msg, Type: "request_too_long",
-		}}})
-		return &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
 	}
 	b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": "request_too_long", "message": msg}})
 	return &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
@@ -547,11 +429,11 @@ func decode(coding string, body []byte, limit int) ([]byte, error) {
 	return out, nil
 }
 
-// Refusing is a decision path's answer to an error a layer RETURNED rather than
+// Refusing is /v1/decisions' answer to an error a layer RETURNED rather than
 // wrote — a refusal the framework raised reading the request included: its status
-// and sentence in the path's shape, a body over the limit as request_too_long, and
-// anything that chose no status as a 500 that says nothing of what failed.
-func Refusing(path string, err error, rid string) (int, []byte, map[string]string) {
+// and sentence in the service's shape, a body over the limit as request_too_long,
+// and anything that chose no status as a 500 that says nothing of what failed.
+func Refusing(err error, rid string) (int, []byte, map[string]string) {
 	status, msg := http.StatusInternalServerError, "internal error"
 	var he *zip.HTTPError
 	var fe *fiber.Error
@@ -563,13 +445,13 @@ func Refusing(path string, err error, rid string) (int, []byte, map[string]strin
 	case errors.As(err, &fe):
 		status, msg = fe.Code, fe.Message
 	default:
-		log.Error("decisions: %s failed request_id=%s: %v", path, rid, err)
+		log.Error("decisions: failed request_id=%s: %v", rid, err)
 	}
-	r := decline(path, status, msg)
+	r := decline(status, msg)
 	if status == http.StatusRequestEntityTooLarge {
-		r = tooLong(path, 0)
+		r = tooLong(0)
 	}
-	out := refused(path, rid, r)
+	out := refused(rid, r)
 	return out.status, out.body, out.header
 }
 
@@ -580,9 +462,6 @@ var decisionKeys = map[string]bool{
 	"provider": true, "session_id": true, "user": true, "trace": true,
 }
 
-// systemoneKeys are the fields Jev's request carries, the only ones /v1/systemone reads.
-var systemoneKeys = map[string]bool{"model": true, "state": true, "questions": true}
-
 // fieldsOf reads a decision body's top level exactly as written, and refuses a body
 // the service could read differently from the gateway: a field it does not know —
 // in any spelling, a case variant of one it does included — or a field given twice.
@@ -590,29 +469,21 @@ var systemoneKeys = map[string]bool{"model": true, "state": true, "questions": t
 // and no re-encoding downstream can fold a repeat into one value.
 //
 // It costs one pass over at most one more key than decisionKeys holds: an unknown or
-// repeated key ends the read the moment it is seen, before its value is decoded. On
-// /v1/systemone an unknown key is FastAPI's 422 extra_forbidden, as Jev answers it.
-func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRefusal) {
-	bad := func(msg string) *decisionRefusal { return decline(path, http.StatusBadRequest, "body: "+msg) }
-	keys := decisionKeys
-	if path == systemonePath {
-		keys = systemoneKeys
-	}
+// repeated key ends the read the moment it is seen, before its value is decoded.
+func fieldsOf(body []byte) (map[string]json.RawMessage, *decisionRefusal) {
+	bad := func(msg string) *decisionRefusal { return decline(http.StatusBadRequest, "body: "+msg) }
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
 		return nil, bad("not a JSON object")
 	}
-	fields := make(map[string]json.RawMessage, len(keys))
+	fields := make(map[string]json.RawMessage, len(decisionKeys))
 	for dec.More() {
 		t, err := dec.Token()
 		if err != nil {
 			return nil, bad(err.Error())
 		}
 		key, _ := t.(string)
-		if !keys[key] {
-			if path == systemonePath {
-				return nil, invalid(key, "Extra inputs are not permitted", "extra_forbidden")
-			}
+		if !decisionKeys[key] {
 			for k := range decisionKeys {
 				if strings.EqualFold(k, key) {
 					return nil, bad(fmt.Sprintf("%q is spelled %q", k, key))
@@ -656,31 +527,25 @@ func vouched(token, lang string) error {
 // a test can count the reads a refused credential never reaches.
 var readModel = decisionModel
 
-// decisionModel reads the model a body names on path, and refuses — in that path's
-// words — a body with none, or a model the path does not serve. Both paths serve
-// every route to the decision service: Kai, and Jev under OpenRouter's vendor ids,
-// which reach Jev itself. An id that names Jev is never answered by Kai, so a route
-// that would send one there is unknown, and so is every bare Jev spelling, which
-// has no route. A model the service knows and does not publish is unknown on both,
-// so it is never forwarded. The model comes back as its route's id, the one it is
-// priced and filed under, whatever case or alias it was asked by.
-func decisionModel(path string, body []byte) (model, version string, _ *decisionRefusal) {
-	fields, bad := fieldsOf(path, body)
+// decisionModel reads the model a body names, and refuses a body with none, or a
+// model /v1/decisions does not serve. It serves every route to the decision
+// service: Kai, and Jev under OpenRouter's vendor ids, which reach Jev itself. An
+// id that names Jev is never answered by Kai, so a route that would send one there
+// is unknown, and so is every bare Jev spelling, which has no route. A model the
+// service knows and does not publish is unknown, so it is never forwarded. The
+// model comes back as its route's id, the one it is priced and filed under,
+// whatever case or alias it was asked by.
+func decisionModel(body []byte) (model, version string, _ *decisionRefusal) {
+	fields, bad := fieldsOf(body)
 	if bad != nil {
 		return "", "", bad
 	}
 	raw, named := fields["model"]
 	if named && json.Unmarshal(raw, &model) != nil {
-		if path == systemonePath {
-			return "", "", invalid("model", "Input should be a valid string", "string_type")
-		}
-		return "", "", refuseDecision(http.StatusBadRequest, "'model' must be a string")
+		return "", "", decline(http.StatusBadRequest, "'model' must be a string")
 	}
 	if !named {
-		if path == systemonePath {
-			return "", "", invalid("model", "Field required", "missing")
-		}
-		return "", "", refuseDecision(http.StatusBadRequest, "the request needs a 'model'")
+		return "", "", decline(http.StatusBadRequest, "the request needs a 'model'")
 	}
 	if id, ok := Canonical(model); ok {
 		model = id
@@ -695,21 +560,9 @@ func decisionModel(path string, body []byte) (model, version string, _ *decision
 		}
 	}
 	if r == nil || r.providerName != object.KaiName || (jevNamed(model) && kaiUpstream(r.upstreamModel)) {
-		if path == systemonePath {
-			return "", "", decline(path, http.StatusBadRequest, "Unknown model: "+model)
-		}
-		return "", "", refuseDecision(http.StatusBadRequest, "unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", "))
+		return "", "", decline(http.StatusBadRequest, fmt.Sprintf("unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", ")))
 	}
 	return strings.ToLower(model), "", nil
-}
-
-// invalid is FastAPI's 422 for one body field that failed.
-func invalid(field, msg, kind string) *decisionRefusal {
-	name, _ := json.Marshal(field)
-	b, _ := json.Marshal(systemoneInvalid{Detail: []systemoneViolation{{
-		Loc: []decisionPlace{decisionPlace(`"body"`), decisionPlace(name)}, Msg: msg, Type: kind,
-	}}})
-	return &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
 }
 
 // A handle belongs to the org that observed it. The service holds observed states
@@ -742,19 +595,10 @@ func handleID(id string) bool {
 	return true
 }
 
-// badHandle refuses an id handleID does not accept: 422, in path's words.
-func badHandle(path, key string) *decisionRefusal {
-	msg := fmt.Sprintf("'%s' must be 1 to %d characters of A-Z, a-z, 0-9, '.', '_' and '-'", key, handleIDBytes)
-	if path == systemonePath {
-		return invalid(key, msg, "string_pattern_mismatch")
-	}
-	return decline(path, http.StatusUnprocessableEntity, msg)
-}
-
 // scope names the body's handles by org. A body naming none goes out byte for
 // byte; a handle that is not a string is refused, and so is one handleID does
-// not accept.
-func scope(path string, body []byte, org string) ([]byte, handles, *decisionRefusal) {
+// not accept, 422.
+func scope(body []byte, org string) ([]byte, handles, *decisionRefusal) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(body, &fields) != nil || fields == nil {
 		return body, handles{}, nil
@@ -767,10 +611,11 @@ func scope(path string, body []byte, org string) ([]byte, handles, *decisionRefu
 			continue
 		}
 		if err := json.Unmarshal(raw, id); err != nil {
-			return nil, handles{}, decline(path, http.StatusBadRequest, fmt.Sprintf("'%s' must be a string", key))
+			return nil, handles{}, decline(http.StatusBadRequest, fmt.Sprintf("'%s' must be a string", key))
 		}
 		if !handleID(*id) {
-			return nil, handles{}, badHandle(path, key)
+			return nil, handles{}, decline(http.StatusUnprocessableEntity,
+				fmt.Sprintf("'%s' must be 1 to %d characters of A-Z, a-z, 0-9, '.', '_' and '-'", key, handleIDBytes))
 		}
 		fields[key], _ = json.Marshal(org + "/" + *id)
 		named = true
@@ -784,13 +629,13 @@ func scope(path string, body []byte, org string) ([]byte, handles, *decisionRefu
 	// An org with a slash in its name would make <org>/<id> ambiguous. IAM names
 	// never carry one; a principal whose does is refused rather than guessed at.
 	if strings.Contains(org, "/") {
-		return nil, handles{}, decline(path, http.StatusForbidden, "this organization cannot hold a handle")
+		return nil, handles{}, decline(http.StatusForbidden, "this organization cannot hold a handle")
 	}
 	var out bytes.Buffer
 	enc := json.NewEncoder(&out)
 	enc.SetEscapeHTML(false)
 	if enc.Encode(fields) != nil {
-		return nil, handles{}, decline(path, http.StatusBadRequest, "body: not a JSON object")
+		return nil, handles{}, decline(http.StatusBadRequest, "body: not a JSON object")
 	}
 	return bytes.TrimRight(out.Bytes(), "\n"), h, nil
 }
@@ -903,9 +748,9 @@ func (h *handleCosts) note(org, id string, tokens int) {
 // forward pass, or one upstream call for a forwarded model.
 var decisionsClient = &http.Client{Timeout: 120 * time.Second}
 
-// Relayed are the service's headers a caller is owed: the request id, under Hanzo's
-// name and Jev's, and how long to wait before asking again.
-var relayed = []string{"X-Request-Id", "X-Typesafe-Request-Id", "Retry-After", "Retry-After-Ms"}
+// Relayed are the service's headers a caller is owed: the request id, and how long
+// to wait before asking again.
+var relayed = []string{"X-Request-Id", "Retry-After", "Retry-After-Ms"}
 
 // decided is the service's reply to a body as sent, or ai's refusal to send it.
 type decided struct {
@@ -918,13 +763,13 @@ type decided struct {
 	exp    time.Time
 }
 
-// consult sends body to path on the decision service, naming model by the id its
-// route names upstream, and returns what the service said: a 200 on /v1/decisions
-// names the model asked for, with the usage that answer reports. A refusal is ai's
-// own: the service is not configured, or could not be reached.
-func consult(ctx context.Context, kai *object.Provider, path, model, version, org, rid string, body []byte) decided {
+// consult sends body to the decision service, naming model by the id its route
+// names upstream, and returns what the service said: a 200 names the model asked
+// for, with the usage that answer reports. A refusal is ai's own: the service is
+// not configured, or could not be reached.
+func consult(ctx context.Context, kai *object.Provider, model, version, org, rid string, body []byte) decided {
 	if kai == nil {
-		return decided{fault: decline(path, http.StatusServiceUnavailable, "the decision service is not configured")}
+		return decided{fault: decline(http.StatusServiceUnavailable, "the decision service is not configured")}
 	}
 	up := model
 	if r := resolveModelRoute(model); r != nil && r.upstreamModel != "" {
@@ -942,12 +787,12 @@ func consult(ctx context.Context, kai *object.Provider, path, model, version, or
 	if json.Unmarshal(body, &fields) != nil || string(fields["model"]) != string(named) {
 		b, ok := WithModel(body, up)
 		if !ok {
-			return decided{fault: decline(path, http.StatusBadRequest, "body: not a JSON object")}
+			return decided{fault: decline(http.StatusBadRequest, "body: not a JSON object")}
 		}
 		body = b
 	}
-	d := recall(ctx, kai, path, up, org, rid, body)
-	if d.status == http.StatusOK && path == decisionsPath && up != model {
+	d := recall(ctx, kai, up, org, rid, body)
+	if d.status == http.StatusOK && up != model {
 		if named, ok := WithModel(d.body, model); ok {
 			d.body = named
 		}
@@ -955,13 +800,13 @@ func consult(ctx context.Context, kai *object.Provider, path, model, version, or
 	return d
 }
 
-// send posts body to path on the decision service, under the caller's request id,
-// and reads its reply.
-func send(ctx context.Context, kai *object.Provider, path, rid string, body []byte) decided {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+path, bytes.NewReader(body))
+// send posts body to the decision service's /v1/decisions, under the caller's
+// request id, and reads its reply.
+func send(ctx context.Context, kai *object.Provider, rid string, body []byte) decided {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+decisionsPath, bytes.NewReader(body))
 	if err != nil {
 		log.Error("decisions: build request to the decision service request_id=%s: %v", rid, err)
-		return decided{fault: decline(path, http.StatusInternalServerError, "the decision request could not be built")}
+		return decided{fault: decline(http.StatusInternalServerError, "the decision request could not be built")}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-Id", rid)
@@ -971,13 +816,13 @@ func send(ctx context.Context, kai *object.Provider, path, rid string, body []by
 	resp, err := decisionsClient.Do(req)
 	if err != nil {
 		log.Error("decisions: the decision service did not answer request_id=%s: %v", rid, err)
-		return decided{fault: decline(path, http.StatusBadGateway, "the decision service could not be reached")}
+		return decided{fault: decline(http.StatusBadGateway, "the decision service could not be reached")}
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Error("decisions: the decision service's answer broke off request_id=%s: %v", rid, err)
-		return decided{fault: decline(path, http.StatusBadGateway, "the decision service's answer broke off")}
+		return decided{fault: decline(http.StatusBadGateway, "the decision service's answer broke off")}
 	}
 	d := decided{status: resp.StatusCode, body: b, header: map[string]string{}}
 	for _, k := range relayed {
@@ -1027,11 +872,10 @@ func decisionRecord(ctx context.Context, ledger string, authUser *iam.User, mode
 	return rec
 }
 
-// decisionCall is one decision a principal asked for, resolved: the path and the
-// model, the body as written, who is asking, and the org that pays — the one org
-// the reservation, the debit and every handle name.
+// decisionCall is one decision a principal asked for, resolved: the model, the
+// body as written, who is asking, and the org that pays — the one org the
+// reservation, the debit and every handle name.
 type decisionCall struct {
-	path  string
 	model string
 	// version is Kai's versioned id when the call asked by one: the call is priced
 	// and filed as model (kai), and the service is sent this.
@@ -1048,18 +892,18 @@ type decisionCall struct {
 	ctx context.Context
 }
 
-// decisionReply is what a decision path answers: a status, a body, and the headers
-// every answer on the path carries.
+// decisionReply is what /v1/decisions answers: a status, a body, and the headers
+// every answer carries.
 type decisionReply struct {
 	status int
 	body   []byte
 	header map[string]string
 }
 
-// refused is a refusal as a reply on path, under request id rid.
-func refused(path, rid string, r *decisionRefusal) decisionReply {
+// refused is a refusal as a reply, under request id rid.
+func refused(rid string, r *decisionRefusal) decisionReply {
 	header := map[string]string{}
-	body, _ := Restate(path, r.status, r.body, header, rid)
+	body, _ := Restate(r.status, r.body, header, rid)
 	return decisionReply{status: r.status, body: body, header: header}
 }
 
@@ -1068,11 +912,11 @@ func refused(path, rid string, r *decisionRefusal) decisionReply {
 // and the debit — the call to the books — is filed once the reply has gone.
 func decide(ctx context.Context, d decisionCall) decisionReply {
 	if d.user == nil || d.ledger == "" {
-		return refused(d.path, d.rid, decline(d.path, http.StatusForbidden, "no organization pays for this call"))
+		return refused(d.rid, decline(http.StatusForbidden, "no organization pays for this call"))
 	}
-	body, h, bad := scope(d.path, d.body, d.ledger)
+	body, h, bad := scope(d.body, d.ledger)
 	if bad != nil {
-		return refused(d.path, d.rid, bad)
+		return refused(d.rid, bad)
 	}
 
 	// Reserve the call's price before anything is sent, and never less than a cent:
@@ -1091,21 +935,21 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	est := (decisionCostNano(d.model, tokens) + nanoPerCent - 1) / nanoPerCent
 	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), max(est, 1))
 	if !admitted {
-		return refused(d.path, d.rid, decline(d.path, http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
+		return refused(d.rid, decline(http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
 	}
 	defer hold.settle(0)
 
 	kai := object.KaiProvider()
-	got := consult(ctx, kai, d.path, d.model, d.version, d.ledger, d.rid, body)
+	got := consult(ctx, kai, d.model, d.version, d.ledger, d.rid, body)
 	if got.fault != nil {
-		return refused(d.path, d.rid, got.fault)
+		return refused(d.rid, got.fault)
 	}
 	out := unscope(got.status, got.body, d.ledger, h)
 	header := make(map[string]string, len(got.header))
 	for k, v := range got.header {
 		header[k] = v
 	}
-	out, _ = Restate(d.path, got.status, out, header, d.rid)
+	out, _ = Restate(got.status, out, header, d.rid)
 	if got.status == http.StatusOK {
 		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens))
 		if h.observe != "" {
@@ -1239,20 +1083,10 @@ func Settled(ctx context.Context) error {
 	}
 }
 
-// DecisionPath reports whether path is one of the two decision paths, whose
-// answers Restate words, spelled any way the router matches it.
+// DecisionPath reports whether path is /v1/decisions, whose answers Restate words,
+// spelled any way the router matches it: any case, a trailing slash or not.
 func DecisionPath(path string) bool {
-	return decisionPath(path) != ""
-}
-
-// decisionPath is path as a decision path, the way the router matches it — any
-// case, a trailing slash or not — or "" for any other path.
-func decisionPath(path string) string {
-	p := strings.TrimSuffix(strings.ToLower(path), "/")
-	if p == decisionsPath || p == systemonePath {
-		return p
-	}
-	return ""
+	return strings.TrimSuffix(strings.ToLower(path), "/") == decisionsPath
 }
 
 // RequestID is the id a decision answers under: the caller's own, when it is one a
@@ -1285,13 +1119,12 @@ func pause(status int) (time.Duration, bool) {
 	return 0, false
 }
 
-// Restate is how a decision path says an answer, whoever wrote it: a refusal in the
-// path's own error shape — {"error":{"code","message"}} on /v1/decisions,
-// {"detail": ...} on /v1/systemone — a 402, 429 or 529 in both Retry-After and
-// Retry-After-Ms, and every answer under X-Request-Id, rid when nobody set one.
-// header holds the answer's headers by canonical name and is completed in place;
-// changed reports whether body was reworded.
-func Restate(path string, status int, body []byte, header map[string]string, rid string) (_ []byte, changed bool) {
+// Restate is how /v1/decisions says an answer, whoever wrote it: a refusal in the
+// service's error shape, {"error":{"code","message"}}, a 402, 429 or 529 in both
+// Retry-After and Retry-After-Ms, and every answer under X-Request-Id, rid when
+// nobody set one. header holds the answer's headers by canonical name and is
+// completed in place; changed reports whether body was reworded.
+func Restate(status int, body []byte, header map[string]string, rid string) (_ []byte, changed bool) {
 	if header["X-Request-Id"] == "" {
 		header["X-Request-Id"] = rid
 	}
@@ -1316,12 +1149,6 @@ func Restate(path string, status int, body []byte, header map[string]string, rid
 	}
 	var v map[string]any
 	_ = json.Unmarshal(body, &v)
-	if decisionPath(path) == systemonePath {
-		if _, ok := v["detail"]; ok {
-			return body, false
-		}
-		return systemoneFailure(wording(v, body, status)), true
-	}
 	if e, ok := v["error"].(map[string]any); ok {
 		if _, ok := e["message"].(string); ok {
 			return body, false
@@ -1337,7 +1164,7 @@ func wording(v map[string]any, body []byte, status int) string {
 			return s
 		}
 	}
-	for _, k := range []string{"error", "detail", "msg", "message"} {
+	for _, k := range []string{"error", "msg", "message"} {
 		if s, ok := v[k].(string); ok && s != "" {
 			return s
 		}
@@ -1377,7 +1204,9 @@ func remint(body []byte) []byte {
 // Body: {"model": "kai", "state": "..."|{...}|[...], "questions": {"<name>":
 // {"type": "choice"|"noul"|"score", "instructions": ..., "criteria": ...}}}.
 // model is kai, Kai's versioned id kai-<12 hex of the weights' sha256> — priced as
-// kai and sent as asked — or a Jev id.
+// kai and sent as asked — or Jev by OpenRouter's vendor ids, typesafe/jev-1.13 and
+// ~typesafe/jev-latest, which reach Jev itself and bill at Jev's list price. No Jev
+// id is ever answered by Kai: a bare one, such as jev-latest, is an unknown model.
 // model is required; state and questions are required unless the request names a
 // handle, which carries neither. instructions is optional and any JSON. A choice
 // names at least 2 labels and a score at least 1 level, bounded by the token
@@ -1405,46 +1234,19 @@ func remint(body []byte) []byte {
 // failed, 503 the model is known and not served, 529 overloaded. 402, 429 and 529
 // carry Retry-After and Retry-After-Ms, and every answer carries X-Request-Id.
 // Billed on the answer's input tokens at the model's price.
-func (c *ApiController) Decisions() { c.decision(decisionsPath) }
+func (c *ApiController) Decisions() { c.decision() }
 
-// Systemone implements POST /v1/systemone, the Jev-compatible spelling of POST
-// /v1/decisions for a Jev client pointed at Hanzo: the same service, auth and
-// billing, on Jev's wire.
-//
-// Body: {"model": "kai", "state": ..., "questions": {...}}, all three required and
-// nothing else: 1 to 100 questions, a choice of 2 to 255 labels, a score of 1 to 10
-// levels.
-// kai and its versioned id, kai-<12 hex of the weights' sha256>, are answered by
-// Kai, and the versioned id is sent as asked; typesafe/jev-1.13 and
-// ~typesafe/jev-latest, OpenRouter's names for Jev, reach Jev itself and bill at
-// Jev's list price. No Jev id is ever answered by Kai: a bare one, such as
-// jev-latest, is 400 {"detail": "Unknown model: <id>"}.
-//
-// Response: {"model","answers","usage":{"input_tokens","output_tokens"}}, Jev's
-// shape and nothing beside it; model is the versioned id that answered.
-//
-// The body may be sent gzip, deflate, br or zstd encoded; decoded, it is bounded as
-// sent.
-//
-// Refusals are FastAPI's: 422 {"detail":[{"loc","msg","type"}]} for a field that
-// failed, a field Jev's request does not carry (type extra_forbidden) or a body past
-// 16 MiB (type request_too_long), and {"detail": "..."} for
-// everything else — 400, 401, 402, 403, 415 (any other Content-Encoding), 429, 502,
-// 503 and 529. 402, 429 and 529 carry Retry-After and Retry-After-Ms, and every
-// answer carries X-Request-Id.
-func (c *ApiController) Systemone() { c.decision(systemonePath) }
-
-// decision answers a decision path over HTTP: authenticate, resolve who pays, and
+// decision answers /v1/decisions over HTTP: authenticate, resolve who pays, and
 // decide.
-func (c *ApiController) decision(path string) {
+func (c *ApiController) decision() {
 	rid := RequestID(c.Header("X-Request-Id"))
 	token, ok := strings.CutPrefix(c.Header("Authorization"), "Bearer ")
 	if !ok || strings.TrimSpace(token) == "" {
-		c.decisionReply(refused(path, rid, decline(path, http.StatusUnauthorized, "a Bearer credential is required")))
+		c.decisionReply(refused(rid, decline(http.StatusUnauthorized, "a Bearer credential is required")))
 		return
 	}
 	if isPublishableKey(token) {
-		c.decisionReply(refused(path, rid, decline(path, http.StatusForbidden,
+		c.decisionReply(refused(rid, decline(http.StatusForbidden,
 			"Publishable keys (pk-) can only access read-only endpoints. Use a secret key (sk-) for this endpoint.")))
 		return
 	}
@@ -1453,40 +1255,40 @@ func (c *ApiController) decision(path string) {
 	// it costs the length of the bytes as sent. Everything that decodes or reads the
 	// body waits on the credential.
 	if n := len(c.Fiber().Request().Body()); n > decisionBodyBytes {
-		c.decisionReply(refused(path, rid, tooLong(path, n)))
+		c.decisionReply(refused(rid, tooLong(n)))
 		return
 	}
 	if err := vouched(token, c.GetAcceptLanguage()); err != nil {
-		c.decisionReply(refused(path, rid, decline(path, statusOf(err), err.Error())))
+		c.decisionReply(refused(rid, decline(statusOf(err), err.Error())))
 		return
 	}
 	body, err := DecisionBody(c.Ctx)
 	if err != nil {
-		status, out, header := Refusing(path, err, rid)
+		status, out, header := Refusing(err, rid)
 		c.decisionReply(decisionReply{status: status, body: out, header: header})
 		return
 	}
-	model, version, bad := readModel(path, body)
+	model, version, bad := readModel(body)
 	if bad != nil {
-		c.decisionReply(refused(path, rid, bad))
+		c.decisionReply(refused(rid, bad))
 		return
 	}
 
 	start := time.Now().UTC()
 	_, authUser, _, isPremium, err := c.authResolveProvider(token, model, c.GetOrg())
 	if err != nil {
-		c.decisionReply(refused(path, rid, decline(path, statusOf(err), err.Error())))
+		c.decisionReply(refused(rid, decline(statusOf(err), err.Error())))
 		return
 	}
 	c.decisionReply(decide(c.Context(), decisionCall{
-		path: path, model: model, version: version, body: body,
+		model: model, version: version, body: body,
 		user: authUser, ledger: c.billingOrg(authUser), premium: isPremium,
 		host: c.Host(), ip: strings.Clone(c.Fiber().IP()), rid: rid, start: start,
 		ctx: context.WithoutCancel(c.Context()),
 	}))
 }
 
-// decisionReply writes a decision path's reply and disables the router's
+// decisionReply writes a decision's reply and disables the router's
 // auto-render.
 func (c *ApiController) decisionReply(r decisionReply) {
 	for k, v := range r.header {

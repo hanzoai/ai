@@ -203,7 +203,7 @@ var modelPricing = map[string]modelPrice{
 	"openai-direct/o3":          {InputPerMillion: 10.00, OutputPerMillion: 40.00},
 	"openai-direct/o3-mini":     {InputPerMillion: 1.10, OutputPerMillion: 4.40},
 
-	// ── Hanzo Decision (POST /v1/decisions, POST /v1/systemone) ─────
+	// ── Hanzo Decision (POST /v1/decisions) ─────
 	// Kai is half of Jev's $0.042 per million input tokens, and Jev — reached
 	// through OpenRouter under its vendor ids — is billed at that list price on the
 	// input tokens its answer reports. Output is free for both.

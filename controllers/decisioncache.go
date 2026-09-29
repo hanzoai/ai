@@ -69,7 +69,7 @@ type decisionCacheT struct {
 	m      map[[32]byte]*list.Element // by key
 	size   int
 	orgs   map[string]*share // what each org holds
-	rev    map[string]string // path and upstream model → routing.sha256 of its latest 200 answer
+	rev    map[string]string // upstream model → routing.sha256 of its latest 200 answer
 	flight singleflight.Group
 }
 
@@ -78,19 +78,18 @@ var decisionCache decisionCacheT
 // share is what one org holds: answers and bytes.
 type share struct{ n, size int }
 
-// recall answers body, sent to path as up for org, from a live held answer, else
-// asks the service once for every identical body in flight. An answer that was not
-// produced by this caller's own call leaves under a fresh id.
-func recall(ctx context.Context, kai *object.Provider, path, up, org, rid string, body []byte) decided {
+// recall answers body, sent as up for org, from a live held answer, else asks the
+// service once for every identical body in flight. An answer that was not produced
+// by this caller's own call leaves under a fresh id.
+func recall(ctx context.Context, kai *object.Provider, up, org, rid string, body []byte) decided {
 	norm, ok := holdable(body)
 	if !ok {
-		return send(ctx, kai, path, rid, body)
+		return send(ctx, kai, rid, body)
 	}
 	c := &decisionCache
-	line := path + "\x00" + up
 	c.mu.Lock()
-	rev := c.rev[line]
-	id := decisionKey(org, line, rev, norm)
+	rev := c.rev[up]
+	id := decisionKey(org, up, rev, norm)
 	d, hit := c.lookup(id)
 	c.mu.Unlock()
 	if hit {
@@ -98,12 +97,12 @@ func recall(ctx context.Context, kai *object.Provider, path, up, org, rid string
 		return d
 	}
 	if rev == "" {
-		return learn(line, org, norm, send(ctx, kai, path, rid, body))
+		return learn(up, org, norm, send(ctx, kai, rid, body))
 	}
 	mine := false
 	v, _, _ := c.flight.Do(string(id[:]), func() (any, error) {
 		mine = true
-		return learn(line, org, norm, send(context.WithoutCancel(ctx), kai, path, rid, body)), nil
+		return learn(up, org, norm, send(context.WithoutCancel(ctx), kai, rid, body)), nil
 	})
 	d = v.(decided)
 	if !mine {
@@ -122,9 +121,9 @@ func recall(ctx context.Context, kai *object.Provider, path, up, org, rid string
 	return d
 }
 
-// learn takes the weights a 200 answer names as line's revision, and holds the
+// learn takes the weights a 200 answer names as up's revision, and holds the
 // answer for org when Kai gave it in process.
-func learn(line, org string, norm []byte, d decided) decided {
+func learn(up, org string, norm []byte, d decided) decided {
 	if d.fault != nil || d.status != http.StatusOK {
 		return d
 	}
@@ -134,11 +133,11 @@ func learn(line, org string, norm []byte, d decided) decided {
 	if c.rev == nil {
 		c.rev = make(map[string]string)
 	}
-	c.rev[line] = d.sha256
+	c.rev[up] = d.sha256
 	if d.sha256 == "" || len(d.body) > decisionBytes {
 		return d
 	}
-	c.hold(decisionKey(org, line, d.sha256, norm), org, d)
+	c.hold(decisionKey(org, up, d.sha256, norm), org, d)
 	return d
 }
 
@@ -231,11 +230,11 @@ func holdable(body []byte) ([]byte, bool) {
 	return norm.Bytes(), true
 }
 
-// decisionKey is SHA-256 of the org, the path and upstream model, its revision and
-// the body, NUL between them.
-func decisionKey(org, line, rev string, norm []byte) [32]byte {
+// decisionKey is SHA-256 of the org, the upstream model, its revision and the body,
+// NUL between them.
+func decisionKey(org, up, rev string, norm []byte) [32]byte {
 	h := sha256.New()
-	h.Write([]byte(org + "\x00" + line + "\x00" + rev + "\x00"))
+	h.Write([]byte(org + "\x00" + up + "\x00" + rev + "\x00"))
 	h.Write(norm)
 	var id [32]byte
 	h.Sum(id[:0])

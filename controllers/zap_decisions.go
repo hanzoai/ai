@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Native ZAP handlers for POST /v1/decisions and POST /v1/systemone — the pure-ZAP
-// twins of ApiController.Decisions and ApiController.Systemone (decisions.go). Both
-// resolve the principal as the HTTP path does and hand it to the same decide, so the
-// reservation, the debit and every handle name the same org whichever door the call
-// came through. The paths stay live on routers.App, which also backs the gateway
-// fallback.
+// Native ZAP handlers for POST /v1/decisions — the pure-ZAP twins of
+// ApiController.Decisions (decisions.go). They resolve the principal as the HTTP
+// path does and hand it to the same decide, so the reservation, the debit and every
+// handle name the same org whichever door the call came through. The path stays
+// live on routers.App, which also backs the gateway fallback.
 
 package controllers
 
@@ -39,23 +38,17 @@ import (
 
 func init() {
 	registerCloud("decisions", func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-		return decisionCloud(zapDecision(ctx, decisionsPath, auth, body))
-	})
-	registerCloud("systemone", func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-		return decisionCloud(zapDecision(ctx, systemonePath, auth, body))
+		return decisionCloud(zapDecision(ctx, auth, body))
 	})
 	registerGatewayPath(decisionsPath, func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-		return decisionGateway(zapDecision(ctx, decisionsPath, auth, body))
-	})
-	registerGatewayPath(systemonePath, func(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-		return decisionGateway(zapDecision(ctx, systemonePath, auth, body))
+		return decisionGateway(zapDecision(ctx, auth, body))
 	})
 }
 
 // decisionCloud is a reply on the cloud wire: status, body, and a refusal's words
 // in the error slot. The cloud wire (MsgType 100) has no header slot, so the
 // request id and a refusal's Retry-After do not cross it; they are never folded into
-// the body, which is the path's own shape. A caller that needs them reaches the
+// the body, which is the service's own shape. A caller that needs them reaches the
 // same handler over the gateway wire (MsgType 200) or HTTP.
 func decisionCloud(r decisionReply) (*zap.Message, error) {
 	said := ""
@@ -80,33 +73,33 @@ func decisionGateway(r decisionReply) (*zap.Message, error) {
 
 // zapDecision is the native twin of ApiController.decision. A ZAP call names no
 // org to switch to, so it pays from the principal's own.
-func zapDecision(ctx context.Context, path, auth string, body []byte) decisionReply {
+func zapDecision(ctx context.Context, auth string, body []byte) decisionReply {
 	rid := RequestID(gatewayHeader(ctx, "X-Request-Id"))
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if token == "" {
-		return refused(path, rid, decline(path, http.StatusUnauthorized, "authentication required"))
+		return refused(rid, decline(http.StatusUnauthorized, "authentication required"))
 	}
 	if isPublishableKey(token) {
-		return refused(path, rid, decline(path, http.StatusForbidden,
+		return refused(rid, decline(http.StatusForbidden,
 			"Publishable keys (pk-) can only access read-only endpoints. Use a secret key (sk-) for this endpoint."))
 	}
 	// The size bound first, then who is asking, and only then the body — as on HTTP.
 	if n := len(body); n > decisionBodyBytes {
-		return refused(path, rid, tooLong(path, n))
+		return refused(rid, tooLong(n))
 	}
 	if err := vouched(token, "en"); err != nil {
-		return refused(path, rid, decline(path, statusOf(err), err.Error()))
+		return refused(rid, decline(statusOf(err), err.Error()))
 	}
-	model, version, bad := readModel(path, body)
+	model, version, bad := readModel(body)
 	if bad != nil {
-		return refused(path, rid, bad)
+		return refused(rid, bad)
 	}
 	user, ledger, premium, err := zapDecisionPrincipal(token, model, gatewayHeader(ctx, "X-Org-Id"))
 	if err != nil {
-		return refused(path, rid, decline(path, statusOf(err), err.Error()))
+		return refused(rid, decline(statusOf(err), err.Error()))
 	}
 	return decide(ctx, decisionCall{
-		path: path, model: model, version: version, body: body,
+		model: model, version: version, body: body,
 		user: user, ledger: ledger, premium: premium,
 		rid: rid, start: time.Now().UTC(), ctx: context.WithoutCancel(ctx),
 	})

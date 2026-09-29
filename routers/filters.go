@@ -53,9 +53,9 @@ import (
 // at three URLs, each one a place a policy could be applied inconsistently.
 // Resources live at exactly one address, generated from the table in resources.go.
 func InstallFilters(app *zip.App) {
-	// Outside Recovered, so an answer on a decision path is said in that path's
-	// words — a panic's 500 included — with its request id. Dialect itself only
-	// rewords a finished answer.
+	// Outside Recovered, so an answer on /v1/decisions is said in the decision
+	// service's words — a panic's 500 included — with its request id. Dialect itself
+	// only rewords a finished answer.
 	app.Use(zip.H(Dialect))
 	// FIRST of everything that runs a handler, so it covers the filters below as well
 	// as the handlers. See recover.go for why this is a move rather than an addition.
