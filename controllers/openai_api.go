@@ -778,6 +778,11 @@ type usageRecord struct {
 	ErrorMsg         string  `json:"errorMsg"`
 	ClientIP         string  `json:"clientIp"`
 	RequestID        string  `json:"requestId"`
+	// ClientRequestID is the X-Request-Id the caller was answered under, where the
+	// surface answers with one. It is what the row's request_id column shows, so a
+	// caller's id finds their bill; RequestID stays the row's own, minted here, and is
+	// never a value a caller chose.
+	ClientRequestID string `json:"clientRequestId,omitempty"`
 
 	// Requested is the model the caller ASKED for, set only when a different route
 	// answered — today, when a vendor's account was spent and it served the request
@@ -1178,14 +1183,26 @@ func usageBilledCents(record *usageRecord, costCents int64) int64 {
 	return costCents
 }
 
+// shownID is the request id the row files under in its request_id column: the one
+// the caller was answered under when there was one, else the row's own.
+func (r *usageRecord) shownID() string {
+	if r.ClientRequestID != "" {
+		return r.ClientRequestID
+	}
+	return r.RequestID
+}
+
 // usageTimeout bounds one debit's hand-off to the ledger. The native recorder
 // answers once the debit is durably posted, which is milliseconds; a ledger that
 // has not answered in this long has failed, and the failure is logged with the
 // request id instead of holding a goroutine — and, on a path that files the debit
-// before its reply, the caller — for as long as the ledger stays silent.
-const usageTimeout = 30 * time.Second
+// before its reply, the caller — for as long as the ledger stays silent. It is kept
+// well inside a pod's shutdown budget, so a debit filed after its reply can be tried
+// again before the process goes (settleAfter).
+var usageTimeout = 5 * time.Second
 
-// recordUsage files what a call spent. It is the ONE chokepoint between a request and
+// recordUsage files what a call spent, and returns the native recorder's refusal
+// when the debit did not land. It is the ONE chokepoint between a request and
 // the money: an exact debit on the org's wallet where this build is co-resident with
 // the ledger, or the same amount on its way to Commerce where it is not.
 //
@@ -1207,7 +1224,7 @@ const usageTimeout = 30 * time.Second
 // identical number and cannot disagree. A failure that came back with no tokens therefore
 // bills nothing — not because failure is free, but because that is what the meter reads,
 // and reading it is the whole point.
-func recordUsage(record *usageRecord) {
+func recordUsage(record *usageRecord) error {
 	// Dense flywheel reward (HIP-510): score EVERY routed request's outcome and
 	// attach it to its routing decision, so the bandit learns from request-volume
 	// signal instead of sparse explicit thumbs. An errored request scores 0 (the arm
@@ -1221,7 +1238,7 @@ func recordUsage(record *usageRecord) {
 	// emit sites write the warehouse row and the span for it either way; what it does
 	// not get is a place in the money.
 	if !record.reached() {
-		return
+		return nil
 	}
 
 	// Calculate cost. usageCostCents is the ONE cost of record — the same value the
@@ -1314,12 +1331,13 @@ func recordUsage(record *usageRecord) {
 			RequestID: record.RequestID,
 		}); err != nil {
 			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
+			return err
 		}
-		return
+		return nil
 	}
 
 	if billingQueue == nil {
-		return
+		return nil
 	}
 
 	// The SAME two facts the native event carries, in the shape Commerce reads them.
@@ -1347,6 +1365,7 @@ func recordUsage(record *usageRecord) {
 		"audioSeconds":     record.AudioSeconds,
 		"audioChars":       record.AudioChars,
 		"requestId":        record.RequestID,
+		"clientRequestId":  record.ClientRequestID,
 		"premium":          record.Premium,
 		"stream":           record.Stream,
 		"status":           record.Status,
@@ -1360,7 +1379,7 @@ func recordUsage(record *usageRecord) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		log.Error("billing: failed to marshal usage record request_id=%s: %v", record.RequestID, err)
-		return
+		return nil
 	}
 
 	billingQueue.Enqueue(&util.BillingRecord{
@@ -1369,6 +1388,7 @@ func recordUsage(record *usageRecord) {
 		Org:       org,
 		Model:     record.Model,
 	})
+	return nil
 }
 
 // recordTrace persists an LLM/agent trace + usage record to hanzoai/datastore

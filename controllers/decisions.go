@@ -55,6 +55,7 @@ import (
 const (
 	decisionsPath = "/v1/decisions"
 	systemonePath = "/v1/systemone"
+	nanoPerCent   = 10_000_000
 )
 
 // decisionContent is Content on the decision wire: a string, an object or an
@@ -403,30 +404,85 @@ func jevNamed(id string) bool {
 	return strings.Contains(strings.ToLower(id), "jev")
 }
 
+// decisionKeys are the fields a decision body carries at its top level, as the
+// service spells them.
+var decisionKeys = []string{"model", "state", "questions", "observe", "handle", "provider", "session_id", "user", "trace"}
+
+// fieldsOf reads a decision body's top level exactly as written, and refuses a body
+// the service could read differently from the gateway: a key given twice, two keys
+// that differ only in case, or a field the service knows spelled in another case.
+// What the gateway prices, gates and scopes is what the service reads, key for key,
+// and no re-encoding downstream can fold a repeat into one value.
+func fieldsOf(path string, body []byte) (map[string]json.RawMessage, *decisionRefusal) {
+	bad := func(msg string) *decisionRefusal { return decline(path, http.StatusBadRequest, "body: "+msg) }
+	dec := json.NewDecoder(bytes.NewReader(body))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil, bad("not a JSON object")
+	}
+	fields := map[string]json.RawMessage{}
+	var keys []string
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		key, _ := t.(string)
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, bad(err.Error())
+		}
+		for _, k := range keys {
+			if strings.EqualFold(k, key) {
+				if k == key {
+					return nil, bad(fmt.Sprintf("%q is given twice", key))
+				}
+				return nil, bad(fmt.Sprintf("%q and %q name one field", k, key))
+			}
+		}
+		for _, k := range decisionKeys {
+			if k != key && strings.EqualFold(k, key) {
+				return nil, bad(fmt.Sprintf("%q is spelled %q", k, key))
+			}
+		}
+		keys = append(keys, key)
+		fields[key] = v
+	}
+	if _, err := dec.Token(); err != nil {
+		return nil, bad(err.Error())
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, bad("more than one JSON value")
+	}
+	return fields, nil
+}
+
 // decisionModel reads the model a body names on path, and refuses — in that path's
 // words — a body with none, or a model the path does not serve. Both paths serve
 // every route to the decision service: Kai, and Jev under OpenRouter's vendor ids,
 // which reach Jev itself. An id that names Jev is never answered by Kai, so a route
 // that would send one there is unknown, and so is every bare Jev spelling, which
 // has no route. A model the service knows and does not publish is unknown on both,
-// so it is never forwarded.
+// so it is never forwarded. The model comes back as its route's id, the one it is
+// priced and filed under, whatever case it was asked in.
 func decisionModel(path string, body []byte) (string, *decisionRefusal) {
-	var head struct {
-		Model *string `json:"model"`
+	fields, bad := fieldsOf(path, body)
+	if bad != nil {
+		return "", bad
 	}
-	if err := json.Unmarshal(body, &head); err != nil {
-		return "", decline(path, http.StatusBadRequest, "body: "+err.Error())
-	}
-	if head.Model == nil {
+	raw, named := fields["model"]
+	var model string
+	if named && json.Unmarshal(raw, &model) != nil {
 		if path == systemonePath {
-			b, _ := json.Marshal(systemoneInvalid{Detail: []systemoneViolation{{
-				Loc: []decisionPlace{decisionPlace(`"body"`), decisionPlace(`"model"`)}, Msg: "Field required", Type: "missing",
-			}}})
-			return "", &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
+			return "", invalid("model", "Input should be a valid string", "string_type")
+		}
+		return "", refuseDecision(http.StatusBadRequest, "'model' must be a string")
+	}
+	if !named {
+		if path == systemonePath {
+			return "", invalid("model", "Field required", "missing")
 		}
 		return "", refuseDecision(http.StatusBadRequest, "the request needs a 'model'")
 	}
-	model := *head.Model
 	r := resolveModelRoute(model)
 	if r == nil || r.providerName != object.KaiName || (jevNamed(model) && kaiUpstream(r.upstreamModel)) {
 		if path == systemonePath {
@@ -434,7 +490,16 @@ func decisionModel(path string, body []byte) (string, *decisionRefusal) {
 		}
 		return "", refuseDecision(http.StatusBadRequest, "unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", "))
 	}
-	return model, nil
+	return strings.ToLower(model), nil
+}
+
+// invalid is FastAPI's 422 for one body field that failed.
+func invalid(field, msg, kind string) *decisionRefusal {
+	name, _ := json.Marshal(field)
+	b, _ := json.Marshal(systemoneInvalid{Detail: []systemoneViolation{{
+		Loc: []decisionPlace{decisionPlace(`"body"`), decisionPlace(name)}, Msg: msg, Type: kind,
+	}}})
+	return &decisionRefusal{status: http.StatusUnprocessableEntity, body: b}
 }
 
 // A handle belongs to the org that observed it. The service holds observed states
@@ -542,9 +607,9 @@ func unscope(status int, body []byte, org string, h handles) []byte {
 // forward pass, or one upstream call for a forwarded model.
 var decisionsClient = &http.Client{Timeout: 120 * time.Second}
 
-// Relayed are the service's headers a caller is owed: the request id, and how long
-// to wait before asking again.
-var relayed = []string{"X-Request-Id", "Retry-After", "Retry-After-Ms"}
+// Relayed are the service's headers a caller is owed: the request id, under Hanzo's
+// name and Jev's, and how long to wait before asking again.
+var relayed = []string{"X-Request-Id", "X-Typesafe-Request-Id", "Retry-After", "Retry-After-Ms"}
 
 // decided is the service's reply to a body as sent, or ai's refusal to send it.
 type decided struct {
@@ -569,10 +634,17 @@ func consult(ctx context.Context, kai *object.Provider, path, model, org, rid st
 	if r := resolveModelRoute(model); r != nil && r.upstreamModel != "" {
 		up = r.upstreamModel
 	}
-	if up != model {
-		if b, ok := WithModel(body, up); ok {
-			body = b
+	// The service reads the model the call was priced for, whatever spelling it was
+	// asked in: the body's model is set to that id unless it already is it, byte for
+	// byte. fieldsOf has refused every body with a second spelling of the key.
+	var fields map[string]json.RawMessage
+	named, _ := json.Marshal(up)
+	if json.Unmarshal(body, &fields) != nil || string(fields["model"]) != string(named) {
+		b, ok := WithModel(body, up)
+		if !ok {
+			return decided{fault: decline(path, http.StatusBadRequest, "body: not a JSON object")}
 		}
+		body = b
 	}
 	d := recall(ctx, kai, path, up, org, rid, body)
 	if d.status == http.StatusOK && path == decisionsPath && up != model {
@@ -588,19 +660,24 @@ func consult(ctx context.Context, kai *object.Provider, path, model, org, rid st
 func send(ctx context.Context, kai *object.Provider, path, rid string, body []byte) decided {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+path, bytes.NewReader(body))
 	if err != nil {
-		return decided{fault: decline(path, http.StatusInternalServerError, "build decision request: "+err.Error())}
+		log.Error("decisions: build request to the decision service request_id=%s: %v", rid, err)
+		return decided{fault: decline(path, http.StatusInternalServerError, "the decision request could not be built")}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-Id", rid)
 	upstream.Authorize(req, kai)
+	// Where the service lives is ours to know: a failure to reach it is logged with
+	// its address and answered without one.
 	resp, err := decisionsClient.Do(req)
 	if err != nil {
-		return decided{fault: decline(path, http.StatusBadGateway, "decision service: "+err.Error())}
+		log.Error("decisions: the decision service did not answer request_id=%s: %v", rid, err)
+		return decided{fault: decline(path, http.StatusBadGateway, "the decision service could not be reached")}
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return decided{fault: decline(path, http.StatusBadGateway, "decision service: "+err.Error())}
+		log.Error("decisions: the decision service's answer broke off request_id=%s: %v", rid, err)
+		return decided{fault: decline(path, http.StatusBadGateway, "the decision service's answer broke off")}
 	}
 	d := decided{status: resp.StatusCode, body: b, header: map[string]string{}}
 	for _, k := range relayed {
@@ -695,10 +772,14 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		return refused(d.path, d.rid, bad)
 	}
 
-	// Reserve the call's price on the body's size, as the rerank media pipe does.
-	// Whatever way this ends, the hold is released; a served call settles it at the
-	// price of the tokens its answer reports first.
-	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), nanoToCents(decisionCostNano(d.model, coarseTokenEstimate(body))))
+	// Reserve the call's price before anything is sent, and never less than a cent:
+	// the ledger holds whole cents and a decision costs a fraction of one, so a hold
+	// rounded to zero would admit every call against a balance of one cent. A cent
+	// covers a whole wire's worth of state at either model's price. Whatever way this
+	// ends, the hold is released; a served call settles it first, in nano, at the
+	// tokens its answer reports.
+	est := (decisionCostNano(d.model, coarseTokenEstimate(body)) + nanoPerCent - 1) / nanoPerCent
+	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), max(est, 1))
 	if !admitted {
 		return refused(d.path, d.rid, decline(d.path, http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
 	}
@@ -710,18 +791,53 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		return refused(d.path, d.rid, got.fault)
 	}
 	out := unscope(got.status, got.body, d.ledger, h)
-	if got.status == http.StatusOK {
-		hold.settle(nanoToCents(decisionCostNano(d.model, got.usage.InputTokens)))
-		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
-		rec.ClientIP = d.ip
-		settleAfter(d.ctx, rec, d.start)
-	}
 	header := make(map[string]string, len(got.header))
 	for k, v := range got.header {
 		header[k] = v
 	}
 	out, _ = Restate(d.path, got.status, out, header, d.rid)
+	if got.status == http.StatusOK {
+		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens))
+		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
+		rec.ClientIP = d.ip
+		// The row carries the id the caller was answered under, so a bill and the
+		// answer it is for are found by one id; the row's own id stays ours.
+		rec.ClientRequestID = header["X-Request-Id"]
+		settleAfter(d.ctx, rec, d.start)
+	}
 	return decisionReply{status: got.status, body: out, header: header}
+}
+
+// A debit filed after its reply is handed to a fixed set of settlers through a
+// bounded queue, so a burst of answers cannot become a burst of goroutines. A debit
+// the ledger refuses or does not answer in usageTimeout is tried again, with
+// backoff, up to settleTries times — the billing queue's rule for the same failure.
+// A queue that is full files the debit on the request path instead: that answer
+// waits, and no debit is dropped.
+//
+// Trying again can charge twice when the ledger took a debit and its answer was
+// lost: the ledger mints each entry's key itself (object.UsageEvent.RequestID is
+// not one), so the retry is a second entry. The alternative is a served decision
+// nobody pays for, and a double charge is the one of the two a customer reports.
+const (
+	settleWorkers = 16
+	settleDepth   = 1024
+	settleTries   = 3
+)
+
+// settleBackoff is the first wait before a debit is tried again; it doubles.
+var settleBackoff = 500 * time.Millisecond
+
+// SettleBudget is how long a stopping process must give Settled: every try of a
+// debit at its full timeout, and the waits between them.
+func SettleBudget() time.Duration {
+	return settleTries*usageTimeout + settleBackoff*(1<<(settleTries-1)) + time.Second
+}
+
+type settleJob struct {
+	ctx   context.Context
+	rec   *usageRecord
+	start time.Time
 }
 
 // settling is every debit filed after its reply that has not reached the ledger.
@@ -729,39 +845,69 @@ var settling struct {
 	mu   sync.Mutex
 	n    int
 	idle chan struct{} // closed when n falls to zero
+	once sync.Once
+	jobs chan settleJob
 }
 
 // settleAfter files a served call's debit off the request path, so the reply never
 // waits on the books. Every filing is counted until it lands, and Settled waits on
 // the count: a debit is not lost to a process that stops.
 func settleAfter(ctx context.Context, rec *usageRecord, start time.Time) {
+	settling.once.Do(func() {
+		settling.jobs = make(chan settleJob, settleDepth)
+		for range settleWorkers {
+			go func() {
+				for j := range settling.jobs {
+					settle(j)
+				}
+			}()
+		}
+	})
 	settling.mu.Lock()
 	if settling.n == 0 {
 		settling.idle = make(chan struct{})
 	}
 	settling.n++
 	settling.mu.Unlock()
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Error("billing: debit filed after its reply panicked request_id=%s: %v", rec.RequestID, r)
-			}
-			settling.mu.Lock()
-			settling.n--
-			if settling.n == 0 {
-				close(settling.idle)
-			}
-			settling.mu.Unlock()
-		}()
-		// One goroutine for both, in this order: recordUsage stamps the honesty
-		// flag the span then reads.
-		recordUsage(rec)
-		recordTrace(ctx, rec, start)
+	select {
+	case settling.jobs <- settleJob{ctx: ctx, rec: rec, start: start}:
+	default:
+		settle(settleJob{ctx: ctx, rec: rec, start: start})
+	}
+}
+
+// settle files one debit, trying again while the ledger refuses it, then its trace.
+func settle(j settleJob) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("billing: debit filed after its reply panicked request_id=%s", j.rec.RequestID)
+		}
+		settling.mu.Lock()
+		settling.n--
+		if settling.n == 0 {
+			close(settling.idle)
+		}
+		settling.mu.Unlock()
 	}()
+	// One goroutine for both, in this order: recordUsage stamps the honesty flag the
+	// span then reads.
+	for try := 1; ; try++ {
+		err := recordUsage(j.rec)
+		if err == nil {
+			break
+		}
+		if try == settleTries {
+			log.Error("billing: debit filed after its reply did not land after %d tries request_id=%s: %v", try, j.rec.RequestID, err)
+			break
+		}
+		time.Sleep(settleBackoff << (try - 1))
+	}
+	recordTrace(j.ctx, j.rec, j.start)
 }
 
 // Settled waits until every debit filed after its reply has been handed to the
-// ledger, or ctx ends. Shutdown calls it before the process exits.
+// ledger, or ctx ends. A stopping process calls it once it has stopped taking
+// requests, with at least SettleBudget.
 func Settled(ctx context.Context) error {
 	settling.mu.Lock()
 	idle := settling.idle
@@ -779,10 +925,19 @@ func Settled(ctx context.Context) error {
 }
 
 // DecisionPath reports whether path is one of the two decision paths, whose
-// answers Restate words.
+// answers Restate words, spelled any way the router matches it.
 func DecisionPath(path string) bool {
-	p := strings.ToLower(path)
-	return p == decisionsPath || p == systemonePath
+	return decisionPath(path) != ""
+}
+
+// decisionPath is path as a decision path, the way the router matches it — any
+// case, a trailing slash or not — or "" for any other path.
+func decisionPath(path string) string {
+	p := strings.TrimSuffix(strings.ToLower(path), "/")
+	if p == decisionsPath || p == systemonePath {
+		return p
+	}
+	return ""
 }
 
 // RequestID is the id a decision answers under: the caller's own, when it is one a
@@ -846,7 +1001,7 @@ func Restate(path string, status int, body []byte, header map[string]string, rid
 	}
 	var v map[string]any
 	_ = json.Unmarshal(body, &v)
-	if strings.ToLower(path) == systemonePath {
+	if decisionPath(path) == systemonePath {
 		if _, ok := v["detail"]; ok {
 			return body, false
 		}

@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -75,8 +76,10 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (res
 	// surface as a 500 response, never escape the dispatch seam.
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("zap cloud handler panic: %v", r)
-			resp, err = object.BuildCloudResponse(500, nil, fmt.Sprintf("internal error: %v", r))
+			// The panic's value is logged, never answered: it can name anything the
+			// handler held.
+			log.Error("zap cloud handler panic: %v\n%s", r, debug.Stack())
+			resp, err = object.BuildCloudResponse(500, nil, "internal error")
 		}
 	}()
 	root := msg.Root()
@@ -121,8 +124,8 @@ func gateway(router http.Handler) zap.Handler {
 		// escape the dispatch seam.
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("zap gateway handler panic: %v", r)
-				errBody, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("internal error: %v", r)})
+				log.Error("zap gateway handler panic: %v\n%s", r, debug.Stack())
+				errBody, _ := json.Marshal(map[string]string{"error": "internal error"})
 				resp, err = object.BuildGatewayResponse(500, errBody, nil)
 			}
 		}()
@@ -134,6 +137,9 @@ func gateway(router http.Handler) zap.Handler {
 
 		// Extract auth from headers JSON: {"Authorization":"Bearer xxx", ...}
 		auth := extractAuthFromHeaders(root.Bytes(16))
+		// The request's headers travel with it, so a handler resolves who pays the way
+		// the HTTP surface does (X-Org-Id) and answers under the caller's X-Request-Id.
+		ctx = context.WithValue(ctx, gatewayHeaders{}, root.Bytes(16))
 
 		switch {
 		case path == "/v1/chat" || path == "/v1/chat/completions" || path == "/v1/completions":
@@ -196,6 +202,31 @@ func dispatchGateway(ctx context.Context, router http.Handler, method, path, que
 	// which resolves method + path parameters and runs every filter. See
 	// zap_gateway_fallback.go for why a second router is not taught to do that.
 	return serveGatewayViaRouter(ctx, router, method, path, query, auth, body)
+}
+
+// gatewayHeaders keys a gateway request's JSON-encoded headers on its context.
+type gatewayHeaders struct{}
+
+// gatewayHeader is one header of the gateway request ctx carries, "" for none or
+// for a request that came some other way.
+func gatewayHeader(ctx context.Context, name string) string {
+	h, _ := ctx.Value(gatewayHeaders{}).([]byte)
+	return strings.TrimSpace(headerOf(h, name))
+}
+
+// headerOf reads one header, by any case, from a JSON-encoded headers map sent by
+// the gateway.
+func headerOf(headersJSON []byte, name string) string {
+	var headers map[string]string
+	if json.Unmarshal(headersJSON, &headers) != nil {
+		return ""
+	}
+	for k, v := range headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
 }
 
 // extractAuthFromHeaders parses the Authorization header from a JSON-encoded
@@ -329,7 +360,7 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 		// ledger has not, so "which session spent the money" was a join against a
 		// store that holds no money.
 		record.Session, record.TraceID,
-		record.RequestID,
+		record.shownID(),
 		record.PromptTokens, record.CompletionTokens, record.TotalTokens,
 		record.CacheReadTokens, record.CacheWriteTokens,
 		costCents, "usd",

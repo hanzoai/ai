@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -48,15 +49,34 @@ var decisionTTL = time.Minute
 const (
 	decisionMax   = 4096     // answers held
 	decisionBytes = 64 << 20 // bytes of answers held
+	// decisionShare is the part of the cache one org may hold, as a divisor: an org
+	// asking more than its share evicts its own least recently used answers, never
+	// another org's.
+	decisionShare = 8
 )
 
-var decisionCache struct {
+// held is one answer in the cache, for the org that asked it.
+type held struct {
+	id  [32]byte
+	org string
+	d   decided
+}
+
+// decisionCacheT is the cache's shape; decisionCache is the one.
+type decisionCacheT struct {
 	mu     sync.Mutex
-	m      map[[32]byte]decided
+	lru    *list.List                 // front is most recently used; values are *held
+	m      map[[32]byte]*list.Element // by key
 	size   int
+	orgs   map[string]*share // what each org holds
 	rev    map[string]string // path and upstream model → routing.sha256 of its latest 200 answer
 	flight singleflight.Group
 }
+
+var decisionCache decisionCacheT
+
+// share is what one org holds: answers and bytes.
+type share struct{ n, size int }
 
 // recall answers body, sent to path as up for org, from a live held answer, else
 // asks the service once for every identical body in flight. An answer that was not
@@ -71,9 +91,9 @@ func recall(ctx context.Context, kai *object.Provider, path, up, org, rid string
 	c.mu.Lock()
 	rev := c.rev[line]
 	id := decisionKey(org, line, rev, norm)
-	d, held := c.m[id]
+	d, hit := c.lookup(id)
 	c.mu.Unlock()
-	if held && time.Now().Before(d.exp) {
+	if hit {
 		d.body = remint(d.body)
 		return d
 	}
@@ -118,29 +138,79 @@ func learn(line, org string, norm []byte, d decided) decided {
 	if d.sha256 == "" || len(d.body) > decisionBytes {
 		return d
 	}
-	id := decisionKey(org, line, d.sha256, norm)
-	now := time.Now()
-	if old, ok := c.m[id]; ok {
-		delete(c.m, id)
-		c.size -= len(old.body)
+	c.hold(decisionKey(org, line, d.sha256, norm), org, d)
+	return d
+}
+
+// lookup is the live answer held under id, marked most recently used; an expired
+// one is dropped. Called with mu held.
+func (c *decisionCacheT) lookup(id [32]byte) (decided, bool) {
+	e, ok := c.m[id]
+	if !ok {
+		return decided{}, false
 	}
-	if len(c.m) >= decisionMax || c.size+len(d.body) > decisionBytes {
-		for k, v := range c.m {
-			if now.After(v.exp) {
-				delete(c.m, k)
-				c.size -= len(v.body)
+	h := e.Value.(*held)
+	if time.Now().After(h.d.exp) {
+		c.drop(e)
+		return decided{}, false
+	}
+	c.lru.MoveToFront(e)
+	return h.d, true
+}
+
+// hold keeps d for org under id: past org's share, org's own least recently used
+// answer goes first; past the whole cache's bound, the least recently used answer
+// of any org. Called with mu held.
+func (c *decisionCacheT) hold(id [32]byte, org string, d decided) {
+	if len(d.body) > decisionBytes/decisionShare {
+		return
+	}
+	if c.m == nil {
+		c.lru, c.m, c.orgs, c.size = list.New(), map[[32]byte]*list.Element{}, map[string]*share{}, 0
+	}
+	if e, ok := c.m[id]; ok {
+		c.drop(e)
+	}
+	mine := c.orgs[org]
+	if mine == nil {
+		mine = &share{}
+		c.orgs[org] = mine
+	}
+	for over := true; over && mine.n > 0 && (mine.n >= decisionMax/decisionShare || mine.size+len(d.body) > decisionBytes/decisionShare); {
+		over = false
+		for e := c.lru.Back(); e != nil; e = e.Prev() {
+			if e.Value.(*held).org == org {
+				c.drop(e)
+				over = true
+				break
 			}
 		}
 	}
-	if c.m == nil || len(c.m) >= decisionMax || c.size+len(d.body) > decisionBytes {
-		c.m, c.size = make(map[[32]byte]decided), 0
+	for c.lru.Len() > 0 && (c.lru.Len() >= decisionMax || c.size+len(d.body) > decisionBytes) {
+		c.drop(c.lru.Back())
 	}
-	held := d
-	held.header = nil
-	held.exp = now.Add(decisionTTL)
-	c.m[id] = held
+	// Evicting the org's last answer let its share go; this answer brings it back.
+	c.orgs[org] = mine
+	d.header = nil
+	d.exp = time.Now().Add(decisionTTL)
+	c.m[id] = c.lru.PushFront(&held{id: id, org: org, d: d})
 	c.size += len(d.body)
-	return d
+	mine.n++
+	mine.size += len(d.body)
+}
+
+// drop removes one held answer. Called with mu held.
+func (c *decisionCacheT) drop(e *list.Element) {
+	h := c.lru.Remove(e).(*held)
+	delete(c.m, h.id)
+	c.size -= len(h.d.body)
+	if s := c.orgs[h.org]; s != nil {
+		s.n--
+		s.size -= len(h.d.body)
+		if s.n == 0 {
+			delete(c.orgs, h.org)
+		}
+	}
 }
 
 // holdable is body without its insignificant whitespace, in the order it was

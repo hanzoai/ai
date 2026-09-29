@@ -31,6 +31,19 @@ type ledgerEntry struct {
 	balanceCents  int64     // last balance fetched from Commerce
 	reservedCents int64     // sum of holds for in-flight requests
 	fetchedAt     time.Time // when balanceCents was last set
+	// spentNano is settled spend below a whole cent, not yet taken off
+	// balanceCents. A call priced at a fraction of a cent is still spend: it counts
+	// against what is available as the whole cent it has begun, and becomes one
+	// once enough of them add up.
+	spentNano int64
+}
+
+// nanoPerCent is how many nano-USD make one cent.
+const nanoPerCent = 10_000_000
+
+// available is balance less holds less the cent any sub-cent spend has begun.
+func (e *ledgerEntry) available() int64 {
+	return e.balanceCents - e.reservedCents - (e.spentNano+nanoPerCent-1)/nanoPerCent
 }
 
 // BalanceLedger is the in-pod source of truth for a billing subject's SPENDABLE
@@ -100,6 +113,9 @@ func (l *BalanceLedger) SetBalance(subject string, cents int64) {
 		l.entries[subject] = e
 	}
 	e.balanceCents = cents
+	// A fresh balance has had every posted debit taken off it, the sub-cent ones
+	// included, so the local remainder starts again.
+	e.spentNano = 0
 	e.fetchedAt = time.Now()
 }
 
@@ -124,7 +140,7 @@ func (l *BalanceLedger) Available(subject string) (cents int64, known bool) {
 	if e == nil {
 		return 0, false
 	}
-	return e.balanceCents - e.reservedCents, true
+	return e.available(), true
 }
 
 // Reserve atomically holds estCents against the subject's available balance.
@@ -143,7 +159,7 @@ func (l *BalanceLedger) Reserve(subject string, estCents int64) bool {
 	if e == nil {
 		return false
 	}
-	if e.balanceCents-e.reservedCents < estCents {
+	if e.available() < estCents {
 		return false
 	}
 	e.reservedCents += estCents
@@ -170,11 +186,21 @@ func (l *BalanceLedger) EvictIdle(maxIdle time.Duration) {
 // Reserve time. actualCents may be 0 (a failed/empty request that still reserved).
 // Reserved never goes below zero (defensive against a double-settle).
 func (l *BalanceLedger) Settle(subject string, estCents, actualCents int64) {
+	if actualCents < 0 {
+		actualCents = 0
+	}
+	l.SettleNano(subject, estCents, actualCents*nanoPerCent)
+}
+
+// SettleNano is Settle with the actual spend in nano-USD, for a call priced below
+// a cent. Whole cents come off the balance; the remainder is carried until it
+// makes one, and counts against what is available meanwhile.
+func (l *BalanceLedger) SettleNano(subject string, estCents, actualNano int64) {
 	if estCents < 0 {
 		estCents = 0
 	}
-	if actualCents < 0 {
-		actualCents = 0
+	if actualNano < 0 {
+		actualNano = 0
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -186,5 +212,8 @@ func (l *BalanceLedger) Settle(subject string, estCents, actualCents int64) {
 	if e.reservedCents < 0 {
 		e.reservedCents = 0
 	}
-	e.balanceCents -= actualCents
+	e.spentNano += actualNano
+	whole := e.spentNano / nanoPerCent
+	e.balanceCents -= whole
+	e.spentNano -= whole * nanoPerCent
 }

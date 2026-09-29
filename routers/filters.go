@@ -53,8 +53,12 @@ import (
 // at three URLs, each one a place a policy could be applied inconsistently.
 // Resources live at exactly one address, generated from the table in resources.go.
 func InstallFilters(app *zip.App) {
-	// FIRST, so it covers the filters below as well as the handlers. See
-	// recover.go for why this is a move rather than an addition.
+	// Outside Recovered, so an answer on a decision path is said in that path's
+	// words — a panic's 500 included — with its request id. Dialect itself only
+	// rewords a finished answer.
+	app.Use(zip.H(Dialect))
+	// FIRST of everything that runs a handler, so it covers the filters below as well
+	// as the handlers. See recover.go for why this is a move rather than an addition.
 	app.Use(zip.H(Recovered))
 	app.Use(zip.H(CorsFilter))
 	// Live request-geo tap: folds each inbound hit into the in-process traffic
@@ -64,9 +68,6 @@ func InstallFilters(app *zip.App) {
 	app.Use(zip.H(TrafficTapFilter))
 	app.Use(zip.H(HstsFilter))
 	app.Use(zip.H(CacheControlFilter))
-	// Ahead of every filter that can refuse, so a refusal on a decision path is said
-	// in that path's words whichever layer wrote it.
-	app.Use(zip.H(Dialect))
 	app.Use(zip.H(RateLimitFilter))
 	// Ahead of every filter that reads a token. Below this line a token that does
 	// not parse means the TOKEN is bad; above it, it could also mean no signing

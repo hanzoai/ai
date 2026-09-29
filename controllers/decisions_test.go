@@ -103,7 +103,7 @@ func setupDecisions(t *testing.T) (*fakeDecisions, *[]object.UsageEvent) {
 	t.Helper()
 	forget := func() {
 		decisionCache.mu.Lock()
-		decisionCache.m, decisionCache.rev, decisionCache.size = nil, nil, 0
+		decisionCache.lru, decisionCache.m, decisionCache.orgs, decisionCache.rev, decisionCache.size = nil, nil, nil, nil, 0
 		decisionCache.mu.Unlock()
 	}
 	forget()
@@ -131,6 +131,11 @@ func setupDecisions(t *testing.T) (*fakeDecisions, *[]object.UsageEvent) {
 	prevBalance := object.BalanceReader()
 	object.SetBalanceReader(balReader(100_00, nil))
 	t.Cleanup(func() { object.SetBalanceReader(prevBalance) })
+	// The in-process ledger outlives a test; each one starts both tenants funded.
+	for _, org := range []string{decisionsOrg, "globex"} {
+		user, _ := providerKeyBillingUser(&object.Provider{Owner: org})
+		object.GlobalBalanceLedger.SetBalance(user.PayerSubject(org), 100_00)
+	}
 
 	var mu sync.Mutex
 	events := &[]object.UsageEvent{}

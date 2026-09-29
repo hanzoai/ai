@@ -1,0 +1,379 @@
+// Copyright 2026 Hanzo AI Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package controllers
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/luxfi/zap"
+
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/util"
+)
+
+// A decision service that cannot be reached is a 502 that names no address: where
+// the service lives is ours to know.
+func TestDecisionRefusalNamesNoAddress(t *testing.T) {
+	setupDecisions(t)
+	t.Setenv("KAI_URL", "http://127.0.0.1:1")
+	for _, p := range []string{decisionsPath, systemonePath} {
+		status, body, _ := drive(t, p, "Bearer "+decisionsKey, decisionBody, nil)
+		if status != http.StatusBadGateway || strings.Contains(body, "127.0.0.1") || strings.Contains(body, "http") {
+			t.Fatalf("%s => %d %s", p, status, body)
+		}
+	}
+}
+
+// One org asking more than its share of the cache evicts its own answers, never
+// another org's: acme's held answer survives globex filling the cache.
+func TestDecisionCacheKeepsEachOrgsShare(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	fake.answer = heldAnswer
+	kai := object.KaiProvider()
+	ctx := context.Background()
+	recall(ctx, kai, decisionsPath, "kai", "acme", "r", []byte(decisionBody))
+	recall(ctx, kai, decisionsPath, "kai", "acme", "r", []byte(decisionBody))
+	for i := 0; i < decisionMax; i++ {
+		b := strings.Replace(decisionBody, "twice", fmt.Sprintf("twice %d", i), 1)
+		recall(ctx, kai, decisionsPath, "kai", "globex", "r", []byte(b))
+	}
+	before, _, _ := fake.seen()
+	recall(ctx, kai, decisionsPath, "kai", "acme", "r", []byte(decisionBody))
+	if after, _, _ := fake.seen(); after != before {
+		t.Fatalf("globex's %d requests evicted acme's held answer", decisionMax)
+	}
+	decisionCache.mu.Lock()
+	defer decisionCache.mu.Unlock()
+	if n := decisionCache.orgs["globex"].n; n > decisionMax/decisionShare {
+		t.Fatalf("globex holds %d answers, over its share of %d", n, decisionMax/decisionShare)
+	}
+}
+
+// gatewayCall is a MsgType 200 request carrying headers and a body, as the ZAP
+// gateway sends one.
+func gatewayCall(t *testing.T, path string, headers map[string]string, body string) *zap.Message {
+	t.Helper()
+	h, _ := json.Marshal(headers)
+	b := zap.NewBuilder(len(body) + len(h) + 256)
+	obj := b.StartObject(40)
+	obj.SetText(0, http.MethodPost)
+	obj.SetText(8, path)
+	obj.SetBytes(16, h)
+	obj.SetBytes(24, []byte(body))
+	obj.FinishAsRoot()
+	msg, err := zap.Parse(b.FinishWithFlags(object.MsgTypeHTTPRequest << 8))
+	if err != nil {
+		t.Fatalf("build gateway request: %v", err)
+	}
+	return msg
+}
+
+// Both doors pay from, and scope handles by, the org a JWT asked to act in under
+// X-Org-Id, and both refuse an org its signed membership does not cover.
+func TestDecisionDoorsAgreeUnderOrgSwitch(t *testing.T) {
+	fake, events := setupDecisions(t)
+	var mu sync.Mutex
+	var seen []string
+	fake.serve = func(_ string, body []byte) (int, string) {
+		var b struct{ Observe, Handle string }
+		_ = json.Unmarshal(body, &b)
+		mu.Lock()
+		seen = append(seen, b.Observe+b.Handle)
+		mu.Unlock()
+		return http.StatusOK, decisionAnswer
+	}
+	tok := mintUsageJWTWithOrgs(t, "beta", "bob", "beta", "acme")
+	observe := strings.Replace(decisionBody, `}}}`, `}},"observe":"s1"}`, 1)
+	if status, body, _ := drive(t, decisionsPath, "Bearer "+tok, observe, map[string]string{"X-Org-Id": "acme"}); status != 200 {
+		t.Fatalf("HTTP => %d %s", status, body)
+	}
+	msg, err := gateway(nil)(context.Background(), "", gatewayCall(t, decisionsPath,
+		map[string]string{"Authorization": "Bearer " + tok, "X-Org-Id": "acme", "X-Request-Id": "zap-7"}, `{"model":"kai","handle":"s1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := msg.Root().Uint32(object.GatewayRespStatus); st != 200 {
+		t.Fatalf("ZAP => %d %s", st, msg.Root().Bytes(object.GatewayRespBody))
+	}
+	var h map[string]string
+	if json.Unmarshal(msg.Root().Bytes(object.GatewayRespHeaders), &h); h["X-Request-Id"] != "zap-7" || fake.rid != "zap-7" {
+		t.Fatalf("the gateway's request id: answered %q, sent %q", h["X-Request-Id"], fake.rid)
+	}
+	settled(t)
+	mu.Lock()
+	if strings.Join(seen, " ") != "acme/s1 acme/s1" {
+		t.Fatalf("the service was sent %v; both doors must name acme's handle", seen)
+	}
+	mu.Unlock()
+	if len(*events) != 2 || (*events)[0].Namespace != "acme" || (*events)[1].Namespace != "acme" {
+		t.Fatalf("debits = %+v; both doors must pay from acme", *events)
+	}
+
+	msg, _ = gateway(nil)(context.Background(), "", gatewayCall(t, decisionsPath,
+		map[string]string{"Authorization": "Bearer " + tok, "X-Org-Id": "globex"}, decisionBody))
+	if st := msg.Root().Uint32(object.GatewayRespStatus); st != http.StatusForbidden {
+		t.Fatalf("ZAP in an org outside the membership => %d, want 403", st)
+	}
+}
+
+// A debit the ledger does not take is tried again, each try bounded, and Settled
+// waits long enough for every try: the answer went out, so the debit must land.
+func TestDecisionDebitOutlivesAFailingLedger(t *testing.T) {
+	_, _ = setupDecisions(t)
+	prevTimeout, prevBackoff := usageTimeout, settleBackoff
+	usageTimeout, settleBackoff = 100*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { usageTimeout, settleBackoff = prevTimeout, prevBackoff })
+	if SettleBudget() <= usageTimeout*settleTries {
+		t.Fatalf("SettleBudget %v does not cover %d tries of %v", SettleBudget(), settleTries, usageTimeout)
+	}
+
+	var tries atomic.Int32
+	var landed atomic.Int32
+	object.SetUsageRecorder(func(ctx context.Context, _ object.UsageEvent) error {
+		if dl, ok := ctx.Deadline(); !ok || time.Until(dl) > usageTimeout {
+			t.Errorf("a debit's hand-off is not bounded by usageTimeout")
+		}
+		if tries.Add(1) == 1 {
+			<-ctx.Done() // the ledger does not answer
+			return ctx.Err()
+		}
+		landed.Add(1)
+		return nil
+	})
+	if status, _, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, decisionBody, nil); status != 200 {
+		t.Fatalf("status %d", status)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), SettleBudget())
+	defer cancel()
+	if err := Settled(ctx); err != nil {
+		t.Fatalf("Settled gave up inside its budget: %v", err)
+	}
+	if tries.Load() != 2 || landed.Load() != 1 {
+		t.Fatalf("tries = %d, landed = %d; want the timed-out debit tried again and landed once", tries.Load(), landed.Load())
+	}
+}
+
+// However many answers go out at once, the debits behind them run on a fixed set
+// of settlers, and one past the queue is filed where it was answered, not dropped.
+func TestDecisionSettlersAreBounded(t *testing.T) {
+	_, _ = setupDecisions(t)
+	release := make(chan struct{})
+	var landed atomic.Int32
+	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error {
+		<-release
+		landed.Add(1)
+		return nil
+	})
+	before := runtime.NumGoroutine()
+	rec := func() *usageRecord {
+		return &usageRecord{Owner: decisionsOrg, Model: "kai", Provider: object.KaiName, PromptTokens: 1, DecisionCount: 1, Status: "success", RequestID: "r"}
+	}
+	const n = settleWorkers + settleDepth
+	for i := 0; i < n; i++ {
+		settleAfter(context.Background(), rec(), time.Now())
+	}
+	if grew := runtime.NumGoroutine() - before; grew > settleWorkers+8 {
+		t.Fatalf("%d debits in flight grew %d goroutines; the settlers are %d", n, grew, settleWorkers)
+	}
+	inline := make(chan struct{})
+	go func() {
+		settleAfter(context.Background(), rec(), time.Now())
+		close(inline)
+	}()
+	select {
+	case <-inline:
+		t.Fatal("a debit past a full queue returned before it was filed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	<-inline
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := Settled(ctx); err != nil {
+		t.Fatalf("%d debits did not land: %v", n+1, err)
+	}
+	if got := landed.Load(); got != n+1 {
+		t.Fatalf("landed %d of %d debits", got, n+1)
+	}
+}
+
+// A decision costs a fraction of a cent and the ledger holds cents, so each call
+// holds at least one and its spend counts in nano: a balance of one cent pays for
+// what it covers and no more.
+func TestJevCannotOverdrawACent(t *testing.T) {
+	fake, events := setupDecisions(t)
+	fake.answer = `{"model":"typesafe/jev-1.13","answers":{"is_bug":{"type":"noul","noul":0.5}},"usage":{"input_tokens":110000,"output_tokens":0,"cost":0.00462}}`
+	object.SetBalanceReader(balReader(1, nil))
+	user, _ := providerKeyBillingUser(&object.Provider{Owner: decisionsOrg})
+	subject := user.PayerSubject(decisionsOrg)
+	object.GlobalBalanceLedger.SetBalance(subject, 1)
+	t.Cleanup(func() { object.GlobalBalanceLedger.SetBalance(subject, 0) })
+	asked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"typesafe/jev-1.13"`, 1)
+	ok := 0
+	for i := 0; i < 20; i++ {
+		if status, _, _ := drive(t, systemonePath, "Bearer "+decisionsKey, asked, nil); status == http.StatusOK {
+			ok++
+		}
+	}
+	total := 0.0
+	for _, e := range *events {
+		f, _ := strconv.ParseFloat(e.USD, 64)
+		total += f
+	}
+	if ok == 0 || total > 0.01 {
+		t.Fatalf("a one-cent balance admitted %d Jev calls billing $%.5f", ok, total)
+	}
+}
+
+// A model asked in any case is priced, filed and forwarded as its route's id.
+func TestDecisionCaseVariantsPriceAsTheirRoute(t *testing.T) {
+	fake, events := setupDecisions(t)
+	useCatalog(t, "../conf/models.yaml")
+	fake.answer = `{"model":"x","answers":{"q":{"type":"noul","noul":0.5}},"usage":{"input_tokens":1000000,"output_tokens":0}}`
+	want := map[string]string{"KAI": "0.021", "Kai": "0.021", "TYPESAFE/JEV-1.13": "0.042", "~TypeSafe/Jev-Latest": "0.042"}
+	for model, usd := range want {
+		body := strings.Replace(decisionBody, `"model":"kai"`, `"model":"`+model+`"`, 1)
+		if status, out, _ := drive(t, systemonePath, "Bearer "+decisionsKey, body, nil); status != 200 {
+			t.Fatalf("%s => %d %s", model, status, out)
+		}
+		_, _, sent := fake.seen()
+		e := (*events)[len(*events)-1]
+		if e.Model != strings.ToLower(model) || e.USD != usd || top(t, string(sent), "model") != `"`+strings.ToLower(model)+`"` {
+			t.Fatalf("%s: debit %s at $%s per 1M, forwarded %s", model, e.Model, e.USD, top(t, string(sent), "model"))
+		}
+	}
+}
+
+// The gateway reads the body the way the service does, key for key: a second
+// spelling of a field, in any case, or a key given twice, is refused before
+// anything is priced or sent.
+func TestDecisionBodyIsReadKeyForKey(t *testing.T) {
+	fake, events := setupDecisions(t)
+	seedOther(t)
+	for _, body := range []string{
+		strings.Replace(decisionBody, `"model":"kai"`, `"model":"typesafe/jev-1.13","MODEL":"kai"`, 1),
+		strings.Replace(decisionBody, `"model":"kai"`, `"Model":"kai"`, 1),
+		`{"model":"kai","handle":"s1","handle":null}`,
+		`{"model":"kai","Handle":"s1"}`,
+		`{"model":"kai","HANDLE":"s1","handle":null}`,
+		`{"model":"kai","ſtate":"x","questions":{"q":{"type":"noul"}}}`,
+		`{"model":"kai","state":"x","questions":{"a":{"type":"noul"}},"questions":{"b":{"type":"noul"}}}`,
+		`{"model":"kai","state":"x","questions":{"q":{"type":"noul"}}} {"model":"typesafe/jev-1.13"}`,
+	} {
+		for _, p := range []string{decisionsPath, systemonePath} {
+			if status, out, _ := drive(t, p, "Bearer "+otherKey, body, nil); status != http.StatusBadRequest {
+				t.Errorf("%s %s => %d %s", p, body, status, out)
+			}
+		}
+	}
+	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
+		t.Fatalf("an ambiguous body reached the service %d time(s) and was billed %d", calls, len(*events))
+	}
+}
+
+// Jev's own request id header crosses with the rest, on HTTP and on the gateway.
+func TestDecisionRelaysJevsRequestID(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	fake.answer = joneAnswer
+	fake.header = map[string]string{"X-Typesafe-Request-Id": "ts-1"}
+	if _, _, c := drive(t, systemonePath, "Bearer "+decisionsKey, decisionBody, nil); replied(c, "X-Typesafe-Request-Id") != "ts-1" {
+		t.Fatalf("HTTP X-Typesafe-Request-Id = %q", replied(c, "X-Typesafe-Request-Id"))
+	}
+	gw, _ := lookupGatewayHandler(systemonePath)
+	msg, _ := gw(context.Background(), "Bearer "+decisionsKey, []byte(decisionBody))
+	var h map[string]string
+	_ = json.Unmarshal(msg.Root().Bytes(object.GatewayRespHeaders), &h)
+	if h["X-Typesafe-Request-Id"] != "ts-1" {
+		t.Fatalf("gateway headers = %v", h)
+	}
+}
+
+// The usage row files under the id the caller was answered under, and keeps an id
+// of its own: the caller's finds their bill, and never becomes the row's key.
+func TestDecisionRowCarriesTheCallersRequestID(t *testing.T) {
+	_, _ = setupDecisions(t)
+	var mu sync.Mutex
+	var posted []map[string]any
+	commerce := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		mu.Lock()
+		posted = append(posted, m)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(commerce.Close)
+	object.SetUsageRecorder(nil)
+	prevQueue := billingQueue
+	billingQueue = util.NewBillingQueue(commerce.URL, "t")
+	t.Cleanup(func() { billingQueue.Shutdown(); billingQueue = prevQueue })
+
+	if status, _, _ := drive(t, decisionsPath, "Bearer "+decisionsKey, decisionBody, map[string]string{"X-Request-Id": "req-42"}); status != 200 {
+		t.Fatalf("status %d", status)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		n := len(posted)
+		mu.Unlock()
+		if n > 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(posted) != 1 || posted[0]["clientRequestId"] != "req-42" || posted[0]["requestId"] == "req-42" || posted[0]["requestId"] == "" {
+		t.Fatalf("usage posted = %v", posted)
+	}
+	row := cloudUsageValues(&usageRecord{RequestID: "own", ClientRequestID: "req-42"}, time.Now())
+	if row[0] != "own" {
+		t.Fatalf("the row's own id is %v, want the one it minted", row[0])
+	}
+	shown := false
+	for _, v := range row {
+		if v == "req-42" {
+			shown = true
+		}
+	}
+	if !shown {
+		t.Fatal("the row does not carry the caller's request id")
+	}
+}
+
+// A recorder failure is an error recordUsage returns, not only a log line.
+func TestRecordUsageReturnsTheLedgersRefusal(t *testing.T) {
+	_, _ = setupDecisions(t)
+	refusal := errors.New("ledger down")
+	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { return refusal })
+	rec := &usageRecord{Owner: decisionsOrg, Model: "kai", Provider: object.KaiName, PromptTokens: 10, DecisionCount: 1, Status: "success", RequestID: "r"}
+	if err := recordUsage(rec); !errors.Is(err, refusal) {
+		t.Fatalf("recordUsage = %v, want the recorder's refusal", err)
+	}
+}

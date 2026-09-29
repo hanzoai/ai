@@ -54,12 +54,23 @@ func main() {
 		panic(err)
 	}
 
-	// Graceful shutdown: drain billing queue and stop rate limiter.
+	// Graceful shutdown: stop taking requests, let every debit filed after its reply
+	// land, then drain the billing queue and stop the rate limiter.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	stopping := make(chan struct{})
 	go func() {
 		sig := <-sigCh
 		log.Info("Received %v, shutting down...", sig)
+		close(stopping)
+
+		// No request is taken from here on, and the ones in flight finish — their
+		// debits are filed as they reply, so they are all counted before Settled.
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := app.ShutdownWithContext(drainCtx); err != nil {
+			log.Error("HTTP drain: %v", err)
+		}
+		drainCancel()
 
 		if rlInstance != nil {
 			rlInstance.Stop()
@@ -68,8 +79,8 @@ func main() {
 		}
 
 		// A debit filed after its reply is handed to the ledger — or to the billing
-		// queue drained just below — before the process goes.
-		settleCtx, settleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// queue drained just below — before the process goes, every try included.
+		settleCtx, settleCancel := context.WithTimeout(context.Background(), controllers.SettleBudget())
 		if err := controllers.Settled(settleCtx); err != nil {
 			log.Error("Debits filed after their reply did not all land before shutdown: %v", err)
 		}
@@ -134,5 +145,12 @@ func main() {
 	// net/http server wrapping it, so there is one server for one app.
 	if err := app.Listen(fmt.Sprintf(":%v", port)); err != nil {
 		log.Error("http server on :%v exited: %v", port, err)
+	}
+	// A listener closed by the shutdown above returns here while the debits are still
+	// landing; the shutdown ends the process once they have.
+	select {
+	case <-stopping:
+		select {}
+	default:
 	}
 }

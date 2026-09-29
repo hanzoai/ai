@@ -511,26 +511,43 @@ called, so it answers in the path's shape. Kai bills $0.021 and Jev its list
 $0.042 per million input tokens — the same row in `model_pricing.go`,
 `conf/models.yaml` and hanzoai/pricing's `decisionCatalog`.
 
-- **One principal pays.** The ledger org (`billingOrg` on HTTP, the principal's
-  own org on ZAP) is what the reservation, the debit and every handle name. A
-  vendor key over ZAP pays as the org that owns it, gated like HTTP.
+- **One principal pays.** The ledger org is what the reservation, the debit and
+  every handle name: `billingOrg` on HTTP; on ZAP the same rule over the gateway
+  request's `X-Org-Id` (carried on ctx, `orgAsked`) and the JWT's signed `orgs`. An
+  IAM or vendor key has no membership and pays from its own org.
 - **A handle belongs to the org that observed it.** `observe`/`handle` are sent as
   `<org>/<id>`; `unscope` takes the prefix off anything said back. An answer with no
   handle in it goes back byte for byte.
-- **The reply never waits on the books.** The in-process ledger settles before the
-  reply; `recordUsage` runs in `settleAfter`'s goroutine, counted so
-  `controllers.Settled` can drain it at shutdown (cmd/aid does). The native
-  recorder call is bounded by `usageTimeout`.
-- **Held answers are per org.** `decisioncache.go` gives a Kai answer again for an
+- **The body is read key for key** (`fieldsOf`): a repeated top-level key, two keys
+  equal under case folding, or a known field in another case is 400, so the gateway
+  prices and scopes exactly what the service reads. The forwarded `model` is always
+  the priced route's upstream id; a model asked in any case is filed as its route id.
+- **A hold is at least a cent, spend is carried in nano.** The ledger holds cents and
+  a decision costs a fraction of one: `decide` holds `max(1¢, estimate)` and settles
+  with `settleNano`; `BalanceLedger` carries the sub-cent remainder, which counts
+  against what is available as the cent it has begun. A cent covers a whole wire's
+  worth of state at either price.
+- **The reply never waits on the books.** The debit goes to 16 settlers through a
+  1024-deep queue (full: filed inline, never dropped). A debit the ledger refuses or
+  does not answer in `usageTimeout` (5 s) is tried 3 times with backoff; a retry after
+  a lost ack can charge twice, because the ledger mints entry keys itself.
+  `controllers.Settled` waits `SettleBudget()`; cmd/aid stops taking requests first,
+  and cloud's ai plugin runs it as its `Shutdown` hook after zip drains.
+- **Held answers are per org.** `decisioncache.go` is an LRU of Kai answers for an
   identical body (whitespace-insensitive, order kept) from the same org within a
-  minute, under a fresh `id`, billed like a miss. Never across orgs: a faster
-  reply would say what another tenant sent. Handle requests are never held.
+  minute, under a fresh `id`, billed like a miss. Each org holds at most an eighth of
+  it and evicts its own. Never across orgs. Handle requests are never held.
 - **`Restate` is the wording rule**: refusal shape per path, `Retry-After` +
-  `Retry-After-Ms` on 402/429/529, `X-Request-Id` on everything. The `Dialect`
-  filter applies it to refusals other layers write (rate limit, quota, balance
-  gate, authz) before the handler runs; the handler and the ZAP twins apply it
-  themselves. `usageRecord.RequestID` stays server-minted: a caller's id is
-  correlation, never a key the ledger could dedupe on.
+  `Retry-After-Ms` on 402/429/529, `X-Request-Id` on everything; the service's
+  `X-Request-Id` and `X-Typesafe-Request-Id` pass through. The `Dialect` filter sits
+  OUTSIDE `Recovered`, so a panic's 500 is worded too, and matches the paths any
+  case, trailing slash or not. The ZAP cloud wire (MsgType 100) has no header slot:
+  its replies carry status, body and error text only, never headers folded into a
+  body. The usage row's `request_id` column is the id the caller saw
+  (`ClientRequestID`); the row's own `id` stays minted here. A 502 names no address.
+- **Nothing named Jev reaches Kai**: a route or a models.yaml `alias_of` that would
+  send a Jev-named id to a Kai upstream is refused where it resolves (`Canonical`,
+  `decisionModel`).
 - **The spec is derived.** `routers/shape.go` reads `validate:"required,min=,max="`
   and `enum:"..."` tags, a type's `Schema()` (Content kinds) and `Variants()`
   (a question is one of three, by `type`); `controllers.Answer.Refusals` states

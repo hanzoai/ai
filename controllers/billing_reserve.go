@@ -199,10 +199,16 @@ func reserveBudget(subject string, est int64) (*budgetHold, bool) {
 // ledger so subsequent reads reflect it immediately. Idempotent and nil-safe, so
 // a deferred fail-safe settle(0) is harmless once a real settle has run.
 func (h *budgetHold) settle(actualCents int64) {
+	h.settleNano(actualCents * 10_000_000)
+}
+
+// settleNano is settle with the actual spend in nano-USD, for a call priced below a
+// cent: the ledger carries the fraction rather than rounding it away.
+func (h *budgetHold) settleNano(actualNano int64) {
 	if h == nil || h.settled || h.subject == "" {
 		return
 	}
-	object.GlobalBalanceLedger.Settle(h.subject, h.est, actualCents)
+	object.GlobalBalanceLedger.SettleNano(h.subject, h.est, actualNano)
 	h.settled = true
 }
 

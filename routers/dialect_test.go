@@ -15,11 +15,23 @@
 package routers
 
 import (
+	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/ai/controllers"
+	"github.com/hanzoai/ai/internal/authtest"
+	iam "github.com/hanzoai/ai/internal/iam"
+	"github.com/hanzoai/ai/object"
 )
 
 // limited is a filter that refuses the way RateLimitFilter does.
@@ -157,5 +169,84 @@ func TestTheDecisionPathsArePublished(t *testing.T) {
 	}
 	if r := required("ai.DecisionsUsage"); !slices.Equal(r, []any{"input_tokens", "output_tokens"}) {
 		t.Errorf("usage requires %v", r)
+	}
+}
+
+// A Jev-named alias of Kai is no alias: through the whole router — filters, the
+// alias rewrite and the handler — a caller asking for jev-latest is told it is an
+// unknown model, and nothing reaches the decision service.
+func TestJevAliasIsRefusedThroughTheRouter(t *testing.T) {
+	restore, err := object.UseMemoryDB(fmt.Sprintf("file:routers_jev_%d?mode=memory&cache=shared", time.Now().UnixNano()), &object.Provider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(restore)
+	if _, err := object.AddProvider(&object.Provider{
+		Owner: "acme", Name: "acme-openai", Category: "Model", Type: "OpenAI",
+		ProviderKey: "sk-routers-jev", ProviderUrl: "http://127.0.0.1:1/v1", ClientSecret: "x", State: "Active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(svc.Close)
+	t.Setenv("KAI_URL", svc.URL)
+	shipped, err := os.ReadFile("../conf/models.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := t.TempDir() + "/models.yaml"
+	if err := os.WriteFile(path, append(shipped, []byte("  jev-latest:\n    alias_of: kai\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := controllers.InitModelConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controllers.InitModelConfig("../conf/models.yaml") })
+
+	app := built()
+	for _, p := range []string{"/v1/systemone", "/v1/decisions"} {
+		req := httptest.NewRequest(http.MethodPost, p, strings.NewReader(`{"model":"jev-latest","state":"x","questions":{"q":{"type":"noul"}}}`))
+		req.Header.Set("Authorization", "Bearer sk-routers-jev")
+		resp, err := app.Fiber().Test(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(b), "jev-latest") {
+			t.Errorf("%s jev-latest => %d %s", p, resp.StatusCode, b)
+		}
+	}
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("the decision service saw %d call(s) for a Jev name", n)
+	}
+}
+
+// Every filter the service runs, in the order it runs them: a panic on a decision
+// path still leaves in that path's shape with a request id, and so does a refusal
+// on the path spelled with a trailing slash or in capitals.
+func TestDialectCoversPanicsAndEverySpelling(t *testing.T) {
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
+	InstallFilters(app)
+	app.Raw(http.MethodPost, "/v1/systemone", func(c *zip.Ctx) error { panic("boom: secret") })
+	req := httptest.NewRequest(http.MethodPost, "/v1/systemone", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", authtest.Bearer(t, iam.User{Owner: "acme", Name: "alice"}))
+	resp, err := app.Fiber().Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 500 || string(b) != `{"detail":"internal error"}` || resp.Header.Get("X-Request-Id") == "" {
+		t.Fatalf("panic => %d %s X-Request-Id=%q", resp.StatusCode, b, resp.Header.Get("X-Request-Id"))
+	}
+
+	for _, p := range []string{"/v1/systemone/", "/V1/SYSTEMONE"} {
+		pr := ask(http.MethodPost, p).through(Dialect, limited)
+		if pr.said() != `{"detail":"Rate limit exceeded. Retry after 3 seconds."}` || pr.replied("X-Request-Id") == "" || pr.replied("Retry-After-Ms") != "3000" {
+			t.Errorf("%s => %s id=%q ms=%q", p, pr.said(), pr.replied("X-Request-Id"), pr.replied("Retry-After-Ms"))
+		}
 	}
 }

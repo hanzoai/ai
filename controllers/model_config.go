@@ -416,14 +416,23 @@ func (mc *ModelConfig) ResolveRoute(model string) *modelRoute {
 
 // Canonical names the id an alias stands for; ok is false for an id that is not
 // an alias.
+//
+// An id that names Jev never resolves to Kai: an alias that would send one there is
+// no alias, so the request keeps the id it asked for and meets the route table as
+// that id — and a Jev spelling routes to Jev or to nothing.
 func Canonical(model string) (string, bool) {
 	cfg := GetModelConfig()
 	if cfg == nil {
 		return "", false
 	}
 	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
 	id, ok := cfg.aliases[strings.ToLower(strings.TrimSpace(model))]
+	cfg.mu.RUnlock()
+	if ok && jevNamed(model) {
+		if r := resolveModelRoute(id); r != nil && r.providerName == object.KaiName && kaiUpstream(r.upstreamModel) {
+			return "", false
+		}
+	}
 	return id, ok
 }
 
