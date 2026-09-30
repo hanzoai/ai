@@ -2444,27 +2444,18 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 // PUBLIC BY DESIGN, AND IT DOES NOT AUTHENTICATE — that is the whole contract, so it
 // is stated here rather than left to be inferred. The catalogue is the same for
 // everyone (listAvailableModels takes no principal), docs.hanzo.ai fetches it from
-// the browser, and every policy layer around it already says so out loud: the authz
-// filter lists "models" as public, filter_balance refuses to gate it (a 402 here was
-// a console-wide outage), the rate limiter excludes it, and cloud's spend.Reachable
-// carries /v1/models/ as "the model catalog the shell reads for discovery".
+// the browser, and every policy layer around it says so: the authz filter lists
+// "models" as public, filter_balance does not gate it, the rate limiter excludes it,
+// and cloud's spend.Reachable carries /v1/models/ as "the model catalog the shell
+// reads for discovery".
 //
 // SO THE Authorization HEADER IS NOT AN ADMISSION CHECK HERE. It is read for ONE
 // thing — annotating gated SKUs with the caller's own access standing — and
 // annotation degrades to nothing when there is no verified principal.
 //
-// It used to hold a "require authentication" gate that authenticated nobody: it
-// rejected an ABSENT credential and a MALFORMED one, then accepted any string that
-// merely looked like a key. `Bearer sk-` followed by 36 zeroes returned 200 in
-// production; so did a JWT three days expired. It was a shape check wearing an auth
-// check's clothes, and its cost was diagnostic: /v1/models is the natural "is my auth
-// working?" probe, and answering 200 to a dead credential sent people debugging the
-// wrong system. A public endpoint must not appear to validate. Either check the
-// credential or ignore it — this one ignores it, deliberately and visibly.
-//
-// Removing that gate discloses nothing new: the catalogue was already reachable by
-// anyone willing to type three characters, so there is no confidentiality delta, only
-// an honesty one.
+// A credential that is presented is verified, never merely shape-checked: a caller
+// using /v1/models to ask "is my key working?" gets an honest answer, because a key
+// that does not verify annotates nothing rather than reading as accepted.
 //
 // @Title ListModels
 // @Tag OpenAI Compatible API

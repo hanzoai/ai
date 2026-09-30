@@ -30,11 +30,10 @@ import (
 // api.hanzo.ai HTTP binding, so there is NO controller twin to drift from and the
 // split-brain the router refactor removed stays removed.
 //
-// Why a bridge and not a twin controller method: every other migrated route
-// (get-records, get-connections, …) carries BOTH a controller method and a
-// ZAP handler — the exact dual-impl drift that silently NULLed customer router
-// settings (the update-router-policy data-wipe). Routing these nouns through the
-// ZAP handler over one adapter keeps a single source of truth.
+// Why a bridge and not a twin controller method: one handler serves both
+// transports, so the HTTP route and the ZAP message read and write router settings
+// through the same code and cannot come to disagree about them. Routing these nouns
+// through the ZAP handler over one adapter keeps a single source of truth.
 //
 // Identity is the request's own Bearer credential (Authorization header), which
 // the native handlers resolve exactly as the gateway does — every caller
