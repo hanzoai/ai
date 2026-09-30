@@ -266,6 +266,16 @@ func familyForProviderType(t string) *modelFamily {
 	return nil
 }
 
+// familyNamed is the family whose provider row is named name, or nil.
+func familyNamed(name string) *modelFamily {
+	for _, f := range modelFamilies {
+		if f.name == name {
+			return f
+		}
+	}
+	return nil
+}
+
 // freeID is the platform's OWN name for the pool: one id every surface can send and
 // always get a free answer from, wearing no brand at all. enso-free and zen-free are
 // the same pool behind a brand; this is the same pool in front of all of them, so a

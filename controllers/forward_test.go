@@ -577,7 +577,7 @@ func TestTheDialIsTheSeam(t *testing.T) {
 	dial = func(_ context.Context, _ string, _ *object.Provider, c candidate, body func(*object.Provider) []byte) (*http.Response, *object.Provider, error) {
 		asked = append(asked, c.provider)
 		row := &object.Provider{Owner: "admin", Name: c.provider, Type: "DigitalOcean"}
-		if c.provider == "enso" {
+		if c.provider == "vendor-a" {
 			return nil, row, apiErr(402, "Insufficient credits.")
 		}
 		var sentBody map[string]json.RawMessage
@@ -589,10 +589,10 @@ func TestTheDialIsTheSeam(t *testing.T) {
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	req := &openai.ChatCompletionRequest{Model: "test-model", Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "hi"}}}
 	body, _ := json.Marshal(req)
-	c.forward(pass{req: req, body: body, route: route("enso", "do-ai"), id: "req1", start: time.Now()})
+	c.forward(pass{req: req, body: body, route: route("vendor-a", "do-ai"), id: "req1", start: time.Now()})
 
-	if strings.Join(asked, ",") != "enso,do-ai" {
-		t.Errorf("asked %v, want [enso do-ai]", asked)
+	if strings.Join(asked, ",") != "vendor-a,do-ai" {
+		t.Errorf("asked %v, want [vendor-a do-ai]", asked)
 	}
 	if !strings.Contains(sent(c), "up-do-ai") {
 		t.Errorf("answer %s, want do-ai's, asked under its own id", sent(c))
@@ -969,5 +969,31 @@ func TestTheHoldIsPricedOnTheWholeBody(t *testing.T) {
 		`"function":{"name":"f","description":"` + desc + `","parameters":{"type":"object"}}}]}`)
 	if answered(c) == http.StatusOK || w.a.asked() != 0 {
 		t.Fatalf("status %d, asked %d: a hold priced on the message text alone admitted a %d-byte body", answered(c), w.a.asked(), len(desc))
+	}
+}
+
+// With the paid lane off a relayed route is offered only the free floor, and the
+// family pipe serves it: the route answers, and neither of its own vendors is asked.
+func TestWithThePaidLaneOffARelayedRouteIsAnsweredByTheFreeFloor(t *testing.T) {
+	FreeOnly = func() bool { return true }
+	t.Cleanup(func() { FreeOnly = func() bool { return false } })
+	// The family files its routing event on a goroutine; held here, it cannot outlive
+	// the store this test opened.
+	sink := routingEventSink
+	routingEventSink = func(object.RoutingEvent) {}
+	t.Cleanup(func() { routingEventSink = sink })
+	w := newRelayWorld(t, never(t), never(t))
+	const free = "vendor/big:free"
+	fake := &refuses{status: http.StatusPaymentRequired, body: `{"error":{"message":"no"}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+	spareFamily(t, vendor.URL, free)
+
+	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}]}`)
+	if answered(c) != http.StatusOK {
+		t.Fatalf("status %d, want the free floor's answer: %s", answered(c), sent(c))
+	}
+	if len(fake.asked) == 0 || fake.asked[len(fake.asked)-1] != free {
+		t.Errorf("the free floor was asked %v, want %q last", fake.asked, free)
 	}
 }

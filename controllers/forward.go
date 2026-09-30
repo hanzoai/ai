@@ -433,6 +433,20 @@ func (c *ApiController) forward(p pass) bool {
 		if err = ctx.Err(); err != nil {
 			break
 		}
+		// A family's candidate — the route's OpenRouter copy and the free floor — is the
+		// family pipe's to serve. The pipe keeps back the fields that would buy something
+		// on our account, states the terms a paid SKU is sold under, and names and prices
+		// a stand-in as what it is; a raw body sent to the same row would do none of it.
+		// With the paid lane off these are all a route is offered, so skipping them would
+		// leave every relayed route answering 503.
+		if fam := familyNamed(cand.provider); fam != nil && !p.strict {
+			refused := c.pipeToFamily(fam, "chat/completions", "openai", cand.upstream, p.body, p.req.Stream, p.req.MaxTokens, snap.org, p.user, p.premium, p.hold, p.start)
+			if refused == nil {
+				return p.req.Stream
+			}
+			tried = append(tried, refused...)
+			continue
+		}
 		resp, whole, row, e := p.call(ctx, snap.org, rowFor(p.primary, cand), cand, d)
 		if e == nil {
 			if len(tried) > 0 {
