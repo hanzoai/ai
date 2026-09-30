@@ -91,6 +91,18 @@ func (c *ApiController) Responses() {
 		return
 	}
 
+	// A Responses request is served as a chat completion, which is a translation, so
+	// one that asked to be served unchanged is refused — after its credential is read,
+	// like every other refusal here.
+	if c.strictAsked() {
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.refuseStrict("translation", "/v1/responses is served as a chat completion; send the request to /v1/chat/completions")
+		return
+	}
+
 	// c.Body() is the body the server already decoded (zstd included, within its body
 	// limit), so it is read as plain whatever Content-Encoding the caller sent.
 	call, err := ReadResponses(c.Body(), "")

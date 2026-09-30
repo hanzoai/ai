@@ -537,6 +537,21 @@ Anthropic-type rows and endpoint-less rows keep the older paths
 (`proxyToolRequestAnthropic`, the QueryText cascade). An Anthropic-type FALLBACK on
 a relayed route is passed over, not converted.
 
+
+## Strict mode — served unchanged or refused (`controllers/strict.go`)
+
+`X-Hanzo-Strict: 1` on `/v1/chat/completions` asks for the request to reach the
+route's FIRST row exactly as sent, or be refused 409 `strict_violation` with the
+broken invariant in `X-Hanzo-Strict-Violation`: `route_auto` (auto-routing),
+`translation` (a family pipe, an Anthropic/QueryText row, `/v1/responses`),
+`ceiling_unset` (no max_tokens named: the relay would write one), `ceiling_lowered`,
+`rag`, `param_dropped`, `rewritten`, `added`, `not_canonical` (a repeated name).
+No fallback, no cooled reordering: a vendor refusal is the answer. Served, it
+carries `X-Hanzo-Request-Sha256` and `X-Hanzo-Upstream-Sha256` — SHA-256 of the
+RFC 8785 form (go-json-experiment `jsontext.Canonicalize`) of the client body and
+the upstream body, each without `model` and `stream_options.include_usage`; they
+are equal on every strict answer. `/v1/messages` answers strict requests in its
+own file (anthropic_api.go).
 ## Decisions — `/v1/decisions`, the one decision path
 
 `controllers/decisions.go`. It reaches the decision service (`KAI_URL`) through one

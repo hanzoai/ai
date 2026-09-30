@@ -1818,9 +1818,14 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// runs (a strict subset — credential only, no model/balance), read-only, so it
 	// never rejects a request the resolver would accept. Concrete models skip this
 	// (resolveAutoModel is a no-op for them), so the dominant path pays nothing.
+	strict := c.strictAsked()
 	if isAutoModel(request.Model) {
 		if authErr := c.authenticate(token); authErr != nil {
 			c.ResponseAuthError(authErr)
+			return
+		}
+		if strict {
+			c.refuseStrict("route_auto", "auto-routing chooses the model; name one")
 			return
 		}
 	}
@@ -1971,6 +1976,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// route's declared alternates below. That is the difference between a vendor
 	// running out of money and the product going dark.
 	var familyRefused []attempt
+	if fam := familyForProviderType(provider.Type); fam != nil && strict {
+		c.refuseStrict("translation", "this model is served through a pipe that rewrites the request")
+		return
+	}
 	if fam := familyForProviderType(provider.Type); fam != nil {
 		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Body(), request.Stream, clampMaxTokens(request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
@@ -2035,6 +2044,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			id:      requestId,
 			start:   requestStartTime,
 			judge:   score,
+			strict:  strict,
 		}) {
 			hold = nil
 		}
@@ -2048,6 +2058,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// Neither carries a response format, so one the caller named is refused rather than
 	// ignored: an answer that skipped the schema would read as one that followed it.
 	// These rows move to the Messages translator when it lands, and this goes with them.
+	if strict {
+		c.refuseStrict("translation", "this model's route converts the request to another dialect")
+		return
+	}
 	var format struct {
 		Type string `json:"type"`
 	}

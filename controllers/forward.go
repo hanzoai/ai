@@ -132,6 +132,9 @@ type pass struct {
 	// judge scores a finished answer for the router, or is nil for an answer it does
 	// not score. It is called from inside a stream writer, so it closes over values.
 	judge func(answer string)
+	// strict asks for the request to reach the route's first row exactly as sent, or be
+	// refused (strict.go).
+	strict bool
 }
 
 // relays reports whether a provider row can be sent a chat body as the caller wrote
@@ -396,6 +399,16 @@ func (c *ApiController) forward(p pass) bool {
 	if p.route == nil {
 		queue = []candidate{{p.primary.Name, p.primary.SubType}}
 	}
+	if p.strict {
+		// The route's own first row, whether or not it is resting: a strict request is
+		// served where it was sent or refused there, never moved.
+		if p.route != nil {
+			queue = []candidate{{p.route.providerName, p.route.upstreamModel}}
+		}
+		if !c.provenUnchanged(p, d, queue[0]) {
+			return false
+		}
+	}
 
 	tried := p.prior
 	by := ""
@@ -609,4 +622,35 @@ func refusedIn(body []byte) bool {
 		Choices json.RawMessage `json:"choices"`
 	}
 	return json.Unmarshal(body, &f) == nil && present(f.Error) && !present(f.Choices)
+}
+
+// provenUnchanged holds a strict request to the body its first attempt would send,
+// and either refuses it naming what would change or stamps the two digests that
+// prove nothing did.
+func (c *ApiController) provenUnchanged(p pass, d draft, cand candidate) bool {
+	if d.ceiling > 0 {
+		c.refuseStrict("ceiling_unset", "name max_tokens or max_completion_tokens; the gateway writes a ceiling otherwise")
+		return false
+	}
+	invariant, field, sent, relayed, err := unchanged(p.body, d.body(cand.upstream, p.primary))
+	if err != nil {
+		c.refuseStrict("not_canonical", err.Error())
+		return false
+	}
+	switch {
+	case invariant == "":
+	case field == "max_tokens" || field == "max_completion_tokens":
+		c.refuseStrict("ceiling_lowered", fmt.Sprintf("%s is above what this request may spend; ask for less", field))
+		return false
+	case field == "messages" && len(p.knowledge) > 0:
+		c.refuseStrict("rag", "retrieval adds a system message; turn retrieval off")
+		return false
+	default:
+		c.refuseStrict(invariant, fmt.Sprintf("%q would not reach the vendor as sent", field))
+		return false
+	}
+	c.SetHeader(strictHeader, "1")
+	c.SetHeader(requestSha, sent)
+	c.SetHeader(upstreamSha, relayed)
+	return true
 }
