@@ -190,7 +190,10 @@ func carry(chat, body []byte) ([]byte, error) {
 		} `json:"reasoning"`
 	}
 	if err := json.Unmarshal(body, &in); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("text and reasoning must be objects: %w", err)
+	}
+	if f := unpricedField(body); f != "" {
+		return nil, fmt.Errorf("%q is not accepted: it would buy something this model's price does not cover", f)
 	}
 	if in.Previous != "" {
 		return nil, errors.New("previous_response_id is not supported: no response is stored here, so send the whole conversation in input")

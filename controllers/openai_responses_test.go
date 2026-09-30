@@ -343,3 +343,12 @@ func TestAPreviousResponseIsRefusedNotIgnored(t *testing.T) {
 		t.Fatalf("err = %v, want a refusal naming previous_response_id", err)
 	}
 }
+
+// A Responses field that would buy something the SKU's price does not cover is
+// refused here as on /v1/chat/completions, not dropped by the conversion.
+func TestAResponsesRequestNamingAnUnpricedFieldIsRefused(t *testing.T) {
+	if _, err := ReadResponses([]byte(`{"model":"m","input":"hi","service_tier":"priority"}`), ""); err == nil ||
+		!strings.Contains(err.Error(), "service_tier") {
+		t.Fatalf("err = %v, want a refusal naming service_tier", err)
+	}
+}

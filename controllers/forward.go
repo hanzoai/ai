@@ -135,10 +135,18 @@ type pass struct {
 }
 
 // relays reports whether a provider row can be sent a chat body as the caller wrote
-// it: it has an OpenAI-compatible chat address, and it does not speak Anthropic's own
-// dialect, which the relay does not translate.
+// it: it has an OpenAI-compatible chat address, it does not speak Anthropic's own
+// dialect, which the relay does not translate, and it is not a family's.
+//
+// A family's row is left to the family pipe. The pipe keeps back the fields that
+// would buy another model or tool on our account, states the data-collection terms a
+// paid SKU is sold under, and names and prices a free stand-in as what it is; a raw
+// body sent to the same row directly would do none of that, and a tool or image
+// request would land on the free floor answering under the SKU's name. So a route's
+// OpenRouter tail and free pool are passed over here, not reached around the pipe.
 func relays(p *object.Provider) bool {
-	return model.Upstream(p.Type) != model.Anthropic && upstream.Endpoint(p, "chat/completions") != ""
+	return familyForProviderType(p.Type) == nil &&
+		model.Upstream(p.Type) != model.Anthropic && upstream.Endpoint(p, "chat/completions") != ""
 }
 
 // errUnrelayable is a candidate whose row the relay cannot send an OpenAI chat body
@@ -336,6 +344,12 @@ func (p pass) call(ctx context.Context, org string, row *object.Provider, c cand
 				// Cut off on the way to us. Nothing has reached the caller, so this is
 				// still movable.
 				return e
+			}
+			// A 200 whose body is an error and no answer is the vendor refusing, and is
+			// moved like any refusal. Delivered, it would reach the caller as a success
+			// and be billed at the prompt it never answered.
+			if refusedIn(b) {
+				return declined(errorStatus(b), b)
 			}
 			whole = b
 		}
@@ -586,4 +600,13 @@ func answerText(body []byte) string {
 		}
 	}
 	return sb.String()
+}
+
+// refusedIn reports a buffered answer that carries an error and no choices.
+func refusedIn(body []byte) bool {
+	var f struct {
+		Error   json.RawMessage `json:"error"`
+		Choices json.RawMessage `json:"choices"`
+	}
+	return json.Unmarshal(body, &f) == nil && present(f.Error) && !present(f.Choices)
 }

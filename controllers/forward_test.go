@@ -822,3 +822,86 @@ func TestAResponseFormatALegacyRouteCannotCarryIsRefused(t *testing.T) {
 		t.Errorf("the refusal does not name the format: %s", sent(c))
 	}
 }
+
+// ── one request, read one way ───────────────────────────────────────────────
+
+// A key that differs from a field this handler reads only in letter case would make
+// the hold, the stream and the price describe a different request from the one the
+// vendor reads, so it is refused by name before any vendor is asked. Each body here
+// was an exploit: a free streamed answer, every vendor paid for a refused request,
+// and a hold priced on a conversation the vendor never read.
+func TestAKeyThatDiffersOnlyInCaseIsRefused(t *testing.T) {
+	for _, tc := range []struct{ name, body, key string }{
+		{"stream both ways", `{"model":"relay-sku","stream":true,"Stream":false,"messages":[{"role":"user","content":"hi"}]}`, "Stream"},
+		{"stream alone", `{"model":"relay-sku","Stream":true,"messages":[{"role":"user","content":"hi"}]}`, "Stream"},
+		{"a second conversation", `{"model":"relay-sku","messages":[{"role":"user","content":"long"}],"Messages":[{"role":"user","content":"hi"}]}`, "Messages"},
+		{"inside a message", `{"model":"relay-sku","messages":[{"role":"user","content":"long","Content":"hi"}]}`, "Content"},
+		{"by Unicode folding", `{"model":"relay-sku","ſtream":true,"messages":[{"role":"user","content":"hi"}]}`, "ſtream"},
+		{"a ceiling spelled twice", `{"model":"relay-sku","max_tokens":16,"MAX_TOKENS":4096,"messages":[{"role":"user","content":"hi"}]}`, "MAX_TOKENS"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newRelayWorld(t, never(t), never(t))
+			c := w.chat(tc.body)
+			if answered(c) != http.StatusBadRequest {
+				t.Fatalf("status %d, want 400: %s", answered(c), sent(c))
+			}
+			if !strings.Contains(sent(c), tc.key) {
+				t.Errorf("the refusal does not name %q: %s", tc.key, sent(c))
+			}
+			if w.a.asked() != 0 {
+				t.Errorf("the vendor was asked")
+			}
+		})
+	}
+}
+
+// Below an object decoded into a map, a key is data: a tool's schema may name "Name"
+// beside "name", and both reach the vendor.
+func TestKeysInsideAToolSchemaAreTheCallers(t *testing.T) {
+	w := newRelayWorld(t, completes("ok", 3, 0, 1), never(t))
+	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function",` +
+		`"function":{"name":"f","parameters":{"type":"object","properties":{"Name":{"type":"string"},"name":{"type":"string"}}}}}]}`)
+	if answered(c) != http.StatusOK {
+		t.Fatalf("status %d: %s", answered(c), sent(c))
+	}
+}
+
+// n completions cost n times one and the hold covers one.
+func TestMoreThanOneCompletionIsRefused(t *testing.T) {
+	w := newRelayWorld(t, never(t), never(t))
+	c := w.chat(`{"model":"relay-sku","n":64,"max_tokens":4096,"messages":[{"role":"user","content":"hi"}]}`)
+	if answered(c) != http.StatusBadRequest || w.a.asked() != 0 {
+		t.Fatalf("status %d, asked %d, want 400 and no vendor: %s", answered(c), w.a.asked(), sent(c))
+	}
+	w2 := newRelayWorld(t, completes("ok", 3, 0, 1), never(t))
+	if c := w2.chat(`{"model":"relay-sku","n":1,"messages":[{"role":"user","content":"hi"}]}`); answered(c) != http.StatusOK {
+		t.Errorf("n=1 answered %d: %s", answered(c), sent(c))
+	}
+}
+
+// A buffered 200 that carries an error and no answer is the vendor refusing: the
+// fallback answers, and only its answer is billed.
+func TestABufferedErrorInsideA200IsARefusal(t *testing.T) {
+	w := newRelayWorld(t, func(rw http.ResponseWriter, _ int) {
+		rw.Header().Set("Content-Type", "application/json")
+		_, _ = rw.Write([]byte(`{"error":{"message":"upstream overloaded","code":503}}`))
+	}, completes("from b", 3, 0, 1))
+	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}]}`)
+	if answered(c) != http.StatusOK || !strings.Contains(sent(c), "from b") {
+		t.Fatalf("status %d: %s", answered(c), sent(c))
+	}
+	if strings.Contains(sent(c), "upstream overloaded") {
+		t.Errorf("the refusal reached the caller as an answer: %s", sent(c))
+	}
+}
+
+// A family's row is the family pipe's: its guards, its terms and its stand-in naming
+// do not apply to a raw body sent around it.
+func TestAFamilysRowIsNotRelayedAround(t *testing.T) {
+	if relays(&object.Provider{Type: "OpenRouter", ProviderUrl: "https://openrouter.ai/api/v1"}) {
+		t.Error("an OpenRouter row is relayed around its family pipe")
+	}
+	if !relays(&object.Provider{Type: "OpenAI", ProviderUrl: "https://api.example/v1"}) {
+		t.Error("an OpenAI-compatible row is not relayed")
+	}
+}

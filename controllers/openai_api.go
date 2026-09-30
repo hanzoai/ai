@@ -1765,8 +1765,15 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	refusal := ""
 	if err := json.Unmarshal(c.Body(), &parsed); err != nil {
 		refusal = fmt.Sprintf("Failed to parse request: %s", err.Error())
+	} else if k := casefolded(c.Body()); k != "" {
+		refusal = fmt.Sprintf("%q differs from a field this API reads only in letter case: send the field under its exact name, once.", k)
 	} else if f := unpricedField(c.Body()); f != "" {
 		refusal = fmt.Sprintf("%q is not accepted: it would buy something this model's price does not cover. Remove it and send the request again.", f)
+	} else if parsed.N > 1 {
+		// n completions cost n times one, and the hold covers one. Priced by n, a
+		// request would be admitted on a balance a single answer fits and settle far
+		// past it; one answer per request is the price that was quoted.
+		refusal = fmt.Sprintf("n=%d is not accepted: one request is one completion here.", parsed.N)
 	}
 	if refusal != "" {
 		if from == callerBearer {
