@@ -623,7 +623,9 @@ func (m zenModel) variable() bool { return m.Margin.Sign() > 0 }
 // costCents rounds and floored at one cent for a call that was served.
 func (m zenModel) resale(cost *int64, promptTokens, cachedTokens, completionTokens int) (nano, cents int64) {
 	usd := m.retailUSD(promptTokens, cachedTokens, completionTokens)
-	if cost != nil {
+	// A stated cost of zero or less is no statement: it bills at the ceiling, never a
+	// credit to the caller.
+	if cost != nil && *cost > 0 {
 		usd = decimal.New(*cost, 9).Mul(m.Margin)
 	}
 	cents = money.New(usd, money.USD).Minor().Int64()
