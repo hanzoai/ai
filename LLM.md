@@ -507,11 +507,12 @@ one path. The relay writes four things and only these: `model` (each provider's
 own id), the completion ceiling when the hold covers less than the caller asked
 (under the caller's key; when they named none, `max_completion_tokens` to an
 `OpenAI` row and `max_tokens` elsewhere), `stream_options.include_usage` on a
-stream, and retrieved knowledge as one leading system message. `withheld` is
-not sent on: `fast`/`retrieval`/`retrieval_store` (ours), and the fields that buy
-something on OUR account the SKU price does not cover (`models`, `provider`,
-`transforms`, `route`, `plugins`, `web_search_options`, `service_tier` — the family
-pipe's reason). Nothing else is touched: every turn, temperature 0, seed,
+stream, and retrieved knowledge as one leading system message. `ours`
+(`fast`/`retrieval`/`retrieval_store`) is read here and not sent on. `unpriced`
+(`models`, `provider`, `transforms`, `route`, `plugins`, `web_search_options`,
+`service_tier`: fields that buy something on OUR account the SKU price does not
+cover) is REFUSED 400 by name on every path, before any vendor is asked, never
+stripped. Nothing else is touched: every turn, temperature 0, seed,
 `response_format`, `stop`, vendor extras. `chatRequest` holds `response_format` and `stop` raw because go-openai
 cannot decode a `json_schema` or a string `stop`, which used to 400 before routing.
 
