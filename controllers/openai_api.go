@@ -1762,14 +1762,20 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// from an unauthenticated caller must not return 200. A valid credential with
 	// a bad body gets 400 (not 200).
 	var parsed chatRequest
+	refusal := ""
 	if err := json.Unmarshal(c.Body(), &parsed); err != nil {
+		refusal = fmt.Sprintf("Failed to parse request: %s", err.Error())
+	} else if f := unpricedField(c.Body()); f != "" {
+		refusal = fmt.Sprintf("%q is not accepted: it would buy something this model's price does not cover. Remove it and send the request again.", f)
+	}
+	if refusal != "" {
 		if from == callerBearer {
 			if authErr := c.authenticate(token); authErr != nil {
 				c.ResponseAuthError(authErr)
 				return
 			}
 		}
-		c.ResponseErrorWithStatus(http.StatusBadRequest, fmt.Sprintf("Failed to parse request: %s", err.Error()))
+		c.ResponseErrorWithStatus(http.StatusBadRequest, refusal)
 		return
 	}
 	request := parsed.ChatCompletionRequest
@@ -1961,6 +1967,9 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	if fam := familyForProviderType(provider.Type); fam != nil {
 		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Body(), request.Stream, clampMaxTokens(request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
+			if request.Stream {
+				hold = nil // a family's stream settles its own hold, from its writer
+			}
 			return
 		}
 		recordRefusals(c.takeSnapshot(authUser), request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
@@ -2028,6 +2037,17 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// Anthropic-type rows and rows with no OpenAI-compatible address keep the older
 	// path until the relay speaks their dialect: a tool call or an image converted
 	// for Anthropic, and plain text through the QueryText pipeline below.
+	//
+	// Neither carries a response format, so one the caller named is refused rather than
+	// ignored: an answer that skipped the schema would read as one that followed it.
+	// These rows move to the Messages translator when it lands, and this goes with them.
+	var format struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(parsed.ResponseFormat, &format) == nil && format.Type != "" && format.Type != "text" {
+		c.ResponseFailure(modelError("response_format %q is not supported for %s on this route; send the request without it", format.Type, request.Model))
+		return
+	}
 	if tooled || media {
 		if model.Upstream(provider.Type) != model.Anthropic {
 			c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
@@ -2142,6 +2162,12 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// complete produces the whole answer into out and returns what went wrong, if
 	// anything. It renders nothing itself: the caller knows whether a status can
 	// still be sent.
+	//
+	// It settles `own`, never `hold`. A streamed answer finishes after this handler
+	// has returned, and the handler's deferred release would win the one settle first
+	// and leave the ledger blind to what the stream cost; so a stream takes the hold
+	// from the handler below, and complete must still be holding it when it does.
+	own := hold
 	answered := false
 	complete := func(out io.Writer) error {
 		writer.out = out
@@ -2255,7 +2281,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			// Settle the reservation with the ACTUAL cost (this works identically for
 			// streaming and non-streaming non-tool responses — both have real token
 			// counts here from the QueryText pipeline).
-			hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
+			own.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
 		}
 
 		// Handle response based on streaming mode
@@ -2330,8 +2356,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		out := newUnsent()
 		var failed error
 		done := make(chan struct{})
+		hold = nil // the stream settles it: complete with the cost, or at zero if it failed
 		go func() {
 			defer close(done)
+			defer own.settle(0)
 			failed = complete(out)
 			judge()
 		}()

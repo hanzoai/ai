@@ -300,3 +300,46 @@ func TestResponsesStreamCompletesWhenUsagePrecedesFinishReason(t *testing.T) {
 		t.Fatalf("usage missing:\n%s", wire)
 	}
 }
+
+// A Responses request reaches the chat body with what go-openai's struct cannot hold:
+// greedy sampling (zero, which omitempty drops), the structured-output format in
+// chat's shape, and the reasoning effort.
+func TestAResponsesRequestKeepsZeroSamplingItsFormatAndItsEffort(t *testing.T) {
+	call, err := ReadResponses([]byte(`{"model":"m","input":"hi","temperature":0,"top_p":0,`+
+		`"text":{"format":{"type":"json_schema","name":"answer","schema":{"type":"object"},"strict":true}},`+
+		`"reasoning":{"effort":"high"}}`), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var chat map[string]json.RawMessage
+	if err := json.Unmarshal(call.Chat, &chat); err != nil {
+		t.Fatal(err)
+	}
+	if string(chat["temperature"]) != "0" || string(chat["top_p"]) != "0" {
+		t.Errorf("temperature=%s top_p=%s, want 0 and 0: %s", chat["temperature"], chat["top_p"], call.Chat)
+	}
+	var format struct {
+		Type       string `json:"type"`
+		JSONSchema struct {
+			Name   string          `json:"name"`
+			Schema json.RawMessage `json:"schema"`
+			Strict bool            `json:"strict"`
+		} `json:"json_schema"`
+	}
+	if err := json.Unmarshal(chat["response_format"], &format); err != nil || format.Type != "json_schema" ||
+		format.JSONSchema.Name != "answer" || !format.JSONSchema.Strict || string(format.JSONSchema.Schema) != `{"type":"object"}` {
+		t.Errorf("response_format = %s", chat["response_format"])
+	}
+	if string(chat["reasoning_effort"]) != `"high"` {
+		t.Errorf("reasoning_effort = %s", chat["reasoning_effort"])
+	}
+}
+
+// A stored conversation is asked for by id, and none is stored here: the request is
+// refused rather than answered without the conversation it named.
+func TestAPreviousResponseIsRefusedNotIgnored(t *testing.T) {
+	if _, err := ReadResponses([]byte(`{"model":"m","input":"and then?","previous_response_id":"resp_1"}`), ""); err == nil ||
+		!strings.Contains(err.Error(), "previous_response_id") {
+		t.Fatalf("err = %v, want a refusal naming previous_response_id", err)
+	}
+}

@@ -422,14 +422,12 @@ func TestTheRelaySendsTheConversationAsWritten(t *testing.T) {
 	}
 }
 
-// Two kinds of field stay here: our own API's, which a strict vendor refuses, and the
-// ones that buy another model, endpoint, tool or queue on our account. A vendor's own
-// extra goes through. A fast request is relayed once, not raced.
-func TestTheRelayWithholdsWhatIsOursAndWhatWeWouldPayFor(t *testing.T) {
+// This API's own fields stay here: a strict vendor refuses them. A vendor's own extra
+// goes through. A fast request is relayed once, not raced.
+func TestTheRelayKeepsOurFieldsAndPassesTheVendorsOwn(t *testing.T) {
 	w := newRelayWorld(t, completes("ok", 3, 0, 1), never(t))
 	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}],"fast":true,` +
-		`"models":["vendor/dearer"],"provider":{"order":["x"]},"transforms":["middle-out"],"route":"fallback",` +
-		`"plugins":[{"id":"web"}],"web_search_options":{},"service_tier":"priority","top_k":5}`)
+		`"retrieval":false,"retrieval_store":"s","top_k":5}`)
 	if answered(c) != http.StatusOK {
 		t.Fatalf("status %d: %s", answered(c), sent(c))
 	}
@@ -438,13 +436,34 @@ func TestTheRelayWithholdsWhatIsOursAndWhatWeWouldPayFor(t *testing.T) {
 	}
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(w.a.sent(t, 0), &fields)
-	for _, k := range withheld {
+	for _, k := range ours {
 		if _, ok := fields[k]; ok {
 			t.Errorf("%q was sent upstream: %s", k, w.a.sent(t, 0))
 		}
 	}
 	if string(fields["top_k"]) != "5" {
 		t.Errorf("a vendor's own parameter was dropped: %s", w.a.sent(t, 0))
+	}
+}
+
+// A field that would buy another model, endpoint, tool or queue on our account is
+// refused before any vendor is asked, and never stripped into an answer the caller
+// would read as what they asked for.
+func TestAnUnpricedFieldIsRefusedNotStripped(t *testing.T) {
+	for _, k := range unpriced {
+		t.Run(k, func(t *testing.T) {
+			w := newRelayWorld(t, completes("ok", 3, 0, 1), never(t))
+			c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}],"` + k + `":{}}`)
+			if answered(c) != http.StatusBadRequest {
+				t.Fatalf("status %d, want 400: %s", answered(c), sent(c))
+			}
+			if !strings.Contains(sent(c), k) {
+				t.Errorf("the refusal does not name %q: %s", k, sent(c))
+			}
+			if w.a.asked() != 0 {
+				t.Errorf("the vendor was asked %d time(s), want never", w.a.asked())
+			}
+		})
 	}
 }
 
@@ -758,5 +777,48 @@ func TestResponsesStreamGoesThroughTheRelay(t *testing.T) {
 	}
 	if strings.Contains(out, "chat.completion") {
 		t.Errorf("a chat chunk reached a Responses client:\n%s", out)
+	}
+}
+
+// TestAMovedRequestIsNeverHandedTheResolvedRow pins rowFor to the row's own name.
+// routeForPrompt can move a request to a route another vendor leads; the row auth
+// resolved carries the first vendor's address and key, so handing it to that route's
+// candidate would send the prompt to the wrong vendor under someone else's model id.
+func TestAMovedRequestIsNeverHandedTheResolvedRow(t *testing.T) {
+	primary := &object.Provider{Name: "do-ai"}
+	if got := rowFor(primary, candidate{"fireworks", "llama"}); got != nil {
+		t.Fatalf("a fireworks candidate was handed the do-ai row")
+	}
+	if got := rowFor(primary, candidate{"do-ai", "llama"}); got != primary {
+		t.Fatalf("a do-ai candidate was not handed its own resolved row")
+	}
+	if got := rowFor(nil, candidate{"do-ai", "llama"}); got != nil {
+		t.Fatalf("no resolved row must mean the candidate resolves its own")
+	}
+}
+
+// A route the relay cannot speak for yet carries no response format, so one the caller
+// named is refused before the vendor is asked, never answered as if it were followed.
+func TestAResponseFormatALegacyRouteCannotCarryIsRefused(t *testing.T) {
+	w := newRelayWorld(t, never(t), never(t))
+	if _, err := object.AddProvider(&object.Provider{
+		Owner: "admin", Name: "claude-row", Category: "Model", Type: "Anthropic",
+		ClientSecret: "k", State: "Active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := object.AddModelRoute(&object.ModelRoute{
+		Owner: "built-in", ModelName: "claude-sku", Enabled: true,
+		Provider: "claude-row", Upstream: "claude-up", InputPrice: 2, OutputPrice: 8, Priced: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c := w.chat(`{"model":"claude-sku","messages":[{"role":"user","content":"hi"}],` +
+		`"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object"}}}}`)
+	if answered(c) != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400: %s", answered(c), sent(c))
+	}
+	if !strings.Contains(sent(c), "json_schema") {
+		t.Errorf("the refusal does not name the format: %s", sent(c))
 	}
 }

@@ -198,7 +198,7 @@ func (a ask) call(c candidate) (*model.ModelResult, *object.Provider, error) {
 			r.Reset()
 		}
 		var e error
-		res, row, e = callProvider(a.org, a.rowFor(c), c, a.question, a.writer, a.history, a.knowledge, a.lang)
+		res, row, e = callProvider(a.org, rowFor(a.primary, c), c, a.question, a.writer, a.history, a.knowledge, a.lang)
 		if e != nil && isTransientError(e) {
 			log.Warn("retry: provider=%s is busy (%v) — holding the request rather than bouncing it to the client", c.provider, e)
 		}
@@ -217,11 +217,16 @@ func (a ask) context() context.Context {
 	return context.Background()
 }
 
-// rowFor returns the pre-resolved provider row when the candidate IS the one
-// auth resolved, and nil otherwise so callProvider resolves it for the org.
-func (a ask) rowFor(c candidate) *object.Provider {
-	if a.primary != nil && a.route != nil && c.provider == a.route.providerName {
-		return a.primary
+// rowFor returns the row auth resolved when it IS candidate c's provider, and nil
+// for any other candidate so that one is resolved for the org.
+//
+// It asks the ROW's name, never the route's. routeForPrompt may move a request to a
+// route led by a different vendor, and handing that route's first candidate the row
+// auth resolved would send the prompt to the wrong vendor, under a model id meant
+// for another one.
+func rowFor(primary *object.Provider, c candidate) *object.Provider {
+	if primary != nil && primary.Name == c.provider {
+		return primary
 	}
 	return nil
 }

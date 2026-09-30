@@ -161,8 +161,89 @@ func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
 	if call.Chat, err = json.Marshal(chat); err != nil {
 		return nil, err
 	}
+	if call.Chat, err = carry(call.Chat, body); err != nil {
+		return nil, err
+	}
 	call.kinds = kinds
 	return call, nil
+}
+
+// carry puts into the chat body what go-openai's struct cannot hold, read from the
+// Responses body as the caller wrote it: a temperature or top_p of zero (omitempty
+// drops both, so a caller who asked for greedy sampling got the vendor's default),
+// the structured-output format (text.format, chat's response_format) and the
+// reasoning effort.
+//
+// previous_response_id asks for a stored conversation, and this gateway stores none.
+// It is refused rather than answered: an answer without the conversation it named
+// would read as one that had it.
+func carry(chat, body []byte) ([]byte, error) {
+	var in struct {
+		Previous    string          `json:"previous_response_id"`
+		Temperature json.RawMessage `json:"temperature"`
+		TopP        json.RawMessage `json:"top_p"`
+		Text        struct {
+			Format json.RawMessage `json:"format"`
+		} `json:"text"`
+		Reasoning struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning"`
+	}
+	if err := json.Unmarshal(body, &in); err != nil {
+		return nil, err
+	}
+	if in.Previous != "" {
+		return nil, errors.New("previous_response_id is not supported: no response is stored here, so send the whole conversation in input")
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(chat, &out); err != nil {
+		return nil, err
+	}
+	for k, v := range map[string]json.RawMessage{"temperature": in.Temperature, "top_p": in.TopP} {
+		if len(v) > 0 && string(v) != "null" {
+			out[k] = v
+		}
+	}
+	format, err := chatFormat(in.Text.Format)
+	if err != nil {
+		return nil, err
+	}
+	if format != nil {
+		out["response_format"] = format
+	}
+	if in.Reasoning.Effort != "" {
+		out["reasoning_effort"], _ = json.Marshal(in.Reasoning.Effort)
+	}
+	return json.Marshal(out)
+}
+
+// chatFormat is a Responses text.format in chat's response_format shape, or nil for
+// plain text. The Responses form holds the schema's fields beside its type; chat's
+// holds them under json_schema.
+func chatFormat(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var f map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return nil, fmt.Errorf("text.format: %w", err)
+	}
+	var kind string
+	_ = json.Unmarshal(f["type"], &kind)
+	switch kind {
+	case "", "text":
+		return nil, nil
+	case "json_object":
+		return json.RawMessage(`{"type":"json_object"}`), nil
+	case "json_schema":
+		delete(f, "type")
+		schema, err := json.Marshal(f)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]json.RawMessage{"type": json.RawMessage(`"json_schema"`), "json_schema": schema})
+	}
+	return nil, fmt.Errorf("text.format type %q is not supported", kind)
 }
 
 // Stream writes a chat SSE stream to w as Responses events, as it is produced.

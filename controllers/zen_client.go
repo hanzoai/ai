@@ -1774,13 +1774,19 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// charged a token estimate for its prompt and nothing at all for its completion.
 		// The context is still the request's: fasthttp finishes writing the response
 		// before fiber releases it.
+		//
+		// So the stream owns the hold. It settles with what the stream cost, and at zero
+		// when it ended before a cost could be read; releasing it here would win the one
+		// settle first and leave the ledger blind to the answer. The caller hands its own
+		// release over for the same reason.
 		upstream := resp.Body
 		resp = nil
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
 			defer upstream.Close()
+			defer hold.settle(0)
 			settle(relayZenStream(w, upstream, mk))
 		})
-		return done()
+		return nil
 	}
 
 	b, rErr := io.ReadAll(resp.Body)

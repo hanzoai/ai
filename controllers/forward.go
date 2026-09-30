@@ -34,9 +34,9 @@ package controllers
 // for the SKU), the completion ceiling where the reservation holds less than the
 // caller asked for, include_usage on a stream so the answer can be billed, and — when
 // the caller asked for retrieval — the retrieved knowledge as a leading system
-// message. A short list of fields is not sent on (withheld): our own API's, and the
-// ones that would buy something on our account the SKU's price does not cover.
-// Everything else arrives upstream as it left the caller.
+// message. This API's own fields are not sent on (ours), and a request naming a field
+// that would buy something on our account the SKU's price does not cover is refused
+// before it gets here (unpriced). Everything else arrives upstream as it left the caller.
 
 import (
 	"bufio"
@@ -72,20 +72,34 @@ type chatRequest struct {
 	Stop           json.RawMessage `json:"stop,omitempty"`
 }
 
-// withheld are the request fields the relay does not send on, for one of two reasons.
+// ours are this API's own request fields, not any vendor's: fast mode (fast.go) and
+// retrieval (chat_retrieval.go). This handler has read them by the time the body
+// leaves, and a vendor that checks its parameters — OpenAI does — refuses a name it
+// does not define, so they are not sent on.
+var ours = []string{"fast", "retrieval", "retrieval_store"}
+
+// unpriced are the fields that change what a vendor charges US without changing what
+// the SKU is sold for: another model (models), another endpoint (provider, transforms,
+// route), a paid tool (plugins, web_search_options), a dearer queue (service_tier).
+// Sent on, each would be bought on our account at a price nobody quoted the caller.
 //
-// Three are this API's own, not any vendor's: fast mode (fast.go) and retrieval
-// (chat_retrieval.go). This handler has read them by the time the body leaves, and a
-// vendor that checks its parameters — OpenAI does — refuses a name it does not define.
-//
-// The rest change what a vendor charges US without changing what the SKU is sold
-// for: another model (models), another endpoint (provider, transforms, route), a paid
-// tool (plugins, web_search_options), a dearer queue (service_tier). Sent on, each
-// would be bought on our account at a price nobody quoted the caller. The family pipe
-// keeps the same fields back for the same reason (familyFields).
-var withheld = []string{
-	"fast", "retrieval", "retrieval_store",
-	"models", "provider", "transforms", "route", "plugins", "web_search_options", "service_tier",
+// A request naming one is REFUSED, on every path, before any vendor is asked. It is
+// never quietly stripped: a caller who asked for another model's fallback or a web
+// search and got an answer without it would read that answer as what they asked for.
+var unpriced = []string{"models", "provider", "transforms", "route", "plugins", "web_search_options", "service_tier"}
+
+// unpricedField names the first unpriced field raw carries, or "" when it carries none.
+func unpricedField(raw []byte) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return ""
+	}
+	for _, k := range unpriced {
+		if _, ok := fields[k]; ok {
+			return k
+		}
+	}
+	return ""
 }
 
 // pass is one chat completion on its way through the relay: what the caller sent,
@@ -187,7 +201,7 @@ func outbound(raw []byte, req *openai.ChatCompletionRequest, knowledge []*model.
 	if fields == nil {
 		fields = map[string]json.RawMessage{}
 	}
-	for _, k := range withheld {
+	for _, k := range ours {
 		delete(fields, k)
 	}
 
@@ -331,15 +345,6 @@ func (p pass) call(ctx context.Context, org string, row *object.Provider, c cand
 	return resp, whole, used, err
 }
 
-// rowFor is ask.rowFor: the row auth resolved, for the provider it was resolved for,
-// and nil for every other candidate so dial resolves that one for the org.
-func (p pass) rowFor(c candidate) *object.Provider {
-	if p.route == nil || c.provider == p.route.providerName {
-		return p.primary
-	}
-	return nil
-}
-
 // forward relays p to the first provider on its route that answers, and reports
 // whether a stream took the hold with it — a streamed answer settles from inside its
 // own writer, which runs after the handler has returned.
@@ -386,7 +391,7 @@ func (c *ApiController) forward(p pass) bool {
 		if err = ctx.Err(); err != nil {
 			break
 		}
-		resp, whole, row, e := p.call(ctx, snap.org, p.rowFor(cand), cand, d)
+		resp, whole, row, e := p.call(ctx, snap.org, rowFor(p.primary, cand), cand, d)
 		if e == nil {
 			if len(tried) > 0 {
 				log.Warn("failover: model=%s served by %s after %d refusal(s) — %s",

@@ -393,7 +393,11 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 		{"our own balance lookup blip", 402, `{"error":{"message":"Unable to verify your balance right now.","type":"billing_error","code":"balance_unavailable"}}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// Both memories reset: a 401 rests the account's key for every scope, so
+			// without forgetKeys the case after "credential rejected" finds no key
+			// to ask with and never reaches the vendor at all.
 			cooled.forget()
+			forgetKeys()
 			fake := &refuses{status: tc.status, body: tc.body, free: free}
 			vendor := fake.serve(t)
 			defer vendor.Close()
@@ -401,6 +405,9 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 
 			c, refusedBy := fake.pipe(t, fam, sku)
 
+			if len(fake.asked) == 0 {
+				t.Fatal("the vendor was never asked")
+			}
 			moved := len(fake.asked) > 1
 			if moved != tc.moves {
 				t.Fatalf("asked=%v: moved=%v, want %v", fake.asked, moved, tc.moves)

@@ -117,7 +117,7 @@ func (a ask) race() (*model.ModelResult, served, []attempt, error) {
 			// Its OWN translating writer over its OWN share of the stream. The
 			// buffers this fills are what the ledger reads if it loses.
 			out := a.fan.fork(w)
-			res, row, err := callProvider(a.org, a.rowFor(c), c, a.question, out, a.history, a.knowledge, a.lang)
+			res, row, err := callProvider(a.org, rowFor(a.primary, c), c, a.question, out, a.history, a.knowledge, a.lang)
 			// Reported before returning, so the winner's outcome is always on the
 			// channel by the time Race hands its index back.
 			done <- shot{i: i, c: c, res: res, row: row, out: out, err: err}
