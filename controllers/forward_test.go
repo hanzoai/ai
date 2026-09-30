@@ -996,4 +996,118 @@ func TestWithThePaidLaneOffARelayedRouteIsAnsweredByTheFreeFloor(t *testing.T) {
 	if len(fake.asked) == 0 || fake.asked[len(fake.asked)-1] != free {
 		t.Errorf("the free floor was asked %v, want %q last", fake.asked, free)
 	}
+	// The answer wears the pool's name, ours, never the vendor's id for the route.
+	if got := string(c.Fiber().Response().Header.Peek("X-Hanzo-Served")); got != freeID {
+		t.Errorf("X-Hanzo-Served = %q, want %q", got, freeID)
+	}
+	if strings.Contains(sent(c), free) {
+		t.Errorf("the answer names the vendor's route %q: %s", free, sent(c))
+	}
+}
+
+// With the paid lane on, a route's own vendors are asked and a family row reached
+// from the relay is passed over: a tool request whose vendors refuse is refused, never
+// answered by the free floor for nothing.
+func TestWithThePaidLaneOnTheFreeFloorIsNeverReachedFromTheRelay(t *testing.T) {
+	sink := routingEventSink
+	routingEventSink = func(object.RoutingEvent) {}
+	t.Cleanup(func() { routingEventSink = sink })
+	down := func(rw http.ResponseWriter, _ int) { rw.WriteHeader(http.StatusServiceUnavailable) }
+	w := newRelayWorld(t, down, down)
+	const free = "vendor/big:free"
+	fake := &refuses{status: http.StatusPaymentRequired, body: `{"error":{"message":"no"}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+	spareFamily(t, vendor.URL, free)
+
+	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"f","parameters":{"type":"object"}}}]}`)
+	if answered(c) == http.StatusOK {
+		t.Fatalf("a tool request both vendors refused was answered: %s", sent(c))
+	}
+	if len(fake.asked) != 0 {
+		t.Errorf("the free floor was asked %v with the paid lane on", fake.asked)
+	}
+}
+
+// A field the family pipe would not send is refused by name before the free floor is
+// asked, never dropped from an answer read as if it had been honoured.
+func TestAFieldTheFreeFloorCannotCarryIsRefused(t *testing.T) {
+	FreeOnly = func() bool { return true }
+	t.Cleanup(func() { FreeOnly = func() bool { return false } })
+	w := newRelayWorld(t, never(t), never(t))
+	const free = "vendor/big:free"
+	fake := &refuses{status: http.StatusPaymentRequired, body: `{"error":{"message":"no"}}`, free: free}
+	vendor := fake.serve(t)
+	defer vendor.Close()
+	spareFamily(t, vendor.URL, free)
+
+	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}],"modalities":["text","audio"]}`)
+	if answered(c) != http.StatusBadRequest || !strings.Contains(sent(c), "modalities") {
+		t.Fatalf("status %d, want 400 naming modalities: %s", answered(c), sent(c))
+	}
+	if len(fake.asked) != 0 {
+		t.Errorf("the free floor was asked %v", fake.asked)
+	}
+}
+
+// A customer's own row under a family's name is their key, and is not handed to the
+// platform's family.
+func TestACustomersOwnRowIsTheirs(t *testing.T) {
+	newRelayWorld(t, never(t), never(t))
+	if _, err := object.AddProvider(&object.Provider{Owner: "relayco", Name: "openrouter", Category: "Model", Type: "OpenAI",
+		ProviderUrl: "http://customer.invalid", ClientSecret: "theirs", State: "Active"}); err != nil {
+		t.Fatal(err)
+	}
+	if !ownRow("relayco", "openrouter") {
+		t.Error("the customer's own row was not recognised")
+	}
+	if ownRow("another", "openrouter") {
+		t.Error("another org was given the customer's row")
+	}
+}
+
+// Thousands of keys in one object a request decodes into a struct are refused at the
+// cap, before the credential, without walking the rest; a large value nothing checks
+// is skipped at the decoder's speed.
+func TestAKeyFloodIsRefusedAtTheCap(t *testing.T) {
+	var b strings.Builder
+	for i := range 20000 {
+		fmt.Fprintf(&b, `"k%d":1,`, i)
+	}
+	flood := b.String()
+	for _, body := range []string{
+		`{"model":"x","messages":[{` + flood + `"role":"user","content":"hi"}]}`,
+		`{` + flood + `"model":"x","messages":[{"role":"user","content":"hi"}]}`,
+	} {
+		start := time.Now()
+		why := casefolded([]byte(body))
+		if !strings.Contains(why, "more than") {
+			t.Fatalf("casefolded = %q, want the key cap", why)
+		}
+		if took := time.Since(start); took > 100*time.Millisecond {
+			t.Errorf("refusing a flood took %s", took)
+		}
+	}
+}
+
+// The free tier answers as Enso wherever Enso's catalog carries its free id, and falls
+// back to the family holding the free routes where it does not.
+func TestTheFreeTierAnswersAsEnsoWhereEnsoCarriesIt(t *testing.T) {
+	restore(t, ensoFam)
+	ensoFam.providerFn = func() *object.Provider { return nil }
+	if fam, id := freeDoor(); fam != freeFamily() || id != freeID {
+		t.Errorf("with Enso off, freeDoor = %s/%s, want the pool's own door", fam.name, id)
+	}
+	ensoFam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: "http://enso.invalid"}
+	}
+	ensoFam.byID = map[string]zenModel{}
+	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
+	if fam, _ := freeDoor(); fam == ensoFam {
+		t.Error("Enso answers for the free tier without carrying its free id")
+	}
+	ensoFam.byID = map[string]zenModel{ensoFam.freeName: {ID: ensoFam.freeName}}
+	if fam, id := freeDoor(); fam != ensoFam || id != ensoFam.freeName {
+		t.Errorf("freeDoor = %s/%s, want enso/%s", fam.name, id, ensoFam.freeName)
+	}
 }

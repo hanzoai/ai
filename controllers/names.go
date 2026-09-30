@@ -35,6 +35,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"unicode"
@@ -101,20 +102,28 @@ func fold(s string) string {
 	return b.String()
 }
 
-// casefolded names the first key in raw that this handler would read as a field and a
-// vendor would not, or "" when every key is exact. A body that is not JSON is left to
-// the decoder, which has already refused it.
+// maxKeys bounds the keys one struct-decoded object may carry. The request objects
+// name a few dozen fields at most; a body with thousands of keys in one of them is
+// not a request, and walking it before the credential is read is work the caller
+// did not pay for.
+const maxKeys = 256
+
+// casefolded is the refusal for the first key in raw that this handler would read as a
+// field and a vendor would not, or for an object with more keys than any request
+// carries; "" when there is none. A body that is not JSON is left to the decoder,
+// which has already refused it.
 func casefolded(raw []byte) string {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
-	bad, _ := walkNames(dec, "")
-	return bad
+	why, _ := walkNames(dec, "")
+	return why
 }
 
-// walkNames reads one value from dec, sitting at path, and returns the first
-// offending key within it. A value at no path the handler decodes into a struct is
-// skipped whole, at the decoder's own speed: the walk runs before the credential is
-// read, so it must cost no more than the decode it guards.
+// walkNames reads one value from dec, sitting at path, and returns the refusal for
+// the first offending key within it. It runs before the credential is read, so it
+// costs no more than the decode it guards: a value at no path the handler decodes
+// into a struct is skipped whole at the decoder's speed, and so is the value of any
+// key in a checked object that names no field.
 func walkNames(dec *json.Decoder, path string) (string, error) {
 	if !under(path) {
 		var skip json.RawMessage
@@ -128,26 +137,35 @@ func walkNames(dec *json.Decoder, path string) (string, error) {
 	case json.Delim('{'):
 		fields, checked := structured[path]
 		seen := map[string]string{}
-		for dec.More() {
+		for n := 0; dec.More(); n++ {
+			if n == maxKeys {
+				return fmt.Sprintf("an object in this request carries more than %d fields", maxKeys), nil
+			}
 			t, err := dec.Token()
 			if err != nil {
 				return "", err
 			}
 			key, _ := t.(string)
-			below := "-"
-			if checked {
-				f := fold(key)
-				if exact, ok := fields[f]; ok && exact != key {
-					return key, nil
+			f := fold(key)
+			exact, field := fields[f]
+			if !checked || !field {
+				// Not a field the handler reads here: the decoder ignores it, and so
+				// does every vendor that reads it under its own name.
+				var skip json.RawMessage
+				if err := dec.Decode(&skip); err != nil {
+					return "", err
 				}
-				if prev, ok := seen[f]; ok && prev != key {
-					return key, nil
-				}
-				seen[f] = key
-				below = strings.TrimPrefix(path+"."+key, ".")
+				continue
 			}
-			if bad, err := walkNames(dec, below); bad != "" || err != nil {
-				return bad, err
+			if exact != key {
+				return refusedName(key), nil
+			}
+			if prev, ok := seen[f]; ok && prev != key {
+				return refusedName(key), nil
+			}
+			seen[f] = key
+			if why, err := walkNames(dec, strings.TrimPrefix(path+"."+key, ".")); why != "" || err != nil {
+				return why, err
 			}
 		}
 		_, err = dec.Token()
@@ -155,14 +173,18 @@ func walkNames(dec *json.Decoder, path string) (string, error) {
 	case json.Delim('['):
 		element := path + "[]"
 		for dec.More() {
-			if bad, err := walkNames(dec, element); bad != "" || err != nil {
-				return bad, err
+			if why, err := walkNames(dec, element); why != "" || err != nil {
+				return why, err
 			}
 		}
 		_, err = dec.Token()
 		return "", err
 	}
 	return "", nil
+}
+
+func refusedName(key string) string {
+	return fmt.Sprintf("%q differs from a field this API reads only in letter case: send the field under its exact name, once.", key)
 }
 
 // under reports a path that is, or leads to, an object the handler decodes into a

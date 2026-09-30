@@ -48,6 +48,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -89,20 +90,28 @@ var ours = []string{"fast", "retrieval", "retrieval_store"}
 var unpriced = []string{"models", "provider", "transforms", "route", "plugins", "web_search_options", "service_tier"}
 
 // unpricedField names the first unpriced field raw carries, or "" when it carries none.
+// It runs after casefolded has bounded the body's keys, and folds each key once.
 func unpricedField(raw []byte) string {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
 		return ""
 	}
 	for k := range fields {
-		for _, u := range unpriced {
-			if fold(k) == fold(u) {
-				return k
-			}
+		if unpricedFolds[fold(k)] {
+			return k
 		}
 	}
 	return ""
 }
+
+// unpricedFolds is unpriced, folded once.
+var unpricedFolds = func() map[string]bool {
+	m := make(map[string]bool, len(unpriced))
+	for _, u := range unpriced {
+		m[fold(u)] = true
+	}
+	return m
+}()
 
 // pass is one chat completion on its way through the relay: what the caller sent,
 // what was decided for it, and who pays.
@@ -439,9 +448,25 @@ func (c *ApiController) forward(p pass) bool {
 		// a stand-in as what it is; a raw body sent to the same row would do none of it.
 		// With the paid lane off these are all a route is offered, so skipping them would
 		// leave every relayed route answering 503.
-		if fam := familyNamed(cand.provider); fam != nil && !p.strict {
-			refused := c.pipeToFamily(fam, "chat/completions", "openai", cand.upstream, p.body, p.req.Stream, p.req.MaxTokens, snap.org, p.user, p.premium, p.hold, p.start)
+		//
+		// Only with the paid lane off, which is when a route is offered nothing else.
+		// With it on, the route's own vendors are asked and a family row reached from
+		// here is passed over, as it always was. A customer's own row under the
+		// family's name is theirs, and goes through dial like any other.
+		if fam := familyNamed(cand.provider); fam != nil && !p.strict && FreeOnly() && !ownRow(snap.org, cand.provider) {
+			if why := unpiped(p); why != "" {
+				err, by = modelError("%s", why), ""
+				break
+			}
+			// The free tier's own door, not the route's id: the answer leaves wearing a
+			// name of ours and answering as a model of ours (freeDoor), never as the
+			// vendor's route that happened to answer.
+			door, id := freeDoor()
+			refused := c.pipeToFamily(door, "chat/completions", "openai", id, p.body, p.req.Stream, p.req.MaxTokens, snap.org, p.user, p.premium, p.hold, p.start)
 			if refused == nil {
+				if n := len(p.prior); len(tried) > n {
+					recordRefusals(snap, sku, tried[n:], p.user, p.premium, p.req.Stream, p.id, p.start)
+				}
 				return p.req.Stream
 			}
 			tried = append(tried, refused...)
@@ -683,4 +708,32 @@ func (c *ApiController) provenUnchanged(p pass, d draft, cand candidate) ([2]str
 		c.refuseStrict(invariant, fmt.Sprintf("%q would not reach the vendor as sent", field))
 	}
 	return [2]string{}, false
+}
+
+// ownRow reports that org has a provider row of its own under name, which is the
+// customer's key and not the platform's family.
+func ownRow(org, name string) bool {
+	row, err := object.GetModelProviderByNameForOrg(org, name)
+	return err == nil && row != nil && row.Owner != "admin"
+}
+
+// unpiped is the refusal for a relayed request the family pipe cannot carry as sent,
+// or "". The pipe sends a family only the fields it names (familyFields) and has no
+// place for retrieved knowledge; a request relying on either would be answered
+// without it, and read as if it had not been.
+func unpiped(p pass) string {
+	if len(p.knowledge) > 0 {
+		return "retrieval is not available for this model while it is served from the free tier"
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(p.body, &fields) != nil {
+		return ""
+	}
+	allowed := familyFields["chat/completions"]
+	for _, k := range slices.Sorted(maps.Keys(fields)) {
+		if !allowed[k] && !slices.Contains(ours, k) {
+			return fmt.Sprintf("%q is not available for this model while it is served from the free tier; send the request without it", k)
+		}
+	}
+	return ""
 }

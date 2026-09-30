@@ -282,6 +282,20 @@ func familyNamed(name string) *modelFamily {
 // client that does not care which family answered has one id to remember.
 const freeID = "free"
 
+// freeDoor is the family and id the platform's free pool is served under. Wherever
+// Enso's own catalog publishes its free id, the pool answers as Enso: Enso's service
+// serves it and gives it Enso's name and maker, so no vendor's model introduces itself
+// to a caller who asked for the free tier. Where Enso does not carry it, the family
+// that holds the free routes chooses among them.
+func freeDoor() (*modelFamily, string) {
+	if ensoFam.enabled() {
+		if _, own := ensoFam.lookup(ensoFam.freeName); own {
+			return ensoFam, ensoFam.freeName
+		}
+	}
+	return freeFamily(), freeID
+}
+
 // frontDoor reports that this id is a name this family publishes for the pool — its
 // own branded one, and, for the family that HOLDS the pool, the platform's unbranded
 // one. Such an id is not a model any vendor has: it is a name for a choice.

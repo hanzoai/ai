@@ -1765,8 +1765,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	refusal := ""
 	if err := json.Unmarshal(c.Body(), &parsed); err != nil {
 		refusal = fmt.Sprintf("Failed to parse request: %s", err.Error())
-	} else if k := casefolded(c.Body()); k != "" {
-		refusal = fmt.Sprintf("%q differs from a field this API reads only in letter case: send the field under its exact name, once.", k)
+	} else if why := casefolded(c.Body()); why != "" {
+		refusal = why
 	} else if f := unpricedField(c.Body()); f != "" {
 		refusal = fmt.Sprintf("%q is not accepted: it would buy something this model's price does not cover. Remove it and send the request again.", f)
 	} else if parsed.N > 1 {
@@ -1998,7 +1998,12 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		return
 	}
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", request.Model, c.Body(), request.Stream, clampMaxTokens(request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
+		// The free tier is served under freeDoor, so it answers as a model of ours.
+		sku := request.Model
+		if fam == freeFamily() && strings.EqualFold(strings.TrimSpace(sku), freeID) {
+			fam, sku = freeDoor()
+		}
+		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", sku, c.Body(), request.Stream, clampMaxTokens(request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
 			if request.Stream {
 				hold = nil // a family's stream settles its own hold, from its writer
@@ -2016,7 +2021,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// an honest refusal that names the vendor and the reason.
 	//
 	// With the paid lane off, only that floor is asked, so the same holds.
-	tooled := len(request.Tools) > 0 || request.ToolChoice != nil
+	tooled := len(request.Tools) > 0 || request.ToolChoice != nil || len(request.Functions) > 0 || request.FunctionCall != nil
 	media := requestHasMedia(&request)
 	if tooled || media {
 		if familyRefused != nil {
