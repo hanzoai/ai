@@ -1829,6 +1829,16 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			return
 		}
 	}
+	// RouteAuto has usually rewritten "auto" to its choice before this handler runs,
+	// so the body alone no longer says the model was chosen for the caller.
+	if _, routed := c.Locals(autoRoutedKey).(autoRouted); routed && strict {
+		if authErr := c.authenticate(token); authErr != nil {
+			c.ResponseAuthError(authErr)
+			return
+		}
+		c.refuseStrict("route_auto", "auto-routing chose the model; name one")
+		return
+	}
 
 	// One request id, generated once here — it is the response id (`chatcmpl-<id>`),
 	// the usage-ledger request_id, AND the routing-event join key, so a later reward
@@ -1952,8 +1962,15 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		// upstream can never emit more than we reserve — the actual settle can
 		// never exceed the hold (R1b). reserveCompletionTokens also covers the
 		// QueryText pipeline's fixed cap, which ignores max_tokens.
+		// The ceiling a caller named under either key is the one the hold covers; one
+		// named only as max_completion_tokens was otherwise lowered to the floor.
+		if request.MaxTokens == 0 {
+			request.MaxTokens = request.MaxCompletionTokens
+		}
 		request.MaxTokens = clampMaxTokens(request.MaxTokens)
-		est := estimateRequestCostCents(request.Model, measured, request.MaxTokens)
+		// The vendor bills the whole body — tools, schemas and call arguments as well
+		// as message text — so the hold is never priced on less than its size.
+		est := estimateRequestCostCents(request.Model, max(measured, len(c.Body())/4), request.MaxTokens)
 		var ok bool
 		if hold, wide, ok = c.widthFor(authUser, subject, est); !ok {
 			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message))
@@ -1977,7 +1994,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// running out of money and the product going dark.
 	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil && strict {
-		c.refuseStrict("translation", "this model is served through a pipe that rewrites the request")
+		c.refuseStrict("translation", "this model is not served in a way that keeps the request as sent")
 		return
 	}
 	if fam := familyForProviderType(provider.Type); fam != nil {
@@ -2029,11 +2046,18 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 				judgeRoutedResponse(agent, org, requestId, country, sku, task, question, answer)
 			}
 		}
+		// A strict request goes where its route is declared to go. Sized to the prompt,
+		// routeForPrompt may move it to another row serving another model, which the
+		// digests, taken without the model, would not show.
+		route := routeForPrompt(request.Model, orgId, measured)
+		if strict {
+			route = resolveModelRouteForOrg(request.Model, orgId)
+		}
 		if c.forward(pass{
 			req:     &request,
 			body:    c.Body(),
 			primary: provider,
-			route:   routeForPrompt(request.Model, orgId, measured),
+			route:   route,
 			prior:   familyRefused,
 			knowledge: c.retrieveKnowledgeIfEnabled(
 				question, retrievalOwner(authUser), c.retrievalStore(), c.GetAcceptLanguage()),
@@ -2059,7 +2083,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// ignored: an answer that skipped the schema would read as one that followed it.
 	// These rows move to the Messages translator when it lands, and this goes with them.
 	if strict {
-		c.refuseStrict("translation", "this model's route converts the request to another dialect")
+		c.refuseStrict("translation", "this model is not served in a way that keeps the request as sent")
 		return
 	}
 	var format struct {

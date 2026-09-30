@@ -57,7 +57,8 @@ var structured = map[string]map[string]string{
 }
 
 // fieldNames is every name encoding/json would match for v's fields, keyed by fold:
-// the json tag, or the Go name of an untagged field, and those of embedded structs.
+// the json tag, and those of embedded structs. An untagged field maps to "", which no
+// key equals, so every spelling of its Go name is refused.
 func fieldNames(v any) map[string]string {
 	out := map[string]string{}
 	var walk func(t reflect.Type)
@@ -74,7 +75,10 @@ func fieldNames(v any) map[string]string {
 				continue
 			}
 			if name == "" {
-				name = f.Name
+				// An untagged field is matched by its Go name, which no vendor reads:
+				// every spelling of it is one the handler would read alone.
+				out[fold(f.Name)] = ""
+				continue
 			}
 			out[fold(name)] = name
 		}
@@ -108,8 +112,14 @@ func casefolded(raw []byte) string {
 }
 
 // walkNames reads one value from dec, sitting at path, and returns the first
-// offending key within it.
+// offending key within it. A value at no path the handler decodes into a struct is
+// skipped whole, at the decoder's own speed: the walk runs before the credential is
+// read, so it must cost no more than the decode it guards.
 func walkNames(dec *json.Decoder, path string) (string, error) {
+	if !under(path) {
+		var skip json.RawMessage
+		return "", dec.Decode(&skip)
+	}
 	tok, err := dec.Token()
 	if err != nil {
 		return "", err
@@ -124,6 +134,7 @@ func walkNames(dec *json.Decoder, path string) (string, error) {
 				return "", err
 			}
 			key, _ := t.(string)
+			below := "-"
 			if checked {
 				f := fold(key)
 				if exact, ok := fields[f]; ok && exact != key {
@@ -133,10 +144,6 @@ func walkNames(dec *json.Decoder, path string) (string, error) {
 					return key, nil
 				}
 				seen[f] = key
-			}
-			// Below an object decoded into a map nothing is a field, and "-" is no path.
-			below := "-"
-			if checked {
 				below = strings.TrimPrefix(path+"."+key, ".")
 			}
 			if bad, err := walkNames(dec, below); bad != "" || err != nil {
@@ -146,8 +153,9 @@ func walkNames(dec *json.Decoder, path string) (string, error) {
 		_, err = dec.Token()
 		return "", err
 	case json.Delim('['):
+		element := path + "[]"
 		for dec.More() {
-			if bad, err := walkNames(dec, path+"[]"); bad != "" || err != nil {
+			if bad, err := walkNames(dec, element); bad != "" || err != nil {
 				return bad, err
 			}
 		}
@@ -155,4 +163,15 @@ func walkNames(dec *json.Decoder, path string) (string, error) {
 		return "", err
 	}
 	return "", nil
+}
+
+// under reports a path that is, or leads to, an object the handler decodes into a
+// struct.
+func under(path string) bool {
+	for p := range structured {
+		if p == path || strings.HasPrefix(p, path+".") || strings.HasPrefix(p, path+"[]") {
+			return true
+		}
+	}
+	return false
 }

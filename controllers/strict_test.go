@@ -173,3 +173,51 @@ func TestAStrictResponsesRequestIsRefused(t *testing.T) {
 		t.Fatalf("status %d violation %q: %s", answered(c), header(c, violationHeader), sent(c))
 	}
 }
+
+// With the paid lane off, a strict request is refused as any other request with no
+// free row to ask would be. Taking the route's first row directly must not step
+// around the lane.
+func TestAStrictRequestKeepsToThePaidLane(t *testing.T) {
+	FreeOnly = func() bool { return true }
+	t.Cleanup(func() { FreeOnly = func() bool { return false } })
+	w := newRelayWorld(t, never(t), never(t))
+	c := w.strictChat(`{"model":"relay-sku","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`)
+	if answered(c) != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want the paid lane's 503: %s", answered(c), sent(c))
+	}
+	if w.a.asked() != 0 {
+		t.Error("a paid vendor was asked with the paid lane off")
+	}
+	if header(c, requestSha) != "" {
+		t.Error("a refused strict request carries a proof")
+	}
+}
+
+// RouteAuto rewrites "auto" to its choice before the handler runs, so the body alone
+// no longer says the model was chosen for the caller.
+func TestAStrictRequestAutoRoutingChoseIsRefused(t *testing.T) {
+	w := newRelayWorld(t, never(t), never(t))
+	c := as(visit(http.MethodPost, "/v1/chat/completions"), w.cred)
+	c.Fiber().Request().Header.Set(strictHeader, "1")
+	c.Fiber().Request().SetBody([]byte(`{"model":"relay-sku","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Locals(autoRoutedKey, autoRouted{routed: "relay-sku"})
+	c.ChatCompletions()
+	if answered(c) != http.StatusConflict || header(c, violationHeader) != "route_auto" {
+		t.Fatalf("status %d violation %q: %s", answered(c), header(c, violationHeader), sent(c))
+	}
+}
+
+// A refused strict request was served nothing, so it carries no proof of what was.
+func TestARefusedStrictRequestCarriesNoProof(t *testing.T) {
+	w := newRelayWorld(t, func(rw http.ResponseWriter, _ int) {
+		rw.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = rw.Write([]byte(`{"error":{"message":"overloaded"}}`))
+	}, never(t))
+	c := w.strictChat(`{"model":"relay-sku","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`)
+	if answered(c) == http.StatusOK {
+		t.Fatalf("answered 200: %s", sent(c))
+	}
+	if header(c, requestSha) != "" || header(c, upstreamSha) != "" {
+		t.Errorf("a refusal carries digests %q / %q", header(c, requestSha), header(c, upstreamSha))
+	}
+}

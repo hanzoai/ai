@@ -94,9 +94,11 @@ func unpricedField(raw []byte) string {
 	if json.Unmarshal(raw, &fields) != nil {
 		return ""
 	}
-	for _, k := range unpriced {
-		if _, ok := fields[k]; ok {
-			return k
+	for k := range fields {
+		for _, u := range unpriced {
+			if fold(k) == fold(u) {
+				return k
+			}
 		}
 	}
 	return ""
@@ -212,8 +214,12 @@ func outbound(raw []byte, req *openai.ChatCompletionRequest, knowledge []*model.
 	if fields == nil {
 		fields = map[string]json.RawMessage{}
 	}
-	for _, k := range ours {
-		delete(fields, k)
+	for k := range fields {
+		for _, o := range ours {
+			if fold(k) == fold(o) {
+				delete(fields, k)
+			}
+		}
 	}
 
 	// THE CEILING IS LOWERED, NEVER RAISED, AND UNDER THE CALLER'S OWN KEY. The hold
@@ -399,13 +405,22 @@ func (c *ApiController) forward(p pass) bool {
 	if p.route == nil {
 		queue = []candidate{{p.primary.Name, p.primary.SubType}}
 	}
+	var proof [2]string
 	if p.strict {
 		// The route's own first row, whether or not it is resting: a strict request is
 		// served where it was sent or refused there, never moved.
 		if p.route != nil {
 			queue = []candidate{{p.route.providerName, p.route.upstreamModel}}
 		}
-		if !c.provenUnchanged(p, d, queue[0]) {
+		// Every row the relay serves sells its answers, so with the paid lane off a
+		// strict request is refused exactly as candidates() leaves any other with
+		// nobody to ask. Taking the first row directly must not step around the lane.
+		if FreeOnly() {
+			c.ResponseFailure(paidLaneOff(sku))
+			return false
+		}
+		var ok bool
+		if proof, ok = c.provenUnchanged(p, d, queue[0]); !ok {
 			return false
 		}
 	}
@@ -426,6 +441,12 @@ func (c *ApiController) forward(p pass) bool {
 			}
 			if n := len(p.prior); len(tried) > n {
 				recordRefusals(snap, sku, tried[n:], p.user, p.premium, p.req.Stream, p.id, p.start)
+			}
+			// The proof is stamped on an answer only: a refusal was served nothing.
+			if p.strict {
+				c.SetHeader(strictHeader, "1")
+				c.SetHeader(requestSha, proof[0])
+				c.SetHeader(upstreamSha, proof[1])
 			}
 			return c.deliver(p, cand, row, resp, whole, snap)
 		}
@@ -625,32 +646,27 @@ func refusedIn(body []byte) bool {
 }
 
 // provenUnchanged holds a strict request to the body its first attempt would send,
-// and either refuses it naming what would change or stamps the two digests that
+// and either refuses it naming what would change or returns the two digests that
 // prove nothing did.
-func (c *ApiController) provenUnchanged(p pass, d draft, cand candidate) bool {
+func (c *ApiController) provenUnchanged(p pass, d draft, cand candidate) ([2]string, bool) {
 	if d.ceiling > 0 {
 		c.refuseStrict("ceiling_unset", "name max_tokens or max_completion_tokens; the gateway writes a ceiling otherwise")
-		return false
+		return [2]string{}, false
 	}
 	invariant, field, sent, relayed, err := unchanged(p.body, d.body(cand.upstream, p.primary))
 	if err != nil {
 		c.refuseStrict("not_canonical", err.Error())
-		return false
+		return [2]string{}, false
 	}
 	switch {
 	case invariant == "":
+		return [2]string{sent, relayed}, true
 	case field == "max_tokens" || field == "max_completion_tokens":
 		c.refuseStrict("ceiling_lowered", fmt.Sprintf("%s is above what this request may spend; ask for less", field))
-		return false
 	case field == "messages" && len(p.knowledge) > 0:
 		c.refuseStrict("rag", "retrieval adds a system message; turn retrieval off")
-		return false
 	default:
 		c.refuseStrict(invariant, fmt.Sprintf("%q would not reach the vendor as sent", field))
-		return false
 	}
-	c.SetHeader(strictHeader, "1")
-	c.SetHeader(requestSha, sent)
-	c.SetHeader(upstreamSha, relayed)
-	return true
+	return [2]string{}, false
 }

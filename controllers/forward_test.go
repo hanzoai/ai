@@ -905,3 +905,69 @@ func TestAFamilysRowIsNotRelayedAround(t *testing.T) {
 		t.Error("an OpenAI-compatible row is not relayed")
 	}
 }
+
+// An untagged field is matched by its Go name, which no vendor reads, and a refused
+// field spelled another way is still the field.
+func TestFieldsOnlyThisHandlerWouldReadAreRefusedInEverySpelling(t *testing.T) {
+	for _, tc := range []struct{ name, body, key string }{
+		{"an untagged field", `{"model":"relay-sku","messages":[{"role":"user","content":"hi","MultiContent":[{"type":"text","text":"x"}]}]}`, "MultiContent"},
+		{"an unpriced field, capitalised", `{"model":"relay-sku","Service_tier":"priority","messages":[{"role":"user","content":"hi"}]}`, "Service_tier"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newRelayWorld(t, never(t), never(t))
+			c := w.chat(tc.body)
+			if answered(c) != http.StatusBadRequest || !strings.Contains(sent(c), tc.key) || w.a.asked() != 0 {
+				t.Fatalf("status %d, asked %d, want 400 naming %q: %s", answered(c), w.a.asked(), tc.key, sent(c))
+			}
+		})
+	}
+}
+
+// The key walk runs before the credential is read, so a body nothing checks is
+// skipped at the decoder's speed rather than walked token by token.
+func TestTheKeyWalkSkipsWhatItDoesNotCheck(t *testing.T) {
+	deep := strings.Repeat("[", 9000) + strings.Repeat("0,", 200000) + "0" + strings.Repeat("]", 9000)
+	body := []byte(`{"model":"x","messages":[{"role":"user","content":"hi"}],"zzz":` + deep + `}`)
+	start := time.Now()
+	var parsed chatRequest
+	_ = json.Unmarshal(body, &parsed)
+	decode := time.Since(start)
+
+	start = time.Now()
+	if bad := casefolded(body); bad != "" {
+		t.Fatalf("casefolded = %q", bad)
+	}
+	// Measured against the decode the handler already runs before the credential, on
+	// the same machine at the same moment, so load moves both.
+	if took := time.Since(start); took > 10*decode+100*time.Millisecond {
+		t.Errorf("walking a %d-byte body nothing checks took %s; decoding it took %s", len(body), took, decode)
+	}
+}
+
+// A ceiling named only as max_completion_tokens is the one the hold covers and the
+// vendor is sent, not lowered to the floor.
+func TestACeilingNamedAsMaxCompletionTokensIsKept(t *testing.T) {
+	w := newRelayWorld(t, completes("ok", 3, 0, 1), never(t))
+	c := w.chat(`{"model":"relay-sku","max_completion_tokens":20000,"messages":[{"role":"user","content":"hi"}]}`)
+	if answered(c) != http.StatusOK {
+		t.Fatalf("status %d: %s", answered(c), sent(c))
+	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(w.a.sent(t, 0), &fields)
+	if string(fields["max_completion_tokens"]) != "20000" {
+		t.Errorf("max_completion_tokens = %s, want 20000", fields["max_completion_tokens"])
+	}
+}
+
+// The vendor bills the whole body, so a hold is never priced on less than its size: a
+// large tool description does not ride on a hold priced for "hi".
+func TestTheHoldIsPricedOnTheWholeBody(t *testing.T) {
+	w := newRelayWorld(t, never(t), never(t))
+	object.GlobalBalanceLedger.SetBalance(w.subject, estimateRequestCostCents(relaySku, 10, reserveCompletionFloor))
+	desc := strings.Repeat("describe ", 300000)
+	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function",` +
+		`"function":{"name":"f","description":"` + desc + `","parameters":{"type":"object"}}}]}`)
+	if answered(c) == http.StatusOK || w.a.asked() != 0 {
+		t.Fatalf("status %d, asked %d: a hold priced on the message text alone admitted a %d-byte body", answered(c), w.a.asked(), len(desc))
+	}
+}

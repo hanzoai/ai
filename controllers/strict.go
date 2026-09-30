@@ -48,7 +48,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 
 	"github.com/go-json-experiment/json/jsontext"
 )
@@ -137,7 +139,8 @@ func unchanged(client, upstream []byte) (invariant, field, clientSha, upstreamSh
 	if err != nil {
 		return "", "", "", "", err
 	}
-	for k, v := range sent {
+	for _, k := range slices.Sorted(maps.Keys(sent)) {
+		v := sent[k]
 		w, ok := relayed[k]
 		if !ok {
 			return "param_dropped", k, "", "", nil
@@ -146,7 +149,7 @@ func unchanged(client, upstream []byte) (invariant, field, clientSha, upstreamSh
 			return "rewritten", k, "", "", nil
 		}
 	}
-	for k := range relayed {
+	for _, k := range slices.Sorted(maps.Keys(relayed)) {
 		if _, ok := sent[k]; !ok {
 			return "added", k, "", "", nil
 		}
