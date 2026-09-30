@@ -15,6 +15,8 @@
 package object
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -279,9 +281,18 @@ func NewRecord(ctx *zip.Ctx) (*Record, error) {
 	// pastes an upstream key into this body on its way to being sealed, so the
 	// unredacted form would keep a plaintext copy of the very key that sealing
 	// exists to remove.
+	//
+	// A prompt is not kept at all. The trail records that a model was called and
+	// with what, never what the caller said to it: a customer's prompts are theirs,
+	// kept only where their org has asked for them to be (the capture store), and an
+	// audit row every org writes on every call is not that place.
 	object := ""
 	if body := ctx.Body(); len(body) != 0 {
-		object = RedactBody(string(body))
+		if promptBearing(ctx.Path()) {
+			object = bodyDigest(body)
+		} else {
+			object = RedactBody(string(body))
+		}
 	}
 	status, msg := "ok", ""
 	if code := ctx.Fiber().Response().StatusCode(); code >= 400 {
@@ -429,4 +440,23 @@ func (r *Record) updateErrorText(errText string, lang string) (bool, error) {
 		}
 		return affected > 0, nil
 	}
+}
+
+// promptBearing reports a path whose request body is a customer's prompt: the model
+// surfaces, which carry what the caller said to a model and nothing an audit needs.
+func promptBearing(path string) bool {
+	p := strings.TrimSuffix(strings.ToLower(path), "/")
+	for _, surface := range []string{"/v1/chat", "/v1/completions", "/v1/responses", "/v1/messages",
+		"/v1/embeddings", "/v1/rerank", "/v1/images", "/v1/audio", "/v1/videos"} {
+		if p == surface || strings.HasPrefix(p, surface+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyDigest is what the trail keeps of a prompt: which body it was, and how large.
+func bodyDigest(body []byte) string {
+	sum := sha256.Sum256(body)
+	return fmt.Sprintf(`{"sha256":"%s","bytes":%d}`, hex.EncodeToString(sum[:]), len(body))
 }

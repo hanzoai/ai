@@ -86,3 +86,41 @@ func TestTheRecordWriteRedactsWhatItStores(t *testing.T) {
 		t.Fatal("NewRecord stores the request body without redacting it")
 	}
 }
+
+// A prompt never reaches the audit trail: every org writes a record on every call,
+// and a customer's words are kept only where their org asked for them to be.
+func TestAPromptIsRecordedAsItsDigestOnly(t *testing.T) {
+	for _, path := range []string{"/v1/chat/completions", "/v1/responses", "/v1/messages", "/v1/embeddings", "/v1/chat"} {
+		if !promptBearing(path) {
+			t.Errorf("%s is not treated as a prompt", path)
+		}
+	}
+	for _, path := range []string{"/v1/chats", "/v1/ai/providers", "/v1/ai/router/policy"} {
+		if promptBearing(path) {
+			t.Errorf("%s is treated as a prompt", path)
+		}
+	}
+	got := bodyDigest([]byte(`{"messages":[{"role":"user","content":"my secret plan"}]}`))
+	if strings.Contains(got, "secret") || !strings.Contains(got, `"sha256":"`) {
+		t.Fatalf("digest = %s", got)
+	}
+}
+
+// The rule only helps if the write calls it, for the reason the redaction test gives.
+func TestTheRecordWriteKeepsOnlyAPromptsDigest(t *testing.T) {
+	fs := token.NewFileSet()
+	f, err := parser.ParseFile(fs, "record.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src strings.Builder
+	ast.Inspect(f, func(n ast.Node) bool {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "NewRecord" {
+			_ = printer.Fprint(&src, fs, d)
+		}
+		return true
+	})
+	if !strings.Contains(src.String(), "promptBearing(") || !strings.Contains(src.String(), "bodyDigest(") {
+		t.Fatal("NewRecord stores a prompt's body")
+	}
+}
