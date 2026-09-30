@@ -38,6 +38,9 @@ type modelPrice struct {
 	CacheWritePerMillion float64 // $ per 1M cache-write tokens (0 = use InputPerMillion)
 	CostInPerMillion     float64 // $ per 1M input tokens (provider COGS; 0 = not known)
 	CostOutPerMillion    float64 // $ per 1M output tokens (provider COGS; 0 = not known)
+	// Variable: each call bills at the cost its answer states (zenModel.variable), and
+	// the rates above are only the ceiling a hold reserves, never a price.
+	Variable bool
 }
 
 // costed reports whether this model states what it costs us to serve.
@@ -83,9 +86,10 @@ type modelPricingInfo struct {
 // question: it reports that a real per-model entry was FOUND, and a found price of
 // zero is a price — the one a caller most needs to see, since it says the route is
 // free. Only a model no source names has its pricing block dropped, and so does one
-// whose rate is not a number (a YAML `.inf`), which states no price at all.
+// with no per-token rate to state: a variable SKU, which bills what served each call,
+// and a rate that is not a number (a YAML `.inf`).
 func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
-	if !ok || !finite(p.InputPerMillion) || !finite(p.OutputPerMillion) {
+	if !ok || p.Variable || !finite(p.InputPerMillion) || !finite(p.OutputPerMillion) {
 		return nil
 	}
 	return &modelPricingInfo{
@@ -105,28 +109,6 @@ func perToken(perMillion float64) string {
 }
 
 func finite(f float64) bool { return !math.IsNaN(f) && !math.IsInf(f, 0) }
-
-// staticModelPrice looks up real per-model pricing from the static tables only.
-// Unlike getModelPrice it neither queries the DB nor falls back to a default
-// price: ok is false when ai holds no genuine pricing, letting the /v1/models
-// listing OMIT pricing rather than fabricate it.
-func staticModelPrice(model string) (modelPrice, bool) {
-	// Zen family: the discovered retail price is the source of truth (hip-00NN).
-	if p, ok := familyModelPrice(model); ok {
-		return p, true
-	}
-
-	m := strings.ToLower(model)
-	if price, ok := modelPricing[m]; ok {
-		return price, true
-	}
-	if base, ok := aliasPricing[m]; ok {
-		if price, ok := modelPricing[base]; ok {
-			return price, true
-		}
-	}
-	return modelPrice{}, false
-}
 
 // modelPricing maps upstream model identifiers to their pricing.
 // Keyed by user-facing model name (lowercase). Pricing reflects actual

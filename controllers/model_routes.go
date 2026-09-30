@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -293,6 +294,16 @@ func resolveModelRouteForOrg(model string, orgId string) *modelRoute {
 		return &route
 	}
 
+	// A canonical slug is refused, not routed. It names a listed row but is not an id,
+	// and a family would otherwise take it by prefix ("zenlm/zen5" starts with "zen")
+	// and bill it at a price nothing states. A SKU a family lists under that very name
+	// still routes.
+	if listedSlug(model) {
+		if _, known := familyLookup(model); !known {
+			return nil
+		}
+	}
+
 	// Model families (Zen, Enso, OpenRouter): any family SKU routes to its family
 	// service, which owns the SKU→upstream mapping, identity, and reasoning. ai holds no
 	// such route of its own (hip-00NN). An alias a family resolves (openrouter_alias.go)
@@ -481,9 +492,15 @@ func (c *modelCatalog) get() ([]modelInfo, []byte, error) {
 
 // build renders the catalogue from the config's routing table, or from the static
 // table when no config is loaded, overlaid in the config case with every family's
-// discovered lineup and sorted by name, and stamps each row's canonical slug. Hidden
-// models (provider-prefixed aliases, upstream-named routes) are excluded from the
-// listing but remain callable via the completions endpoint.
+// discovered lineup and sorted by name. Hidden models (provider-prefixed aliases,
+// upstream-named routes) are excluded from the listing but remain callable via the
+// completions endpoint.
+//
+// Each row is priced by getModelPriceForOrgOK, the lookup billing charges from, so a
+// listed rate is the billed rate by construction: a bare id an OpenRouter alias serves
+// lists the SKU's retail, not a config figure billing never reads. And each row's
+// canonical slug is stamped only where the slug routes nowhere else; the published
+// set is kept in slugs, which resolveModelRouteForOrg refuses.
 func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 	var models []modelInfo
 	if cfg != nil {
@@ -491,10 +508,63 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 	} else {
 		models = staticModels()
 	}
-	for i := range models {
-		models[i].CanonicalSlug = canonicalSlug(models[i])
+	ids := make(map[string]bool, len(models))
+	for _, m := range models {
+		ids[strings.ToLower(m.ID)] = true
 	}
+	published := make(map[string]string, len(models))
+	for i := range models {
+		m := &models[i]
+		m.Pricing = pricingInfo(getModelPriceForOrgOK(m.ID, ""))
+		slug := canonicalSlug(*m)
+		key := strings.ToLower(slug)
+		switch {
+		case slug == m.ID:
+			m.CanonicalSlug = slug
+		case slug != "" && !ids[key] && !routes(key):
+			m.CanonicalSlug = slug
+			published[key] = m.ID
+		}
+	}
+	slugs.Store(&published)
 	return models
+}
+
+// slugs is every published canonical slug that is not its row's id, lowercased, from
+// the last catalogue build.
+var slugs atomic.Pointer[map[string]string]
+
+// routes reports that id names a route of its own — config, static table, a family
+// SKU or alias, or a global route row — which a slug spelled the same must not shadow.
+// It matches exactly: a family's prefix is not a claim on a name.
+func routes(id string) bool {
+	if cfg := GetModelConfig(); cfg != nil {
+		if cfg.ResolveRoute(id) != nil {
+			return true
+		}
+	} else if _, ok := modelRoutes[id]; ok {
+		return true
+	}
+	if _, ok := familyLookup(id); ok {
+		return true
+	}
+	r, err := object.ResolveModelRouteFromDB(id, "")
+	return err == nil && r != nil
+}
+
+// listedSlug reports that model is a published canonical slug, which names a listed
+// row without being its id. The first call on a replica builds the catalogue; nothing
+// on the build path resolves a route, so it cannot come back here holding the lock.
+func listedSlug(model string) bool {
+	m := slugs.Load()
+	if m == nil {
+		listing.get()
+		if m = slugs.Load(); m == nil {
+			return false
+		}
+	}
+	_, ok := (*m)[strings.ToLower(strings.TrimSpace(model))]
+	return ok
 }
 
 // canonicalSlug is the row's id qualified by the maker `owned_by` names, the form
@@ -544,7 +614,6 @@ func staticModels() []modelInfo {
 			SupportsVision:  route.vision,
 			SupportsTools:   route.tools,
 			Outputs:         route.outputs,
-			Pricing:         pricingInfo(staticModelPrice(name)),
 		})
 	}
 

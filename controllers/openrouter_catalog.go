@@ -196,7 +196,18 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 		m.MinTier = "paid"    // subscription floor: not reachable by free/trial
 		m.Funding = "prepaid" // funding floor: real cash, so the fail-closed gate applies
 	}
+	if w.variable() {
+		// Billed per call at its stated cost; openrouterCatalog sets the ceiling. The
+		// -1 is a marker, not a cost, so no COGS is derived from it.
+		m.Margin, m.CostIn, m.CostOut = margin, decimal.Zero(), decimal.Zero()
+	}
 	return m
+}
+
+// variable reports a SKU OpenRouter prices by whatever serves each call — its routers,
+// which it lists at a price of -1 because no one rate describes them.
+func (w openrouterWireModel) variable() bool {
+	return w.Pricing.Prompt.Sign() < 0 || w.Pricing.Completion.Sign() < 0
 }
 
 // openrouterOwner is the vendor an OpenRouter id names ("anthropic/claude-…" →
@@ -281,10 +292,37 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 	}
 	margin := openrouterMargin()
 	models := make([]zenModel, 0, len(wire))
+	var ceiling zenTier
 	for _, w := range wire {
-		models = append(models, w.model(margin))
+		m := w.model(margin)
+		if !m.variable() {
+			ceiling.In = maxDecimal(ceiling.In, m.Base.In)
+			ceiling.Out = maxDecimal(ceiling.Out, m.Base.Out)
+		}
+		models = append(models, m)
 	}
-	return models, nil
+	// A router may send a call to any SKU in the catalog, so its hold reserves the
+	// dearest rate on each side and it is premium. One the catalog cannot bound —
+	// nothing else in it is priced — is left out rather than listed free.
+	out := models[:0]
+	for _, m := range models {
+		if m.variable() {
+			if ceiling.In.IsZero() && ceiling.Out.IsZero() {
+				continue
+			}
+			ceiling.MaxCtx = m.MaxCtx
+			m.Base, m.Tiers = ceiling, []zenTier{ceiling}
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+func maxDecimal(a, b decimal.Decimal) decimal.Decimal {
+	if b.Cmp(a) > 0 {
+		return b
+	}
+	return a
 }
 
 // openrouterSpare names the routes OpenRouter still serves once its account is

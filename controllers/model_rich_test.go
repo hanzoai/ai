@@ -17,13 +17,13 @@ package controllers
 import (
 	"encoding/json"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/decimal"
 )
 
 // These tests pin the ADDITIVE enrichment of the /v1/models response shape
@@ -176,65 +176,136 @@ func TestPricingKeysNameTheirUnit(t *testing.T) {
 	}
 }
 
-// TestListedPricePerTokenIsCatalogPricePerMillion reads the listing the way an
-// OpenRouter client does: for every priced row, the per-token string times 1e6 is the
-// per-1M price the catalog bills, exactly. It runs over the real models.yaml and a
-// discovered OpenRouter lineup, and names one known model outright.
-func TestListedPricePerTokenIsCatalogPricePerMillion(t *testing.T) {
-	useCatalog(t, "../conf/models.yaml")
-	withOpenRouter(t, orBody)
+// catalogYAML is a config with a bare id an OpenRouter alias serves (gpt-4o, priced
+// here at a figure billing never reads), a branded row (kai, owned_by hanzo), an
+// unbranded passthrough, and a branded row whose owner is a family prefix.
+const catalogYAML = `version: 1
+models:
+  gpt-4o:
+    provider: do-ai
+    upstream: openai-gpt-4o
+    pricing: {input: 2.50, output: 10.00}
+  kai:
+    provider: kai
+    upstream: kai
+    owned_by: hanzo
+    pricing: {input: 0.021, output: 0}
+  bge-m3:
+    provider: do-ai
+    upstream: bge-m3
+    pricing: {input: 0.02, output: 0}
+  zen-voice-mini:
+    provider: speech
+    upstream: kokoro
+    owned_by: hanzo
+    pricing: {input: 0, output: 0}
+  auto-x:
+    provider: do-ai
+    upstream: auto-x
+    owned_by: openrouter
+    pricing: {input: 1, output: 1}
+`
 
-	million := decimal.New(1_000_000, 0)
-	priced := 0
-	for _, m := range listAvailableModels() {
-		if m.Pricing == nil {
-			continue
-		}
-		priced++
-		catalog, ok := GetModelConfig().GetPriceOK(m.ID)
-		if !ok {
-			catalog, ok = familyModelPrice(m.ID)
-		}
-		if !ok {
-			t.Errorf("%s lists a price the catalog does not hold", m.ID)
-			continue
-		}
-		for _, leg := range []struct {
-			name     string
-			perToken string
-			million  float64
-		}{
-			{"prompt", m.Pricing.Prompt, catalog.InputPerMillion},
-			{"completion", m.Pricing.Completion, catalog.OutputPerMillion},
-		} {
-			per, err := decimal.Parse(leg.perToken)
-			if err != nil {
-				t.Errorf("%s %s = %q is not a decimal: %v", m.ID, leg.name, leg.perToken, err)
-				continue
-			}
-			want := decimal.MustParse(strconv.FormatFloat(leg.million, 'f', -1, 64))
-			if !per.Mul(million).Equal(want) {
-				t.Errorf("%s %s = %s per token, want catalog %v per 1M / 1e6", m.ID, leg.name, per, leg.million)
-			}
+// orCatalog adds, beside orBody's two SKUs, the one an alias names (openai/gpt-4o, at
+// an OpenRouter price unlike the config's) and a router OpenRouter prices at -1.
+const orCatalog = `{"data":[
+ {"id":"anthropic/claude-sonnet-4","context_length":200000,"pricing":{"prompt":"0.000003","completion":"0.000015"}},
+ {"id":"meta/muse-spark-1.1","context_length":1048576,"pricing":{"prompt":"0.00000125","completion":"0.00000425"}},
+ {"id":"openai/gpt-4o","context_length":128000,"pricing":{"prompt":"0.000005","completion":"0.00002"}},
+ {"id":"openrouter/auto","context_length":2000000,"pricing":{"prompt":"-1","completion":"-1"}}
+]}`
+
+func withListing(t *testing.T) map[string]modelInfo {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "models.yaml")
+	if err := os.WriteFile(path, []byte(catalogYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	useCatalog(t, path)
+	withOpenRouter(t, orCatalog)
+	return indexModels(listAvailableModels())
+}
+
+// TestListedPriceIsBilledPrice holds /v1/models to the one price authority: every
+// row lists exactly what getModelPriceForOrgOK, the lookup billing charges from,
+// returns for its id — and no price where billing has none to state.
+func TestListedPriceIsBilledPrice(t *testing.T) {
+	byID := withListing(t)
+	if len(byID) < 8 {
+		t.Fatalf("listed %d rows, want the config and the OpenRouter lineup", len(byID))
+	}
+	for id, m := range byID {
+		want := pricingInfo(getModelPriceForOrgOK(id, ""))
+		if (want == nil) != (m.Pricing == nil) || want != nil && *want != *m.Pricing {
+			t.Errorf("%s lists %+v, billing charges %+v", id, m.Pricing, want)
 		}
 	}
-	if priced == 0 {
-		t.Fatal("no priced rows listed")
-	}
 
-	haiku := indexModels(listAvailableModels())["claude-3-5-haiku"]
-	if haiku.Pricing == nil || haiku.Pricing.Prompt != "0.0000008" || haiku.Pricing.Completion != "0.000004" ||
-		haiku.Pricing.InputPerMillion != 0.80 || haiku.Pricing.OutputPerMillion != 4.00 {
-		t.Errorf("claude-3-5-haiku ($0.80/$4.00 per 1M) lists %+v", haiku.Pricing)
+	// The bare id an alias serves bills at the SKU's retail ($5/M × 1.20), so that is
+	// what it lists — not the $2.50 its config row states.
+	gpt := byID["gpt-4o"]
+	if gpt.Pricing == nil || gpt.Pricing.InputPerMillion != 6 || gpt.Pricing.Prompt != "0.000006" {
+		t.Errorf("gpt-4o lists %+v, want OpenRouter retail $6/M", gpt.Pricing)
+	}
+	haiku := pricingInfo(modelPrice{InputPerMillion: 0.80, OutputPerMillion: 4}, true)
+	if haiku.Prompt != "0.0000008" || haiku.Completion != "0.000004" {
+		t.Errorf("$0.80/$4 per 1M projects as %+v", haiku)
 	}
 }
 
-// TestBothIdsRoute: a row's listed id routes, a bare id and the vendor-qualified SKU it
-// aliases route to the same place, and the canonical slug names the maker without
-// changing the id a caller sends.
-func TestBothIdsRoute(t *testing.T) {
-	useCatalog(t, "../conf/models.yaml")
-	withOpenRouter(t, orBody)
+// A router OpenRouter prices at -1 routes each call to some SKU of its choosing. It is
+// premium and paid-floored, its hold reserves the dearest rate in the catalog, it lists
+// no per-token rate, and a call bills at the cost its answer states times the margin.
+func TestVariableRouterBillsStatedCost(t *testing.T) {
+	byID := withListing(t)
+	router, ok := byID["openrouter/auto"]
+	if !ok {
+		t.Fatal("openrouter/auto is not listed")
+	}
+	if !router.Premium || router.Pricing != nil {
+		t.Errorf("openrouter/auto lists premium=%v pricing=%+v, want premium and no rate", router.Premium, router.Pricing)
+	}
+
+	zm, ok := familyLookup("openrouter/auto")
+	if !ok || !zm.variable() || zm.MinTier != "paid" || zm.Funding != "prepaid" {
+		t.Fatalf("openrouter/auto discovered as %+v", zm)
+	}
+	// The dearest SKU on both sides is openai/gpt-4o, $5/$20 per 1M, at 1.20 retail.
+	if zm.Base.In.String() != "6" || zm.Base.Out.String() != "24" {
+		t.Errorf("router ceiling = %s/%s per 1M, want 6/24", zm.Base.In, zm.Base.Out)
+	}
+	if p := getModelPrice("openrouter/auto"); p.InputPerMillion != 6 || p.OutputPerMillion != 24 || !p.Variable {
+		t.Errorf("the hold prices openrouter/auto at %+v, want the 6/24 ceiling", p)
+	}
+	// 100k prompt tokens at the $6/M input ceiling alone is 60 cents.
+	if got := estimateRequestCostCents("openrouter/auto", 100_000, 10_000); got < 60 {
+		t.Errorf("the hold for a 100k-token call reserves %d cents, under the ceiling's 60 for input alone", got)
+	}
+
+	c := visit(http.MethodPost, "/v1/x")
+	w := whence{ledger: c.billingOrg(nil), ip: c.Fiber().IP(), ctx: c.Context()}
+	use := tokens{fresh: 1000, completion: 1000}
+	half := int64(500_000_000) // $0.50 the answer says the call cost us
+	if cents := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{cost: &half}, nil, true, false, "r1", use, serving{}, time.Now(), nil, "success", ""); cents != 60 {
+		t.Errorf("a $0.50 call billed %d cents, want 60 at 1.20", cents)
+	}
+	if cents := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{}, nil, true, false, "r2", use, serving{}, time.Now(), nil, "success", ""); cents != zm.costCents(1000, 0, 1000) {
+		t.Errorf("a call that states no cost billed %d cents, want the ceiling's %d", cents, zm.costCents(1000, 0, 1000))
+	}
+
+	// A catalog with nothing priced cannot bound a router, so it is left out.
+	only, err := openrouterCatalog([]byte(`{"data":[{"id":"openrouter/auto","pricing":{"prompt":"-1","completion":"-1"}}]}`))
+	if err != nil || len(only) != 0 {
+		t.Errorf("an unbounded router decoded as %+v (%v)", only, err)
+	}
+}
+
+// TestIdsRouteAndSlugsAreRefused: every listed id routes, a bare id and the
+// vendor-qualified SKU it aliases route to the same place, and a canonical slug that
+// is not an id is refused rather than taken by a family's prefix and billed at a price
+// nothing states. A slug another row's id already spells is not published.
+func TestIdsRouteAndSlugsAreRefused(t *testing.T) {
+	byID := withListing(t)
 
 	bare, qualified := resolveModelRoute("claude-sonnet-4"), resolveModelRoute("anthropic/claude-sonnet-4")
 	if bare == nil || qualified == nil {
@@ -244,24 +315,39 @@ func TestBothIdsRoute(t *testing.T) {
 		t.Errorf("bare routes to %s/%s, qualified to %s/%s", bare.providerName, bare.upstreamModel, qualified.providerName, qualified.upstreamModel)
 	}
 
-	byID := indexModels(listAvailableModels())
 	for id, slug := range map[string]string{
 		"anthropic/claude-sonnet-4": "anthropic/claude-sonnet-4", // already qualified
 		"kai":                       "hanzo/kai",                 // branded: owned_by is the maker
-		"text-embedding-3-small":    "openai/text-embedding-3-small",
-		"claude-3-5-haiku":          "", // passthrough: owned_by is the server, not the maker
+		"zen-voice-mini":            "hanzo/zen-voice-mini",
+		"auto-x":                    "openrouter/auto-x", // under a family's prefix
+		"bge-m3":                    "",                  // passthrough: owned_by is the server, not the maker
 	} {
-		m, ok := byID[id]
-		if !ok {
-			t.Errorf("%s is not listed under its own id", id)
-			continue
+		if got := byID[id].CanonicalSlug; got != slug {
+			t.Errorf("%s canonical_slug = %q, want %q", id, got, slug)
 		}
-		if m.CanonicalSlug != slug {
-			t.Errorf("%s canonical_slug = %q, want %q", id, m.CanonicalSlug, slug)
-		}
+	}
+	for id, m := range byID {
 		if resolveModelRoute(id) == nil {
 			t.Errorf("listed id %s does not route", id)
 		}
+		if m.CanonicalSlug != "" && m.CanonicalSlug != id && resolveModelRoute(m.CanonicalSlug) != nil {
+			t.Errorf("slug %s of %s routes; it must be refused", m.CanonicalSlug, id)
+		}
+	}
+
+	// Without the refusal the OpenRouter family would take this by its prefix.
+	if !openrouterFam.serves("openrouter/auto-x") {
+		t.Fatal("the prefix no longer claims openrouter/auto-x, so this test proves nothing")
+	}
+
+	// kai's slug is an id the moment OpenRouter lists hanzo/kai, so it is withheld.
+	withOpenRouter(t, `{"data":[{"id":"hanzo/kai","context_length":131072,"pricing":{"prompt":"0.00000004","completion":"0"}}]}`)
+	byID = indexModels(listAvailableModels())
+	if got := byID["kai"].CanonicalSlug; got != "" {
+		t.Errorf("kai publishes %q, which is another row's id", got)
+	}
+	if r := resolveModelRoute("hanzo/kai"); r == nil || r.providerName != "openrouter" {
+		t.Errorf("hanzo/kai, an OpenRouter SKU, routes to %+v", r)
 	}
 }
 
@@ -325,8 +411,8 @@ func TestPublicProviderBrandGate(t *testing.T) {
 	}
 }
 
-// TestListModelsRichConfigPath covers the prod path: ModelConfig.ListModels()
-// built from YAML. It exercises both an unbranded model (real provider exposed)
+// TestListModelsRichConfigPath covers the prod path: the catalogue built from a
+// YAML config. It exercises both an unbranded model (real provider exposed)
 // and two branded classes (provider OMITTED, never the upstream), plus pricing
 // present/omitted.
 func TestListModelsRichConfigPath(t *testing.T) {
@@ -358,15 +444,8 @@ models:
 	if err := os.WriteFile(path, []byte(richYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mc := &ModelConfig{
-		routes:  make(map[string]modelRoute),
-		pricing: make(map[string]modelPrice),
-		stopCh:  make(chan struct{}),
-	}
-	if err := mc.loadFromFile(path); err != nil {
-		t.Fatal(err)
-	}
-	byID := indexModels(mc.ListModels())
+	useCatalog(t, path)
+	byID := indexModels(listAvailableModels())
 
 	// (a) OpenAI core fields unchanged for a sample (unbranded) model, and the
 	// real serving provider IS exposed for unbranded passthroughs.

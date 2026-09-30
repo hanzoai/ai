@@ -622,11 +622,21 @@ million input tokens — the same row in `model_pricing.go`,
   `input_per_million`/`output_per_million` are the same rates per 1M. A bare
   `input`/`output` is per token to OpenRouter- and Vercel-style readers, so no
   per-million figure goes there (hanzoai/pricing's own document keeps `input` per
-  1M; it is not an OpenAI-compatible catalog). `canonical_slug` is `owned_by/id` (`hanzo/kai`),
-  the id itself when already qualified, absent for an unbranded passthrough.
-  `id` stays what callers send: Codex reads only `models`, but every entry path
-  bills and gates on the raw id, so a qualified spelling needs canonicalizing at
-  the entry first.
+  1M; it is not an OpenAI-compatible catalog).
+- **A listed price is the billed price**: `build` prices every row with
+  `getModelPriceForOrgOK(id, "")`, the lookup billing charges from, so a bare id an
+  OpenRouter alias serves lists the SKU's retail, not its config figure. No price
+  is listed where billing has none, nor for a variable SKU.
+- **OpenRouter's routers are variable** (priced `-1`, e.g. `openrouter/auto`):
+  premium, paid-floored, held at the catalog's dearest rate on each side, and billed
+  at the answer's `usage.cost` × margin (the ceiling when no cost is stated). A
+  catalog with nothing priced drops them.
+- **`canonical_slug` identifies; `id` routes**: `owned_by/id` (`hanzo/kai`), the id
+  when already qualified, absent for an unbranded passthrough and when another
+  route owns that spelling. A published slug is refused (400), never taken by a
+  family prefix (`zenlm/zen5` starts with `zen`) and billed at a default. Every
+  entry path bills and gates on the raw id, so routing a slug needs
+  canonicalizing at the entry first.
 - **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is
   Kai with no route of its own: priced and filed as `kai`, sent to the
   service as asked (the service checks it names the weights it serves). Any other

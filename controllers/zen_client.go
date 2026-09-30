@@ -604,6 +604,27 @@ type zenModel struct {
 	// the retail it publishes is this cost times a margin, never below it.
 	CostIn  decimal.Decimal
 	CostOut decimal.Decimal
+
+	// Margin is set only for a SKU the vendor prices per call by whatever served it
+	// (OpenRouter's routers, which it lists at a price of -1). No rate describes such
+	// a call, so it bills at the cost its answer states times Margin, and Base and
+	// Tiers hold the ceiling a hold reserves: the dearest SKU it could be routed to.
+	Margin decimal.Decimal
+}
+
+// variable reports that this SKU bills each call at the cost its answer states.
+func (m zenModel) variable() bool { return m.Margin.Sign() > 0 }
+
+// resaleCents is what a variable SKU's call bills: the cost the answer stated, in
+// nano-USD, times the SKU's margin, rounded to the cent the way costCents rounds and
+// with its one-cent floor for a call that was served.
+func (m zenModel) resaleCents(costNano int64) int64 {
+	usd := decimal.New(costNano, 9).Mul(m.Margin)
+	cents := money.New(usd, money.USD).Minor().Int64()
+	if cents <= 0 {
+		cents = 1
+	}
+	return cents
 }
 
 // releasedOr is the model's release time, or now when the catalog records none.
@@ -691,6 +712,7 @@ func (m zenModel) price() (modelPrice, bool) {
 	return modelPrice{
 		InputPerMillion: in, OutputPerMillion: out, CacheReadPerMillion: cache,
 		CostInPerMillion: costIn, CostOutPerMillion: costOut,
+		Variable: m.variable(),
 	}, true
 }
 
@@ -1091,7 +1113,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			// for is not. A free route reported as premium reads to a client as a
 			// SKU their plan cannot afford, which is the opposite of true.
 			ID: z.ID, Object: "model", Created: z.releasedOr(now), OwnedBy: owner, Premium: z.priced(),
-			Pricing: pricingInfo(z.price()), ContextWindow: window, Outputs: z.Outputs,
+			ContextWindow: window, Outputs: z.Outputs,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
 		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.
@@ -1133,7 +1155,6 @@ func (f *modelFamily) freeInfo(now int64) []modelInfo {
 		out = append(out, modelInfo{
 			ID: n.id, Object: "model", Created: now, OwnedBy: n.owner,
 			Premium: false, ContextWindow: window, Outputs: []string{"text"},
-			Pricing: pricingInfo(modelPrice{}, true),
 		})
 	}
 	return out
@@ -2290,6 +2311,13 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
 			cents = zm.costCents(t.fresh, t.cached, t.completion)
+			// A variable SKU bills what the answer says it cost us, marked up. An answer
+			// that states no cost bills at the ceiling its hold reserved: the router could
+			// have served it from any SKU up to that, and billing below what a call cost
+			// is the one error resale cannot absorb.
+			if cost := mk.cogs(); zm.variable() && cost != nil {
+				cents = zm.resaleCents(*cost)
+			}
 		} else {
 			cents = calculateCostCentsWithCache(model, t.fresh, t.completion, t.cached, 0)
 		}

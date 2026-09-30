@@ -249,7 +249,7 @@ func TestOpenRouterCatalogIsListed(t *testing.T) {
 	if got.ContextWindow != 200000 {
 		t.Errorf("context_window = %d, want the discovered window", got.ContextWindow)
 	}
-	if got.Pricing == nil || got.Pricing.InputPerMillion <= 0 {
-		t.Error("a resale SKU must list its retail price")
+	if p, ok := familyModelPrice(got.ID); !ok || p.InputPerMillion <= 0 {
+		t.Error("a resale SKU must be priced at its retail, which the listing reads")
 	}
 }
