@@ -422,7 +422,9 @@ func TestBilledAmountHasOneSource(t *testing.T) {
 		BilledNanoExact:  new(usdToNano(price)),
 	}
 
-	table := usageBilledNano(rec, usageCostNano(rec))
+	bare := *rec
+	bare.BilledNanoExact = nil
+	table := usageBilledNano(&bare, usageCostNano(&bare))
 	if table == usdToNano(price) {
 		t.Skip("the table happens to agree here; this test needs an unpriced model to be meaningful")
 	}

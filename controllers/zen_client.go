@@ -615,16 +615,22 @@ type zenModel struct {
 // variable reports that this SKU bills each call at the cost its answer states.
 func (m zenModel) variable() bool { return m.Margin.Sign() > 0 }
 
-// resaleCents is what a variable SKU's call bills: the cost the answer stated, in
-// nano-USD, times the SKU's margin, rounded to the cent the way costCents rounds and
-// with its one-cent floor for a call that was served.
-func (m zenModel) resaleCents(costNano int64) int64 {
-	usd := decimal.New(costNano, 9).Mul(m.Margin)
-	cents := money.New(usd, money.USD).Minor().Int64()
+// resale is what a variable SKU's call bills: the cost its answer stated times the
+// SKU's margin, or its tokens at the ceiling the hold reserved when the answer stated
+// no cost — the router could have served it from any SKU up to that, and billing below
+// what a call cost is the one error resale cannot absorb. nano is the exact charge the
+// ledger, the usage row and the span read; cents settles the hold, rounded the way
+// costCents rounds and floored at one cent for a call that was served.
+func (m zenModel) resale(cost *int64, promptTokens, cachedTokens, completionTokens int) (nano, cents int64) {
+	usd := m.retailUSD(promptTokens, cachedTokens, completionTokens)
+	if cost != nil {
+		usd = decimal.New(*cost, 9).Mul(m.Margin)
+	}
+	cents = money.New(usd, money.USD).Minor().Int64()
 	if cents <= 0 {
 		cents = 1
 	}
-	return cents
+	return usd.Rescale(9).Coef().Int64(), cents
 }
 
 // releasedOr is the model's release time, or now when the catalog records none.
@@ -673,6 +679,16 @@ func (m zenModel) tierFor(promptTokens int) zenTier {
 
 var zenMillion = decimal.New(1_000_000, 0)
 
+// retailUSD is what the tokens cost at the tier their prompt reaches, in exact dollars
+// to 18 places — identical to the family's own arithmetic.
+func (m zenModel) retailUSD(promptTokens, cachedTokens, completionTokens int) decimal.Decimal {
+	t := m.tierFor(promptTokens + cachedTokens)
+	in := t.In.Mul(decimal.New(int64(promptTokens), 0))
+	out := t.Out.Mul(decimal.New(int64(completionTokens), 0))
+	cached := t.cacheRate().Mul(decimal.New(int64(cachedTokens), 0))
+	return in.Add(cached).Add(out).Quo(zenMillion, 18)
+}
+
 // costCents computes exact retail cost for token counts at the served tier and returns
 // it in ai's cent-granular ledger unit. The dollar value is derived the same way the
 // family derives it — money/decimal, no float, no cents flooring mid-way; only the
@@ -683,12 +699,7 @@ var zenMillion = decimal.New(1_000_000, 0)
 // upstream's cache, which bill at the tier's cache rate; the tier is chosen by the
 // whole prompt.
 func (m zenModel) costCents(promptTokens, cachedTokens, completionTokens int) int64 {
-	t := m.tierFor(promptTokens + cachedTokens)
-	in := t.In.Mul(decimal.New(int64(promptTokens), 0))
-	out := t.Out.Mul(decimal.New(int64(completionTokens), 0))
-	cached := t.cacheRate().Mul(decimal.New(int64(cachedTokens), 0))
-	usd := in.Add(cached).Add(out).Quo(zenMillion, 18) // exact dollars to 18 dp — identical to the family
-	cents := money.New(usd, money.USD).Minor().Int64()
+	cents := money.New(m.retailUSD(promptTokens, cachedTokens, completionTokens), money.USD).Minor().Int64()
 	if cents <= 0 && (promptTokens > 0 || cachedTokens > 0 || completionTokens > 0) {
 		cents = 1
 	}
@@ -2308,15 +2319,14 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	// family says it answered from a free rung costs the caller what that rung costs.
 	free := fam.isSpare(model) || inPool(model) || sv.free
 	var cents int64
+	var exact *int64 // a variable SKU's charge, the one the ledger, row and span read
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
 			cents = zm.costCents(t.fresh, t.cached, t.completion)
-			// A variable SKU bills what the answer says it cost us, marked up. An answer
-			// that states no cost bills at the ceiling its hold reserved: the router could
-			// have served it from any SKU up to that, and billing below what a call cost
-			// is the one error resale cannot absorb.
-			if cost := mk.cogs(); zm.variable() && cost != nil {
-				cents = zm.resaleCents(*cost)
+			if zm.variable() {
+				var nano int64
+				nano, cents = zm.resale(mk.cogs(), t.fresh, t.cached, t.completion)
+				exact = &nano
 			}
 		} else {
 			cents = calculateCostCentsWithCache(model, t.fresh, t.completion, t.cached, 0)
@@ -2327,6 +2337,10 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		if requested != "" && w.asked != nil {
 			if zm, ok := w.asked.lookup(requested); ok && zm.priced() {
 				cents = min(cents, zm.costCents(t.fresh, t.cached, t.completion))
+				if exact != nil {
+					n := min(*exact, zm.retailUSD(t.fresh, t.cached, t.completion).Rescale(9).Coef().Int64())
+					exact = &n
+				}
 			}
 		}
 	}
@@ -2345,7 +2359,8 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		// What the call cost us to buy, when the answer stated it, beside what we
 		// charged for it. usageMargin reads this as the COGS, so the margin on a
 		// relayed call stops being a guess.
-		CostNanoExact: mk.cogs(),
+		CostNanoExact:   mk.cogs(),
+		BilledNanoExact: exact,
 	}
 	rec.bind(w.ctx, authUser)
 	recordUsage(rec)

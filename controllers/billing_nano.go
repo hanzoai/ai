@@ -95,6 +95,11 @@ func usageCostNano(record *usageRecord) int64 {
 	// asks this one function, which is what keeps them agreeing.
 	case record.Free:
 		return 0
+	// A Hanzo-served call whose biller knows its exact charge costs exactly that: a
+	// variable SKU bills what its answer stated, which no rate table can recompute. A
+	// BYO call's exact figure is the platform fee, not the cost, so it is not read here.
+	case record.BilledNanoExact != nil && !record.BYO:
+		return *record.BilledNanoExact
 	case record.VideoCount > 0:
 		return videoCostCents(record.Model, record.VideoCount) * 10_000_000 // 1¢ = 1e7 nano
 	case record.ImageCount > 0:

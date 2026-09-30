@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -282,15 +283,31 @@ func TestVariableRouterBillsStatedCost(t *testing.T) {
 		t.Errorf("the hold for a 100k-token call reserves %d cents, under the ceiling's 60 for input alone", got)
 	}
 
+	// The hold settles in cents and the ledger takes the exact dollars, and both are the
+	// stated cost times the margin: never the ceiling's rate for tokens a cheaper SKU
+	// served, and never below what the call cost us.
+	debits := captureDebits(t)
 	c := visit(http.MethodPost, "/v1/x")
-	w := whence{ledger: c.billingOrg(nil), ip: c.Fiber().IP(), ctx: c.Context()}
+	w := whence{ledger: "acme", ip: c.Fiber().IP(), ctx: c.Context()}
+	alice := &iam.User{Owner: "acme", Name: "alice"}
 	use := tokens{fresh: 1000, completion: 1000}
-	half := int64(500_000_000) // $0.50 the answer says the call cost us
-	if cents := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{cost: &half}, nil, true, false, "r1", use, serving{}, time.Now(), nil, "success", ""); cents != 60 {
-		t.Errorf("a $0.50 call billed %d cents, want 60 at 1.20", cents)
-	}
-	if cents := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{}, nil, true, false, "r2", use, serving{}, time.Now(), nil, "success", ""); cents != zm.costCents(1000, 0, 1000) {
-		t.Errorf("a call that states no cost billed %d cents, want the ceiling's %d", cents, zm.costCents(1000, 0, 1000))
+	for _, tc := range []struct {
+		name  string
+		cost  *int64 // nano-USD the answer says the call cost us
+		cents int64
+		usd   string
+	}{
+		{"a $0.50 call", new(int64(500_000_000)), 60, "0.6"},
+		{"a $0.001 call", new(int64(1_000_000)), 1, "0.0012"},
+		{"a call that states no cost", nil, zm.costCents(1000, 0, 1000), "0.03"},
+	} {
+		*debits = (*debits)[:0]
+		if cents := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{cost: tc.cost}, alice, true, false, "r", use, serving{}, time.Now(), nil, "success", ""); cents != tc.cents {
+			t.Errorf("%s settled its hold at %d cents, want %d", tc.name, cents, tc.cents)
+		}
+		if len(*debits) != 1 || (*debits)[0].usd != tc.usd {
+			t.Errorf("%s debited %+v, want one debit of $%s", tc.name, *debits, tc.usd)
+		}
 	}
 
 	// A catalog with nothing priced cannot bound a router, so it is left out.
