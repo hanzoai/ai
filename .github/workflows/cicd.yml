@@ -12,6 +12,10 @@ on:
 jobs:
   cicd:
     uses: hanzoai/ci/.github/workflows/build.yml@v1
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
     with:
       # Not on a tag. A tag here is cut from a commit this same gate already
       # passed on main, so a tag build re-proves a proven tree — and on this
