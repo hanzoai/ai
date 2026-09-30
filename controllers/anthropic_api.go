@@ -17,10 +17,13 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,11 +47,10 @@ type AnthropicRequest struct {
 	ToolChoice  json.RawMessage    `json:"tool_choice,omitempty"`
 	Temperature float32            `json:"temperature,omitempty"`
 	Stream      bool               `json:"stream"`
-	// Thinking is Anthropic extended-thinking config: {"type":"enabled","budget_tokens":N}.
-	// RawMessage so it forwards VERBATIM to a native Anthropic upstream (the native path
-	// re-marshals this struct) AND is parseable by anthropicThinkingToReasoningEffort for
-	// the Anthropic→OpenAI translation. One field, two consumers — the round trip that
-	// used to be silently dropped on BOTH paths.
+	// Thinking is Anthropic extended-thinking config, read by
+	// anthropicThinkingToReasoningEffort for the Anthropic→OpenAI translation. A
+	// native upstream is sent the caller's own bytes (nativeRequest), never this
+	// struct re-marshalled.
 	Thinking json.RawMessage `json:"thinking,omitempty"`
 }
 
@@ -136,10 +138,153 @@ func rawContentToText(raw json.RawMessage) string {
 	return string(raw)
 }
 
-// AnthropicUsage tracks token counts.
+// AnthropicUsage tracks token counts as the Messages API reports them: the two
+// cache counts are beside InputTokens, not inside it. input_tokens is what was read
+// fresh; the cache counts are what was read from the cache and written to it.
 type AnthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	CacheReadTokens  int `json:"cache_read_input_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_creation_input_tokens,omitempty"`
+	// CacheWrites splits CacheWriteTokens by how long the entry is kept, which
+	// the vendor prices apart.
+	CacheWrites *CacheWrites `json:"cache_creation,omitempty"`
+	// Iterations is one usage per time the model ran for this answer. Compaction
+	// runs it more than once, and the counts above then cover the last run only.
+	Iterations []AnthropicUsage `json:"iterations,omitempty"`
+}
+
+// CacheWrites is cache_creation: the cache writes kept five minutes and one hour.
+type CacheWrites struct {
+	Minutes int `json:"ephemeral_5m_input_tokens"`
+	Hour    int `json:"ephemeral_1h_input_tokens"`
+}
+
+// merge takes each count u reports and keeps what was already known for a count it
+// does not. A stream reports usage twice — message_start opens with the input side,
+// message_delta closes with the output side — and either may repeat or omit a count.
+func (a *AnthropicUsage) merge(u AnthropicUsage) {
+	if u.InputTokens > 0 {
+		a.InputTokens = u.InputTokens
+	}
+	if u.OutputTokens > 0 {
+		a.OutputTokens = u.OutputTokens
+	}
+	if u.CacheReadTokens > 0 {
+		a.CacheReadTokens = u.CacheReadTokens
+	}
+	if u.CacheWriteTokens > 0 {
+		a.CacheWriteTokens = u.CacheWriteTokens
+	}
+	if u.CacheWrites != nil {
+		a.CacheWrites = u.CacheWrites
+	}
+	if len(u.Iterations) > 0 {
+		a.Iterations = u.Iterations
+	}
+}
+
+// tally is an answer's usage as it is priced: tokens read fresh, written, read
+// from the cache, and cache writes in five-minute-write units.
+type tally struct{ in, out, read, write int }
+
+// billed is u as it is priced for model.
+//
+// Every iteration is summed, and no count is billed below what the top level
+// reports, so the answer is priced whether or not the vendor listed its runs and
+// whether or not each run lists its cache counts.
+//
+// The usage record carries one cache-write count, so a one-hour write is folded in
+// as the five-minute writes that cost the same at model's rates. The token count
+// on the row reads high by that premium; the money is right.
+func (u AnthropicUsage) billed(model string) tally {
+	top := u.flat(model)
+	if len(u.Iterations) == 0 {
+		return top
+	}
+	var sum tally
+	for _, it := range u.Iterations {
+		f := it.flat(model)
+		sum.in += f.in
+		sum.out += f.out
+		sum.read += f.read
+		sum.write += f.write
+	}
+	return tally{max(sum.in, top.in), max(sum.out, top.out), max(sum.read, top.read), max(sum.write, top.write)}
+}
+
+// flat is u's own counts, without its iterations.
+func (u AnthropicUsage) flat(model string) tally {
+	hour := 0
+	if u.CacheWrites != nil {
+		hour = min(u.CacheWrites.Hour, u.CacheWriteTokens)
+	}
+	return tally{u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens - hour + hourAsMinutes(model, hour)}
+}
+
+// hourAsMinutes is n one-hour cache writes as the number of five-minute writes that
+// cost the same for model, rounded up.
+func hourAsMinutes(model string, n int) int {
+	if n == 0 {
+		return 0
+	}
+	p := getModelPrice(model)
+	minutes := cacheWriteRate(p.InputPerMillion, p.CacheWritePerMillion)
+	if minutes <= 0 {
+		return n
+	}
+	return int(math.Ceil(float64(n) * p.InputPerMillion * cacheWriteHourMultiple / minutes))
+}
+
+// answerUsage is the usage a whole native answer reports, and whether it reported
+// one at all.
+func answerUsage(body []byte) (AnthropicUsage, bool) {
+	var answer struct {
+		Usage *AnthropicUsage `json:"usage"`
+	}
+	if json.Unmarshal(body, &answer) != nil || answer.Usage == nil {
+		return AnthropicUsage{}, false
+	}
+	return *answer.Usage, true
+}
+
+// lost is what an answer is billed no less than: nothing when the vendor's final
+// count arrived, and floor — the most it could have cost — when it did not. An
+// answer cut off by the upstream, by an idle deadline, or by an error event mid-way
+// was still generated, and invoiced, up to the point it stopped; the count of how
+// far that was is exactly what did not arrive.
+func lost(final bool, floor AnthropicUsage) *AnthropicUsage {
+	if final {
+		return nil
+	}
+	return &floor
+}
+
+// reservation is the most a /v1/messages call can use: its body read as tokens at
+// 3.5 bytes each, rounded up — every byte counted as fresh input — and the
+// completion ceiling it is held to.
+func reservation(body []byte, completion int) AnthropicUsage {
+	return AnthropicUsage{InputTokens: (2*len(body) + 6) / 7, OutputTokens: completion}
+}
+
+// holdCents is what reservation u holds against the caller's balance: its price at
+// model's rates, or nothing for a route that costs nothing.
+func holdCents(model string, u AnthropicUsage) int64 {
+	if costsNothing(model, "") {
+		return 0
+	}
+	return calculateCostCents(model, u.InputTokens, u.OutputTokens)
+}
+
+// completionCeiling is the most output a /v1/messages request can be answered with:
+// the max_tokens it is sent with wherever it is proxied, and the QueryText
+// pipeline's own cap where that pipeline serves it — a text-only request to an
+// upstream that does not speak this API.
+func completionCeiling(provider *object.Provider, request *AnthropicRequest) int {
+	if model.Upstream(provider.Type) != model.Anthropic && len(request.Tools) == 0 && !requestHasMediaAnthropic(request) {
+		return reserveCompletionTokens(request.MaxTokens)
+	}
+	return request.MaxTokens
 }
 
 // AnthropicResponse is the non-streaming Messages API response.
@@ -519,13 +664,13 @@ func (c *ApiController) AnthropicMessages() {
 		provider.SubType = request.Model
 	}
 
-	// ── Balance reservation (shared by tool-proxy and QueryText paths) ────
+	// ── Balance reservation (shared by the proxies and the QueryText path) ──
 	request.MaxTokens = clampMaxTokens(request.MaxTokens)
 	var hold *budgetHold
 	if authUser != nil {
 		ledger := c.billingOrg(authUser)
 		subject := authUser.PayerSubject(ledger)
-		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
+		est := holdCents(request.Model, reservation(c.Body(), completionCeiling(provider, &request)))
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
 			c.respondAnthropicError("billing_error", object.InsufficientBalance(c.Host(), ledger, "request cost").Message, http.StatusPaymentRequired)
@@ -549,6 +694,12 @@ func (c *ApiController) AnthropicMessages() {
 	// carries on to the route's declared alternates below.
 	var familyRefused []attempt
 	if fam := familyForProviderType(provider.Type); fam != nil {
+		// A family answers in its own pipeline, so a strict request cannot be proven
+		// to reach a vendor as sent there (strict.go).
+		if c.strictAsked() {
+			c.refuseStrict("translation", "this model is served through a model family, not sent to its vendor as is; name a native Anthropic model")
+			return
+		}
 		familyRefused = c.pipeToFamily(fam, "messages", "anthropic", request.Model, c.Body(), request.Stream, request.MaxTokens, orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
 			return
@@ -556,15 +707,17 @@ func (c *ApiController) AnthropicMessages() {
 		recordRefusals(c.takeSnapshot(authUser), request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
-	// ── Tool-calling proxy ────────────────────────────────────────────────
-	// When the request carries tools (Claude Code, agents, etc.) the QueryText
-	// pipeline cannot handle structured tool_use blocks. Proxy the raw Anthropic
-	// request directly to the upstream and stream/return the raw response.
+	// ── Proxy ─────────────────────────────────────────────────────────────
+	// A native Anthropic upstream is always sent the caller's own request: the
+	// QueryText pipeline below keeps one user turn, flattens every block to text
+	// and drops every field it has no slot for, so it has nothing to offer a
+	// vendor that speaks this API.
 	//
-	// A tool request the family refused stops here: the pipeline below is
-	// text-only, and answering a tool call with prose is worse than an honest
-	// refusal that names the vendor and the reason.
-	if len(request.Tools) > 0 {
+	// Otherwise the proxy takes what the pipeline cannot carry: tools (it emits no
+	// tool_use blocks) and media (it is text-only). A tool or media request the
+	// family refused stops here: answering a tool call with prose, or images with an
+	// answer about nothing, is worse than an honest refusal naming the reason.
+	if model.Upstream(provider.Type) == model.Anthropic || len(request.Tools) > 0 || requestHasMediaAnthropic(&request) {
 		if familyRefused != nil {
 			err := exhausted(request.Model, familyRefused)
 			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
@@ -575,27 +728,7 @@ func (c *ApiController) AnthropicMessages() {
 			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
 			return
 		}
-		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
-		return
-	}
-
-	// Multimodal (vision): the QueryText path below is text-only and would drop image
-	// blocks. Forward multimodal requests verbatim to the upstream (same path as tools),
-	// so vision-capable models receive the images. Symmetric with the OpenAI endpoint.
-	if requestHasMediaAnthropic(&request) {
-		// Same stop as tools: cascading a request whose images the pipeline
-		// would discard produces an answer about nothing.
-		if familyRefused != nil {
-			err := exhausted(request.Model, familyRefused)
-			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
-			return
-		}
-		if FreeOnly() {
-			err := paidLaneOff(request.Model)
-			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
-			return
-		}
-		c.proxyAnthropicToolRequest(provider, &request, requestStartTime, authUser, isPremium, hold)
+		c.proxyAnthropic(provider, &request, requestId, requestStartTime, authUser, isPremium, hold)
 		return
 	}
 
@@ -664,6 +797,7 @@ func (c *ApiController) AnthropicMessages() {
 	// travels out through fail(), which knows which connection is still open.
 	snap := c.takeSnapshot(authUser)
 	run := func(w *bufio.Writer) {
+		defer hold.settle(0)
 		fail := func(errType string, message string, status int) {
 			if request.Stream {
 				streamAnthropicError(w, errType, message)
@@ -836,29 +970,64 @@ func (c *ApiController) AnthropicMessages() {
 
 	}
 	if request.Stream {
+		// run reads hold by reference, so from here it settles the carried one.
+		hold = hand(hold)
 		_ = c.SendStreamWriter(run)
 	} else {
 		run(bufio.NewWriter(io.Discard))
 	}
 }
 
-// proxyAnthropicToolRequest forwards a /v1/messages request that contains tools
-// directly to the upstream, bypassing the QueryText pipeline which cannot emit
-// tool_use blocks. For DO-AI / OpenAI-compat upstreams it delegates to the
-// proxyToolRequest OpenAI path; for native Anthropic upstreams it forwards verbatim.
-func (c *ApiController) proxyAnthropicToolRequest(
+// carry moves a reservation into a stream writer and returns the hold the writer
+// settles; the writer also defers settle(0), as the handler does, for the answers
+// that end without a price.
+//
+// zip runs the writer on its own goroutine, and the handler's deferred settle(0)
+// runs when the handler returns — before the stream has produced anything worth
+// pricing. A hold settles once, so that settle(0) won: the reservation was released
+// before the first byte streamed, and the answer's real cost never reached the
+// ledger, so neither bound the spend of a caller with several streams open.
+// Carried, the handler's hold is spent and its settle does nothing; the reservation
+// stands until the writer settles it. fasthttp starts the writer when the stream is
+// set, and a writer whose client has gone still runs to its end, so the
+// reservation is always given back.
+func hand(h *budgetHold) *budgetHold {
+	if h == nil || !h.settled.CompareAndSwap(false, true) {
+		return nil
+	}
+	return &budgetHold{subject: h.subject, est: h.est}
+}
+
+// proxyAnthropic forwards a /v1/messages request the QueryText pipeline cannot
+// carry. A native Anthropic upstream is sent the caller's own request
+// (nativeRequest) and its answer is relayed as it came; any other upstream is sent
+// a full Anthropic→OpenAI translation and its answer translated back.
+func (c *ApiController) proxyAnthropic(
 	provider *object.Provider,
 	request *AnthropicRequest,
+	requestId string,
 	requestStartTime time.Time,
 	authUser *iam.User,
 	isPremium bool,
 	hold *budgetHold,
 ) {
+	// Our id for this answer, and the only header of ours or the vendor's that goes
+	// back with it besides its type: it is the key the usage row is filed under.
+	c.SetHeader("X-Request-Id", requestId)
+
+	// What the answer is billed at when it ends without the vendor's own count: the
+	// most it could have cost. Read here, while the body is still this handler's.
+	floor := reservation(c.Body(), request.MaxTokens)
+
 	// For non-native Anthropic upstreams (DO-AI, OpenAI-compat, Local, etc.):
 	// fully translate the request Anthropic→OpenAI (messages incl. tool_use /
 	// tool_result / images, tools, tool_choice) and translate the response
 	// OpenAI→Anthropic (SSE events or JSON) — never a raw OpenAI passthrough.
 	if model.Upstream(provider.Type) != model.Anthropic {
+		if c.strictAsked() {
+			c.refuseStrict("translation", "this model's vendor speaks another API, so the request would be translated; name a native Anthropic model")
+			return
+		}
 		oaiReq := &openai.ChatCompletionRequest{
 			Model:      provider.SubType,
 			Messages:   anthropicToOpenAIMessages(request),
@@ -878,33 +1047,28 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		if re := anthropicThinkingToReasoningEffort(request.Thinking, vocab); re != "" {
 			oaiReq.ReasoningEffort = re
 		}
-		c.proxyAnthropicViaOpenAI(provider, oaiReq, request, requestStartTime, authUser, isPremium, hold)
+		c.proxyAnthropicViaOpenAI(provider, oaiReq, request, requestId, floor, requestStartTime, authUser, isPremium, hold)
 		return
 	}
 
-	// Native Anthropic upstream: forward the raw request body verbatim.
-	baseURL := strings.TrimRight(provider.ProviderUrl, "/")
-	if baseURL == "" {
-		baseURL = "https://api.anthropic.com"
+	// Native Anthropic upstream: the caller's own request, addressed to the route's
+	// upstream id. Built here, while the request buffer is still this handler's.
+	byo, _ := providerBYO(provider, authUser)
+	version, betas := c.anthropicHeaders()
+	set := map[string]any{
+		"model":      provider.SubType,
+		"max_tokens": request.MaxTokens,
 	}
-
-	body, err := json.Marshal(request)
+	if c.strictAsked() && !c.provenNative(set) {
+		return
+	}
+	req, err := nativeRequest(context.Background(), provider, c.Body(), set, byo, version, betas)
 	if err != nil {
-		c.respondAnthropicError("api_error", "Failed to marshal request: "+err.Error(), 500)
+		c.respondAnthropicRefusal(err)
 		return
 	}
 
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		c.respondAnthropicError("api_error", "Failed to build upstream request: "+err.Error(), 500)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sendIdle(req)
 	if err != nil {
 		c.respondAnthropicError("api_error", "Upstream request failed: "+err.Error(), 502)
 		return
@@ -918,22 +1082,13 @@ func (c *ApiController) proxyAnthropicToolRequest(
 	}()
 
 	// ONE status decision, ahead of the stream/buffered split and ahead of the
-	// billing below, for the reason proxyToolRequest states: both branches write a
-	// status and both then bill, and neither question has a different answer for a
-	// stream than for a buffered response.
+	// billing below: both branches write a status and both then bill, and neither
+	// question has a different answer for a stream than for a buffered response.
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		c.respondAnthropicRefusal(relay(request.Model, provider.Name, resp.StatusCode, b))
 		return
 	}
-
-	for k, vals := range resp.Header {
-		for _, v := range vals {
-			c.Fiber().Response().Header.Add(k, v)
-		}
-	}
-
-	requestId := uuid.NewString()
 
 	if request.Stream {
 		c.SetHeader("Content-Type", "text/event-stream")
@@ -951,63 +1106,425 @@ func (c *ApiController) proxyAnthropicToolRequest(
 		upstream := resp.Body
 		resp = nil
 		snap := c.takeSnapshot(authUser)
+		held := hand(hold)
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			defer held.settle(0)
 			defer upstream.Close()
-			prompt, completion := streamCaptureAnthropicUsage(
-				upstream, w, func() { _ = w.Flush() },
-			)
-			if authUser == nil {
-				return
-			}
-			rec := &usageRecord{
-				Owner: snap.org, Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
-				Origin:       provider.Origin(),
-				PromptTokens: prompt, CompletionTokens: completion,
-				TotalTokens: prompt + completion, Currency: "USD",
-				Premium: isPremium, Stream: true, Status: "success",
-				ClientIP: snap.ip, RequestID: requestId,
-			}
-			rec.bind(snap.ctx, authUser)
-			rec.BYO, rec.Account = providerBYO(provider, authUser)
-			recordUsage(rec)
-			recordTrace(snap.ctx, rec, requestStartTime)
-			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
+			used, final := streamCaptureAnthropicUsage(upstream, w, func() { _ = w.Flush() })
+			recordAnthropicToolUsage(snap, request, provider, authUser, isPremium, true, requestId, used, lost(final, floor), requestStartTime, held)
 		})
-	} else {
-		// A body that could not be read is not a success. Handing back what arrived
-		// gives the caller truncated JSON under a 200, and the counts parsed from it
-		// are whatever survived — which settles the hold at whatever that came to,
-		// for an answer the upstream did charge us for.
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			c.respondAnthropicRefusal(relay(request.Model, provider.Name, http.StatusBadGateway, nil))
-			return
-		}
-		var usage struct {
-			Usage struct {
-				InputTokens  int `json:"input_tokens"`
-				OutputTokens int `json:"output_tokens"`
-			} `json:"usage"`
-		}
-		_ = json.Unmarshal(respBody, &usage)
-		prompt, completion := usage.Usage.InputTokens, usage.Usage.OutputTokens
-		if authUser != nil {
-			rec := &usageRecord{
-				Owner: c.billingOrg(authUser), Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
-				Origin:       provider.Origin(),
-				PromptTokens: prompt, CompletionTokens: completion,
-				TotalTokens: prompt + completion, Currency: "USD",
-				Premium: isPremium, Stream: false, Status: "success",
-				ClientIP: c.Fiber().IP(), RequestID: requestId,
-			}
-			rec.bind(c.Context(), authUser)
-			rec.BYO, rec.Account = providerBYO(provider, authUser)
-			recordUsage(rec)
-			recordTrace(c.Context(), rec, requestStartTime)
-			hold.settle(calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0))
-		}
-		c.Bytes(http.StatusOK, respBody)
+		return
 	}
+
+	// A body that could not be read is not a success. Handing back what arrived
+	// gives the caller truncated JSON under a 200, and the counts parsed from it
+	// are whatever survived — which settles the hold at whatever that came to,
+	// for an answer the upstream did charge us for.
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.respondAnthropicRefusal(relay(request.Model, provider.Name, http.StatusBadGateway, nil))
+		return
+	}
+	used, final := answerUsage(respBody)
+	recordAnthropicToolUsage(c.takeSnapshot(authUser), request, provider, authUser, isPremium, false, requestId, used, lost(final, floor), requestStartTime, hold)
+	// A whole Messages answer is JSON. The type is stated rather than copied: a
+	// connected account's URL is the customer's to set, and whatever it answers is
+	// served from this origin.
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(http.StatusOK, respBody)
+}
+
+// ── Native Anthropic passthrough ────────────────────────────────────────────
+
+// anthropicVersion is the API version a native upstream is asked for when the
+// caller names none; the upstream refuses a request that carries no version.
+const anthropicVersion = "2023-06-01"
+
+// anthropicHeaders is the caller's anthropic-version and every anthropic-beta,
+// copied out of the request buffer. They are the caller's choice of API dialect and
+// opt-in features, and the upstream reads the body by them, so the body is not the
+// caller's request without them.
+func (c *ApiController) anthropicHeaders() (version string, betas []string) {
+	for _, v := range c.Fiber().Request().Header.PeekAll("anthropic-beta") {
+		betas = append(betas, string(v))
+	}
+	return strings.Clone(strings.TrimSpace(c.Header("anthropic-version"))), betas
+}
+
+// nativeRequest is what a native Anthropic upstream receives for a /v1/messages
+// call: the caller's body byte for byte except the fields in set, the caller's
+// anthropic-version (anthropicVersion when there is none) and anthropic-beta, and
+// the provider's credential. Nothing else of the caller's crosses — least of all
+// the caller's own credential.
+//
+// set always carries `model`, the route's upstream id, and `max_tokens`, the
+// ceiling the hold was reserved for. A max_tokens that passed validation is a
+// plain decimal integer, so for a caller who asked for no more than that ceiling
+// its bytes are the ones they sent.
+//
+// On the shared account anything not priced in tokens, or reaching state the
+// account holds, is refused before anything is sent (shared); the caller's own
+// connected account (byo) is sent whatever the caller wrote.
+func nativeRequest(ctx context.Context, provider *object.Provider, body []byte, set map[string]any, byo bool, version string, betas []string) (*http.Request, error) {
+	out, err := splice(body, set)
+	if err != nil {
+		return nil, err
+	}
+	if !byo {
+		if err := shared(body, betas); err != nil {
+			return nil, err
+		}
+	}
+	base := strings.TrimRight(provider.ProviderUrl, "/")
+	if base == "" {
+		base = "https://api.anthropic.com"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/messages", bytes.NewReader(out))
+	if err != nil {
+		return nil, serverError("Failed to build upstream request: %s", err.Error())
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if version == "" {
+		version = anthropicVersion
+	}
+	req.Header.Set("anthropic-version", version)
+	for _, b := range betas {
+		req.Header.Add("anthropic-beta", b)
+	}
+	upstream.Authorize(req, provider)
+	return req, nil
+}
+
+// spelled are the top-level fields this process reads a request by: to route it,
+// reserve for it, price it, choose how the answer is carried back, and decide
+// whether it may be sent at all (shared).
+var spelled = func() map[string]string {
+	m := map[string]string{}
+	for _, name := range []string{"model", "max_tokens", "messages", "system", "tools",
+		"tool_choice", "temperature", "stream", "thinking", "speed", "inference_geo", "fallbacks"} {
+		m[fold(name)] = name
+	}
+	return m
+}()
+
+// provenNative holds a strict /v1/messages request to the body the vendor would be
+// sent — the caller's bytes with set spliced in — and either refuses it naming what
+// would change or stamps the two digests that prove nothing did (strict.go).
+func (c *ApiController) provenNative(set map[string]any) bool {
+	upstream, err := splice(c.Body(), set)
+	if err != nil {
+		c.refuseStrict("not_canonical", err.Error())
+		return false
+	}
+	invariant, field, sent, relayed, err := unchanged(c.Body(), upstream)
+	if err != nil {
+		c.refuseStrict("not_canonical", err.Error())
+		return false
+	}
+	switch {
+	case invariant == "":
+	case field == "max_tokens":
+		c.refuseStrict("ceiling_lowered", "max_tokens is above what this request may spend; ask for less")
+		return false
+	default:
+		c.refuseStrict(invariant, fmt.Sprintf("%q would not reach the vendor as sent", field))
+		return false
+	}
+	c.SetHeader(strictHeader, "1")
+	c.SetHeader(requestSha, sent)
+	c.SetHeader(upstreamSha, relayed)
+	return true
+}
+
+// splice is body with each top-level field named in set given that value, and every
+// other byte as the caller sent it: key order, whitespace, escapes and number
+// spellings included, since any of them can be what a prompt-cache prefix or a
+// signature was computed over.
+//
+// It refuses a body whose top-level fields this process and the upstream could read
+// differently. encoding/json keeps the LAST of two equal keys and matches a key to
+// a field ignoring case; another parser need do neither. The request is routed and
+// priced on this process's reading and answered on the upstream's, so
+// `"stream":false,"stream":true`, or a lone "Stream", is an answer streamed to a
+// relay that expected one JSON body, found no usage in it, and billed nothing. A
+// body is sent only when both readings are the same one.
+func splice(body []byte, set map[string]any) ([]byte, error) {
+	out := make([]byte, 0, len(body)+32)
+	seen := map[string]bool{}
+	last := 0
+	err := members(body, func(key string, value json.RawMessage, end int) error {
+		folded := fold(key)
+		if seen[folded] {
+			return modelError("the field %q appears more than once", key)
+		}
+		seen[folded] = true
+		if name, ok := spelled[folded]; ok && name != key {
+			return modelError("the field %q must be spelled %q", key, name)
+		}
+		v, ok := set[key]
+		if !ok {
+			return nil
+		}
+		start := end - len(value)
+		if start < last || !bytes.Equal(body[start:end], value) {
+			return serverError("the request could not be addressed to its upstream")
+		}
+		b, err := json.Marshal(v)
+		if err != nil {
+			return serverError("the request could not be addressed to its upstream: %s", err.Error())
+		}
+		out = append(append(out, body[last:start]...), b...)
+		last = end
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for key := range set {
+		if !seen[fold(key)] {
+			return nil, modelError("%s is required", key)
+		}
+	}
+	return append(out, body[last:]...), nil
+}
+
+// members calls fn with each member of the JSON object obj in order, duplicates
+// included, and the offset in obj just past the member's value. obj must be one
+// object and nothing after it but whitespace.
+func members(obj []byte, fn func(key string, value json.RawMessage, end int) error) error {
+	dec := json.NewDecoder(bytes.NewReader(obj))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return modelError("the request body must be a JSON object")
+	}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return modelError("Failed to parse request: %s", err.Error())
+		}
+		key, _ := t.(string)
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return modelError("Failed to parse request: %s", err.Error())
+		}
+		if err := fn(key, value, int(dec.InputOffset())); err != nil {
+			return err
+		}
+	}
+	if _, err := dec.Token(); err != nil {
+		return modelError("Failed to parse request: %s", err.Error())
+	}
+	if len(bytes.TrimSpace(obj[dec.InputOffset():])) > 0 {
+		return modelError("the request body continues after its JSON object")
+	}
+	return nil
+}
+
+// sharedFields are the top-level fields a request may carry on the shared account,
+// each with the values it may take there (nil: any). They are the fields the vendor
+// prices in tokens and that touch nothing held in the account but the answer
+// itself, so the route's token price covers them. Anything else — a new field, a
+// faster lane, a pinned region, a fallback model, a container, a remote MCP server,
+// cache diagnostics naming another message — is served on the caller's own
+// connected account, where the vendor bills the caller and holds only the caller's
+// state.
+var sharedFields = map[string][]string{
+	"model": nil, "max_tokens": nil, "messages": nil, "system": nil,
+	"stop_sequences": nil, "stream": nil, "temperature": nil, "top_p": nil, "top_k": nil,
+	"tools": nil, "tool_choice": nil, "thinking": nil, "metadata": nil,
+	"output_config": nil, "context_management": nil, "cache_control": nil,
+	"service_tier":  {"auto", "standard_only"},
+	"speed":         {"standard"},
+	"inference_geo": {"global"},
+}
+
+// sharedTools are the tool types a request may declare on the shared account: its
+// own tools, and the vendor's that are priced in tokens alone. Search, code
+// execution, the advisor and remote MCP toolsets are billed per use or run
+// elsewhere, and are not on it.
+var sharedTools = []string{"bash_", "text_editor_", "computer_", "memory_", "web_fetch_", "tool_search_tool_"}
+
+// sharedBetas are the anthropic-beta features a request may turn on on the shared
+// account: the ones priced in tokens, with compaction billed per iteration
+// (AnthropicUsage.billed) and the one-hour cache TTL priced apart (hourAsMinutes).
+var sharedBetas = fieldSet(
+	"prompt-caching-2024-07-31", "extended-cache-ttl-2025-04-11",
+	"interleaved-thinking-2025-05-14", "fine-grained-tool-streaming-2025-05-14",
+	"token-efficient-tools-2025-02-19", "output-128k-2025-02-19",
+	"context-management-2025-06-27", "compact-2026-01-12",
+	"structured-outputs-2025-11-13", "claude-code-20250219",
+	"thinking-display-updates-2026-08-18", "mid-conversation-output-config-2026-07-01",
+	"mid-conversation-system-clear-at-2026-08-21",
+	"computer-use-2025-01-24", "computer-use-2025-11-24", "web-fetch-2025-09-10",
+)
+
+// shared refuses what the shared account does not serve: a field, value, tool or
+// beta off the lists above, or a reference to a file held in the account. Every
+// answer on it is priced from the tokens it reports at the rate of the model the
+// caller named, and the account is one workspace for every tenant, so what is not
+// priced in tokens is served at our cost and what reaches the account's stored
+// state reaches every tenant's.
+//
+// splice has already refused a top-level field spelled any way but one, so each is
+// read as the upstream reads it. A tool object has no such guarantee, so every key
+// in it that folds to "type" is read, not only the one encoding/json would keep.
+func shared(body []byte, betas []string) error {
+	refuse := func(format string, a ...any) error {
+		return forbiddenError("%s is not served on the shared account; it is served on your organization's own connected account", fmt.Sprintf(format, a...))
+	}
+	var tools []json.RawMessage
+	err := members(body, func(key string, value json.RawMessage, _ int) error {
+		allowed, ok := sharedFields[key]
+		if !ok {
+			return refuse("the field %q", key)
+		}
+		if key == "tools" {
+			if err := json.Unmarshal(value, &tools); err != nil {
+				return modelError("tools: %s", err.Error())
+			}
+		}
+		if allowed == nil || string(value) == "null" {
+			return nil
+		}
+		var v string
+		if json.Unmarshal(value, &v) != nil || !slices.Contains(allowed, v) {
+			return refuse("%s %s", key, value)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	typ := fold("type")
+	for _, tool := range tools {
+		err := members(tool, func(key string, value json.RawMessage, _ int) error {
+			if fold(key) != typ {
+				return nil
+			}
+			var name string
+			if json.Unmarshal(value, &name) != nil {
+				return refuse("the tool type %s", value)
+			}
+			if name == "custom" || slices.ContainsFunc(sharedTools, func(p string) bool { return strings.HasPrefix(name, p) }) {
+				return nil
+			}
+			return refuse("the %s tool", name)
+		})
+		if err != nil {
+			return err
+		}
+	}
+	for _, line := range betas {
+		for b := range strings.SplitSeq(line, ",") {
+			if b = strings.TrimSpace(b); b != "" && !sharedBetas[b] {
+				return refuse("the %s beta", b)
+			}
+		}
+	}
+	if held, err := heldFile(body); err != nil {
+		return modelError("Failed to parse request: %s", err.Error())
+	} else if held {
+		return refuse("a file_id")
+	}
+	return nil
+}
+
+// heldFile reports whether any object in body names a file the account holds: a
+// file source or a container upload, anywhere the body can carry one. One pass over
+// the tokens, so its cost is the body's length whatever its depth. Every key that
+// folds to "type" is read, as in shared.
+func heldFile(body []byte) (bool, error) {
+	type frame struct {
+		obj, key, id, file bool
+		last               string
+	}
+	typ, id := fold("type"), fold("file_id")
+	var stack []*frame
+	dec := json.NewDecoder(bytes.NewReader(body))
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if d, ok := tok.(json.Delim); ok {
+			if d == '{' || d == '[' {
+				stack = append(stack, &frame{obj: d == '{', key: d == '{'})
+				continue
+			}
+			f := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if f.id && f.file {
+				return true, nil
+			}
+			if n := len(stack); n > 0 && stack[n-1].obj {
+				stack[n-1].key = true
+			}
+			continue
+		}
+		if len(stack) == 0 {
+			continue
+		}
+		top := stack[len(stack)-1]
+		if top.obj && top.key {
+			top.last, top.key = fold(tok.(string)), false
+			top.id = top.id || top.last == id
+			continue
+		}
+		if s, ok := tok.(string); ok && top.obj && top.last == typ && (s == "file" || s == "container_upload") {
+			top.file = true
+		}
+		if top.obj {
+			top.key = true
+		}
+	}
+}
+
+// upstreamIdle is how long a proxied upstream may send nothing — before its
+// response starts, or between two reads of its body — before the request is
+// abandoned. It bounds silence, not length: an answer that keeps arriving is never
+// cut however long it runs, and one that stalls is cut wherever it stopped.
+var upstreamIdle = 120 * time.Second
+
+// sendIdle sends req with the idle deadline upstreamIdle in place of a deadline on
+// the whole exchange, which cut every stream still running at two minutes.
+func sendIdle(req *http.Request) (*http.Response, error) {
+	idle := upstreamIdle
+	ctx, cancel := context.WithCancel(req.Context())
+	timer := time.AfterFunc(idle, cancel)
+	resp, err := (&http.Client{}).Do(req.WithContext(ctx))
+	if err != nil {
+		timer.Stop()
+		cancel()
+		return nil, err
+	}
+	timer.Reset(idle)
+	resp.Body = &idleBody{ReadCloser: resp.Body, timer: timer, idle: idle, cancel: cancel}
+	return resp, nil
+}
+
+// idleBody is a response body whose every read that returns bytes restarts the
+// idle deadline.
+type idleBody struct {
+	io.ReadCloser
+	timer  *time.Timer
+	idle   time.Duration
+	cancel context.CancelFunc
+}
+
+func (b *idleBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.timer.Reset(b.idle)
+	}
+	return n, err
+}
+
+func (b *idleBody) Close() error {
+	b.timer.Stop()
+	b.cancel()
+	return b.ReadCloser.Close()
 }
 
 // proxyAnthropicViaOpenAI sends a translated OpenAI request to an OpenAI-compatible
@@ -1018,16 +1535,16 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	provider *object.Provider,
 	oaiReq *openai.ChatCompletionRequest,
 	request *AnthropicRequest,
+	requestId string,
+	floor AnthropicUsage,
 	requestStartTime time.Time,
 	authUser *iam.User,
 	isPremium bool,
 	hold *budgetHold,
 ) {
-	requestId := uuid.NewString()
-
 	// Force a final usage chunk on the streaming path so tool calls bill for real
-	// token counts (a funded key must never get free premium inference via
-	// stream:true — the same guard proxyToolRequest applies).
+	// token counts: a funded key must never get free premium inference by asking
+	// for stream:true.
 	if oaiReq.Stream {
 		oaiReq.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
 	}
@@ -1052,8 +1569,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	req.Header.Set("Content-Type", "application/json")
 	upstream.Authorize(req, provider)
 
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sendIdle(req)
 	if err != nil {
 		if authUser != nil {
 			errRecord := &usageRecord{
@@ -1096,7 +1612,9 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		upstream := resp.Body
 		resp = nil
 		snap := c.takeSnapshot(authUser)
+		held := hand(hold)
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			defer held.settle(0)
 			defer upstream.Close()
 			emit := func(event string, data any) error {
 				jsonData, mErr := json.Marshal(data)
@@ -1109,14 +1627,18 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 				_ = w.Flush()
 				return nil
 			}
-			prompt, completion, _ := translateOpenAIStream(upstream, emit, request.Model, requestId)
+			prompt, completion, total := translateOpenAIStream(upstream, emit, request.Model, requestId)
 			// Tokenizer fallback so a successful streamed tool call is never billed $0.
 			if prompt == 0 {
 				if pt, e := model.OpenaiNumTokensFromMessages(oaiReq.Messages, request.Model); e == nil {
 					prompt = pt
 				}
 			}
-			recordAnthropicToolUsage(snap, request, provider, authUser, isPremium, true, requestId, prompt, completion, requestStartTime, hold)
+			// The usage chunk is the stream's last; a stream that ended without one
+			// (the upstream cut off, the client left and the relay stopped reading)
+			// is billed at what it could have cost.
+			recordAnthropicToolUsage(snap, request, provider, authUser, isPremium, true, requestId,
+				AnthropicUsage{InputTokens: prompt, OutputTokens: completion}, lost(total > 0 || completion > 0, floor), requestStartTime, held)
 		})
 		return
 	}
@@ -1138,27 +1660,39 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	}
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, out)
-	recordAnthropicToolUsage(c.takeSnapshot(authUser), request, provider, authUser, isPremium, false, requestId, prompt, completion, requestStartTime, hold)
+	recordAnthropicToolUsage(c.takeSnapshot(authUser), request, provider, authUser, isPremium, false, requestId,
+		AnthropicUsage{InputTokens: prompt, OutputTokens: completion}, lost(prompt > 0 || completion > 0, floor), requestStartTime, hold)
 }
 
 // recordAnthropicToolUsage settles the budget hold and records usage + trace for a
-// translated Anthropic tool request. Shared by the streaming and non-streaming
-// paths so billing lives in exactly one place.
-// recordAnthropicToolUsage bills a tool call. One of its two callers runs inside
-// a stream writer, where the request context is already released, so it reads the
-// request's outliving parts from a snapshot rather than from a controller.
+// proxied Anthropic request, native or translated, streamed or not, so billing
+// lives in exactly one place. Some callers run inside a stream writer, where the
+// request context is already released, so it reads the request's outliving parts
+// from a snapshot rather than from a controller.
+//
+// The price is request.Model's — the model the caller asked for and the route
+// is priced at — never the upstream id the request was addressed to.
+//
+// floor is non-nil when the answer ended without the vendor's final count, and
+// then no count is billed below it (lost).
 func recordAnthropicToolUsage(
 	snap snapshot,
 	request *AnthropicRequest, provider *object.Provider, authUser *iam.User,
-	isPremium, stream bool, requestId string, prompt, completion int,
+	isPremium, stream bool, requestId string, used AnthropicUsage, floor *AnthropicUsage,
 	requestStartTime time.Time, hold *budgetHold,
 ) {
-	actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
+	b := used.billed(request.Model)
+	if floor != nil {
+		b.in = max(b.in, floor.InputTokens)
+		b.out = max(b.out, floor.OutputTokens)
+	}
+	actualCents := calculateCostCentsWithCache(request.Model, b.in, b.out, b.read, b.write)
 	if authUser != nil {
 		rec := &usageRecord{
 			Owner: snap.org, Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 			Origin:       provider.Origin(),
-			PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion,
+			PromptTokens: b.in, CompletionTokens: b.out, TotalTokens: b.in + b.out,
+			CacheReadTokens: b.read, CacheWriteTokens: b.write,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
 			ClientIP: snap.ip, RequestID: requestId,
 		}

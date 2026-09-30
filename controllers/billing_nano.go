@@ -43,16 +43,14 @@ func nanoPerToken(perMillion float64) int64 {
 
 // tokenNanoAt is the exact nano-USD token cost for the four per-million base rates,
 // applying the shared cache-rate defaulting (cache-read = 10% of input when the model
-// declares none, cache-write = input). It is the ONE place the token→nano arithmetic
+// declares none, cache-write = cacheWriteRate). It is the ONE place the token→nano arithmetic
 // lives: both the billed-price path (tokenCostNano) and the provider-COGS path
 // (tokenProviderCostNano) call it, so their cache math can never drift.
 func tokenNanoAt(inPerM, outPerM, cacheReadPerM, cacheWritePerM float64, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
 	if cacheReadPerM == 0 && inPerM > 0 {
 		cacheReadPerM = inPerM * 0.10
 	}
-	if cacheWritePerM == 0 {
-		cacheWritePerM = inPerM
-	}
+	cacheWritePerM = cacheWriteRate(inPerM, cacheWritePerM)
 	return int64(promptTokens)*nanoPerToken(inPerM) +
 		int64(completionTokens)*nanoPerToken(outPerM) +
 		int64(cacheReadTokens)*nanoPerToken(cacheReadPerM) +
@@ -70,7 +68,7 @@ func tokenCostNano(model string, promptTokens, completionTokens, cacheReadTokens
 // tokenProviderCostNano is the exact PROVIDER-COGS token cost in nano-USD: the same
 // arithmetic as tokenCostNano at the model's COGS rates. Cache COGS is not separately
 // configured, so pass 0 and let tokenNanoAt default cache-read to 10% of the COGS input
-// rate and cache-write to it — mirroring the price path exactly.
+// rate and cache-write to cacheWriteRate of it — mirroring the price path exactly.
 //
 // Nil when the model states no COGS. Reading the customer price there and calling it a
 // cost makes every such call report margin exactly zero, which is not a small error in

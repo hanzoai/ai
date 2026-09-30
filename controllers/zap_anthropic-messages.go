@@ -178,7 +178,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	var hold *budgetHold
 	if authUser != nil {
 		subject := authUser.PayerSubject("")
-		est := estimateRequestCostCents(request.Model, len(request.Messages)*500, request.MaxTokens)
+		est := holdCents(request.Model, reservation(reqBody, completionCeiling(provider, &request)))
 		var ok bool
 		if hold, ok = reserveBudget(subject, est); !ok {
 			return anthropicErr("billing_error", object.InsufficientBalance(zapBrandHost, authUser.Owner, "request cost").Message, http.StatusPaymentRequired)
@@ -191,11 +191,12 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 		log.Error("ZAP anthropic: KMS resolve %s: %v", provider.Name, err)
 	}
 
-	// ── Tool-calling proxy ────────────────────────────────────────────────
-	// A request carrying tools cannot go through QueryText (no tool_use blocks);
-	// translate + proxy to the upstream, buffered.
-	if len(request.Tools) > 0 {
-		return zapAnthropicToolRequest(ctx, provider, &request, requestStartTime, authUser, isPremium, hold)
+	// ── Proxy ─────────────────────────────────────────────────────────────
+	// A native upstream is always sent the caller's own request, and a request
+	// carrying tools cannot go through QueryText (no tool_use blocks): both are
+	// proxied, buffered. The same rule as the HTTP twin.
+	if model.Upstream(provider.Type) == model.Anthropic || len(request.Tools) > 0 {
+		return zapAnthropicProxy(ctx, provider, &request, reqBody, requestStartTime, authUser, isPremium, hold)
 	}
 
 	// ── Core path: QueryText into a buffer (mirrors zapChatHandler) ────────
@@ -314,41 +315,36 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 // path uses — no forked logic — and forces a non-streaming upstream call so the
 // response is clean JSON to translate (Anthropic→OpenAI request, OpenAI→Anthropic
 // response). Billing lands exactly once via the shared recordUsage/recordTrace.
-func zapAnthropicToolRequest(
+func zapAnthropicProxy(
 	ctx context.Context,
 	provider *object.Provider,
 	request *AnthropicRequest,
+	reqBody []byte,
 	requestStartTime time.Time,
 	authUser *iam.User,
 	isPremium bool,
 	hold *budgetHold,
 ) (int, []byte, string) {
 	requestId := uuid.NewString()
+	floor := reservation(reqBody, request.MaxTokens)
 
-	// Native Anthropic upstream: forward the raw request verbatim (non-stream).
+	// Native Anthropic upstream: the caller's own request, the same one the HTTP
+	// path sends (nativeRequest), with stream off because one ZAP frame carries one
+	// response. The frame carries no headers, so the version is the default one.
 	if model.Upstream(provider.Type) == model.Anthropic {
-		fwd := *request
-		fwd.Stream = false
-		baseURL := strings.TrimRight(provider.ProviderUrl, "/")
-		if baseURL == "" {
-			baseURL = "https://api.anthropic.com"
+		set := map[string]any{"model": provider.SubType, "max_tokens": request.MaxTokens}
+		if request.Stream {
+			set["stream"] = false
 		}
-		body, err := json.Marshal(&fwd)
+		byo, _ := providerBYO(provider, authUser)
+		req, err := nativeRequest(ctx, provider, reqBody, set, byo, "", nil)
 		if err != nil {
-			return anthropicErr("api_error", "Failed to marshal request: "+err.Error(), 500)
+			return anthropicErr(anthropicErrorType(err), err.Error(), statusOf(err))
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/v1/messages", bytes.NewReader(body))
-		if err != nil {
-			return anthropicErr("api_error", "Failed to build upstream request: "+err.Error(), 500)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		upstream.Authorize(req, provider)
-		req.Header.Set("anthropic-version", "2023-06-01")
 
-		client := &http.Client{Timeout: 120 * time.Second}
-		resp, err := client.Do(req)
+		resp, err := sendIdle(req)
 		if err != nil {
-			zapMeterAnthropic(ctx, provider, authUser, request.Model, isPremium, request.Stream, requestId, 0, 0, requestStartTime, hold, "error", err.Error())
+			zapMeterAnthropic(ctx, provider, authUser, request.Model, isPremium, request.Stream, requestId, AnthropicUsage{}, nil, requestStartTime, hold, "error", err.Error())
 			return anthropicErr("api_error", "Upstream request failed: "+err.Error(), 502)
 		}
 		defer resp.Body.Close()
@@ -361,15 +357,9 @@ func zapAnthropicToolRequest(
 		if resp.StatusCode != http.StatusOK {
 			return anthropicErr(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
 		}
-		var usage struct {
-			Usage struct {
-				InputTokens  int `json:"input_tokens"`
-				OutputTokens int `json:"output_tokens"`
-			} `json:"usage"`
-		}
-		_ = json.Unmarshal(respBody, &usage)
+		used, final := answerUsage(respBody)
 		zapMeterAnthropic(ctx, provider, authUser, request.Model, isPremium, request.Stream, requestId,
-			usage.Usage.InputTokens, usage.Usage.OutputTokens, requestStartTime, hold, "success", "")
+			used, lost(final, floor), requestStartTime, hold, "success", "")
 		return resp.StatusCode, respBody, ""
 	}
 
@@ -406,10 +396,9 @@ func zapAnthropicToolRequest(
 	req.Header.Set("Content-Type", "application/json")
 	upstream.Authorize(req, provider)
 
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sendIdle(req)
 	if err != nil {
-		zapMeterAnthropic(ctx, provider, authUser, request.Model, isPremium, request.Stream, requestId, 0, 0, requestStartTime, hold, "error", err.Error())
+		zapMeterAnthropic(ctx, provider, authUser, request.Model, isPremium, request.Stream, requestId, AnthropicUsage{}, nil, requestStartTime, hold, "error", err.Error())
 		return anthropicErr("api_error", "Upstream request failed: "+err.Error(), 502)
 	}
 	defer resp.Body.Close()
@@ -425,19 +414,28 @@ func zapAnthropicToolRequest(
 	if err != nil {
 		return anthropicErr("api_error", err.Error(), 500)
 	}
-	zapMeterAnthropic(ctx, provider, authUser, request.Model, isPremium, request.Stream, requestId, prompt, completion, requestStartTime, hold, "success", "")
+	zapMeterAnthropic(ctx, provider, authUser, request.Model, isPremium, request.Stream, requestId,
+		AnthropicUsage{InputTokens: prompt, OutputTokens: completion}, lost(prompt > 0 || completion > 0, floor), requestStartTime, hold, "success", "")
 	return 200, out, ""
 }
 
 // zapMeterAnthropic is the ONE meter for the ZAP Anthropic tool paths: it records
 // usage + trace and, on success, settles the budget hold with the actual token
-// cost. Extends the shared usageRecord shape (byo/fee via providerBYO) — never a
+// cost at modelName's price — the model the caller asked for, never the upstream
+// id — no lower than floor when the answer ended without the vendor's final count
+// (lost). Extends the shared usageRecord shape (byo/fee via providerBYO) — never a
 // second meter.
 func zapMeterAnthropic(
 	ctx context.Context, provider *object.Provider, authUser *iam.User, modelName string,
-	isPremium, stream bool, requestId string, prompt, completion int,
+	isPremium, stream bool, requestId string, used AnthropicUsage, floor *AnthropicUsage,
 	requestStartTime time.Time, hold *budgetHold, status, errMsg string,
 ) {
+	b := used.billed(modelName)
+	if floor != nil {
+		b.in = max(b.in, floor.InputTokens)
+		b.out = max(b.out, floor.OutputTokens)
+	}
+	prompt, completion := b.in, b.out
 	if authUser != nil {
 		rec := &usageRecord{
 			Owner:            authUser.Owner,
@@ -448,6 +446,8 @@ func zapMeterAnthropic(
 			PromptTokens:     prompt,
 			CompletionTokens: completion,
 			TotalTokens:      prompt + completion,
+			CacheReadTokens:  b.read,
+			CacheWriteTokens: b.write,
 			Currency:         "USD",
 			Premium:          isPremium,
 			Stream:           stream,
@@ -461,7 +461,7 @@ func zapMeterAnthropic(
 		recordTrace(ctx, rec, requestStartTime)
 	}
 	if status == "success" {
-		hold.settle(calculateCostCentsWithCache(modelName, prompt, completion, 0, 0))
+		hold.settle(calculateCostCentsWithCache(modelName, prompt, completion, b.read, b.write))
 	}
 }
 

@@ -790,6 +790,20 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   (`reserveCompletionTokens` / `reserveCompletionFloor=4096`, mirrored in
   `model/openai_util.go`), so actual spend can never exceed the hold on any path.
 
+- **Native `/v1/messages` is the caller's bytes** (`nativeRequest`, HTTP and ZAP,
+  text-only included — QueryText never serves a native upstream) — only `model`
+  and `max_tokens` (the reserved ceiling) are spliced; `anthropic-version`/`-beta`
+  forwarded; only content-type and our `X-Request-Id` come back. `splice` refuses a
+  top-level key repeated or case-folded (encoding/json folds case, keeps the last).
+  The shared account serves an ALLOWLIST (`sharedFields`/`sharedTools`/
+  `sharedBetas`, no held `file_id`); a BYO account is sent anything. The hold is
+  body bytes/3.5 + ceiling; an answer without the vendor's final count bills no
+  less (`lost`); upstreams get an idle deadline, not a total one; no SSE line cap.
+  Billing: SKU price, every `usage.iterations` run, cache writes 1.25x (5m) / 2x
+  (1h, folded into write units until usageRecord carries a 1h count). A stream
+  takes its hold with `carry` (anthropic + family), or the handler's `settle(0)`
+  wins.
+
 - **A tier is read through `object.TierReader`, and the host owes a reader that
   answers** — there are two consumers and they must ask in the same order:
   `controllers.commerceFamilyTier` (the per-SKU gate) and

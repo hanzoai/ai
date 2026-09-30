@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -642,59 +643,118 @@ func (t *anthropicStreamTranslator) finish() error {
 	return t.emit("message_stop", map[string]any{"type": "message_stop"})
 }
 
-// streamCaptureAnthropicUsage copies a NATIVE Anthropic SSE stream verbatim to w
-// while capturing token usage from message_start (input_tokens) and message_delta
-// (output_tokens). The native upstream already emits correct Anthropic SSE, so the
-// bytes pass through unchanged — only the usage capture (previously done with an
-// OpenAI-shaped parser that always returned 0, billing native tool streams at $0)
-// is fixed here.
-func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (prompt, completion int) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		// An SSE comment is a vendor keeping its connection open in its own words.
-		// The keep-alive goes on; the words do not.
+// sseLineMax is the longest SSE line read whole. A usage event is a few hundred
+// bytes; a longer line is a document inside a tool result, relayed as it arrives
+// and never parsed.
+const sseLineMax = 1 << 20
+
+// sseLines reads an SSE stream to its end or its first read error. whole gets each
+// line no longer than sseLineMax, its line ending removed; part gets each piece of
+// a longer one as it arrives — first on its first piece, last on the one that ends
+// it, which has its line ending removed. No line of any length stops the stream.
+func sseLines(r io.Reader, whole func(line string), part func(piece []byte, first, last bool)) {
+	br := bufio.NewReaderSize(r, sseLineMax)
+	long := false
+	for {
+		chunk, err := br.ReadSlice('\n')
+		more := err == bufio.ErrBufferFull
+		switch {
+		case len(chunk) == 0:
+		case long || more:
+			if !more {
+				chunk = bytes.TrimSuffix(bytes.TrimSuffix(chunk, []byte("\n")), []byte("\r"))
+			}
+			part(chunk, !long, !more)
+			long = more
+		default:
+			whole(strings.TrimSuffix(strings.TrimSuffix(string(chunk), "\n"), "\r"))
+		}
+		if err != nil && !more {
+			return
+		}
+	}
+}
+
+// messagesEvent is one event of a native Messages stream, as far as the relays read
+// it.
+type messagesEvent struct {
+	Type    string `json:"type"`
+	Index   int    `json:"index"`
+	Message struct {
+		Usage AnthropicUsage `json:"usage"`
+	} `json:"message"`
+	Usage        *AnthropicUsage `json:"usage"`
+	ContentBlock struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"content_block"`
+	Delta struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		PartialJSON string `json:"partial_json"`
+		Thinking    string `json:"thinking"`
+		StopReason  string `json:"stop_reason"`
+	} `json:"delta"`
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// read parses the event on an SSE line, reporting false for a line that carries
+// none, and takes its usage into used. The final count is message_delta's.
+func (e *messagesEvent) read(line string, used *AnthropicUsage, final *bool) bool {
+	data, ok := strings.CutPrefix(line, "data:")
+	if !ok || json.Unmarshal([]byte(strings.TrimSpace(data)), e) != nil {
+		return false
+	}
+	used.merge(e.Message.Usage)
+	if e.Usage != nil {
+		used.merge(*e.Usage)
+		*final = *final || e.Type == "message_delta"
+	}
+	return true
+}
+
+// streamCaptureAnthropicUsage copies a NATIVE Anthropic SSE stream to w line by line
+// while capturing token usage from message_start (the input side and both cache
+// counts) and message_delta (the output side, and the iterations when compaction
+// ran). final reports that message_delta's count arrived: a stream that ends before
+// it — cut by the upstream, an idle deadline or an error event — was generated and
+// invoiced up to a point this relay never learned.
+//
+// It reads to the upstream's end whatever happens to the client, because the usage
+// is at the end and the vendor bills the answer either way. An SSE comment is a
+// vendor keeping its connection open in its own words: the keep-alive goes on, the
+// words do not.
+func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (used AnthropicUsage, final bool) {
+	comment := false
+	sseLines(r, func(line string) {
 		if strings.HasPrefix(line, ":") {
 			line = ":"
 		}
-		if after, ok := strings.CutPrefix(line, "data:"); ok {
-			raw := strings.TrimSpace(after)
-			if raw != "" && raw != "[DONE]" {
-				var ev struct {
-					Message struct {
-						Usage struct {
-							InputTokens  int `json:"input_tokens"`
-							OutputTokens int `json:"output_tokens"`
-						} `json:"usage"`
-					} `json:"message"`
-					Usage struct {
-						InputTokens  int `json:"input_tokens"`
-						OutputTokens int `json:"output_tokens"`
-					} `json:"usage"`
-				}
-				if json.Unmarshal([]byte(raw), &ev) == nil {
-					if ev.Message.Usage.InputTokens > 0 {
-						prompt = ev.Message.Usage.InputTokens
-					}
-					if ev.Message.Usage.OutputTokens > 0 {
-						completion = ev.Message.Usage.OutputTokens
-					}
-					if ev.Usage.InputTokens > 0 {
-						prompt = ev.Usage.InputTokens
-					}
-					if ev.Usage.OutputTokens > 0 {
-						completion = ev.Usage.OutputTokens
-					}
-				}
+		var ev messagesEvent
+		ev.read(line, &used, &final)
+		_, _ = fmt.Fprintf(w, "%s\n", line)
+		flush()
+	}, func(piece []byte, first, last bool) {
+		if first {
+			comment = piece[0] == ':'
+			if comment {
+				_, _ = io.WriteString(w, ":")
 			}
 		}
-		_, _ = fmt.Fprintf(w, "%s\n", line)
-		if flush != nil {
-			flush()
+		if !comment {
+			_, _ = w.Write(piece)
 		}
-	}
-	return prompt, completion
+		if last {
+			_, _ = io.WriteString(w, "\n")
+		}
+		flush()
+	})
+	return used, final
 }
 
 // translateOpenAIStream reads an upstream OpenAI SSE stream and drives the

@@ -1739,6 +1739,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// at all, which is a compile-time property rather than a rule to remember.
 	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam}
 
+	// bill is the hold the answer settles: this request's, until a stream carries
+	// it into the writer (carry) so done's settle(0) cannot take it first.
+	bill := hold
 	settle := func(t tokens, served, respID string, first time.Time) {
 		if mk.id != "" {
 			respID = mk.id
@@ -1752,7 +1755,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if !first.IsZero() {
 			sv.first = first.Sub(start)
 		}
-		cents := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, hold, "success", "")
+		cents := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, bill, "success", "")
 		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, cents, start)
 	}
 
@@ -1781,7 +1784,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// release over for the same reason.
 		upstream := resp.Body
 		resp = nil
+		bill = hand(hold)
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			defer bill.settle(0)
 			defer upstream.Close()
 			defer hold.settle(0)
 			settle(relayZenStream(w, upstream, mk))
