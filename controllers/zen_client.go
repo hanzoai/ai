@@ -1356,6 +1356,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		return done()
 	}
 	rawBody = familyBody(rawBody, apiPath, maxTokens)
+	// A chat answer the caller wants whole is still asked of the family as a stream,
+	// and assembled here: the stream's first frame decides the status exactly as it
+	// does for a streaming caller, and while the rest arrives the connection is kept
+	// open with whitespace, which a JSON reader skips, so an answer that takes longer
+	// than the edge waits for a first byte still arrives (assembleZenStream).
+	assemble := !stream && apiPath == "chat/completions" && dialect == "openai"
+	if assemble {
+		rawBody = streamed(rawBody)
+	}
 	reqID := uuid.NewString()
 	// The family relays whoever it bought the inference from, so the answer leaves
 	// in our envelope wearing our id, the SKU asked for, and the seller (see
@@ -1443,7 +1452,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
 		// A stream's 200 arrives before its answer; send judges its opening frames
 		// on each key (family_open.go).
-		return f.send(r, p, f.free(s), stream)
+		resp, err := f.send(r, p, f.free(s), stream || assemble)
+		// A family that answered a stream request whole is a whole answer: judged by
+		// its status like any buffered one, and relayed as it came.
+		if assemble && err == nil && resp != nil && resp.StatusCode == http.StatusOK && !eventStream(resp) {
+			return resp, nil
+		}
+		return resp, err
 	}
 
 	send := func(s string) (*http.Response, error) { return dispatch(fam, s) }
@@ -1818,6 +1833,21 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		return nil
 	}
 
+	if assemble && eventStream(resp) {
+		c.SetHeader("Content-Type", "application/json")
+		c.Status(http.StatusOK)
+		upstream := resp.Body
+		resp = nil
+		bill = hand(hold)
+		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+			defer bill.settle(0)
+			defer upstream.Close()
+			defer hold.settle(0)
+			settle(assembleZenStream(w, upstream, mk, heartbeat))
+		})
+		return nil
+	}
+
 	b, rErr := io.ReadAll(resp.Body)
 	if rErr != nil {
 		// The family's answer was truncated on the way to us. Nothing has reached the
@@ -1890,6 +1920,188 @@ func publicName(asked, by *modelFamily, sku string) string {
 // ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
 // completion is stamped from the same mark, so the id a client correlates on holds
 // for the whole stream. first is when the first data chunk was written.
+// eventStream reports whether resp is a server-sent event stream.
+func eventStream(resp *http.Response) bool {
+	return resp != nil && strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
+}
+
+// heartbeat is how often a whole answer being assembled writes a space to keep its
+// connection open.
+var heartbeat = 15 * time.Second
+
+// streamed is a chat body asking for a stream that reports its usage.
+func streamed(body []byte) []byte {
+	var in map[string]json.RawMessage
+	if json.Unmarshal(body, &in) != nil || in == nil {
+		return body
+	}
+	in["stream"] = json.RawMessage("true")
+	in["stream_options"] = json.RawMessage(`{"include_usage":true}`)
+	out, err := json.Marshal(in)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// assembleZenStream reads a family's chat stream to its end and writes it as one
+// chat completion, stamped by mk. Until the answer is whole it writes a space every
+// beat, which a JSON reader skips as leading whitespace. An error frame after the
+// first becomes the answer's error object.
+func assembleZenStream(w *bufio.Writer, body io.Reader, mk *mark, beat time.Duration) (t tokens, served, respID string, first time.Time) {
+	type call struct {
+		ID       string `json:"id,omitempty"`
+		Type     string `json:"type"`
+		Function struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		} `json:"function"`
+	}
+	var (
+		content, reasoning strings.Builder
+		calls              = map[int]*call{}
+		order              []int
+		finish             string
+		created            int64
+		usage              json.RawMessage
+		failure            json.RawMessage
+	)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sc := bufio.NewScanner(body)
+		sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+		for sc.Scan() {
+			line := sc.Bytes()
+			if !bytes.HasPrefix(line, zenDataPrefix) {
+				continue
+			}
+			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
+			if len(payload) == 0 || payload[0] != '{' {
+				continue
+			}
+			if first.IsZero() {
+				first = time.Now()
+			}
+			sniffZenUsage(payload, &t)
+			if served == "" {
+				served = sniffZenModel(payload)
+			}
+			if respID == "" {
+				respID = sniffZenId(payload)
+			}
+			var f struct {
+				Created int64           `json:"created"`
+				Usage   json.RawMessage `json:"usage"`
+				Error   json.RawMessage `json:"error"`
+				Choices []struct {
+					Delta struct {
+						Content          string `json:"content"`
+						Reasoning        string `json:"reasoning"`
+						ReasoningContent string `json:"reasoning_content"`
+						ToolCalls        []struct {
+							Index    int    `json:"index"`
+							ID       string `json:"id"`
+							Type     string `json:"type"`
+							Function struct {
+								Name      string `json:"name"`
+								Arguments string `json:"arguments"`
+							} `json:"function"`
+						} `json:"tool_calls"`
+					} `json:"delta"`
+					Finish string `json:"finish_reason"`
+				} `json:"choices"`
+			}
+			if json.Unmarshal(payload, &f) != nil {
+				continue
+			}
+			if len(f.Error) > 0 && string(f.Error) != "null" {
+				failure = f.Error
+			}
+			if f.Created != 0 && created == 0 {
+				created = f.Created
+			}
+			if len(f.Usage) > 0 && string(f.Usage) != "null" {
+				usage = f.Usage
+			}
+			for _, ch := range f.Choices {
+				content.WriteString(ch.Delta.Content)
+				reasoning.WriteString(ch.Delta.ReasoningContent)
+				reasoning.WriteString(ch.Delta.Reasoning)
+				for _, tc := range ch.Delta.ToolCalls {
+					c := calls[tc.Index]
+					if c == nil {
+						c = &call{Type: "function"}
+						calls[tc.Index] = c
+						order = append(order, tc.Index)
+					}
+					if tc.ID != "" {
+						c.ID = tc.ID
+					}
+					if tc.Type != "" {
+						c.Type = tc.Type
+					}
+					c.Function.Name += tc.Function.Name
+					c.Function.Arguments += tc.Function.Arguments
+				}
+				if ch.Finish != "" {
+					finish = ch.Finish
+				}
+			}
+		}
+	}()
+	tick := time.NewTicker(beat)
+	defer tick.Stop()
+wait:
+	for {
+		select {
+		case <-done:
+			break wait
+		case <-tick.C:
+			_, _ = w.WriteString(" ")
+			_ = w.Flush()
+		}
+	}
+	var out []byte
+	if failure != nil && content.Len() == 0 && len(calls) == 0 {
+		out, _ = json.Marshal(map[string]json.RawMessage{"error": failure})
+		_, _ = w.Write(out)
+		_ = w.Flush()
+		return
+	}
+	msg := map[string]any{"role": "assistant", "content": content.String()}
+	if reasoning.Len() > 0 {
+		msg["reasoning_content"] = reasoning.String()
+	}
+	if len(order) > 0 {
+		list := make([]*call, 0, len(order))
+		for _, i := range order {
+			list = append(list, calls[i])
+		}
+		msg["tool_calls"] = list
+		if content.Len() == 0 {
+			msg["content"] = nil
+		}
+	}
+	if finish == "" {
+		finish = "stop"
+	}
+	whole := map[string]any{
+		"id": respID, "object": "chat.completion", "created": created, "model": served,
+		"choices": []map[string]any{{"index": 0, "message": msg, "finish_reason": finish}},
+	}
+	if usage != nil {
+		whole["usage"] = usage
+	}
+	out, _ = json.Marshal(whole)
+	if mk != nil {
+		out = mk.stamp(out)
+	}
+	_, _ = w.Write(out)
+	_ = w.Flush()
+	return
+}
+
 func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (t tokens, served, respID string, first time.Time) {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)

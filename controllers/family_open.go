@@ -37,6 +37,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -64,6 +65,11 @@ const (
 // opened with an error or ended empty comes back as that error with its status.
 func opening(resp *http.Response) *http.Response {
 	if resp == nil || resp.StatusCode != http.StatusOK {
+		return resp
+	}
+	// Only an event stream has frames to judge. A whole answer to a stream request
+	// is judged by its status, which is its verdict.
+	if ct := strings.ToLower(resp.Header.Get("Content-Type")); ct != "" && !strings.HasPrefix(ct, "text/event-stream") {
 		return resp
 	}
 	br := bufio.NewReaderSize(resp.Body, 64<<10)
