@@ -77,6 +77,12 @@ func data(v any) Answer { return Answer{Shape: v, Data: true} }
 func whole(v any) Answer { return Answer{Shape: v} }
 
 var answers = map[string]Answer{
+	// The routing catalog editor (routing.go), in the envelope.
+	"RouterCatalogRead":     data([]routingView{}),
+	"RouterCatalogApply":    data(object.RoutingVersion{}),
+	"RouterCatalogPropose":  data(routingProposal{}),
+	"RouterCatalogRollback": data(object.RoutingVersion{}),
+	"RouterCatalogTest":     data(routingProbe{}),
 	// The OpenAI-compatible surface. These proxy an upstream or rebuild its
 	// answer, so the shape is that wire format — our own fork of the Go types
 	// every client of it already holds.

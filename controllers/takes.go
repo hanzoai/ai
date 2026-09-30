@@ -38,4 +38,9 @@ var takes = map[string]any{
 	// Forwarded to the decision service with its handles named by the paying org;
 	// this is the Decisions request.
 	"Decisions": decisionsRequest{},
+	// The routing catalog editor (routing.go).
+	"RouterCatalogApply":    routingEdit{},
+	"RouterCatalogPropose":  routingEdit{},
+	"RouterCatalogRollback": routingEdit{},
+	"RouterCatalogTest":     routingEdit{},
 }

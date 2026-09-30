@@ -252,6 +252,47 @@ type routingView struct {
 	Error    string                   `json:"error,omitempty"`
 }
 
+// The typed HTTP bindings of /v1/ai/router/catalog: one handler per operation, so
+// the published document can say what each takes and answers. Each dispatches to
+// zapRoutingHandler, the one implementation, through the router-config bridge.
+
+// RouterCatalogRead lists the Zen and Enso routing catalogs: what each serves, its
+// accounts and model health, and its version history. SuperAdmin only.
+func (c *ApiController) RouterCatalogRead() { c.RouterConfigBridge() }
+
+// RouterCatalogApply applies an edited catalog to one family, made from its newest
+// version, and records the new version. SuperAdmin only.
+func (c *ApiController) RouterCatalogApply() { c.RouterConfigBridge() }
+
+// RouterCatalogPropose answers the diff an edited catalog would apply to a family,
+// and the version it would be made from. Nothing is applied. SuperAdmin only.
+func (c *ApiController) RouterCatalogPropose() { c.RouterConfigBridge() }
+
+// RouterCatalogRollback applies an earlier version of a family's catalog again, as
+// a new version. SuperAdmin only.
+func (c *ApiController) RouterCatalogRollback() { c.RouterConfigBridge() }
+
+// RouterCatalogTest sends one short turn to a SKU through its family and answers
+// which upstream wrote it and how long it took. SuperAdmin only.
+func (c *ApiController) RouterCatalogTest() { c.RouterConfigBridge() }
+
+// routingProposal is what a proposal answers.
+type routingProposal struct {
+	Family string `json:"family"`
+	Base   int64  `json:"base"`
+	Diff   string `json:"diff"`
+}
+
+// routingProbe is what a test turn answers.
+type routingProbe struct {
+	Status   int    `json:"status"`
+	SKU      string `json:"sku"`
+	Arm      string `json:"arm"`
+	Failover string `json:"failover"`
+	Ms       int64  `json:"ms"`
+	Reply    string `json:"reply"`
+}
+
 type routingEdit struct {
 	Family  string          `json:"family"`
 	Catalog json.RawMessage `json:"catalog"`
@@ -300,7 +341,7 @@ func zapRoutingHandler(ctx context.Context, method, path, query, auth string, bo
 		if err != nil {
 			return zapError(http.StatusBadRequest, err.Error())
 		}
-		return zapOk(map[string]any{"family": e.Family, "base": base, "diff": diff})
+		return zapOk(routingProposal{Family: e.Family, Base: base, Diff: diff})
 	case sub == "" && method == http.MethodPut:
 		var e routingEdit
 		if err := json.Unmarshal(body, &e); err != nil {
@@ -458,7 +499,7 @@ func routingApply(ctx context.Context, family string, catalog json.RawMessage, b
 
 // routingTest sends one short turn to model through the family and answers the
 // model that wrote it and how long it took.
-func routingTest(ctx context.Context, family, model string) (map[string]any, error) {
+func routingTest(ctx context.Context, family, model string) (*routingProbe, error) {
 	var base string
 	switch family {
 	case "enso":
@@ -499,9 +540,9 @@ func routingTest(ctx context.Context, family, model string) (map[string]any, err
 	if len(r.Choices) > 0 {
 		text = strings.TrimSpace(r.Choices[0].Message.Content)
 	}
-	return map[string]any{
-		"status": resp.StatusCode, "sku": resp.Header.Get(servedHeader), "arm": resp.Header.Get(armHeader),
-		"failover": resp.Header.Get(failoverHeader), "ms": time.Since(start).Milliseconds(), "reply": text,
+	return &routingProbe{
+		Status: resp.StatusCode, SKU: resp.Header.Get(servedHeader), Arm: resp.Header.Get(armHeader),
+		Failover: resp.Header.Get(failoverHeader), Ms: time.Since(start).Milliseconds(), Reply: text,
 	}, nil
 }
 
