@@ -128,6 +128,8 @@ func registerZapVerticalsAndMisc() {
 	// so the one prefix carries every verb; the handler dispatches by method + the
 	// /list sub-path. The /v1/ai/org/settings prefix also matches /v1/ai/org/settings/list.
 	registerGatewayRoute("/v1/ai/org/settings", zapOrgSettingsHandler)
+	// The Zen and Enso routing catalogs: the prefix carries /propose, /rollback and /test.
+	registerGatewayRoute("/v1/ai/router/catalog", zapRoutingHandler)
 
 }
 
@@ -143,6 +145,7 @@ func zapMiscDeny(status uint32, msg string) *zap.Message {
 // superAdminEndpoints — always super-admin gated, never relaxed by preview mode.
 var zapMiscSuperAdmin = map[string]struct{}{
 	"org/settings": {}, // the RESTful per-org settings noun (GET/PUT/DELETE + /list)
+	"routing":      {}, // the Zen and Enso routing catalogs (routing.go)
 }
 
 // zapMiscExempt is the group's slice of permissionFilter's benign-read/self-scoped

@@ -405,6 +405,11 @@ func sendKeyed(r *http.Request, p *object.Provider, keys []string, free bool, do
 		switch resp.StatusCode {
 		case http.StatusPaymentRequired:
 			cool(k, scopePriced)
+			// A 402 on a free route is the vendor refusing the account even its free
+			// models (a balance below its floor): the key sits out free routes too.
+			if free {
+				cool(k, scopeFree)
+			}
 		case http.StatusUnauthorized:
 			cool(k, scopeAll)
 		case http.StatusTooManyRequests:

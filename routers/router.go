@@ -216,6 +216,10 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/ai/router/artifact-meta", "*:RouterConfigBridge")
 	route(app, "/v1/ai/org/settings", "*:RouterConfigBridge")
 	route(app, "/v1/ai/org/settings/list", "*:RouterConfigBridge")
+	route(app, "/v1/ai/router/catalog", "*:RouterConfigBridge")
+	route(app, "/v1/ai/router/catalog/propose", "*:RouterConfigBridge")
+	route(app, "/v1/ai/router/catalog/rollback", "*:RouterConfigBridge")
+	route(app, "/v1/ai/router/catalog/test", "*:RouterConfigBridge")
 
 	// Per-request reward signal for the enso training loop: clients POST an outcome
 	// keyed by the request_id they hold, scoped to their own org. /v1/ai/feedback is

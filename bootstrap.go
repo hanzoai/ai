@@ -273,6 +273,8 @@ func doBootstrap() (err error) {
 	// Read each model family's catalog once at boot, so the first request after a
 	// restart is priced from discovery (controllers.WarmFamilies).
 	controllers.WarmFamilies()
+	// Serve each family's newest routing version, and keep serving it (routing.go).
+	controllers.StartRoutingConvergence()
 	controllers.StartRouterProbe()
 	controllers.StartRouterTrainer()
 	controllers.StartRouterJudge()

@@ -192,6 +192,7 @@ func (a *Adapter) createTable() {
 		&RouterTrainingLog{},  // append-only retrain timeline (one immutable row per fit)
 		&FinetuneJob{},        // fine-tuning / training runs brokered to the cluster trainer
 		&ModelAccess{},        // per-(org,user,model) grants for gated SKUs (enso limited preview)
+		&RoutingVersion{},     // applied Zen/Enso routing catalogs, one row per edit (routing.go)
 	}
 	for _, m := range models {
 		if err := a.db.Sync(m); err != nil {

@@ -389,3 +389,22 @@ func TestAnOldBalanceIsTreatedAsUnread(t *testing.T) {
 		t.Fatalf("priced order %v, want every key once the balance is stale", got)
 	}
 }
+
+// A key refused 402 on a free route sits out free routes as well.
+func TestAKeyRefusedOnAFreeRouteSitsOutFreeRoutes(t *testing.T) {
+	forgetKeys()
+	a := &accounts{status: map[string]int{"k1": http.StatusPaymentRequired}}
+	s := a.serve(t)
+	for i := 0; i < 3; i++ {
+		sendOnce(t, a, s.URL, threeKeys, true)
+	}
+	n := 0
+	for _, k := range a.calls() {
+		if k == "k1" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("k1 asked %d times over three free requests, want once", n)
+	}
+}

@@ -263,6 +263,10 @@ func resolveKey(name string) string {
 	return resolveSecretName(name)
 }
 
+// ResolveKey is resolveKey for a caller outside this package: a key by NAME, from
+// the deployment's provider keys path, else the store, else configuration.
+func ResolveKey(name string) string { return resolveKey(name) }
+
 // ResolveProviderSecret resolves "kms://NAME" references on a provider record
 // in place. A non-reference value is left exactly as it is (an operator may set
 // a key directly on the admin row; that is a deliberate, visible choice and not
