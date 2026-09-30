@@ -622,7 +622,7 @@ func (c *ApiController) AnthropicMessages() {
 	var request AnthropicRequest
 	badReq := ""
 	if err := json.Unmarshal(c.Body(), &request); err != nil {
-		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		badReq = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if request.Model == "" {
 		badReq = "model is required"
 	} else if request.MaxTokens <= 0 {
@@ -1299,19 +1299,19 @@ func members(obj []byte, fn func(key string, value json.RawMessage, end int) err
 	for dec.More() {
 		t, err := dec.Token()
 		if err != nil {
-			return modelError("Failed to parse request: %s", err.Error())
+			return modelError("Failed to parse request: %s", parseProblem(err))
 		}
 		key, _ := t.(string)
 		var value json.RawMessage
 		if err := dec.Decode(&value); err != nil {
-			return modelError("Failed to parse request: %s", err.Error())
+			return modelError("Failed to parse request: %s", parseProblem(err))
 		}
 		if err := fn(key, value, int(dec.InputOffset())); err != nil {
 			return err
 		}
 	}
 	if _, err := dec.Token(); err != nil {
-		return modelError("Failed to parse request: %s", err.Error())
+		return modelError("Failed to parse request: %s", parseProblem(err))
 	}
 	if len(bytes.TrimSpace(obj[dec.InputOffset():])) > 0 {
 		return modelError("the request body continues after its JSON object")
@@ -1421,7 +1421,7 @@ func shared(body []byte, betas []string) error {
 		}
 	}
 	if held, err := heldFile(body); err != nil {
-		return modelError("Failed to parse request: %s", err.Error())
+		return modelError("Failed to parse request: %s", parseProblem(err))
 	} else if held {
 		return refuse("a file_id")
 	}
@@ -1833,7 +1833,7 @@ func (c *ApiController) AnthropicCountTokens() {
 		return
 	}
 	if parseErr != nil {
-		c.respondAnthropicError("invalid_request_error", "Failed to parse request: "+parseErr.Error(), 400)
+		c.respondAnthropicError("invalid_request_error", "Failed to parse request: "+parseProblem(parseErr), 400)
 		return
 	}
 	if request.Model == "" {

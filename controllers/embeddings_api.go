@@ -66,7 +66,7 @@ func (c *ApiController) Embeddings() {
 	}
 	badReq := ""
 	if err := json.Unmarshal(c.Body(), &head); err != nil {
-		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		badReq = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if head.Model == "" {
 		badReq = "embeddings request requires a \"model\" field"
 	}
@@ -181,7 +181,7 @@ func (c *ApiController) Rerank() {
 	}
 	badReq := ""
 	if err := json.Unmarshal(c.Body(), &raw); err != nil {
-		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		badReq = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if raw.Model == "" {
 		badReq = "rerank request requires a \"model\" field"
 	} else if raw.Query == "" {

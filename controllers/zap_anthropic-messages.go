@@ -132,7 +132,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	var request AnthropicRequest
 	badReq := ""
 	if err := json.Unmarshal(reqBody, &request); err != nil {
-		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		badReq = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if request.Model == "" {
 		badReq = "model is required"
 	} else if request.MaxTokens <= 0 {
@@ -484,7 +484,7 @@ func zapAnthropicCountTokens(ctx context.Context, auth string, reqBody []byte) (
 		return anthropicErr("authentication_error", authErr.Error(), 401)
 	}
 	if parseErr != nil {
-		return anthropicErr("invalid_request_error", "Failed to parse request: "+parseErr.Error(), 400)
+		return anthropicErr("invalid_request_error", "Failed to parse request: "+parseProblem(parseErr), 400)
 	}
 	if request.Model == "" {
 		return anthropicErr("invalid_request_error", "model is required", 400)

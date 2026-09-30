@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -735,6 +736,44 @@ func openrouterEquivalent(upstream string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// parseProblem states what is wrong with a request body in the caller's terms: the
+// JSON field and the kind of value it takes, never the Go type we decode it into.
+func parseProblem(err error) string {
+	if err == nil {
+		return ""
+	}
+	var te *json.UnmarshalTypeError
+	if errors.As(err, &te) {
+		field := strings.TrimPrefix(te.Field, ".")
+		if field == "" {
+			field = "the body"
+		}
+		want := te.Type.Kind().String()
+		switch te.Type.Kind() {
+		case reflect.Slice, reflect.Array:
+			want = "array"
+		case reflect.Map, reflect.Struct, reflect.Pointer, reflect.Interface:
+			want = "object"
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+			reflect.Float32, reflect.Float64:
+			want = "number"
+		case reflect.Bool:
+			want = "boolean"
+		}
+		return fmt.Sprintf("%s takes a %s, not a %s", field, want, te.Value)
+	}
+	var se *json.SyntaxError
+	if errors.As(err, &se) {
+		return fmt.Sprintf("the body is not valid JSON (at byte %d)", se.Offset)
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "Go ") || strings.Contains(msg, "openai.") || strings.Contains(msg, "struct") {
+		return "the body is not a valid request"
+	}
+	return msg
 }
 
 // paidLaneOff is the refusal for a model only its own vendor serves while the paid

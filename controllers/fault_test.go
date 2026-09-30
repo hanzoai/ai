@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -760,5 +761,20 @@ func TestRanAndFaultOfAnswerDifferentQuestions(t *testing.T) {
 		if got := faultOf(c.err) == faultProvider; got != c.failsOver {
 			t.Errorf("%s: fails over = %v, want %v", c.what, got, c.failsOver)
 		}
+	}
+}
+
+// A malformed body is described in the caller's terms, never by the Go type it
+// decodes into.
+func TestAParseProblemNamesNoGoType(t *testing.T) {
+	var v struct {
+		Messages []struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"messages"`
+	}
+	err := json.Unmarshal([]byte(`{"messages":[{"content":5}]}`), &v)
+	got := parseProblem(err)
+	if strings.Contains(got, "Go") || strings.Contains(got, "struct") || !strings.Contains(got, "array") {
+		t.Fatalf("parseProblem = %q", got)
 	}
 }

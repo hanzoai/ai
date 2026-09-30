@@ -138,7 +138,7 @@ func (c *ApiController) VideosGenerations() {
 	var req videosGenerationsRequest
 	badReq := ""
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
-		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		badReq = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if req.Model == "" {
 		badReq = "videos request requires a \"model\" field"
 	} else if req.Prompt == "" {

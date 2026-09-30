@@ -1764,7 +1764,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	var parsed chatRequest
 	refusal := ""
 	if err := json.Unmarshal(c.Body(), &parsed); err != nil {
-		refusal = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		refusal = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if why := casefolded(c.Body()); why != "" {
 		refusal = why
 	} else if f := unpricedField(c.Body()); f != "" {

@@ -402,7 +402,7 @@ func (c *ApiController) forward(p pass) bool {
 	sku := p.req.Model
 	d, err := outbound(p.body, p.req, p.knowledge)
 	if err != nil {
-		c.ResponseFailure(modelError("Failed to parse request: %s", err.Error()))
+		c.ResponseFailure(modelError("Failed to parse request: %s", parseProblem(err)))
 		return false
 	}
 	// What the answer reads from the request, read now: a streamed answer is billed

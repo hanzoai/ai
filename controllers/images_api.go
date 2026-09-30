@@ -77,7 +77,7 @@ func (c *ApiController) ImagesGenerations() {
 	var req imagesGenerationsRequest
 	badReq := ""
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
-		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		badReq = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if req.Model == "" {
 		badReq = "images request requires a \"model\" field"
 	} else if req.Prompt == "" {

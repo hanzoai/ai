@@ -127,7 +127,7 @@ func (c *ApiController) AudioSpeech() {
 	oversize := ""
 	badReq := ""
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
-		badReq = fmt.Sprintf("Failed to parse request: %s", err.Error())
+		badReq = fmt.Sprintf("Failed to parse request: %s", parseProblem(err))
 	} else if req.Model == "" {
 		badReq = "audio request requires a \"model\" field"
 	} else if req.Input == "" {
