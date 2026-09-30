@@ -35,10 +35,10 @@ func TestStreamCaptureUsageCapturesTokens(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	prompt, completion, total, text := streamCaptureUsage(strings.NewReader(sse), &out, nil, false, nil, &mark{id: "chatcmpl-req1", model: "gpt-4o-mini", seller: "hanzo"})
+	used, text := streamCaptureUsage(strings.NewReader(sse), &out, nil, false, nil, &mark{id: "chatcmpl-req1", model: "gpt-4o-mini", seller: "hanzo"})
 
-	if prompt != 12 || completion != 5 || total != 17 {
-		t.Fatalf("captured usage = (%d,%d,%d), want (12,5,17) — streamed tool call MUST capture real tokens", prompt, completion, total)
+	if used.prompt() != 12 || used.completion != 5 {
+		t.Fatalf("captured usage = (%d,%d), want (12,5) — streamed tool call MUST capture real tokens", used.prompt(), used.completion)
 	}
 	if !strings.Contains(text, "Hello") || !strings.Contains(text, `{"x":1}`) {
 		t.Errorf("accumulated output = %q, want it to contain content + tool args", text)
@@ -63,8 +63,8 @@ func TestStreamCaptureUsageForwardsUsageWhenRequested(t *testing.T) {
 		"",
 	}, "\n")
 	var out strings.Builder
-	_, _, total, _ := streamCaptureUsage(strings.NewReader(sse), &out, nil, true, nil, &mark{id: "chatcmpl-c2", model: "m", seller: "hanzo"})
-	if total != 5 {
+	used, _ := streamCaptureUsage(strings.NewReader(sse), &out, nil, true, nil, &mark{id: "chatcmpl-c2", model: "m", seller: "hanzo"})
+	if total := used.prompt() + used.completion; total != 5 {
 		t.Fatalf("total=%d, want 5", total)
 	}
 	if !strings.Contains(out.String(), `"usage"`) {

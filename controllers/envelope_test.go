@@ -747,7 +747,7 @@ func TestPipeToFamilyIsOurs(t *testing.T) {
 func TestToolStreamIsOurs(t *testing.T) {
 	var out strings.Builder
 	mk := ourMark()
-	prompt, completion, _, text := streamCaptureUsage(
+	used, text := streamCaptureUsage(
 		strings.NewReader(upstreamStream), &out, nil, true, nil, mk,
 	)
 	discloses(t, "streamed tool call", []byte(out.String()))
@@ -763,8 +763,8 @@ func TestToolStreamIsOurs(t *testing.T) {
 			t.Errorf("chunk %d model = %q, want the SKU", i, got)
 		}
 	}
-	if prompt != 14 || completion != 7 {
-		t.Errorf("billing read (%d,%d), want (14,7) — stamping must not touch the money", prompt, completion)
+	if used.prompt() != 14 || used.completion != 7 {
+		t.Errorf("billing read (%d,%d), want (14,7) — stamping must not touch the money", used.prompt(), used.completion)
 	}
 	if text != "2 + 2 = 4" {
 		t.Errorf("billing text = %q, want the whole completion", text)
@@ -778,10 +778,10 @@ func TestToolStreamIsOurs(t *testing.T) {
 	}
 }
 
-// TestProxyToolRequestIsOurs drives the second relay end to end — the path a tool
-// call or an image takes to an OpenAI-compatible upstream. Same wiring argument as
-// the family test: the envelope has to be reached, not just be correct.
-func TestProxyToolRequestIsOurs(t *testing.T) {
+// TestForwardIsOurs drives the second relay end to end — the path every chat request
+// takes to an OpenAI-compatible upstream, tools and images included. Same wiring
+// argument as the family test: the envelope has to be reached, not just be correct.
+func TestForwardIsOurs(t *testing.T) {
 	for _, mode := range []struct {
 		name   string
 		stream bool
@@ -801,15 +801,15 @@ func TestProxyToolRequestIsOurs(t *testing.T) {
 
 			c := visit("POST", "/v1/chat/completions")
 
-			// The SKU the caller asked for. proxyToolRequest replaces it with the
-			// upstream's own name for the model before dialling, which is exactly why
-			// the response used to hand back a name the caller never asked for.
+			// The SKU the caller asked for. The relay dials under the upstream's own
+			// name for the model, which is exactly why the response used to hand back
+			// a name the caller never asked for.
 			request := openai.ChatCompletionRequest{Model: sku, Stream: mode.stream}
 			provider := &object.Provider{
 				Owner: "admin", Name: "shared", Type: "OpenAI",
 				SubType: "qwen/qwen3-235b-a22b", ProviderUrl: upstream.URL,
 			}
-			c.proxyToolRequest(provider, &request, time.Now(), nil, false, "", nil)
+			forwarded(t, c, provider, &request, nil)
 
 			out := sent(c)
 			discloses(t, mode.name+" tool relay", []byte(out))

@@ -28,9 +28,9 @@ import (
 	openai "github.com/hanzoai/go-openai"
 )
 
-// sseStreamChunk is the subset of an OpenAI streaming chunk we parse to bill a
-// streamed tool-call response: token usage (from the forced include_usage chunk)
-// plus the delta content / tool-call arguments used for the tokenizer fallback.
+// sseStreamChunk is the subset of an OpenAI streaming chunk the relay reads to bill
+// a streamed answer: whether it carries usage (the forced include_usage chunk), and
+// the delta content / tool-call arguments the tokenizer falls back to.
 type sseStreamChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -42,11 +42,10 @@ type sseStreamChunk struct {
 			} `json:"tool_calls"`
 		} `json:"delta"`
 	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
+	// Usage is read here only for whether it is there. Its counts are read by
+	// sniffZenUsage, the one reader of usage in both dialects, because the split
+	// between a fresh and a cached prompt token is what the price turns on.
+	Usage *struct{} `json:"usage"`
 }
 
 // streamCaptureUsage copies an upstream OpenAI-style SSE stream from r to w while
@@ -54,14 +53,18 @@ type sseStreamChunk struct {
 // the output text (content + tool-call arguments) for a tokenizer fallback. A
 // forced usage-only chunk (usage present, no choices) is suppressed when the
 // client did not request usage; otherwise its envelope is fixed up for SDK
-// clients. This is the billing-critical core of the streaming tool path: it
-// guarantees a streamed tool call yields real token counts to bill.
+// clients. This is the billing-critical core of the streaming relay: it
+// guarantees a streamed answer yields real token counts to bill.
 //
 // mk is what stamps every event on the way out (envelope.go): each chunk goes out in
 // our envelope, stamped from the one mark, so the id holds for the whole stream.
-func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, strip *model.ReasoningStripper, mk *mark) (prompt, completion, total int, completionText string) {
+//
+// A line may be as long as the family relay allows (relayZenStream). A scanner that
+// meets a longer one stops, and everything after it — the rest of the answer and
+// the usage that bills it — would be dropped without an error anyone sees.
+func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, strip *model.ReasoningStripper, mk *mark) (t tokens, completionText string) {
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	var sb strings.Builder
 
 	for scanner.Scan() {
@@ -78,15 +81,7 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 				var chunk sseStreamChunk
 				if json.Unmarshal([]byte(raw), &chunk) == nil {
 					if chunk.Usage != nil {
-						if chunk.Usage.PromptTokens > 0 {
-							prompt = chunk.Usage.PromptTokens
-						}
-						if chunk.Usage.CompletionTokens > 0 {
-							completion = chunk.Usage.CompletionTokens
-						}
-						if chunk.Usage.TotalTokens > 0 {
-							total = chunk.Usage.TotalTokens
-						}
+						sniffZenUsage([]byte(raw), &t)
 					}
 					for _, ch := range chunk.Choices {
 						sb.WriteString(ch.Delta.Content)
@@ -130,7 +125,7 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 			flush()
 		}
 	}
-	return prompt, completion, total, sb.String()
+	return t, sb.String()
 }
 
 const (

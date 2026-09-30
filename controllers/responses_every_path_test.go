@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/go-openai"
@@ -46,7 +45,7 @@ func TestResponsesAnswersInResponsesOnEveryPath(t *testing.T) {
 				Owner: "admin", Name: "shared", Type: "OpenAI",
 				SubType: "qwen/qwen3-235b-a22b", ProviderUrl: upstream.URL,
 			}
-			c.proxyToolRequest(provider, &request, time.Now(), nil, false, "", nil)
+			forwarded(t, c, provider, &request, nil)
 
 			out := sent(c)
 			if !strings.Contains(out, mode.want) {

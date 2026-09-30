@@ -1761,8 +1761,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// invalid credential is 401 regardless of body validity — a malformed body
 	// from an unauthenticated caller must not return 200. A valid credential with
 	// a bad body gets 400 (not 200).
-	var request openai.ChatCompletionRequest
-	if err := json.Unmarshal(c.Body(), &request); err != nil {
+	var parsed chatRequest
+	if err := json.Unmarshal(c.Body(), &parsed); err != nil {
 		if from == callerBearer {
 			if authErr := c.authenticate(token); authErr != nil {
 				c.ResponseAuthError(authErr)
@@ -1772,6 +1772,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		c.ResponseErrorWithStatus(http.StatusBadRequest, fmt.Sprintf("Failed to parse request: %s", err.Error()))
 		return
 	}
+	request := parsed.ChatCompletionRequest
 
 	// Resolve org context for per-org model routing and pricing.
 	orgId := c.GetOrg()
@@ -1924,21 +1925,27 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// decided with the reservation and never after: what a race costs is N
 	// completions, so the hold either covers them or the request is not raced.
 	wide := 1
+	// The prompt as sent, every message of it. The reservation prices it and the
+	// relay sizes the route by it, so it is measured once.
+	measured := estimatePromptTokens(&request)
 	if authUser != nil {
 		subject := authUser.PayerSubject(ledger)
-		// Clamp the upstream completion ceiling BEFORE reserving so the proxied
-		// (tool/stream) upstream can never emit more than we reserve — the actual
-		// settle can never exceed the hold (R1b). reserveCompletionTokens also
-		// covers the QueryText pipeline's fixed cap, which ignores max_tokens.
+		// Clamp the upstream completion ceiling BEFORE reserving so the relayed
+		// upstream can never emit more than we reserve — the actual settle can
+		// never exceed the hold (R1b). reserveCompletionTokens also covers the
+		// QueryText pipeline's fixed cap, which ignores max_tokens.
 		request.MaxTokens = clampMaxTokens(request.MaxTokens)
-		est := estimateRequestCostCents(request.Model, estimatePromptTokens(&request), request.MaxTokens)
+		est := estimateRequestCostCents(request.Model, measured, request.MaxTokens)
 		var ok bool
 		if hold, wide, ok = c.widthFor(authUser, subject, est); !ok {
 			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message))
 			return
 		}
 	}
-	defer hold.settle(0)
+	// Released on the way out — unless a relayed stream took it. That answer settles
+	// from inside its own writer, which runs after this handler has returned, and a
+	// release here would win the one-shot settle before the answer's cost is known.
+	defer func() { hold.settle(0) }()
 
 	// ── Model families (Zen, Enso) ─────────────────────
 	// A family model is served by its family service, which owns identity, reasoning,
@@ -1959,17 +1966,17 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		recordRefusals(c.takeSnapshot(authUser), request.Model, familyRefused, authUser, isPremium, request.Stream, requestId, requestStartTime)
 	}
 
-	// ── Tool-calling pass-through ──────────────────────────────────────
-	// When the request includes tools/functions, the QueryText pipeline
-	// cannot handle structured tool calls. Proxy the raw request directly
-	// to the upstream provider's OpenAI-compatible endpoint so the LLM
-	// receives tool definitions and can return tool_calls in the response.
+	// ── Tools and images ───────────────────────────────────────────────
+	// A tool call or an image the family refused stops here. What follows a family
+	// is its route's tail — the resale copy of the model and the free text floor —
+	// and neither is chosen for tools or vision: an alternate could answer the call
+	// without the part that made it one, and an answer shaped wrongly is worse than
+	// an honest refusal that names the vendor and the reason.
 	//
-	// A tool request the family refused stops here. The pipeline below is
-	// text-only, so cascading it to an alternate would answer a tool call with
-	// prose — an answer shaped wrongly is worse than an honest refusal, and the
-	// refusal names the vendor and the reason.
-	if len(request.Tools) > 0 || request.ToolChoice != nil {
+	// With the paid lane off, only that floor is asked, so the same holds.
+	tooled := len(request.Tools) > 0 || request.ToolChoice != nil
+	media := requestHasMedia(&request)
+	if tooled || media {
 		if familyRefused != nil {
 			c.ResponseFailure(exhausted(request.Model, familyRefused))
 			return
@@ -1978,27 +1985,59 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			c.ResponseFailure(paidLaneOff(request.Model))
 			return
 		}
-		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
+	}
+
+	// ── The relay ──────────────────────────────────────────────────────
+	// A route that speaks OpenAI's dialect is sent the caller's own request —
+	// every message, every parameter, tools and images alike — and fails over
+	// along the route exactly as the text pipeline does (forward.go).
+	if relays(provider) {
+		question := lastUserText(&request)
+		// The router judge scores a text answer against the turn that asked for it,
+		// as it did before; a tool call or an image is not what it scores. Every
+		// value it reads is taken now, because it runs where a stream is finished.
+		var score func(string)
+		if routingRecorded && !tooled && !media {
+			agent, country, org := strings.Clone(c.Header("User-Agent")), strings.Clone(Country(c.Ctx)), strings.Clone(orgId)
+			sku, task := request.Model, routedTask
+			score = func(answer string) {
+				judgeRoutedResponse(agent, org, requestId, country, sku, task, question, answer)
+			}
+		}
+		if c.forward(pass{
+			req:     &request,
+			body:    c.Body(),
+			primary: provider,
+			route:   routeForPrompt(request.Model, orgId, measured),
+			prior:   familyRefused,
+			knowledge: c.retrieveKnowledgeIfEnabled(
+				question, retrievalOwner(authUser), c.retrievalStore(), c.GetAcceptLanguage()),
+			prompt:  measured,
+			user:    authUser,
+			premium: isPremium,
+			hold:    hold,
+			id:      requestId,
+			start:   requestStartTime,
+			judge:   score,
+		}) {
+			hold = nil
+		}
 		return
 	}
 
-	// Multimodal (vision): the QueryText pipeline below is text-only and would drop
-	// image parts. Forward multimodal requests verbatim to the upstream (the same path
-	// tool-calls take), so vision-capable models actually receive the images.
-	//
-	// Same stop as tool calls, for the same reason: cascading a request whose
-	// images the pipeline would silently discard produces an answer about
-	// nothing.
-	if requestHasMedia(&request) {
-		if familyRefused != nil {
-			c.ResponseFailure(exhausted(request.Model, familyRefused))
+	// Anthropic-type rows and rows with no OpenAI-compatible address keep the older
+	// path until the relay speaks their dialect: a tool call or an image converted
+	// for Anthropic, and plain text through the QueryText pipeline below.
+	if tooled || media {
+		if model.Upstream(provider.Type) != model.Anthropic {
+			c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
 			return
 		}
-		if FreeOnly() {
-			c.ResponseFailure(paidLaneOff(request.Model))
-			return
-		}
-		c.proxyToolRequest(provider, &request, requestStartTime, authUser, isPremium, orgId, hold)
+		// The body is built from the upstream's own id; the envelope, the usage row
+		// and the price read the SKU.
+		sku := request.Model
+		request.Model = provider.SubType
+		c.proxyToolRequestAnthropic(provider, &request, sku, requestStartTime, authUser, isPremium, orgId, requestId, hold)
 		return
 	}
 
@@ -2379,258 +2418,6 @@ func (c *ApiController) ListModels() {
 	c.Bytes(http.StatusOK, jsonResponse)
 }
 
-// proxyToolRequest forwards an OpenAI chat completion request that contains
-// tool definitions directly to the upstream provider, bypassing the QueryText
-// pipeline which cannot handle structured tool calls. The raw upstream response
-// (including tool_calls) is streamed back to the client.
-func (c *ApiController) proxyToolRequest(
-	provider *object.Provider,
-	request *openai.ChatCompletionRequest,
-	requestStartTime time.Time,
-	authUser *iam.User,
-	isPremium bool,
-	orgId string,
-	hold *budgetHold,
-) {
-	requestId := uuid.NewString()
-
-	// The wallet this request spends from — the same value ChatCompletions gated
-	// and reserved on, re-derived from the same credential rather than threaded,
-	// so the two can never be given different arguments.
-	ledger := c.billingOrg(authUser)
-
-	// The answer is stamped on the way out (envelope.go): our id, the SKU the caller
-	// asked for, the seller. The SKU has to be read BEFORE the line below, which
-	// replaces it with the upstream's own name for the model — that name is what the
-	// upstream needs and what this path used to hand back to the caller.
-	mk := &mark{id: "chatcmpl-" + requestId, model: request.Model, seller: seller(provider, authUser)}
-
-	// Rewrite model to upstream model name
-	request.Model = provider.SubType
-
-	// For Claude/Anthropic providers, convert to Anthropic Messages API format
-	if model.Upstream(provider.Type) == model.Anthropic {
-		c.proxyToolRequestAnthropic(provider, request, mk.model, requestStartTime, authUser, isPremium, orgId, requestId, hold)
-		return
-	}
-
-	// On the streaming path FORCE the upstream to emit a final usage chunk
-	// (stream_options.include_usage) so streamed tool calls are billed for their
-	// real token counts. Without this the streamed response carried no usage and
-	// was debited as $0 — any funded key + a dummy tool + stream:true = free
-	// premium inference. Remember whether the CLIENT requested usage so the
-	// injected usage-only chunk can be suppressed if it did not.
-	clientWantsUsage := true
-	if request.Stream {
-		clientWantsUsage = request.StreamOptions != nil && request.StreamOptions.IncludeUsage
-		request.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
-	}
-
-	// Determine upstream endpoint and auth
-	upstreamURL := upstream.Endpoint(provider, "chat/completions")
-	if upstreamURL == "" {
-		c.ResponseError("No upstream endpoint configured for provider: " + provider.Name)
-		return
-	}
-
-	// Marshal the full request (tools included) for OpenAI-compatible providers
-	body, err := json.Marshal(request)
-	if err != nil {
-		c.ResponseError(fmt.Sprintf("Failed to marshal request: %s", err.Error()))
-		return
-	}
-
-	// Build upstream HTTP request
-	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
-	if err != nil {
-		c.ResponseError(fmt.Sprintf("Failed to create upstream request: %s", err.Error()))
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(req, provider)
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		if authUser != nil {
-			errRecord := &usageRecord{
-				Owner:     ledger,
-				Model:     request.Model,
-				Provider:  provider.Name,
-				Origin:    provider.Origin(),
-				Premium:   isPremium,
-				Stream:    request.Stream,
-				Status:    "error",
-				ErrorMsg:  err.Error(),
-				ClientIP:  c.Fiber().IP(),
-				RequestID: requestId,
-			}
-			errRecord.bind(c.Context(), authUser)
-			errRecord.BYO, errRecord.Account = providerBYO(provider, authUser)
-			recordUsage(errRecord)
-			recordTrace(c.Context(), errRecord, requestStartTime)
-		}
-		c.ResponseError(fmt.Sprintf("Upstream request failed: %s", err.Error()))
-		return
-	}
-	// Closed by whoever reads it: this function for an answer read whole, and the
-	// stream callback for one relayed event by event — the callback outlives this call,
-	// so it takes the body and this defer stops seeing one.
-	defer func() {
-		if resp != nil {
-			resp.Body.Close()
-		}
-	}()
-
-	// ONE status decision, ahead of the split and ahead of every billing line
-	// below. Whether the caller asked for a stream does not change whose refusal
-	// this is, and nothing has been written yet either way — for a stream this is
-	// the last moment that is true, which is why the decision lives here rather
-	// than down in the relay.
-	//
-	// It also stands between a refusal and the billing below, which reads usage off
-	// the body and settles. An error body carries no usage, so anything reaching
-	// that code tokenizes the refusal itself and charges the caller for the round
-	// trip that turned them away — recorded as a success, since nothing down there
-	// looks at a status.
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		c.ResponseFailure(relay(mk.model, provider.Name, resp.StatusCode, b))
-		return
-	}
-
-	// Copy upstream response headers
-	for k, vals := range resp.Header {
-		for _, v := range vals {
-			c.Fiber().Response().Header.Add(k, v)
-		}
-	}
-
-	// WHAT AN ANSWER COST IS SETTLED IN ONE PLACE. Where the token counts come from
-	// differs between the two shapes; nothing after that does. A stream settles
-	// from its callback, after fiber has released the request, so settle reads the
-	// snapshot and never the controller.
-	snap := c.takeSnapshot(authUser)
-	settle := func(streamed bool, prompt, completion, total int) {
-		if total == 0 {
-			total = prompt + completion
-		}
-		actualCents := calculateCostCentsWithCache(request.Model, prompt, completion, 0, 0)
-		if authUser != nil {
-			successRecord := &usageRecord{
-				Owner:            ledger,
-				Organization:     authUser.Owner,
-				Model:            request.Model,
-				Provider:         provider.Name,
-				Origin:           originOf(provider, mk),
-				CostNanoExact:    mk.cogs(),
-				PromptTokens:     prompt,
-				CompletionTokens: completion,
-				TotalTokens:      total,
-				Currency:         "USD",
-				Premium:          isPremium,
-				Stream:           streamed,
-				Status:           "success",
-				ClientIP:         snap.ip,
-				RequestID:        requestId,
-			}
-			successRecord.bind(snap.ctx, authUser)
-			successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
-			recordUsage(successRecord)
-			recordTrace(snap.ctx, successRecord, requestStartTime)
-		}
-		hold.settle(actualCents)
-	}
-
-	if request.Stream {
-		// Stream: copy SSE events while capturing token usage for billing.
-		c.SetHeader("Content-Type", "text/event-stream")
-		c.SetHeader("Cache-Control", "no-cache")
-		c.SetHeader("Connection", "keep-alive")
-		c.Status(resp.StatusCode)
-
-		// Copy the SSE stream to the client while capturing token usage (and the
-		// output text for a tokenizer fallback). This is the billing-critical core
-		// of the streaming tool path — see streamCaptureUsage. A reasoning-inlining
-		// upstream (DeepSeek) also gets its leading <think></think> block stripped
-		// from the forwarded content; every other upstream streams unchanged.
-		var strip *model.ReasoningStripper
-		if model.InlinesReasoning(request.Model) {
-			strip = &model.ReasoningStripper{}
-		}
-		// THE CAPTURE AND THE SETTLEMENT BOTH RUN INSIDE THE STREAM, and they have to.
-		// fasthttp produces a streamed body by draining this writer while it serialises
-		// the response, so the callback has not run when SendStreamWriter returns —
-		// measured, not assumed. Read outside, every count here is still zero, and a
-		// streamed answer would be billed its prompt and no completion at all.
-		//
-		// The upstream body travels in for the same reason: left to the defer above it
-		// would be closed before the relay read a byte, and the client would be sent
-		// nothing.
-		upstream := resp.Body
-		resp = nil
-		_ = c.SendStreamWriter(func(w *bufio.Writer) {
-			defer upstream.Close()
-			prompt, completion, total, text := streamCaptureUsage(
-				upstream, w, func() { _ = w.Flush() },
-				clientWantsUsage, strip, mk,
-			)
-			// Captured from the forced usage chunk, or tokenized as a fallback so a
-			// successful streamed response is never billed as zero.
-			if completion == 0 && total == 0 {
-				if pt, err := model.OpenaiNumTokensFromMessages(request.Messages, request.Model); err == nil {
-					prompt = pt
-				}
-				completion, _ = model.GetTokenSize(request.Model, text)
-			}
-			settle(true, prompt, completion, total)
-		})
-	} else {
-		// Non-streaming: read full response, extract token counts, forward
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			c.ResponseError(fmt.Sprintf("Failed to read upstream response: %s", err.Error()))
-			return
-		}
-
-		// What goes out is ours (envelope.go); what came in is what the billing below
-		// reads. Stamping is a disclosure decision, never a pricing one, so the two
-		// bodies stay separate — and it happens here so the usage row can record the
-		// upstream the stamp just took out of the answer.
-		out := mk.stamp(respBody)
-
-		// Try to extract usage for billing
-		var upstreamResp struct {
-			Usage struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-				TotalTokens      int `json:"total_tokens"`
-			} `json:"usage"`
-		}
-		_ = json.Unmarshal(respBody, &upstreamResp)
-
-		prompt := upstreamResp.Usage.PromptTokens
-		completion := upstreamResp.Usage.CompletionTokens
-		total := upstreamResp.Usage.TotalTokens
-		if completion == 0 && total == 0 {
-			// Upstream returned no usage — tokenize so a successful tool response
-			// is never billed as zero.
-			if pt, err := model.OpenaiNumTokensFromMessages(request.Messages, request.Model); err == nil {
-				prompt = pt
-			}
-			completion, _ = model.GetTokenSize(request.Model, string(respBody))
-		}
-		settle(false, prompt, completion, total)
-
-		// Strip a reasoning-inlining upstream's leading <think></think> block from
-		// the forwarded body (billing above already tokenized the original).
-		if model.InlinesReasoning(request.Model) {
-			out = stripReasoningBody(out)
-		}
-		c.answerBody(out)
-	}
-}
-
 // proxyToolRequestAnthropic handles tool-calling requests for Claude/Anthropic
 // providers by converting the OpenAI format to Anthropic Messages API format
 // and converting the response back.
@@ -2649,7 +2436,8 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	requestId string,
 	hold *budgetHold,
 ) {
-	// See proxyToolRequest: the same wallet ChatCompletions gated and reserved on.
+	// The same wallet ChatCompletions gated and reserved on, re-derived from the same
+	// credential rather than threaded, so the two cannot be given different arguments.
 	ledger := c.billingOrg(authUser)
 
 	baseURL := provider.ProviderUrl

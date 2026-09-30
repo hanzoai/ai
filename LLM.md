@@ -498,6 +498,44 @@ comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. No
 principal bypasses it: the gate always consults the balance, and a lookup that
 fails returns 500 rather than free access. To verify premium/zen, credit the org.
 
+## The chat relay — the caller's body, as written (`controllers/forward.go`)
+
+Every non-family `/v1/chat/completions` (and `/v1/responses`, which becomes one)
+whose route row `relays` — an OpenAI-compatible chat address, not Anthropic's
+dialect — is sent the CALLER'S OWN BODY. Plain text, tools and images take the
+one path. The relay writes four things and only these: `model` (each provider's
+own id), the completion ceiling when the hold covers less than the caller asked
+(under the caller's key; when they named none, `max_completion_tokens` to an
+`OpenAI` row and `max_tokens` elsewhere), `stream_options.include_usage` on a
+stream, and retrieved knowledge as one leading system message. `withheld` is
+not sent on: `fast`/`retrieval`/`retrieval_store` (ours), and the fields that buy
+something on OUR account the SKU price does not cover (`models`, `provider`,
+`transforms`, `route`, `plugins`, `web_search_options`, `service_tier` — the family
+pipe's reason). Nothing else is touched: every turn, temperature 0, seed,
+`response_format`, `stop`, vendor extras. `chatRequest` holds `response_format` and `stop` raw because go-openai
+cannot decode a `json_schema` or a string `stop`, which used to 400 before routing.
+
+It fails over the way `ask.cascade` does — same `candidates`, `retryTransient`,
+`cooled`, `announce`, `recordRefusals`, `exhausted` — and every decision is made
+on the STATUS, before a byte is written. A stream is judged by its opening frames
+(`opening`, the family's rule): an error inside a 200 moves the request; the
+first answer frame commits it, and nothing after that moves it. `dial` is the
+seam the cascade tests script. Billing is by the SKU, with
+`prompt_tokens_details.cached_tokens` split out and priced as cached.
+
+**A relayed stream OWNS ITS HOLD.** The callback settles the real cost after the
+handler has returned, and `budgetHold.settle` is one-shot, so the handler's
+deferred release would win and the local ledger would never see a stream's spend.
+`forward` reports that it handed the hold to a stream and the handler lets go;
+the callback releases it on the way out if it ends without settling. The text
+pipeline and the family pipe still release before their streams settle.
+
+**The relay does not race.** A relayed attempt is committed at its status, so a
+`fast` request takes the cascade; the reservation `widthFor` made covers it.
+Anthropic-type rows and endpoint-less rows keep the older paths
+(`proxyToolRequestAnthropic`, the QueryText cascade). An Anthropic-type FALLBACK on
+a relayed route is passed over, not converted.
+
 ## Decisions — `/v1/decisions`, the one decision path
 
 `controllers/decisions.go`. It reaches the decision service (`KAI_URL`) through one

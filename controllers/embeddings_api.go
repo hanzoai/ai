@@ -352,8 +352,8 @@ func (c *ApiController) jsonResponse(v any) {
 
 // proxyJSON forwards a pre-marshalled JSON body to the provider's apiPath
 // endpoint (e.g. "embeddings", "rerank") and returns the upstream response
-// verbatim, recording usage for billing. It is the non-streaming twin of
-// proxyToolRequest, used by Embeddings and the native branch of Rerank.
+// verbatim, recording usage for billing. It is the non-streaming twin of the
+// chat relay (forward), used by Embeddings and the native branch of Rerank.
 func (c *ApiController) proxyJSON(provider *object.Provider, apiPath string, body []byte, userModel string, authUser *iam.User, isPremium bool, startTime time.Time) {
 	requestId := uuid.NewString()
 

@@ -16,7 +16,7 @@ package controllers
 
 // envelope.go — the envelope a relayed completion leaves in.
 //
-// Two paths relay an answer produced elsewhere (pipeToFamily, proxyToolRequest) and
+// Two paths relay an answer produced elsewhere (pipeToFamily, forward) and
 // an answer arrives wearing whoever produced it: an id in someone else's shape,
 // fields they invented, and the name of whichever sub-provider they picked this
 // second. A customer bought inference from Hanzo. Who we bought it from is our side

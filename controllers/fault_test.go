@@ -488,9 +488,9 @@ func TestFaultString(t *testing.T) {
 
 // ── the proxied surfaces ─────────────────────────────────────────────────────
 
-// proxied drives the real tool/vision proxy against an upstream answering status
-// with body, and reports what the caller was told plus whether the upstream was
-// actually dialled.
+// proxied drives the real relay — the path a tool call or an image takes — against an
+// upstream answering status with body, and reports what the caller was told plus
+// whether the upstream was actually dialled.
 //
 // The reach matters as much as the status: a proxy that refused before sending
 // anything would answer 503 too, and pass a test that only reads the code while
@@ -515,8 +515,7 @@ func proxied(t *testing.T, status int, body string) (c *ApiController, asked boo
 		ProviderUrl: up.URL, ClientSecret: "k", SubType: "glm-5.2-upstream"}
 
 	c = visit(http.MethodPost, "/v1/chat/completions")
-	c.Fiber().Request().SetBody([]byte("{}"))
-	c.proxyToolRequest(prov, req, time.Now(), nil, false, "org-a", nil)
+	forwarded(t, c, prov, req, nil)
 	return c, asked
 }
 
@@ -569,8 +568,7 @@ func TestAProxiedRefusalIsNotBilled(t *testing.T) {
 		ProviderUrl: up.URL, ClientSecret: "k", SubType: "glm-5.2-upstream"}
 
 	c := visit(http.MethodPost, "/v1/chat/completions")
-	c.Fiber().Request().SetBody([]byte("{}"))
-	c.proxyToolRequest(prov, req, time.Now(), nil, false, "org-a", hold)
+	forwarded(t, c, prov, req, hold)
 
 	hold.settle(0) // the call site's fail-safe; a real settle already won if one happened
 	if avail, _ := object.GlobalBalanceLedger.Available(subject); avail != 1000 {

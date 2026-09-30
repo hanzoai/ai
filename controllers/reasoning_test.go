@@ -126,13 +126,13 @@ func TestStreamCaptureUsageStripsReasoning(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	_, completion, total, completionText := streamCaptureUsage(
+	used, completionText := streamCaptureUsage(
 		strings.NewReader(sse), &out, nil, true, &model.ReasoningStripper{},
 		&mark{id: "chatcmpl-req", model: "zen5-pro", seller: "hanzo"},
 	)
 
 	// Billing sees the ORIGINAL content (reasoning + answer) and the usage chunk.
-	if completion != 8 || total != 18 {
+	if completion, total := used.completion, used.prompt()+used.completion; completion != 8 || total != 18 {
 		t.Errorf("billing: completion=%d total=%d, want 8/18", completion, total)
 	}
 	if !strings.Contains(completionText, "</think>") {
