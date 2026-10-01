@@ -1326,12 +1326,22 @@ func familyBody(body []byte, apiPath string, maxTokens int) []byte {
 // nothing left running that would ever give them back.
 func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, maxTokens int, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) []attempt {
 	// done ends the request here: the client has its answer, or has gone.
+	// A covered request's paid upstream: a family answer that states a paid rung's
+	// rate and was not settled from its own usage — refused, cut, or passed over for
+	// another route — is charged the whole hold, once, since what it cost is unknown.
+	grant, pm := grantOf(c.Ctx), markOf(c.Ctx)
+	unsettled := func() {
+		if grant != nil && pm.tried.Load() && pm.settled.CompareAndSwap(false, true) {
+			grant.Settle(grant.Spend)
+		}
+	}
 	done := func() []attempt {
 		hold.settle(0)
 		// The request is over: a plan's hold ends here, at nothing more than a usage
 		// record already settled.
-		if g := grantOf(c.Ctx); g != nil {
-			g.Settle(0)
+		unsettled()
+		if grant != nil {
+			grant.Settle(0)
 		}
 		return nil
 	}
@@ -1369,6 +1379,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if c.Context().Err() != nil {
 			return done()
 		}
+		unsettled()
 		return []attempt{note(err)}
 	}
 
@@ -1461,8 +1472,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
 	// the family may answer from a paid rung whose cost fits, and tells us its rate.
-	if g := grantOf(c.Ctx); g != nil && g.Spend > 0 && hanzoFamily(fam) {
-		req.Header.Set(spendHeader, spendUSD(g.Spend))
+	if spend := spendFor(c.Ctx, fam); spend != "" {
+		req.Header.Set(spendHeader, spend)
 	}
 
 	// dispatch offers this request to ONE route of ONE family: the family decides the
@@ -1491,7 +1502,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// The credential is the family's own: another family's never travels.
 			r.Header.Del("Authorization")
 		}
-		if !hanzoFamily(f) {
+		if spend := spendFor(c.Ctx, f); spend != "" {
+			r.Header.Set(spendHeader, spend)
+		} else {
 			r.Header.Del(spendHeader)
 		}
 		upstream.Authorize(r, p)
@@ -1510,6 +1523,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// A stream's 200 arrives before its answer; send judges its opening frames
 		// on each key (family_open.go).
 		resp, err := f.send(r, p, f.free(s), stream || assemble)
+		// A Hanzo family that states a paid rung's rate answered from paid upstream,
+		// whatever its status: the request buys no second paid answer.
+		if resp != nil && hanzoFamily(f) && readCostRate(resp.Header) != nil {
+			pm.tried.Store(true)
+		}
 		// A family that answered a stream request whole is a whole answer: judged by
 		// its status like any buffered one, and relayed as it came.
 		if assemble && err == nil && resp != nil && resp.StatusCode == http.StatusOK && !eventStream(resp) {
@@ -1856,6 +1874,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if !first.IsZero() {
 			sv.first = first.Sub(start)
 		}
+		// The answer relayed is the paid one: its usage record settles it (planCost).
+		if sv.rate != nil {
+			pm.settled.Store(true)
+		}
 		cents := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, bill, "success", "")
 		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, cents, start)
 	}
@@ -1890,6 +1912,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			defer bill.settle(0)
 			defer upstream.Close()
 			defer hold.settle(0)
+			defer unsettled()
 			settle(relayZenStream(w, upstream, mk))
 		})
 		return nil
@@ -1905,6 +1928,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			defer bill.settle(0)
 			defer upstream.Close()
 			defer hold.settle(0)
+			defer unsettled()
 			settle(assembleZenStream(w, upstream, mk, heartbeat))
 		})
 		return nil

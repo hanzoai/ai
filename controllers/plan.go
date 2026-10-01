@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
@@ -73,6 +74,35 @@ func FamilyOf(model string) string {
 		return zenFam.name
 	}
 	return ""
+}
+
+// planMark is what one covered request has done with its paid upstream: a family
+// answered it from a paid rung (tried), and that answer's cost was settled.
+type planMark struct{ tried, settled atomic.Bool }
+
+// markKey is where a covered request keeps its mark.
+type markKey struct{}
+
+// markOf is the request's mark, made on first use. A pointer, so a stream's writer,
+// which outlives the request, keeps reading the same one.
+func markOf(c *zip.Ctx) *planMark {
+	if m, ok := c.Locals(markKey{}).(*planMark); ok {
+		return m
+	}
+	m := &planMark{}
+	c.Locals(markKey{}, m)
+	return m
+}
+
+// spendFor is the spend a dispatch of this request to f carries, in USD: the plan's
+// hold, to a Hanzo family only, and only until a paid rung was tried — one request
+// buys at most one paid answer. "" sends none.
+func spendFor(c *zip.Ctx, f *modelFamily) string {
+	g := grantOf(c)
+	if g == nil || g.Spend <= 0 || !hanzoFamily(f) || markOf(c).tried.Load() {
+		return ""
+	}
+	return spendUSD(g.Spend)
 }
 
 // hanzoFamily reports whether f is one of Hanzo's own families, whose routing is

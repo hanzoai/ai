@@ -298,3 +298,45 @@ func TestARefusedCoveredRequestSettlesAtNothing(t *testing.T) {
 		}
 	}
 }
+
+// A family refusal that states a paid rung's rate is a paid answer the family would
+// not relay: what it cost is unknown, so the plan is charged the whole hold, never
+// nothing, whatever the status.
+func TestARefusalCarryingThePaidRateSettlesTheWholeHold(t *testing.T) {
+	for _, status := range []int{http.StatusBadGateway, http.StatusInternalServerError, http.StatusOK} {
+		body := `{"error":{"message":"the model returned an unusable answer","type":"zen_error","code":502}}`
+		if status == http.StatusOK {
+			body = `{"id":"1","model":"enso-pro","choices":[]}`
+		}
+		enso(t, status, "8.00,40.00,0.40", body)
+		got := pipeCovered(t, 1_000_000_000)
+		charged := int64(0)
+		for _, n := range got {
+			charged += n
+		}
+		if charged != 1_000_000_000 {
+			t.Errorf("status %d with the paid rate settled %v, want the whole hold once", status, got)
+		}
+	}
+}
+
+// Once a paid rung was tried, no later dispatch of the request carries the plan's
+// spend: one request buys at most one paid answer. Only a Hanzo family is ever sent
+// it, and only while the grant holds something.
+func TestThePlansSpendIsNeverSentTwice(t *testing.T) {
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	if got := spendFor(c.Ctx, ensoFam); got != "" {
+		t.Fatalf("no grant sent spend %q", got)
+	}
+	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 1_000_000_000, Settle: func(int64) {}})
+	if got := spendFor(c.Ctx, ensoFam); got != "1.000000000" {
+		t.Fatalf("a covered request sent spend %q, want the hold", got)
+	}
+	if got := spendFor(c.Ctx, freeFamily()); got != "" {
+		t.Fatalf("a borrowed family was sent spend %q", got)
+	}
+	markOf(c.Ctx).tried.Store(true)
+	if got := spendFor(c.Ctx, ensoFam); got != "" {
+		t.Fatalf("after a paid rung was tried the request still sends spend %q", got)
+	}
+}
