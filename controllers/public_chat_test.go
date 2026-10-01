@@ -72,20 +72,51 @@ func TestForwardedAddressIsIgnoredFromAPublicPeer(t *testing.T) {
 	}
 }
 
-// Reached through our own ingress the peer is private, and the edge's header is the
-// only thing that names the visitor.
-func TestForwardedAddressIsBelievedFromOurOwnIngress(t *testing.T) {
-	viaIngress := func(cf string) string { return publicAddr("10.244.1.7", cf) }
-	if got := viaIngress("198.51.100.77"); got != "198.51.100.77" {
-		t.Fatalf("publicAddr = %q, want the edge-observed 198.51.100.77", got)
+// Reached from a peer of ours, the host's stamp is the only thing that names the
+// visitor, and no stamp names nobody.
+func TestTheStampIsBelievedFromOurOwnPeer(t *testing.T) {
+	viaPod := func(stamp string) string { return publicAddr("10.244.1.7", stamp) }
+	if got := viaPod("198.51.100.77"); got != "198.51.100.77" {
+		t.Fatalf("publicAddr = %q, want the stamped 198.51.100.77", got)
 	}
-	if publicVisitor(viaIngress("198.51.100.1")) == publicVisitor(viaIngress("198.51.100.2")) {
-		t.Fatal("two visitors behind the ingress collapsed into one bucket")
+	if publicVisitor(viaPod("198.51.100.1")) == publicVisitor(viaPod("198.51.100.2")) {
+		t.Fatal("two visitors the host told apart collapsed into one bucket")
 	}
-	// No edge header behind the ingress: everyone shares the ingress's count. Safe
-	// direction — the lane closes early rather than becoming unbounded.
-	if got := publicAddr("10.244.1.7", ""); got != "10.244.1.7" {
-		t.Fatalf("with no edge header the peer must be the key, got %q", got)
+	// No stamp from a peer of ours: no public caller, so no visitor. Keyed on the
+	// peer, every pod would hold a free allowance of its own.
+	if got := publicAddr("10.244.1.7", ""); got != "" {
+		t.Fatalf("an unstamped peer of ours must name no caller, got %q", got)
+	}
+}
+
+// AN IN-CLUSTER WORKLOAD CANNOT NAME ITSELF EITHER. Reached from a peer of ours with
+// no host stamp, CF-Connecting-IP is whatever that workload wrote; believed, it was
+// a fresh free-lane identity per request. The lane refuses the request as carrying
+// no public caller, whatever the header says.
+func TestAnUnstampedPeerOfOursIsNoPublicCaller(t *testing.T) {
+	for _, peer := range []string{"10.244.1.7:41000", "127.0.0.1:41000", "0.0.0.0:0"} {
+		ask := func(cf string) *ApiController {
+			c := from(visit(http.MethodPost, "/v1/chat/public"), peer)
+			c.Fiber().Request().Header.Set("CF-Connecting-IP", cf)
+			return c
+		}
+		a, b := ask("198.51.100.1"), ask("198.51.100.2")
+		if got := a.stated(); got != "" {
+			t.Fatalf("peer %s: stated = %q; only the host's stamp is a statement", peer, got)
+		}
+		if va, vb := Visitor(a.Ctx), Visitor(b.Ctx); va != "" || vb != "" {
+			t.Fatalf("peer %s: CF-Connecting-IP minted visitors %q and %q", peer, va, vb)
+		}
+	}
+
+	t.Setenv("PUBLIC_CHAT_DAILY", "5")
+	servablePool(t)
+	c := from(visit(http.MethodPost, "/v1/chat/public"), "10.244.1.7:41000")
+	c.Fiber().Request().SetBody([]byte(`{"messages":[{"role":"user","content":"hi"}]}`))
+	c.Fiber().Request().Header.Set("CF-Connecting-IP", "198.51.100.3")
+	c.ChatCompletionsPublic()
+	if status, code := refusalOf(t, c); status != http.StatusForbidden || code != "public_no_address" {
+		t.Fatalf("an unstamped in-cluster caller answered %d/%s, want 403/public_no_address", status, code)
 	}
 }
 
@@ -338,12 +369,12 @@ func TestPublicAnswerIsCapped(t *testing.T) {
 // ---- the handler itself ---------------------------------------------------
 
 // publicCall drives the real ChatCompletionsPublic handler and returns the recorder.
-func publicCall(t *testing.T, remote, cf string) *ApiController {
+func publicCall(t *testing.T, remote, stamp string) *ApiController {
 	t.Helper()
 	c := from(visit(http.MethodPost, "/v1/chat/public"), remote)
 	c.Fiber().Request().SetBody([]byte(`{"messages":[{"role":"user","content":"hi"}]}`))
-	if cf != "" {
-		c.Fiber().Request().Header.Set("CF-Connecting-IP", cf)
+	if stamp != "" {
+		c.Fiber().Request().Header.Set(address.Header, stamp)
 	}
 	c.ChatCompletionsPublic()
 	return c

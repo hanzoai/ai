@@ -192,7 +192,7 @@ func utcDay(t time.Time) string { return t.UTC().Format("2006-01-02") }
 
 // Visitor is who a caller this estate cannot name is, and the composition is the
 // whole of it: the address, then a digest of it. Empty when the request carries no
-// address at all — a socket peer with nothing in front of it naming one.
+// public caller — a peer of ours that the host did not stamp with one.
 //
 // It is exported because the router's ceilings ask the same question this lane does.
 // Two derivations of "who is this, roughly" would be two answers a caller could be
@@ -204,12 +204,11 @@ func Visitor(c *zip.Ctx) string {
 // publicVisitor is the only identity an anonymous caller has: a digest of the address
 // the edge observed.
 //
-// THE FORWARDED ADDRESS IS BELIEVED ONLY FROM INSIDE. A caller sets X-Forwarded-For
-// and CF-Connecting-IP freely, so trusting either from a public peer hands every
-// request a fresh quota and the ceiling stops existing. The socket peer decides:
-// reached through our own ingress the peer is private and the edge's header names the
-// visitor; reached directly the peer IS the visitor and the header is ignored. A
-// deployment with no edge in front therefore counts by socket — stricter, never looser.
+// THE STATED ADDRESS IS BELIEVED ONLY FROM INSIDE. A caller sets any header freely,
+// so trusting one from a public peer hands every request a fresh quota and the
+// ceiling stops existing. The socket peer decides: reached through the host the peer
+// is ours and the host's stamp names the visitor; reached directly the peer IS the
+// visitor and the stamp is ignored.
 //
 // The address is hashed and never kept. It travels into a log line and a usage row,
 // and an address in either is a record of who visited that nothing here needs.
@@ -223,43 +222,40 @@ func publicVisitor(addr string) string {
 	return "visitor:" + hex.EncodeToString(sum[:])[:32]
 }
 
-// publicAddr is the address a public visitor arrived from: the peer, unless the peer
-// is one of our own and something in front of us named the real one.
+// publicAddr is the address a public visitor arrived from: the peer when it is a
+// stranger, the host's stamp when the peer is one of our own, and "" when neither
+// names a public caller.
 //
 // It takes the two values rather than a request because that is all it ever read.
 // THE PEER DECIDES WHETHER THE STATED ADDRESS IS BELIEVED, and that is the whole
 // safety property: a stranger who reached us directly has a routable peer, so their
 // own claim about their address is ignored. Only a peer of ours — a socket, an
 // in-cluster hop — means the address arrived from a layer entitled to state it.
+//
+// A PEER OF OURS THAT STATES NOBODY HAS NO PUBLIC CALLER BEHIND IT. The host stamps
+// "" for an in-cluster caller that never crossed the edge, and a workload that
+// reaches this process without the host stamps nothing. Neither is a visitor, so
+// the answer is "": the lane refuses it and the router counts it in its one
+// unaddressed lane. Keying it on the peer instead would give every pod its own
+// free allowance.
 func publicAddr(peer, stated string) string {
 	peer = strings.TrimSpace(peer)
 	if peer != "" && !internalAddr(peer) {
 		return peer
 	}
-	if stated := strings.TrimSpace(stated); stated != "" {
-		return stated
-	}
-	// Neither a routable peer nor a stated address: everyone who arrives this way
-	// shares one count, and the lane closes for all of them once it is spent.
-	return peer
+	return strings.TrimSpace(stated)
 }
 
-// stated is who a layer in front of this process says is calling.
+// stated is who the host in front of this process says is calling: address.Header,
+// and nothing else.
 //
-// TWO DEPLOYMENTS, ONE READ. As a subsystem the peer is the unix socket the host
-// reached us over — empty, and identical for everyone — so the host resolves the
-// caller and stamps it (address.Header). Served directly, nothing is in front
-// but Cloudflare, which overwrites CF-Connecting-IP at its edge; X-Forwarded-For
-// merely gains an entry and keeps whatever the caller put in front of it, so that
-// one is never read.
-//
-// The host's answer wins where both are present: it is the hardened one, derived
-// from the connection it can actually see.
+// As a subsystem the peer is the unix socket the host reached us over — empty, and
+// identical for everyone — so the host resolves the caller from the connection it
+// can see and stamps it, overwriting any copy the caller sent. CF-Connecting-IP is
+// never read here: from a peer of ours it is whatever an in-cluster workload wrote,
+// and believing it let any workload choose its free-lane identity per request.
 func (c *ApiController) stated() string {
-	if addr := c.Header(address.Header); addr != "" {
-		return addr
-	}
-	return c.Header("CF-Connecting-IP")
+	return c.Header(address.Header)
 }
 
 // Country is the caller's country as the host in front stated it (address.Country),

@@ -21,12 +21,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/ai/address"
 	"github.com/zap-proto/zip"
 )
 
-// askPublicly serves one POST /v1/chat/public through the real mounted router and
-// returns the status and the house error code, if the body carries one.
-func askPublicly(t *testing.T, peer string) (int, string) {
+// askPublicly serves one POST /v1/chat/public through the real mounted router, stamped
+// for caller the way the host stamps it, and returns the status and the house error
+// code, if the body carries one.
+func askPublicly(t *testing.T, caller string) (int, string) {
 	t.Helper()
 
 	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
@@ -35,7 +37,7 @@ func askPublicly(t *testing.T, peer string) (int, string) {
 	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/chat/public",
 		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("CF-Connecting-IP", peer)
+	req.Header.Set(address.Header, caller)
 
 	resp, err := app.Fiber().Test(req)
 	if err != nil {
