@@ -84,7 +84,7 @@ func TestTheStreamRelayMarksItsFirstChunk(t *testing.T) {
 func TestSniffZenUsageReadsReasoning(t *testing.T) {
 	var got tokens
 	sniffZenUsage([]byte(`{"usage":{"prompt_tokens":214,"completion_tokens":20,"completion_tokens_details":{"reasoning_tokens":20},"prompt_tokens_details":{"cached_tokens":14}}}`), &got)
-	if got != (tokens{fresh: 200, cached: 14, completion: 20, reasoning: 20}) {
+	if got != (tokens{fresh: 200, cached: 14, completion: 20, reasoning: 20, reported: true}) {
 		t.Errorf("tokens = %+v", got)
 	}
 	var none tokens

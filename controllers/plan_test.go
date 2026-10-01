@@ -154,8 +154,13 @@ func TestAPlanCoveredFamilyCallCarriesSpendAndSettlesAtTheRate(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			if len(settled) != 1 || settled[0] != tc.want {
-				t.Fatalf("settled %v, want [%d]", settled, tc.want)
+			if len(settled) == 0 || settled[0] != tc.want {
+				t.Fatalf("settled %v, want %d first", settled, tc.want)
+			}
+			for _, n := range settled[1:] {
+				if n != 0 {
+					t.Fatalf("settled %v: a later settle charged more", settled)
+				}
 			}
 			if len(events) != 1 || !events[0].Plan || events[0].Allowance != "" {
 				t.Fatalf("usage events %+v, want one marked as the plan's, counting no allowance", events)
@@ -223,6 +228,73 @@ func TestTheSpendNeverReachesAnotherFamily(t *testing.T) {
 	for _, s := range poolSpend {
 		if s != "" {
 			t.Fatalf("the pool's vendor was sent the plan's spend %q", s)
+		}
+	}
+}
+
+// enso stands up an Enso service that answers status with body and, when rate is
+// set, states that a paid rung served at that rate.
+func enso(t *testing.T, status int, rate, body string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if rate != "" {
+			w.Header().Set(costRateHeader, rate)
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	restore(t, ensoFam)
+	ensoFam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
+	}
+	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro"}}
+	ensoFam.ids = []string{"enso-pro"}
+	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
+}
+
+// pipeCovered sends one covered enso-pro request through the family pipe and
+// answers what its grant was settled with.
+func pipeCovered(t *testing.T, spend int64) []int64 {
+	t.Helper()
+	cooled.forget()
+	var mu sync.Mutex
+	var settled []int64
+	grant := &object.LimitGrant{Plan: "max-20x", Spend: spend, Settle: func(n int64) { mu.Lock(); settled = append(settled, n); mu.Unlock() }}
+	prev := object.UsageRecorder()
+	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { return nil })
+	t.Cleanup(func() { object.SetUsageRecorder(prev) })
+	body := []byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	c.Fiber().Request().SetBody(body)
+	Cover(c.Ctx, grant)
+	c.pipeToFamily(ensoFam, "chat/completions", "openai", "enso-pro", body, false, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, time.Now())
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]int64(nil), settled...)
+}
+
+// A paid rung's answer that reports no usage settles the whole hold: what it cost is
+// unknown, so the budget is charged the most it could have been.
+func TestAPaidAnswerWithoutUsageSettlesTheWholeHold(t *testing.T) {
+	enso(t, http.StatusOK, "0.5,1,0", `{"id":"1","model":"enso-pro","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+	if got := pipeCovered(t, 50_000_000); len(got) == 0 || got[0] != 50_000_000 {
+		t.Fatalf("settled %v, want the whole 50000000 hold first", got)
+	}
+}
+
+// A covered request its family refuses, with nothing served, settles at nothing as
+// soon as it ends: its hold never waits out its keeper.
+func TestARefusedCoveredRequestSettlesAtNothing(t *testing.T) {
+	enso(t, http.StatusBadRequest, "", `{"error":{"message":"bad request"}}`)
+	got := pipeCovered(t, 50_000_000)
+	if len(got) == 0 {
+		t.Fatal("a refused covered request was never settled")
+	}
+	for _, n := range got {
+		if n != 0 {
+			t.Fatalf("settled %v, want nothing charged", got)
 		}
 	}
 }

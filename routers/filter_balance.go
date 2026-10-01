@@ -267,7 +267,14 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			}
 			if grant != nil {
 				controllers.Cover(c, grant)
-				return c.Continue()
+				err := c.Continue()
+				// A whole answer is over once its handler is: the grant ends, at nothing
+				// more than its usage record already settled. A streamed answer is
+				// settled by its own writer when the stream ends.
+				if !c.Fiber().Response().IsBodyStream() {
+					grant.Settle(0)
+				}
+				return err
 			}
 		}
 	}

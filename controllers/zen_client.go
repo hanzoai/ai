@@ -573,7 +573,12 @@ func (t zenTier) cacheRate() decimal.Decimal {
 // tokens is one answer's usage as it is billed: prompt tokens read fresh (a cache
 // write among them), prompt tokens served from the upstream's cache, and completion
 // tokens — of which reasoning is the part the model spent thinking.
-type tokens struct{ fresh, cached, completion, reasoning int }
+type tokens struct {
+	fresh, cached, completion, reasoning int
+	// reported says the upstream stated what the answer's output cost: a usage
+	// object carried its completion. Without it the counts are partial or estimated.
+	reported bool
+}
 
 // prompt is every prompt token, fresh or cached.
 func (t tokens) prompt() int { return t.fresh + t.cached }
@@ -1323,6 +1328,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// done ends the request here: the client has its answer, or has gone.
 	done := func() []attempt {
 		hold.settle(0)
+		// The request is over: a plan's hold ends here, at nothing more than a usage
+		// record already settled.
+		if g := grantOf(c.Ctx); g != nil {
+			g.Settle(0)
+		}
 		return nil
 	}
 
@@ -2289,10 +2299,10 @@ func sniffZenUsage(payload []byte, t *tokens) {
 			t.fresh, t.cached = u.PromptTokens-cached, cached
 		}
 		if u.OutputTokens > 0 {
-			t.completion = u.OutputTokens
+			t.completion, t.reported = u.OutputTokens, true
 		}
 		if u.CompletionTokens > 0 {
-			t.completion = u.CompletionTokens
+			t.completion, t.reported = u.CompletionTokens, true
 		}
 		if u.CompletionDetails != nil && u.CompletionDetails.Reasoning > 0 {
 			t.reasoning = u.CompletionDetails.Reasoning
@@ -2386,7 +2396,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		CostNanoExact:   mk.cogs(),
 		BilledNanoExact: exact,
 		plan:            w.plan,
-		planRate:        sv.rate,
+		planNanos:       planCost(w.plan, sv.rate, t),
 	}
 	rec.bind(w.ctx, authUser)
 	recordUsage(rec)

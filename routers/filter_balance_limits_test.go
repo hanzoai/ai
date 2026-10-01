@@ -15,10 +15,13 @@
 package routers
 
 import (
+	"bufio"
+	"bytes"
 	stdcontext "context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +29,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/hanzoai/ai/internal/authtest"
 	"github.com/hanzoai/ai/object"
+	"github.com/zap-proto/zip"
 )
 
 type refusal struct {
@@ -299,5 +303,36 @@ func TestTheGateReadsTheOrgTheCallerIsWorkingIn(t *testing.T) {
 	post("acme") // an org the claim does not list
 	if len(asked) != 0 {
 		t.Fatalf("a non-member X-Org-Id reached the plan: %+v", asked)
+	}
+}
+
+// A covered request whose answer was whole settles its grant at nothing once its
+// handler is done, so a hold never outlives a request that ended without recording
+// usage (a usage record settles it first, at what it cost). A streamed answer is
+// settled by its own writer, never here.
+func TestACoveredRequestSettlesWhenItsAnswerIsWhole(t *testing.T) {
+	gateWith(t, 0)
+	var settled []int64
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return &object.LimitGrant{Plan: "max-20x", Spend: 7, Settle: func(n int64) { settled = append(settled, n) }}, nil, nil
+	})
+	chatWith("enso", "/v1/chat/completions")
+	if len(settled) != 1 || settled[0] != 0 {
+		t.Fatalf("a whole answer settled %v, want [0]", settled)
+	}
+
+	settled = nil
+	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app.Use(zip.H(BalanceGateFilter))
+	app.Raw(zip.MethodAll, "/*", func(c *zip.Ctx) error {
+		return c.SendStreamWriter(func(w *bufio.Writer) { _, _ = w.WriteString("data: {}\n\n") })
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader([]byte(`{"model":"enso","messages":[]}`)))
+	req.Header.Set("Authorization", "Bearer tok")
+	if _, err := app.Fiber().Test(req); err != nil {
+		t.Fatal(err)
+	}
+	if len(settled) != 0 {
+		t.Fatalf("the filter settled a streamed answer's grant: %v", settled)
 	}
 }

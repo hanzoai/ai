@@ -790,11 +790,10 @@ type usageRecord struct {
 	ClientRequestID string `json:"clientRequestId,omitempty"`
 
 	// plan is the grant of the plan that covers this call (Cover), nil when none
-	// does: the call debits no wallet and counts against no free allowance. planRate
-	// is the paid rung's cost its family stated, nil when a free rung answered; what
-	// the call cost at it settles against the plan's budget.
-	plan     *object.LimitGrant
-	planRate *costRate
+	// does: the call debits no wallet and counts against no free allowance. planNanos
+	// is what its paid upstream cost, settled against the plan's budget (planCost).
+	plan      *object.LimitGrant
+	planNanos int64
 
 	// Requested is the model the caller ASKED for, set only when a different route
 	// answered — today, when a vendor's account was spent and it served the request
@@ -1315,7 +1314,7 @@ func recordUsage(record *usageRecord) error {
 	// paid upstream, against the budget the plan held for it. It debits no wallet and
 	// counts against no free allowance — the plan counted it when it was admitted.
 	if record.plan != nil {
-		record.plan.Settle(record.planRate.nanos(record.PromptTokens, record.CacheReadTokens, record.CompletionTokens))
+		record.plan.Settle(record.planNanos)
 	}
 	free := ""
 	if record.plan == nil && record.answered() && usageFree(record) {

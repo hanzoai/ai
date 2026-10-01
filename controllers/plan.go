@@ -160,6 +160,20 @@ func (r *costRate) nanos(fresh, cached, completion int) int64 {
 	return q.Int64()
 }
 
+// planCost is what a covered answer's paid upstream cost, in nano-dollars: nothing
+// when a free rung answered (no rate), the tokens at the stated rate when the
+// upstream reported the answer's usage, and the whole hold when it did not — what an
+// answer cost that nobody stated is charged at the most it could have been.
+func planCost(g *object.LimitGrant, rate *costRate, t tokens) int64 {
+	switch {
+	case g == nil || rate == nil:
+		return 0
+	case !t.reported:
+		return g.Spend
+	}
+	return min(rate.nanos(t.fresh, t.cached, t.completion), g.Spend)
+}
+
 // spendUSD renders nano-dollars as the decimal USD a family reads.
 func spendUSD(nanos int64) string {
 	return new(big.Rat).SetFrac(big.NewInt(nanos), big.NewInt(1_000_000_000)).FloatString(9)
