@@ -125,7 +125,7 @@ func TestRateLimiterRetryAfter(t *testing.T) {
 		rl.Allow(key)
 	}
 
-	retryAfter := rl.RetryAfter(key)
+	retryAfter := rl.RetryAfter(one(key))
 	if retryAfter < 1 {
 		t.Errorf("expected retry_after >= 1, got %d", retryAfter)
 	}
@@ -136,7 +136,7 @@ func TestRateLimiterUnknownKeyRetryAfter(t *testing.T) {
 	defer rl.Stop()
 
 	// Key that was never seen should return 1.
-	retryAfter := rl.RetryAfter("sk-unknown")
+	retryAfter := rl.RetryAfter(one("sk-unknown"))
 	if retryAfter != 1 {
 		t.Errorf("expected retry_after=1 for unknown key, got %d", retryAfter)
 	}

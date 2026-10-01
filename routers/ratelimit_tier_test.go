@@ -252,15 +252,15 @@ func TestAPaymentMovesTheRateOfAnOrgThatKeepsSending(t *testing.T) {
 	tier := TierZenFree
 	rl := NewRateLimiter(func(string) Tier { return tier }, time.Hour)
 	t.Cleanup(rl.Stop)
-	if e := rl.getOrCreate("acme"); e.tier != TierZenFree {
+	if e := rl.getOrCreate("acme", 1); e.tier != TierZenFree {
 		t.Fatalf("first entry tier %q, want zen-free", e.tier)
 	}
 	tier = TierZenPro // the lookup now answers the plan that was bought
-	if e := rl.getOrCreate("acme"); e.tier != TierZenPro {
+	if e := rl.getOrCreate("acme", 1); e.tier != TierZenPro {
 		t.Fatalf("after paying, entry tier %q, want %q — the org is still rated free", e.tier, TierZenPro)
 	}
 	tier = TierZenFree
-	if e := rl.getOrCreate("acme"); e.tier != TierZenPro {
+	if e := rl.getOrCreate("acme", 1); e.tier != TierZenPro {
 		t.Fatalf("a paid entry moved back to %q on a stale read", e.tier)
 	}
 }

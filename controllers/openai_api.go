@@ -34,6 +34,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hanzoai/account"
 
+	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/funding"
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -971,20 +972,22 @@ type usageRecord struct {
 	// and the wire already carries the subject it resolves to.
 	Payer account.Account `json:"-"`
 
-	// Allowance is the subject whose free calls this one counts against, when the
-	// request named a subject of its own. The public lane does: it counts a visitor,
-	// and one shared subject would let a single caller empty every visitor's day.
-	// Everyone else counts against their payer, so this is empty on an ordinary
-	// call. Not serialized — it addresses the count, it does not describe the row.
-	Allowance string `json:"-"`
+	// Visitor is the lanes whose free calls this one counts against, narrowest
+	// first, when the request named a subject of its own. The public lane does: it
+	// counts a visitor, and one shared subject would let a single caller empty every
+	// visitor's day. Everyone else counts against their payer, so this is empty on an
+	// ordinary call. Not serialized — it addresses the count, it does not describe
+	// the row.
+	Visitor []address.Bucket `json:"-"`
 }
 
-// allowance answers whose free calls this one counts against: the subject the request
-// named, or the payer. Free calls and money are bounded per subject, and this is the
-// one expression that says which subject, so the two counters cannot drift apart.
+// allowance answers whose free calls this one counts against: the visitor the request
+// named, by their narrowest lane, or the payer. Free calls and money are bounded per
+// subject, and this is the one expression that says which subject, so the two
+// counters cannot drift apart.
 func (r *usageRecord) allowance() string {
-	if r.Allowance != "" {
-		return r.Allowance
+	if len(r.Visitor) > 0 {
+		return r.Visitor[0].Key
 	}
 	return r.payer().Subject()
 }
@@ -1097,7 +1100,7 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 	// it spends, so it is answered here, from the same request, and not resolved a
 	// second time somewhere downstream. Only the public lane puts a subject on the
 	// request; every other caller counts against the payer just resolved.
-	r.Allowance = visitorOf(ctx)
+	r.Visitor = visitorOf(ctx)
 
 	self := u.Owner + "/" + u.Name
 	// account.IsMachine is the ONE predicate for "is this credential a program",
@@ -1325,8 +1328,8 @@ func recordUsage(record *usageRecord) error {
 		// obvious test and is the wrong one: it is resolved from X-Org-Id, which any
 		// caller sets, so a bound that read it could be steered out of the lane it
 		// bounds.
-		if record.Allowance != "" {
-			publicCount.count(record.Allowance, utcDay(time.Now()), publicChatDaily())
+		if len(record.Visitor) > 0 {
+			publicCount.serve(record.Visitor, utcDay(time.Now()), publicChatDaily())
 		}
 	}
 

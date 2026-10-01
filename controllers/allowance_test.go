@@ -206,7 +206,7 @@ func TestThePublicLaneCountsTheVisitorItServed(t *testing.T) {
 	const visitor = "visitor:9f86d081884c7d659a2feaa0c55ad015"
 
 	rec := free(publicOrg, publicOrg+"/visitor")
-	rec.bind(withVisitor(context.Background(), visitor),
+	rec.bind(withVisitor(context.Background(), lane(visitor)),
 		&iam.User{Owner: publicOrg, Type: "application"})
 
 	got := counted(t, rec)
@@ -238,7 +238,7 @@ func TestThePublicLanesOwnCountRisesWhenTheCallIsServed(t *testing.T) {
 	t.Cleanup(func() { publicCount = saved })
 
 	served := free(publicOrg, publicOrg+"/visitor")
-	served.bind(withVisitor(context.Background(), visitor),
+	served.bind(withVisitor(context.Background(), lane(visitor)),
 		&iam.User{Owner: publicOrg, Type: "application"})
 	counted(t, served)
 	if n := publicCount.seen[visitor]; n != 1 {
@@ -248,7 +248,7 @@ func TestThePublicLanesOwnCountRisesWhenTheCallIsServed(t *testing.T) {
 	// A call that died costs the visitor nothing here either.
 	failed := free(publicOrg, publicOrg+"/visitor")
 	failed.Status = "error"
-	failed.bind(withVisitor(context.Background(), visitor),
+	failed.bind(withVisitor(context.Background(), lane(visitor)),
 		&iam.User{Owner: publicOrg, Type: "application"})
 	counted(t, failed)
 	if n := publicCount.seen[visitor]; n != 1 {
@@ -259,7 +259,7 @@ func TestThePublicLanesOwnCountRisesWhenTheCallIsServed(t *testing.T) {
 	// from X-Org-Id, so a visitor carrying a credential can put a real org on the
 	// record. The visitor is still the visitor, and the count still binds.
 	steered := free("acme", "acme/alice")
-	steered.bind(withVisitor(context.Background(), visitor),
+	steered.bind(withVisitor(context.Background(), lane(visitor)),
 		&iam.User{Owner: publicOrg, Type: "application"})
 	counted(t, steered)
 	if n := publicCount.seen[visitor]; n != 2 {

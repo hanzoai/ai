@@ -161,27 +161,48 @@ func (d *dayCount) count(visitor, day string, limit int) {
 	d.seen[visitor] = used + 1
 }
 
+// out reports whether a visitor has taken their day on any of their lanes, each held
+// to limit times its scale. A visitor with no lane names nobody this count can hold.
+func (d *dayCount) out(lanes []address.Bucket, day string, limit int) bool {
+	if len(lanes) == 0 {
+		return true
+	}
+	for _, l := range lanes {
+		if d.spent(l.Key, day, limit*l.Scale) {
+			return true
+		}
+	}
+	return false
+}
+
+// serve records one served call on every lane the visitor is charged to.
+func (d *dayCount) serve(lanes []address.Bucket, day string, limit int) {
+	for _, l := range lanes {
+		d.count(l.Key, day, limit*l.Scale)
+	}
+}
+
 // ---- whose day a call spends ----------------------------------------------
 
 // visitorKey addresses the visitor a public call is counted for. The lane is its only
 // writer, and the record of the call is its only reader (usageRecord.bind).
 type visitorKey struct{}
 
-// withVisitor returns ctx naming the visitor this call is counted for.
-func withVisitor(ctx context.Context, visitor string) context.Context {
-	return context.WithValue(ctx, visitorKey{}, visitor)
+// withVisitor returns ctx naming the lanes this call is counted on, narrowest first.
+func withVisitor(ctx context.Context, lanes []address.Bucket) context.Context {
+	return context.WithValue(ctx, visitorKey{}, lanes)
 }
 
-// visitorOf answers the visitor a call is counted for, or "" for a caller who counts
+// visitorOf answers the lanes a call is counted on, or none for a caller who counts
 // against their own payer — which is everyone except a stranger on this lane. The
 // lane needs its own subject because a visitor's payer collapses to the reserved org,
 // and counting every stranger there would spend one shared day.
-func visitorOf(ctx context.Context) string {
+func visitorOf(ctx context.Context) []address.Bucket {
 	if ctx == nil {
-		return ""
+		return nil
 	}
-	visitor, _ := ctx.Value(visitorKey{}).(string)
-	return visitor
+	lanes, _ := ctx.Value(visitorKey{}).([]address.Bucket)
+	return lanes
 }
 
 // utcDay is the period a count belongs to. One rule, one timezone — a period that
@@ -201,8 +222,15 @@ func Visitor(c *zip.Ctx) string {
 	return publicVisitor(publicAddr(c.Fiber().IP(), (&ApiController{Ctx: c}).stated()))
 }
 
+// Lanes are every count the caller Visitor names is charged to, narrowest first: a
+// digest of each of the address's buckets, so an IPv6 visitor is held by their /64
+// and by their /48 together. None when the request carries no public caller.
+func Lanes(c *zip.Ctx) []address.Bucket {
+	return publicLanes(publicAddr(c.Fiber().IP(), (&ApiController{Ctx: c}).stated()))
+}
+
 // publicVisitor is the only identity an anonymous caller has: a digest of the address
-// the edge observed.
+// the edge observed, counted by its narrowest bucket.
 //
 // THE STATED ADDRESS IS BELIEVED ONLY FROM INSIDE. A caller sets any header freely,
 // so trusting one from a public peer hands every request a fresh quota and the
@@ -213,13 +241,26 @@ func Visitor(c *zip.Ctx) string {
 // The address is hashed and never kept. It travels into a log line and a usage row,
 // and an address in either is a record of who visited that nothing here needs.
 func publicVisitor(addr string) string {
-	if addr == "" {
+	lanes := publicLanes(addr)
+	if len(lanes) == 0 {
 		return ""
 	}
-	// Counted by address.Bucket: an IPv6 host rotating addresses inside its /64 is
-	// one visitor, not one per request.
-	sum := sha256.Sum256([]byte(address.Bucket(addr)))
-	return "visitor:" + hex.EncodeToString(sum[:])[:32]
+	return lanes[0].Key
+}
+
+// publicLanes are address.Buckets of addr, each key digested: an IPv6 host rotating
+// addresses inside its /64 is one visitor, and a site rotating /64s inside its /48 is
+// held by the /48 lane they all share.
+func publicLanes(addr string) []address.Bucket {
+	if addr == "" {
+		return nil
+	}
+	lanes := address.Buckets(addr)
+	for i, b := range lanes {
+		sum := sha256.Sum256([]byte(b.Key))
+		lanes[i].Key = "visitor:" + hex.EncodeToString(sum[:])[:32]
+	}
+	return lanes
 }
 
 // publicAddr is the address a public visitor arrived from: the peer when it is a
@@ -300,8 +341,8 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	visitor := Visitor(c.Ctx)
-	if visitor == "" {
+	lanes := Lanes(c.Ctx)
+	if len(lanes) == 0 {
 		c.publicRefuse(http.StatusForbidden, "invalid_request_error", "public_no_address",
 			"This request carries no address to count against.")
 		return
@@ -327,7 +368,8 @@ func (c *ApiController) ChatCompletionsPublic() {
 	//
 	// OUR OWN BOUND FIRST, and it decides. It is kept in this process and asks
 	// nothing, so it holds while anything else is down.
-	if publicCount.spent(visitor, utcDay(time.Now()), publicChatDaily()) {
+	visitor := lanes[0].Key
+	if publicCount.out(lanes, utcDay(time.Now()), publicChatDaily()) {
 		c.publicSpent(visitor, "count")
 		return
 	}
@@ -345,7 +387,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 
 	// The visitor rides on the request, because the record of the call is what counts
 	// it and the record has no other way to know which stranger this was.
-	c.SetContext(withVisitor(c.Context(), visitor))
+	c.SetContext(withVisitor(c.Context(), lanes))
 
 	c.chatCompletions(callerPublic, nil)
 }

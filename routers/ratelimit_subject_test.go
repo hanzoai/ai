@@ -273,6 +273,55 @@ func TestAnonymousTrafficCannotCloseAPayingCallersLane(t *testing.T) {
 	}
 }
 
+// ONE SITE IS SIXTEEN CALLERS, HOWEVER MANY /64s IT HOLDS.
+//
+// Hurricane Electric hands out a /48 for free: 65,536 /64s, each a fresh address lane.
+// Counted per /64 alone, one tunnel is 65,536 anonymous callers and every one of them
+// buys an IAM round trip. The /48 lane they all share holds the site to sixteen
+// callers' worth, and the next /64 it has never seen is refused with it.
+func TestASiteRotatingItsSlash64sIsOneSite(t *testing.T) {
+	billing(t)
+	ceilings(t)
+
+	sent, refused := 16*burst()+64, 0
+	for i := range sent {
+		p := ask(http.MethodPost, "/v1/messages").
+			body([]byte(`{}`)).
+			with(address.Header, fmt.Sprintf("2001:470:1f00:%x::1", i)).
+			through(RateLimitFilter)
+		if p.status() == http.StatusTooManyRequests {
+			refused++
+		}
+	}
+	if refused < 32 {
+		t.Fatalf("%d requests from %d fresh /64s of one /48 were refused %d times; the site is sixteen callers, "+
+			"so at least 32 of the last 64 must be", sent, sent, refused)
+	}
+	if p := ask(http.MethodPost, "/v1/messages").body([]byte(`{}`)).
+		with(address.Header, "2001:470:1f01::1").through(RateLimitFilter); p.status() == http.StatusTooManyRequests {
+		t.Fatal("the neighbouring /48 was refused: it is somebody else")
+	}
+}
+
+// ONE /64'S REFUSALS SPEND NOTHING OF ITS SITE. A caller hammering past its own
+// ceiling is refused at its /64, so the /48 its neighbours share is charged only for
+// what the /64 was admitted — otherwise one caller on a shared /48 closes it for all.
+func TestOneCallersRefusalsDoNotEmptyItsSite(t *testing.T) {
+	billing(t)
+	ceilings(t)
+
+	for range 20 * burst() {
+		ask(http.MethodPost, "/v1/messages").
+			body([]byte(`{}`)).
+			with(address.Header, "2001:470:1f00:1::1").
+			through(RateLimitFilter)
+	}
+	if p := ask(http.MethodPost, "/v1/messages").body([]byte(`{}`)).
+		with(address.Header, "2001:470:1f00:2::1").through(RateLimitFilter); p.status() == http.StatusTooManyRequests {
+		t.Fatal("one /64's refusals closed the /48 for its neighbour")
+	}
+}
+
 // NOBODY NAMES THEIR OWN BUCKET.
 //
 // The address a caller arrived from is the one thing on a request they could not

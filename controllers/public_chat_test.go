@@ -16,7 +16,10 @@ package controllers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -584,6 +587,58 @@ func TestTheLaneRefusesAtTheCeiling(t *testing.T) {
 		t.Fatalf("the refusal moved the count to %d; refusals are not usage", n)
 	}
 }
+
+// ONE SITE IS ONE ALLOWANCE AT SITE SCALE. A /48 holds 65,536 /64s and Hurricane
+// Electric hands one out free, so a lane counting only the /64 gives one tunnel
+// 65,536 days of free messages. The /48 lane every /64 inside it shares is held to
+// sixteen visitors' worth; once it is spent, a /64 the lane has never seen is spent
+// with it.
+func TestASiteIsHeldByItsSlash48(t *testing.T) {
+	t.Setenv("PUBLIC_CHAT_DAILY", "5")
+	servablePool(t)
+
+	sum := sha256.Sum256([]byte("2001:470:1f00::/48"))
+	site := "visitor:" + hex.EncodeToString(sum[:])[:32]
+
+	saved := publicCount
+	publicCount = &dayCount{day: utcDay(time.Now()), seen: map[string]int{site: 16 * 5}}
+	t.Cleanup(func() { publicCount = saved })
+
+	status, code := refusalOf(t, publicCall(t, "[2001:470:1f00:beef::1]:9000", ""))
+	if status != http.StatusPaymentRequired || code != "public_allowance_spent" {
+		t.Fatalf("a fresh /64 inside a spent /48 got %d/%s, want 402/public_allowance_spent", status, code)
+	}
+	if n := publicCount.seen[site]; n != 16*5 {
+		t.Fatalf("the refusal moved the site's count to %d; refusals are not usage", n)
+	}
+}
+
+// A served call rises on every lane the visitor is charged to: their /64 by one and
+// their /48 by one, each against its own ceiling.
+func TestAServedCallCountsOnEveryLane(t *testing.T) {
+	d := &dayCount{}
+	const day, limit = "2026-08-15", 2
+	for i := range 16 * limit {
+		lanes := publicLanes(fmt.Sprintf("2001:470:1f00:%x::1", i))
+		if d.out(lanes, day, limit) {
+			t.Fatalf("call %d of %d across fresh /64s was refused before the /48 was spent", i+1, 16*limit)
+		}
+		d.serve(lanes, day, limit)
+	}
+	if !d.out(publicLanes("2001:470:1f00:ffff::1"), day, limit) {
+		t.Fatal("a /48 that spent sixteen visitors' worth still admits a fresh /64")
+	}
+	if d.out(publicLanes("2001:470:1f01::1"), day, limit) {
+		t.Fatal("the neighbouring /48 is spent by the first one's count")
+	}
+	v4 := publicLanes("203.0.113.9")
+	if len(v4) != 1 {
+		t.Fatalf("an IPv4 visitor is charged to %d lanes, want 1", len(v4))
+	}
+}
+
+// lane is one visitor counted on one lane, as a test names one.
+func lane(key string) []address.Bucket { return []address.Bucket{{Key: key, Scale: 1}} }
 
 // servablePool stands up a pool that CAN answer, so a test whose subject is the
 // ceiling is not answered by the route check instead. That check runs first by design

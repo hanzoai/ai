@@ -74,23 +74,41 @@ const Header = "X-Client-Ip"
 // stale or the caller's own writing.
 const Country = "X-Client-Country"
 
-// Bucket is the key a per-caller count keeps an address under: an IPv4 address as
-// itself, an IPv6 address as its /64. One IPv6 host is handed a whole /64 and can
-// change its interface identifier on every request, so a count per /128 counts
-// nothing. An audit record keeps the full address; only counting buckets. Anything
-// that is not an address comes back unchanged.
-func Bucket(addr string) string {
+// Bucket is one count a caller's requests are charged to: Key, held to Scale times
+// the per-caller limit of whatever counts it.
+type Bucket struct {
+	Key   string
+	Scale int
+}
+
+// site is how many callers' worth of a limit one /48 may spend. A /48 is what a site
+// is handed — Hurricane Electric's tunnel broker gives one away — and it holds 65,536
+// /64s, so a count per /64 alone hands one tunnel 65,536 callers' allowance. Sixteen
+// is a block of real subscribers active at once; a rotating tunnel gets sixteen too.
+const site = 16
+
+// Buckets are the counts a request from addr is charged to, narrowest first, and a
+// caller is within its limit only while it is within every one: an IPv4 address as
+// itself; an IPv6 address as its /64, then its /48 at site times the limit. One IPv6
+// host is handed a whole /64 and can change its interface identifier on every
+// request, so a count per /128 counts nothing; one site is handed a /48 and can move
+// across its /64s the same way. An audit record keeps the full address; only
+// counting buckets. Anything that is not an address is one bucket, unchanged.
+func Buckets(addr string) []Bucket {
 	a, err := netip.ParseAddr(addr)
 	if err != nil {
 		ap, perr := netip.ParseAddrPort(addr)
 		if perr != nil {
-			return addr
+			return []Bucket{{Key: addr, Scale: 1}}
 		}
 		a = ap.Addr()
 	}
 	a = a.Unmap().WithZone("")
 	if a.Is4() {
-		return a.String()
+		return []Bucket{{Key: a.String(), Scale: 1}}
 	}
-	return netip.PrefixFrom(a, 64).Masked().String()
+	return []Bucket{
+		{Key: netip.PrefixFrom(a, 64).Masked().String(), Scale: 1},
+		{Key: netip.PrefixFrom(a, 48).Masked().String(), Scale: site},
+	}
 }

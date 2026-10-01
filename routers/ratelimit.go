@@ -28,6 +28,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/log"
@@ -97,20 +98,40 @@ func NewRateLimiter(tierFunc func(string) Tier, cleanupInterval time.Duration) *
 // Allow checks whether a request from the given API key should be permitted.
 // It returns true if the request is within the rate limit.
 func (rl *RateLimiter) Allow(apiKey string) bool {
-	entry := rl.getOrCreate(apiKey)
-
-	rl.mu.Lock()
-	entry.lastSeen = time.Now()
-	rl.mu.Unlock()
-
-	if entry.limiter.Allow() {
-		rl.totalAllowed.Add(1)
-		return true
-	}
-
-	rl.totalDenied.Add(1)
-	return false
+	return rl.Admit(one(apiKey))
 }
+
+// Admit charges one request to the lanes it is counted on, narrowest first, each at
+// its tier's rate times the lane's scale, and reports whether every lane had room.
+//
+// A WIDER LANE IS SPENT ONLY BY WHAT A NARROWER ONE ADMITTED. The walk stops at the
+// first lane that refuses, so one /64 hammering past its own ceiling spends nothing
+// of the /48 its neighbours share: a site is emptied by sixteen callers' worth of
+// admitted traffic, never by one caller's refusals.
+//
+// One request in Metrics, however many lanes it is counted on.
+func (rl *RateLimiter) Admit(lanes []address.Bucket) bool {
+	ok := true
+	for _, l := range lanes {
+		entry := rl.getOrCreate(l.Key, l.Scale)
+		rl.mu.Lock()
+		entry.lastSeen = time.Now()
+		rl.mu.Unlock()
+		if !entry.limiter.Allow() {
+			ok = false
+			break
+		}
+	}
+	if ok {
+		rl.totalAllowed.Add(1)
+	} else {
+		rl.totalDenied.Add(1)
+	}
+	return ok
+}
+
+// one is a caller counted on one lane: their own name.
+func one(key string) []address.Bucket { return []address.Bucket{{Key: key, Scale: 1}} }
 
 // Open reports whether a lane still has room, spending nothing.
 //
@@ -131,9 +152,23 @@ func (rl *RateLimiter) Open(apiKey string) bool {
 	return entry.limiter.Tokens() >= 1
 }
 
-// RetryAfter returns the number of seconds until the next token is available
-// for the given API key. Returns 0 if the key has no entry.
-func (rl *RateLimiter) RetryAfter(apiKey string) int {
+// RetryAfter returns the number of seconds until every lane has a token again: the
+// longest wait among them.
+func (rl *RateLimiter) RetryAfter(lanes []address.Bucket) int {
+	wait := 1
+	for _, l := range lanes {
+		wait = max(wait, rl.retryAfter(l.Key))
+	}
+	return wait
+}
+
+// retryAfter returns the number of seconds until the next token is available for
+// one key, and 1 when the key has no entry.
+//
+// READ OFF THE TOKENS, never reserved. A reservation on a lane that has a token takes
+// it, and cancelling one already due gives nothing back — so asking every lane how
+// long to wait spent the open ones, and each refusal emptied a /48 by one.
+func (rl *RateLimiter) retryAfter(apiKey string) int {
 	rl.mu.RLock()
 	entry, ok := rl.keys[apiKey]
 	rl.mu.RUnlock()
@@ -141,13 +176,11 @@ func (rl *RateLimiter) RetryAfter(apiKey string) int {
 	if !ok {
 		return 1
 	}
-
-	reservation := entry.limiter.Reserve()
-	delay := reservation.Delay()
-	reservation.Cancel()
-
-	seconds := max(int(math.Ceil(delay.Seconds())), 1)
-	return seconds
+	need := 1 - entry.limiter.Tokens()
+	if need <= 0 || entry.limiter.Limit() <= 0 {
+		return 1
+	}
+	return max(int(math.Ceil(need/float64(entry.limiter.Limit()))), 1)
 }
 
 // Metrics returns the current rate limit hit/pass counters.
@@ -160,8 +193,9 @@ func (rl *RateLimiter) Stop() {
 	close(rl.stopCh)
 }
 
-// getOrCreate returns an existing entry or creates a new one for the given key.
-func (rl *RateLimiter) getOrCreate(apiKey string) *keyEntry {
+// getOrCreate returns an existing entry or creates a new one for the given key, at
+// scale times its tier's rate.
+func (rl *RateLimiter) getOrCreate(apiKey string, scale int) *keyEntry {
 	rl.mu.RLock()
 	entry, ok := rl.keys[apiKey]
 	rl.mu.RUnlock()
@@ -186,6 +220,7 @@ func (rl *RateLimiter) getOrCreate(apiKey string) *keyEntry {
 	if reqPerMin == 0 {
 		reqPerMin = tierLimits[TierZenFree]
 	}
+	reqPerMin *= max(scale, 1)
 
 	// rate.Limit is events per second; burst allows short spikes up to 20%
 	// of the per-minute allowance (minimum burst of 1).
@@ -293,9 +328,10 @@ func RateLimitFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
-	limitKey := limitSubject(c)
+	lanes := limitSubject(c)
+	limitKey := lanes[0].Key
 
-	if rateLimiterInstance.Allow(limitKey) {
+	if rateLimiterInstance.Admit(lanes) {
 		// Two ceilings, asked in the order a caller meets them. If the quota refuses,
 		// it has already answered and this must not answer over the top of it.
 		if proceed, err := charge(c, limitKey, path); !proceed {
@@ -305,7 +341,7 @@ func RateLimitFilter(c *zip.Ctx) error {
 	}
 
 	// Rate limit exceeded — log and respond with 429.
-	retryAfter := rateLimiterInstance.RetryAfter(limitKey)
+	retryAfter := rateLimiterInstance.RetryAfter(lanes)
 	allowed, denied := rateLimiterInstance.Metrics()
 
 	log.Info("rate_limit_exceeded key=%s path=%s retry_after=%d total_allowed=%d total_denied=%d",
@@ -327,7 +363,8 @@ func RateLimitFilter(c *zip.Ctx) error {
 // no bottom.
 const unaddressed = "visitor:unaddressed"
 
-// limitSubject is who a request is counted against, and every request has one.
+// limitSubject is who a request is counted against, and every request has one: the
+// lanes it is counted on, narrowest first, the first of them being who it is.
 //
 // It used to be the credential, and only when the credential arrived on one of three
 // transports — so a caller who authenticated any other way was counted against
@@ -371,9 +408,9 @@ const unaddressed = "visitor:unaddressed"
 // with a customer: junk arriving beside a paying caller is a different address than
 // the customer's name, and a paying caller whose key IAM does not own falls to their
 // own address rather than into a crowd.
-func limitSubject(c *zip.Ctx) string {
+func limitSubject(c *zip.Ctx) []address.Bucket {
 	if subject, _, _, _ := billingKey(c); subject != "" {
-		return subject
+		return one(subject)
 	}
 
 	// Nothing this process already holds names the caller, so the answer costs an
@@ -385,23 +422,28 @@ func limitSubject(c *zip.Ctx) string {
 	//
 	// A caller who IS named pays this nothing: their answer was held, and they
 	// returned above.
-	lane := controllers.Visitor(c)
-	if lane == "" {
-		lane = unaddressed
+	//
+	// The address lane is every lane the address is counted on — an IPv6 caller's /64
+	// and the /48 it sits in — and a caller is held by the first that is closed.
+	lanes := controllers.Lanes(c)
+	if len(lanes) == 0 {
+		lanes = one(unaddressed)
 	}
-	if !rateLimiterInstance.Open(lane) {
-		return lane
+	for _, l := range lanes {
+		if !rateLimiterInstance.Open(l.Key) {
+			return lanes
+		}
 	}
 
 	if subject, _, _ := resolveBillingKey(c); subject != "" {
-		return subject
+		return one(subject)
 	}
 	if key := extractAPIKey(c); strings.HasPrefix(key, "pk-") {
 		if _, err := controllers.PublishableOrg(key); err == nil {
-			return key
+			return one(key)
 		}
 	}
-	return lane
+	return lanes
 }
 
 // isRateLimitExempt returns true for paths that should bypass rate limiting.
