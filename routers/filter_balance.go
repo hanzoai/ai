@@ -245,18 +245,25 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// A plan that cannot be read covers nothing: the request goes on as a free one,
 	// under the allowance, holding no spend. Free models keep answering, and no money
 	// moves on a plan nobody could read.
-	if limits := object.Limits(); limits != nil {
+	//
+	// A spent window on a model that costs nothing refuses nothing either: the request
+	// goes on as one no plan covers, under the free allowance, holding no spend. Free
+	// AI always works; the window bounds what the plan buys.
+	if limits := object.Limits(); limits != nil && controllers.ChatPath(path) {
 		if family := controllers.FamilyOf(model); family != "" {
 			grant, hit, err := limits(c.Context(), object.LimitAsk{
 				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
-				Family: family, Apps: controllers.Apps(c), Spend: controllers.ChatPath(path),
+				Family: family, Apps: controllers.Apps(c), Spend: true,
 			})
 			if err != nil {
 				log.Warning("limits: unreadable, serving as free subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
 			}
-			if hit != nil {
+			if hit != nil && !costsNothing(model, namespace) {
 				log.Info("limits: %s subject=%s namespace=%s actor=%s path=%s", hit.Name, subject, namespace, userKey, path)
 				return limitReached(c, hit, namespace)
+			}
+			if hit != nil {
+				log.Info("limits: %s spent, serving from the free allowance subject=%s namespace=%s actor=%s path=%s", hit.Name, subject, namespace, userKey, path)
 			}
 			if grant != nil {
 				controllers.Cover(c, grant)
@@ -265,7 +272,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 
-	if model != "" && controllers.ModelCostsNothing(model, namespace) {
+	if model != "" && costsNothing(model, namespace) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
 		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
 		// period, held by the host. It is the one gate a free caller meets, and the
@@ -308,6 +315,11 @@ func denied(c *zip.Ctx, deny object.BillingNotice, subject, namespace string, ba
 	c.SetHeader("Content-Type", "application/json")
 	return c.Bytes(deny.Status, deny.ErrorJSON())
 }
+
+// costsNothing reports whether a model costs namespace nothing
+// (controllers.ModelCostsNothing), indirected so the gate's tests state the prices
+// directly.
+var costsNothing = controllers.ModelCostsNothing
 
 // decisionFree reports whether a decision model costs namespace nothing
 // (controllers.DecisionFree), indirected so the gate's tests state the prices directly.

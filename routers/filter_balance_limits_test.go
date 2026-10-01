@@ -67,8 +67,67 @@ func chatWith(model, path string) probe {
 		through(BalanceGateFilter)
 }
 
-// A spent window refuses with 429 usage_cap_exceeded naming the window, its reset,
-// Retry-After and the plan that raises it — never credit.
+// freeModels makes the named models cost nothing for the test's length.
+func freeModels(t *testing.T, ids ...string) {
+	t.Helper()
+	prev := costsNothing
+	costsNothing = func(model, org string) bool {
+		for _, id := range ids {
+			if model == id {
+				return true
+			}
+		}
+		return prev(model, org)
+	}
+	t.Cleanup(func() { costsNothing = prev })
+}
+
+// A spent window on a model that costs nothing refuses nothing: the request falls
+// through to the free allowance, as a caller with no plan's would, holding nothing.
+// Free AI always works.
+func TestASpentWindowFallsThroughToTheFreeAllowance(t *testing.T) {
+	gateWith(t, 0)
+	freeModels(t, "enso")
+	reset := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second)
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return nil, &object.LimitHit{Name: "session", ResetsAt: reset, Upgrade: "max-20x"}, nil
+	})
+	read := 0
+	spent := false
+	object.SetSpent(func(stdcontext.Context, string, string) (object.Standing, error) {
+		read++
+		return object.Standing{Spent: spent, Window: "day", Limit: 50}, nil
+	})
+	if p := chatWith("enso", "/v1/chat/completions"); p.status() != http.StatusOK || read != 1 {
+		t.Fatalf("spent window on a free model: status %d, allowance read %d (%s), want served under the allowance", p.status(), read, p.said())
+	}
+	spent = true
+	if p := chatWith("enso", "/v1/chat/completions"); p.status() == http.StatusOK || refusalOf(t, p.said()).Error.Code == "usage_cap_exceeded" {
+		t.Fatalf("spent window and spent allowance: status %d (%s), want the allowance's own refusal", p.status(), p.said())
+	}
+}
+
+// Off a chat endpoint the plan is never asked: plans count chat requests only.
+func TestThePlanCountsChatRequestsOnly(t *testing.T) {
+	gateWith(t, 100000)
+	asked := 0
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		asked++
+		return nil, nil, nil
+	})
+	chatWith("zen-embedding", "/v1/embeddings")
+	chatWith("enso", "/v1/images/generations")
+	if asked != 0 {
+		t.Fatalf("the plan was asked %d time(s) off a chat endpoint", asked)
+	}
+	chatWith("enso", "/V1/Chat/Completions/")
+	if asked != 1 {
+		t.Fatalf("a chat endpoint spelled another way was not asked (%d)", asked)
+	}
+}
+
+// A spent window on a priced model refuses with 429 usage_cap_exceeded naming the
+// window, its reset, Retry-After and the plan that raises it — never credit.
 func TestASpentWindowIs429WithTheUpgrade(t *testing.T) {
 	gateWith(t, 0)
 	reset := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second)
@@ -114,20 +173,16 @@ func TestThePlanIsAskedAboutHanzoSKUsOnly(t *testing.T) {
 	})
 	chatWith("enso-pro", "/v1/chat/completions")
 	chatWith("zen5", "/v1/messages")
-	chatWith("enso-pro", "/v1/embeddings")
 	chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
 	chatWith("vendor/small:free", "/v1/chat/completions")
-	if len(asked) != 3 {
-		t.Fatalf("asked %d times (%+v), want three: the Hanzo SKUs alone", len(asked), asked)
+	if len(asked) != 2 {
+		t.Fatalf("asked %d times (%+v), want two: the Hanzo SKUs alone", len(asked), asked)
 	}
 	if asked[0].Family != "enso" || !asked[0].Spend || asked[0].Subject != "acme" || asked[0].Namespace != "acme" || asked[0].Actor != "acme/ann" {
 		t.Errorf("enso on chat asked %+v", asked[0])
 	}
 	if asked[1].Family != "zen" || !asked[1].Spend {
 		t.Errorf("zen on messages asked %+v", asked[1])
-	}
-	if asked[2].Family != "enso" || asked[2].Spend {
-		t.Errorf("enso off a chat endpoint asked %+v, want no spend", asked[2])
 	}
 }
 
