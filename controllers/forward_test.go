@@ -972,16 +972,11 @@ func TestTheHoldIsPricedOnTheWholeBody(t *testing.T) {
 	}
 }
 
-// With the paid lane off a relayed route is offered only the free floor, and the
-// family pipe serves it: the route answers, and neither of its own vendors is asked.
-func TestWithThePaidLaneOffARelayedRouteIsAnsweredByTheFreeFloor(t *testing.T) {
+// With the paid lane off a relayed third-party route is refused plainly: neither of
+// its own vendors is asked, and nothing answers in its place.
+func TestWithThePaidLaneOffARelayedRouteIsRefusedPlainly(t *testing.T) {
 	FreeOnly = func() bool { return true }
 	t.Cleanup(func() { FreeOnly = func() bool { return false } })
-	// The family files its routing event on a goroutine; held here, it cannot outlive
-	// the store this test opened.
-	sink := routingEventSink
-	routingEventSink = func(object.RoutingEvent) {}
-	t.Cleanup(func() { routingEventSink = sink })
 	w := newRelayWorld(t, never(t), never(t))
 	const free = "vendor/big:free"
 	fake := &refuses{status: http.StatusPaymentRequired, body: `{"error":{"message":"no"}}`, free: free}
@@ -990,18 +985,11 @@ func TestWithThePaidLaneOffARelayedRouteIsAnsweredByTheFreeFloor(t *testing.T) {
 	spareFamily(t, vendor.URL, free)
 
 	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}]}`)
-	if answered(c) != http.StatusOK {
-		t.Fatalf("status %d, want the free floor's answer: %s", answered(c), sent(c))
+	if answered(c) != http.StatusServiceUnavailable || !strings.Contains(sent(c), "third-party models are not being served") {
+		t.Fatalf("status %d, want 503 with the plain reason: %s", answered(c), sent(c))
 	}
-	if len(fake.asked) == 0 || fake.asked[len(fake.asked)-1] != free {
-		t.Errorf("the free floor was asked %v, want %q last", fake.asked, free)
-	}
-	// The answer wears the pool's name, ours, never the vendor's id for the route.
-	if got := string(c.Fiber().Response().Header.Peek("X-Hanzo-Served")); got != freeID {
-		t.Errorf("X-Hanzo-Served = %q, want %q", got, freeID)
-	}
-	if strings.Contains(sent(c), free) {
-		t.Errorf("the answer names the vendor's route %q: %s", free, sent(c))
+	if len(fake.asked) != 0 || w.a.asked() != 0 {
+		t.Errorf("asked: free floor %v, vendor %d — nothing may answer a third-party route in its place", fake.asked, w.a.asked())
 	}
 }
 
@@ -1026,27 +1014,6 @@ func TestWithThePaidLaneOnTheFreeFloorIsNeverReachedFromTheRelay(t *testing.T) {
 	}
 	if len(fake.asked) != 0 {
 		t.Errorf("the free floor was asked %v with the paid lane on", fake.asked)
-	}
-}
-
-// A field the family pipe would not send is refused by name before the free floor is
-// asked, never dropped from an answer read as if it had been honoured.
-func TestAFieldTheFreeFloorCannotCarryIsRefused(t *testing.T) {
-	FreeOnly = func() bool { return true }
-	t.Cleanup(func() { FreeOnly = func() bool { return false } })
-	w := newRelayWorld(t, never(t), never(t))
-	const free = "vendor/big:free"
-	fake := &refuses{status: http.StatusPaymentRequired, body: `{"error":{"message":"no"}}`, free: free}
-	vendor := fake.serve(t)
-	defer vendor.Close()
-	spareFamily(t, vendor.URL, free)
-
-	c := w.chat(`{"model":"relay-sku","messages":[{"role":"user","content":"hi"}],"modalities":["text","audio"]}`)
-	if answered(c) != http.StatusBadRequest || !strings.Contains(sent(c), "modalities") {
-		t.Fatalf("status %d, want 400 naming modalities: %s", answered(c), sent(c))
-	}
-	if len(fake.asked) != 0 {
-		t.Errorf("the free floor was asked %v", fake.asked)
 	}
 }
 

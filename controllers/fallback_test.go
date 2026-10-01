@@ -90,47 +90,34 @@ func TestFallbackNamesWhereARefusalMayGo(t *testing.T) {
 		}
 	})
 
+	// A third-party model is served as itself or not at all: whatever its vendor
+	// says, nothing stands in for it — not an Enso SKU, not the free pool, not our own
+	// compute.
 	for _, ourOwn := range []bool{true, false} {
-		t.Run(fmt.Sprintf("a deny route never reaches a borrowed free route (compute of our own: %v)", ourOwn), func(t *testing.T) {
+		t.Run(fmt.Sprintf("a named third-party model is never stood in for (compute of our own: %v)", ourOwn), func(t *testing.T) {
 			stage(t, ourOwn)
+			restore(t, ensoFam)
+			ensoFam.providerFn = func() *object.Provider {
+				return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: "http://enso.invalid"}
+			}
 			fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "v/paid")
-			if word, stated := fam.collection("v/paid"); !stated || word != collectionDeny {
-				t.Fatalf("v/paid is bought under (%q, %v), want %q", word, stated, collectionDeny)
-			}
-			var want []string
-			if ourOwn {
-				want = []string{engineModel}
-			}
-			got := ids(fallback(fam, "v/paid", spent, nil))
-			if strings.Join(got, ",") != strings.Join(want, ",") {
-				t.Errorf("routes=%v, want %v — with enso unconfigured only our own compute stands in", got, want)
+			for _, tc := range []struct {
+				err  error
+				what string
+			}{
+				{spent, "spent"},
+				{&apiError{status: http.StatusTooManyRequests, msg: "rate limit exceeded"}, "every account busy"},
+				{&apiError{status: http.StatusBadGateway, msg: "bad gateway"}, "down"},
+				{errors.New("dial tcp: connection refused"), "unreachable"},
+			} {
+				for _, sku := range []string{"v/paid", "v/borrowed:free"} {
+					if got := ids(fallback(fam, sku, tc.err, nil)); len(got) != 0 {
+						t.Errorf("%s %s: routes=%v, want none", tc.what, sku, got)
+					}
+				}
 			}
 		})
 	}
-
-	t.Run("a priced route is answered first by the Enso SKU closest to it", func(t *testing.T) {
-		stage(t, false)
-		restore(t, ensoFam)
-		ensoFam.providerFn = func() *object.Provider {
-			return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: "http://enso.invalid"}
-		}
-		fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "v/paid")
-		// v/paid lists at 3/15 (spareFamily) and retails above frontierOut: enso-pro leads.
-		for _, tc := range []struct {
-			err  error
-			what string
-		}{
-			{spent, "spent"},
-			{&apiError{status: http.StatusTooManyRequests, msg: "rate limit exceeded"}, "every account busy"},
-			{&apiError{status: http.StatusBadGateway, msg: "bad gateway"}, "down"},
-			{errors.New("dial tcp: connection refused"), "unreachable"},
-		} {
-			got := strings.Join(ids(fallback(fam, "v/paid", tc.err, nil)), ",")
-			if got != "enso-pro,enso-flash" {
-				t.Errorf("%s: routes=%s, want enso-pro,enso-flash — never a borrowed free route", tc.what, got)
-			}
-		}
-	})
 
 	t.Run("a refusal that is not the vendor's stands", func(t *testing.T) {
 		stage(t, true)
@@ -170,18 +157,17 @@ func ids(routes []spare) []string {
 	return out
 }
 
-// With the paid lane off, a routed model's own vendors and its priced OpenRouter
-// copy are never offered; only the free floor is.
-func TestWithThePaidLaneOffOnlyTheFreeFloorIsOffered(t *testing.T) {
+// With the paid lane off, a third-party model's own vendors and its priced OpenRouter
+// copy are never offered, and nothing stands in for them: nothing is offered.
+func TestWithThePaidLaneOffAThirdPartyRouteIsOfferedNothing(t *testing.T) {
 	cooled.forget()
 	FreeOnly = func() bool { return true }
 	t.Cleanup(func() { FreeOnly = func() bool { return false } })
 	fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "openai/gpt-4o")
 	_ = fam
-	route := &modelRoute{providerName: "do-ai", upstreamModel: "openai-gpt-4o", premium: true,
+	route := &modelRoute{providerName: "do-ai", upstreamModel: "openai-gpt-4o", premium: false,
 		fallbacks: []modelRouteFallback{{providerName: "anthropic", upstreamModel: "claude"}}}
-	got := candidates("acme", route, nil)
-	if len(got) != 1 || got[0].upstream != "v/borrowed:free" {
-		t.Fatalf("candidates = %+v, want only the free floor", got)
+	if got := candidates("acme", route, nil); len(got) != 0 {
+		t.Fatalf("candidates = %+v, want none", got)
 	}
 }

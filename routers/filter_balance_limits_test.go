@@ -28,120 +28,173 @@ import (
 	"github.com/hanzoai/ai/object"
 )
 
-// TestPlanLimitsGate proves a priced call with money is refused at a plan limit with
-// the window and its reset, admitted inside it, and refused (fail-closed) when the
-// limit cannot be read.
-func TestPlanLimitsGate(t *testing.T) {
+type refusal struct {
+	Error struct {
+		Message    string
+		Code       string
+		Limit      string
+		ResetsAt   string `json:"resets_at"`
+		UpgradeURL string `json:"upgrade_url"`
+	}
+}
+
+func refusalOf(t *testing.T, body string) refusal {
+	t.Helper()
+	var r refusal
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatalf("refusal is not JSON: %s", body)
+	}
+	return r
+}
+
+// gateWith installs a test gate whose caller "tok" is acme/ann paying from acme, with
+// the given wallet balance in cents.
+func gateWith(t *testing.T, cents int64) {
+	t.Helper()
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/ann")
-	bg.ledger.SetBalance("acme", 100000) // the balance admits; only the limit decides
-
+	bg.ledger.SetBalance("acme", cents)
 	prev := balanceGate
 	balanceGate = bg
 	t.Cleanup(func() { balanceGate = prev })
-	t.Cleanup(func() { object.SetLimits(nil) })
+	t.Cleanup(func() { object.SetLimits(nil); object.SetSpent(nil) })
+}
 
-	post := func() (int, string, string) {
-		p := ask(http.MethodPost, "/v1/chat/completions")
-		p = p.with("Authorization", "Bearer tok")
-		p = p.body([]byte(`{"model":"vendor/priced","messages":[]}`))
-		p = p.through(BalanceGateFilter)
-		return p.status(), p.said(), p.replied("Retry-After")
-	}
+func chatWith(model, path string) probe {
+	return ask(http.MethodPost, path).
+		with("Authorization", "Bearer tok").
+		body([]byte(`{"model":"` + model + `","max_tokens":1000,"messages":[{"role":"user","content":"hi"}]}`)).
+		through(BalanceGateFilter)
+}
 
+// A spent window refuses with 429 usage_cap_exceeded naming the window, its reset,
+// Retry-After and the plan that raises it — never credit.
+func TestASpentWindowIs429WithTheUpgrade(t *testing.T) {
+	gateWith(t, 0)
 	reset := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second)
-	var asked object.LimitAsk
-	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitHit, error) {
-		asked = q
-		return &object.LimitHit{Name: "session", ResetsAt: reset}, nil
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return nil, &object.LimitHit{Name: "session", ResetsAt: reset, Upgrade: "max-20x"}, nil
 	})
-	code, body, retry := post()
-	if code != http.StatusTooManyRequests {
-		t.Fatalf("a call at a plan limit must be 429, got %d (%s)", code, body)
+	p := chatWith("enso", "/v1/chat/completions")
+	if p.status() != http.StatusTooManyRequests {
+		t.Fatalf("status %d, want 429 (%s)", p.status(), p.said())
 	}
-	var e struct {
-		Error struct {
-			Code, Limit string
-			ResetsAt    string `json:"resets_at"`
-		}
+	r := refusalOf(t, p.said())
+	if r.Error.Code != "usage_cap_exceeded" || r.Error.Limit != "session" || r.Error.ResetsAt != reset.Format(time.RFC3339) {
+		t.Errorf("refusal %+v", r.Error)
 	}
-	if err := json.Unmarshal([]byte(body), &e); err != nil {
-		t.Fatal(err)
+	if !strings.HasSuffix(r.Error.UpgradeURL, "/cart?plan=max-20x") {
+		t.Errorf("upgrade_url %q, want the next plan's cart", r.Error.UpgradeURL)
 	}
-	if e.Error.Code != "usage_cap_exceeded" || e.Error.Limit != "session" || e.Error.ResetsAt != reset.Format(time.RFC3339) {
-		t.Errorf("429 names code=%q limit=%q resets_at=%q", e.Error.Code, e.Error.Limit, e.Error.ResetsAt)
+	if strings.Contains(strings.ToLower(r.Error.Message), "credit") {
+		t.Errorf("a plan's refusal points at credit: %q", r.Error.Message)
 	}
-	if retry == "" {
+	if p.replied("Retry-After") == "" {
 		t.Error("429 carries no Retry-After")
 	}
-	if asked.Subject != "acme" || asked.Namespace != "acme" || asked.Actor != "acme/ann" || asked.Model != "vendor/priced" {
-		t.Errorf("limits asked %+v", asked)
-	}
 
-	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) { return nil, nil })
-	if code, body, _ := post(); code == http.StatusTooManyRequests || code == http.StatusPaymentRequired || code == http.StatusServiceUnavailable {
-		t.Errorf("a call inside every limit must be admitted, got %d (%s)", code, body)
-	}
-
-	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) {
-		return nil, errors.New("store unreadable")
+	// At the top plan there is no upgrade to offer.
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return nil, &object.LimitHit{Name: "day", ResetsAt: reset}, nil
 	})
-	if code, body, _ := post(); code != http.StatusServiceUnavailable {
-		t.Errorf("an unreadable limit must refuse 503, got %d (%s)", code, body)
+	if r := refusalOf(t, chatWith("enso", "/v1/chat/completions").said()); r.Error.Limit != "day" || r.Error.UpgradeURL != "" {
+		t.Errorf("top plan's day refusal %+v", r.Error)
 	}
+}
 
-	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) {
-		return &object.LimitHit{Name: "plan"}, nil
+// The plan is asked about Hanzo SKUs only, told the family, the apps the caller's
+// token was minted for, and whether the request may reach paid upstream (a chat
+// endpoint). A third-party model is never the plan's.
+func TestThePlanIsAskedAboutHanzoSKUsOnly(t *testing.T) {
+	gateWith(t, 100000)
+	var asked []object.LimitAsk
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		asked = append(asked, q)
+		return nil, nil, nil
 	})
-	code, body, _ = post()
-	var p struct {
-		Error struct {
-			Code       string
-			UpgradeURL string `json:"upgrade_url"`
-		}
+	chatWith("enso-pro", "/v1/chat/completions")
+	chatWith("zen5", "/v1/messages")
+	chatWith("enso-pro", "/v1/embeddings")
+	chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
+	chatWith("vendor/small:free", "/v1/chat/completions")
+	if len(asked) != 3 {
+		t.Fatalf("asked %d times (%+v), want three: the Hanzo SKUs alone", len(asked), asked)
 	}
-	_ = json.Unmarshal([]byte(body), &p)
-	if code != http.StatusPaymentRequired || p.Error.Code != "plan_required" || !strings.HasSuffix(p.Error.UpgradeURL, "/cart?plan=dev") {
-		t.Errorf("no plan and no credit must be 402 plan_required with the upgrade link, got %d (%s)", code, body)
+	if asked[0].Family != "enso" || !asked[0].Spend || asked[0].Subject != "acme" || asked[0].Namespace != "acme" || asked[0].Actor != "acme/ann" {
+		t.Errorf("enso on chat asked %+v", asked[0])
+	}
+	if asked[1].Family != "zen" || !asked[1].Spend {
+		t.Errorf("zen on messages asked %+v", asked[1])
+	}
+	if asked[2].Family != "enso" || asked[2].Spend {
+		t.Errorf("enso off a chat endpoint asked %+v, want no spend", asked[2])
+	}
+}
+
+// A request the plan covers meets neither the free allowance nor the wallet: a $0
+// balance and a spent allowance both admit it.
+func TestACoveredRequestMeetsNoAllowanceAndNoWallet(t *testing.T) {
+	gateWith(t, 0)
+	read := 0
+	object.SetSpent(func(stdcontext.Context, string, string) (object.Standing, error) {
+		read++
+		return object.Standing{Spent: true, Window: "day", Limit: 50}, nil
+	})
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return &object.LimitGrant{Plan: "max-20x", Spend: 1, Settle: func(int64) {}}, nil, nil
+	})
+	if p := chatWith("enso", "/v1/chat/completions"); p.status() != http.StatusOK {
+		t.Errorf("enso under a plan: status %d (%s)", p.status(), p.said())
+	}
+	if read != 0 {
+		t.Errorf("the free allowance was read %d time(s) for a covered request", read)
 	}
 
-	object.SetLimits(nil)
-	if code, body, _ := post(); code == http.StatusTooManyRequests || code == http.StatusServiceUnavailable {
-		t.Errorf("no limits installed must admit, got %d (%s)", code, body)
+	// Without a plan the same request goes on to the gates below: here, priced in this
+	// test's empty catalog, the wallet refuses it at $0.
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return nil, nil, nil
+	})
+	if p := chatWith("enso", "/v1/chat/completions"); p.status() != http.StatusPaymentRequired {
+		t.Errorf("no plan, $0: status %d, want the wallet's 402 (%s)", p.status(), p.said())
+	}
+}
+
+// A plan that cannot be read covers nothing, and the request goes on as a free one:
+// free AI keeps answering and nothing is held.
+func TestAnUnreadablePlanServesAsFree(t *testing.T) {
+	gateWith(t, 0)
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return nil, nil, errors.New("store unreadable")
+	})
+	if p := chatWith("enso", "/v1/chat/completions"); p.status() == http.StatusServiceUnavailable || p.status() == http.StatusTooManyRequests {
+		t.Errorf("unreadable plan: %d, want the request served as free (%s)", p.status(), p.said())
 	}
 }
 
 // A priced call that names no model (crawl, ingest) is the balance gate's alone: the
-// plan limits are never asked about it.
+// plan is never asked about it.
 func TestPlanLimitsAreAskedOnlyForAModel(t *testing.T) {
-	bg := newTestGate("http://unused", "", balanceCacheTTL)
-	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/ann")
-	bg.ledger.SetBalance("acme", 100000)
-	prev := balanceGate
-	balanceGate = bg
-	t.Cleanup(func() { balanceGate = prev })
-	t.Cleanup(func() { object.SetLimits(nil) })
-
+	gateWith(t, 100000)
 	asked := 0
-	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) {
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		asked++
-		return &object.LimitHit{Name: "plan"}, nil
+		return nil, &object.LimitHit{Name: "day"}, nil
 	})
 	p := ask(http.MethodPost, "/v1/crawl").with("Authorization", "Bearer tok").body([]byte(`{"url":"https://example.com"}`)).through(BalanceGateFilter)
-	if asked != 0 || p.status() == http.StatusPaymentRequired {
-		t.Fatalf("a call naming no model asked the plan limits %d time(s), status %d", asked, p.status())
+	if asked != 0 || p.status() == http.StatusTooManyRequests {
+		t.Fatalf("a call naming no model asked the plan %d time(s), status %d", asked, p.status())
 	}
 }
 
 // The gate reads the org the caller is working in: X-Org-Id when the signed `orgs`
 // claim lists it, the home org (orgs[0]) when the header is absent, and nobody when
-// it names an org the claim does not list. The plan limits are asked about exactly
-// that org, which is how a member of a paid team org is covered there and refused
-// in a free home org.
+// it names an org the claim does not list. The plan is asked about exactly that org,
+// with the apps the token was minted for.
 func TestTheGateReadsTheOrgTheCallerIsWorkingIn(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
-	bg.ledger.SetBalance("webby-ai", 100000)
-	bg.ledger.SetBalance("joshuafl369", 100000)
+	bg.ledger.SetBalance("webby-ai", 0)
+	bg.ledger.SetBalance("joshuafl369", 0)
 	prev := balanceGate
 	balanceGate = bg
 	t.Cleanup(func() { balanceGate = prev })
@@ -159,34 +212,37 @@ func TestTheGateReadsTheOrgTheCallerIsWorkingIn(t *testing.T) {
 	}
 
 	var asked []object.LimitAsk
-	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitHit, error) {
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		asked = append(asked, q)
 		if q.Namespace == "webby-ai" {
-			return nil, nil // the paid team org covers the call
+			return &object.LimitGrant{Plan: "max-20x", Settle: func(int64) {}}, nil, nil
 		}
-		return &object.LimitHit{Name: "plan"}, nil // the free home org does not
+		return nil, &object.LimitHit{Name: "day", ResetsAt: time.Now().Add(time.Hour)}, nil
 	})
 	post := func(org string) int {
 		p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer "+tok)
 		if org != "" {
 			p = p.with("X-Org-Id", org)
 		}
-		return p.body([]byte(`{"model":"vendor/priced","messages":[]}`)).through(BalanceGateFilter).status()
+		return p.body([]byte(`{"model":"enso","messages":[]}`)).through(BalanceGateFilter).status()
 	}
 
-	if code := post("webby-ai"); code == http.StatusPaymentRequired || code == http.StatusTooManyRequests {
-		t.Fatalf("working in the paid team org: %d, want admitted", code)
+	if code := post("webby-ai"); code != http.StatusOK {
+		t.Fatalf("working in the paid org: %d, want admitted", code)
 	}
-	if code := post(""); code != http.StatusPaymentRequired {
-		t.Fatalf("working in the free home org: %d, want 402 plan_required", code)
+	if code := post(""); code != http.StatusTooManyRequests {
+		t.Fatalf("working in the home org: %d, want its 429", code)
 	}
 	if len(asked) != 2 || asked[0].Namespace != "webby-ai" || asked[0].Subject != "webby-ai" ||
 		asked[1].Namespace != "joshuafl369" || asked[1].Actor != "joshuafl369/joshuafl369" {
 		t.Fatalf("limits asked %+v", asked)
 	}
+	if len(asked[0].Apps) != 1 || asked[0].Apps[0] != "hanzo-app" {
+		t.Errorf("apps %v, want the token's audience", asked[0].Apps)
+	}
 	asked = nil
 	post("acme") // an org the claim does not list
 	if len(asked) != 0 {
-		t.Fatalf("a non-member X-Org-Id reached the plan limits: %+v", asked)
+		t.Fatalf("a non-member X-Org-Id reached the plan: %+v", asked)
 	}
 }

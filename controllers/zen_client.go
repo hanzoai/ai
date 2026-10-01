@@ -386,6 +386,11 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 	if err == nil || !unserved(err) {
 		return nil
 	}
+	// A third-party model is served as itself or not at all: its vendor's refusal
+	// stands. Only a Hanzo SKU, or the pool's own name, is ours to route elsewhere.
+	if FamilyOf(sku) == "" && !fam.frontDoor(sku) {
+		return nil
+	}
 	return standIn(fam, sku)
 }
 
@@ -1444,6 +1449,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		req.Header.Set("X-Org-Id", authUser.Owner)
 	}
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
+	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
+	// the family may answer from a paid rung whose cost fits, and tells us its rate.
+	if g := grantOf(c.Ctx); g != nil && g.Spend > 0 && hanzoFamily(fam) {
+		req.Header.Set(spendHeader, spendUSD(g.Spend))
+	}
 
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
@@ -1470,6 +1480,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if f != fam {
 			// The credential is the family's own: another family's never travels.
 			r.Header.Del("Authorization")
+		}
+		if !hanzoFamily(f) {
+			r.Header.Del(spendHeader)
 		}
 		upstream.Authorize(r, p)
 		// The vendor is sent its own id for the SKU. An alias is ours, so it goes
@@ -1672,9 +1685,14 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
 		sku, requested, resp, by = alt.id, model, r, alt.fam
+	} else if !lane && FreeOnly() && FamilyOf(sku) == "" {
+		// The paid lane is off and the model named is a third-party one: it is not
+		// sent, and nothing answers in its place.
+		c.zenError(dialect, paidLaneOff(model).Error(), http.StatusServiceUnavailable)
+		return done()
 	} else if !lane && FreeOnly() {
-		// The paid lane is off: a priced route is never sent, and the routes that
-		// stand in for it answer in its place, named as what they are.
+		// The paid lane is off: a priced Hanzo SKU is never sent to its paid route, and
+		// the Hanzo routes that stand in for it answer in its place.
 		r, alt := pool(standIn(fam, sku), sku)
 		if r == nil {
 			if c.Context().Err() != nil {
@@ -1810,7 +1828,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// request's own goroutine, and travel by value. recordFamilyUsage takes no
 	// receiver for the same reason: with no `c` in scope it cannot reach a request
 	// at all, which is a compile-time property rather than a rule to remember.
-	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam}
+	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam, plan: grantOf(c.Ctx)}
 
 	// bill is the hold the answer settles: this request's, until a stream carries
 	// it into the writer (carry) so done's settle(0) cannot take it first.
@@ -1921,6 +1939,9 @@ type serving struct {
 	arm, vendor, failover string
 	first                 time.Duration
 	free                  bool
+	// rate is what the paid rung that answered costs, set only when the request
+	// carried its plan's spend and a paid rung answered it.
+	rate *costRate
 }
 
 // servingOf reads a family response's headers into a serving.
@@ -1929,7 +1950,7 @@ func servingOf(h http.Header) serving {
 	if arm == "" {
 		arm = h.Get(servedHeader)
 	}
-	return serving{arm: arm, vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true"}
+	return serving{arm: arm, vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true", rate: readCostRate(h)}
 }
 
 // armHeader is the upstream model a family says answered, for our records only.
@@ -2302,10 +2323,11 @@ func coarseTokenEstimate(body []byte) int {
 // all three are only safe to read before the handler returns — see the capture in
 // pipeToFamily for what reading them later costs.
 type whence struct {
-	ledger string          // billingOrg: X-Org-Id, the bearer, the session cookie
-	ip     string          // the peer, fiber's own read
-	ctx    context.Context // what the usage row and its span hang off
-	asked  *modelFamily    // the family of the model the caller named
+	ledger string             // billingOrg: X-Org-Id, the bearer, the session cookie
+	ip     string             // the peer, fiber's own read
+	ctx    context.Context    // what the usage row and its span hang off
+	asked  *modelFamily       // the family of the model the caller named
+	plan   *object.LimitGrant // the plan that covers the request, nil for none
 }
 
 // recordFamilyUsage takes NO RECEIVER, deliberately. It is called from inside a
@@ -2363,6 +2385,8 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		// relayed call stops being a guess.
 		CostNanoExact:   mk.cogs(),
 		BilledNanoExact: exact,
+		plan:            w.plan,
+		planRate:        sv.rate,
 	}
 	rec.bind(w.ctx, authUser)
 	recordUsage(rec)

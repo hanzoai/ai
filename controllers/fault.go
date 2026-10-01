@@ -664,55 +664,28 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 	return queue
 }
 
-// openrouterTail is the alternate EVERY route ends in, derived rather than typed
-// out. The route table declares 121 routes and, before this, not one `fallbacks:`
-// entry — so a vendor that could not serve simply ended the request, which is what
-// a dead DO_AI_API_KEY turned into 93 models refusing customers.
+// openrouterTail is the alternate a route ends in, derived rather than typed out:
+// THE SAME MODEL ON OPENROUTER, and only where OpenRouter's own discovered catalog
+// confirms the id. The id is derived from the upstream one — do-ai spells
+// `openai-gpt-4o` where OpenRouter spells `openai/gpt-4o` — but a derivation is a
+// guess, and the vendors disagree often enough (`claude-4.5-sonnet` against
+// `claude-3.5-sonnet`) that guessing would add a hop that 404s. lookup() is the
+// catalog as last discovered, so a wrong guess contributes nothing.
 //
-// Two rungs, and the second is the one that always exists:
+// It is the same model, sold by another vendor, so it is offered only with the paid
+// lane on. Nothing else ever is: a route names a third-party model, and a
+// third-party model is served as itself or not at all — never by a free model, an
+// Enso SKU or our own compute standing in for it.
 //
-//   - THE SAME MODEL ON OPENROUTER, and only where OpenRouter's own discovered
-//     catalog confirms the id. The id is derived from the upstream one — do-ai
-//     spells `openai-gpt-4o` where OpenRouter spells `openai/gpt-4o` — but a
-//     derivation is a guess, and the vendors disagree often enough (`claude-4.5-sonnet`
-//     against `claude-3.5-sonnet`) that guessing would add a hop that 404s. lookup()
-//     is the catalog as last discovered, so a wrong guess contributes nothing and a
-//     right one needs no table to be maintained.
-//   - THE FREE POOL, which needs no mapping at all: freeRoutes() is the platform's
-//     one curated list of routes that cost nothing and answer, best first, and its
-//     ids are OpenRouter's own. That is the floor under every model.
-//
-// It is skipped for a route already served BY openrouter — the family's own
-// `spared` already offers the pool there, and a second offer would be two answers
-// to one question.
-//
-// A PREMIUM route gets the first rung and NOT the free pool. Substituting a free
-// model for one somebody chose and paid for trades terms that are not ours to
-// trade, and the caller would learn of it from a header they would have to
-// remember their own request to compare against — the same argument `spared`
-// already makes when it refuses a `collectionDeny` route. Same model elsewhere is
-// not that trade; a smaller free one is.
+// It is skipped for a route already served BY openrouter.
 func openrouterTail(route *modelRoute) []candidate {
-	if route == nil || route.providerName == freeFamily().name || !freeFamily().enabled() {
+	if route == nil || route.providerName == freeFamily().name || !freeFamily().enabled() || FreeOnly() {
 		return nil
 	}
-	var out []candidate
-	// With the paid lane off, the priced copy of the model is not offered, and the
-	// free floor is offered to every route.
-	paid := !FreeOnly()
-	if id, ok := openrouterEquivalent(route.upstreamModel); ok && paid {
-		out = append(out, candidate{freeFamily().name, id})
+	if id, ok := openrouterEquivalent(route.upstreamModel); ok {
+		return []candidate{{freeFamily().name, id}}
 	}
-	if route.premium && paid {
-		return out
-	}
-	for _, sp := range freeRoutes() {
-		if sp.fam == freeFamily() {
-			out = append(out, candidate{freeFamily().name, sp.id})
-			break // ONE floor: the queue is capped anyway, and the pool's own walk is spared's job
-		}
-	}
-	return out
+	return nil
 }
 
 // openrouterEquivalent maps an upstream id onto OpenRouter's spelling of the same
@@ -787,7 +760,7 @@ func paying(p *object.Provider) bool {
 
 func paidLaneOff(model string) error {
 	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
-		msg: fmt.Sprintf("model %q: the paid lane is off; choose an Enso or Zen model", model)}
+		msg: fmt.Sprintf("model %q is unavailable right now: third-party models are not being served. Choose an Enso or Zen model.", model)}
 }
 
 // codeExhausted is the machine name of "we could not serve this". It is OUR

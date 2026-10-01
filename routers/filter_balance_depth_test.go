@@ -20,27 +20,25 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 )
 
 // The free default id is served as the priced SKU its depth row names exactly when
-// the caller funds that SKU — a plan that covers it, or bought credit — and stays the
-// free id for everyone else, including a caller whose limits cannot be read.
+// the caller's bought credit funds that SKU and no plans are installed. Where plans
+// are installed a Hanzo SKU is a plan's, never a per-call charge, so nothing is
+// lifted onto a priced id.
 func TestTheDefaultIdTakesThePaidLadderOnlyWhenTheCallerFundsIt(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/ann")
 
 	prevGate, prevRoute := balanceGate, depthRoute
 	balanceGate = bg
-	var routedFrom string
 	depthRoute = func(model string, body []byte) (string, bool) {
 		if model != "enso-free" {
 			return "", false
 		}
-		routedFrom = model
 		return "vendor/priced", true
 	}
 	t.Cleanup(func() { balanceGate, depthRoute = prevGate, prevRoute; object.SetLimits(nil) })
@@ -58,12 +56,7 @@ func TestTheDefaultIdTakesThePaidLadderOnlyWhenTheCallerFundsIt(t *testing.T) {
 		return b.Model
 	}
 
-	// Funded: the plan covers the call (no hit) and the balance admits it.
-	var asked []object.LimitAsk
-	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitHit, error) {
-		asked = append(asked, q)
-		return nil, nil
-	})
+	// No plans installed, funded: the free id is served as the priced SKU.
 	bg.ledger.SetBalance("acme", 500)
 	p := post()
 	if p.status() != http.StatusOK || servedAs(p) != "vendor/priced" || p.replied(controllers.RoutedModelHeader) != "vendor/priced" {
@@ -73,20 +66,24 @@ func TestTheDefaultIdTakesThePaidLadderOnlyWhenTheCallerFundsIt(t *testing.T) {
 	if err := json.Unmarshal([]byte(p.handed()), &b); err != nil || b["stream"] != true || b["reasoning_effort"] != "high" {
 		t.Errorf("the rewrite changed more than the model: %s", p.handed())
 	}
-	if routedFrom != "enso-free" || len(asked) == 0 || asked[0].Model != "vendor/priced" || asked[0].Subject != "acme" || asked[0].Actor != "acme/ann" {
-		t.Errorf("limits asked %+v for %q", asked, routedFrom)
+
+	// An empty wallet keeps the free id.
+	bg.ledger.SetBalance("acme", 0)
+	if p := post(); p.status() != http.StatusOK || servedAs(p) != "enso-free" {
+		t.Errorf("an empty wallet: status %d, served %q (%s)", p.status(), servedAs(p), p.said())
 	}
 
-	// Not funded, each way the answer can be no: the request runs as the free id.
+	// Plans installed: never lifted, whatever the plan and the wallet say.
+	bg.ledger.SetBalance("acme", 500)
 	for name, limit := range map[string]object.LimitFunc{
-		"no plan and no credit": func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) {
-			return &object.LimitHit{Name: "plan"}, nil
+		"a covering plan": func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+			return &object.LimitGrant{Plan: "max-20x", Spend: 100, Settle: func(int64) {}}, nil, nil
 		},
-		"a full window": func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) {
-			return &object.LimitHit{Name: "weekly", ResetsAt: time.Now().Add(time.Hour)}, nil
+		"no plan": func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+			return nil, nil, nil
 		},
-		"unreadable limits": func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) {
-			return nil, errors.New("store unreadable")
+		"unreadable plan": func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+			return nil, nil, errors.New("store unreadable")
 		},
 	} {
 		object.SetLimits(limit)
@@ -96,14 +93,8 @@ func TestTheDefaultIdTakesThePaidLadderOnlyWhenTheCallerFundsIt(t *testing.T) {
 		}
 	}
 
-	// Limits that admit, and a wallet that does not.
-	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitHit, error) { return nil, nil })
-	bg.ledger.SetBalance("acme", 0)
-	if p := post(); p.status() != http.StatusOK || servedAs(p) != "enso-free" {
-		t.Errorf("an empty wallet: status %d, served %q (%s)", p.status(), servedAs(p), p.said())
-	}
-
 	// A caller the gate cannot name is never routed.
+	object.SetLimits(nil)
 	p = ask(http.MethodPost, "/v1/chat/completions").body([]byte(sent)).through(BalanceGateFilter)
 	if servedAs(p) == "vendor/priced" {
 		t.Error("an anonymous request was routed onto the priced SKU")

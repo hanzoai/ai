@@ -788,6 +788,13 @@ type usageRecord struct {
 	// never a value a caller chose.
 	ClientRequestID string `json:"clientRequestId,omitempty"`
 
+	// plan is the grant of the plan that covers this call (Cover), nil when none
+	// does: the call debits no wallet and counts against no free allowance. planRate
+	// is the paid rung's cost its family stated, nil when a free rung answered; what
+	// the call cost at it settles against the plan's budget.
+	plan     *object.LimitGrant
+	planRate *costRate
+
 	// Requested is the model the caller ASKED for, set only when a different route
 	// answered — today, when a vendor's account was spent and it served the request
 	// from a route it charges nothing for. Empty on every ordinary call, so
@@ -1242,6 +1249,9 @@ func recordUsage(record *usageRecord) error {
 	// emit sites write the warehouse row and the span for it either way; what it does
 	// not get is a place in the money.
 	if !record.reached() {
+		if record.plan != nil {
+			record.plan.Settle(0)
+		}
 		return nil
 	}
 
@@ -1298,8 +1308,14 @@ func recordUsage(record *usageRecord) error {
 	// where a paid caller is charged what their failure actually cost — usually
 	// nothing. The gate upstream only READS the same count, so a refusal at the ceiling
 	// does not raise it either.
+	// A call the caller's plan covers settles against the plan: what it spent on
+	// paid upstream, against the budget the plan held for it. It debits no wallet and
+	// counts against no free allowance — the plan counted it when it was admitted.
+	if record.plan != nil {
+		record.plan.Settle(record.planRate.nanos(record.PromptTokens, record.CacheReadTokens, record.CompletionTokens))
+	}
 	free := ""
-	if record.answered() && usageFree(record) {
+	if record.plan == nil && record.answered() && usageFree(record) {
 		free = record.allowance()
 		// The public lane keeps its own count in this process so its ceiling holds
 		// while the host is unreachable. Both counts rise at this one moment.
@@ -1335,6 +1351,7 @@ func recordUsage(record *usageRecord) error {
 			Provider:  record.Provider,
 			Actor:     record.User,
 			Allowance: free,
+			Plan:      record.plan != nil,
 			RequestID: record.RequestID,
 			Ref:       record.ref,
 		}); err != nil {

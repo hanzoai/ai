@@ -70,6 +70,10 @@ type UsageEvent struct {
 	// public lane counts a visitor, and one shared subject would let a single caller
 	// empty every visitor's day.
 	Allowance string
+	// Plan says the caller's plan covered this call (LimitGrant): it debits no wallet
+	// and counts against no free allowance, the plan having counted it when it was
+	// admitted.
+	Plan bool
 	// RequestID names the metered call so a warehouse row, a span and a support
 	// question can be tied back to it.
 	//
@@ -100,30 +104,51 @@ type UsageEvent struct {
 // commerce blip never locks a paying caller out of a SKU they already had.
 type TierReaderFunc func(ctx context.Context, subject, namespace string) (name string, err error)
 
-// LimitAsk names the priced call a plan's AI limits are asked about.
+// LimitAsk names one request for a Hanzo SKU that a plan may cover: who pays, which
+// member, which model and family, which app the caller signed in through, and
+// whether the request may reach paid upstream.
 type LimitAsk struct {
 	Subject   string // the billing subject the balance gate reads
 	Namespace string // the org whose ledger pays
 	Actor     string // the member making the call, "<org>/<name>"
 	Model     string // the model the call names
+	// Family is the Hanzo family that serves the model: "enso" or "zen".
+	Family string
+	// Apps are the registered apps the caller's validated token was minted for (its
+	// `aud`); empty for an API key. A plan covers only its consumer apps' requests.
+	Apps []string
+	// Spend says the request may reach its family's paid upstream within the plan's
+	// budget (a chat request); without it the family answers from free models only.
+	Spend bool
 }
 
-// LimitHit is why a priced call is refused: a plan window that is full (session,
-// weekly, weekly_premium, month) and when it resets, or "plan" when no plan covers
-// AI and no bought credit pays, which carries no reset.
+// LimitGrant is a request the caller's plan covers. The wallet is never asked about
+// it: no balance gate, no reservation, no debit, no free allowance. Spend is what
+// its family may spend on paid upstream for it, in nano-dollars; zero means free
+// models only. Settle records, once per answer, what paid upstream actually cost in
+// nano-dollars; the first settle gives back what the request held and did not use.
+type LimitGrant struct {
+	Plan   string
+	Spend  int64
+	Settle func(costNanos int64)
+}
+
+// LimitHit is why a plan refuses a request: "session" or "day" when the plan's
+// request window is spent, when it resets, and the plan that raises it ("" when none
+// does).
 type LimitHit struct {
 	Name     string
 	ResetsAt time.Time
+	Upgrade  string
 }
 
-// LimitFunc answers whether a priced call fits inside the caller's plan AI limits.
-// The host (hanzoai/cloud) owns the plans, the windows and the usage they sum. A nil
-// hit leaves the call to the balance gate; a full window refuses with 429
-// usage_cap_exceeded naming it and its reset; "plan" refuses with 402 plan_required
-// and the upgrade link; an error refuses with 503 limits_unavailable, because a
-// limit that cannot be read bounds nothing. It is asked only for priced models, so a free model is
-// never refused by it. nil (standalone ai) means no plan limits.
-type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitHit, error)
+// LimitFunc answers one request for a Hanzo SKU before it is served. The host
+// (hanzoai/cloud) owns the plans, their windows and their budgets. A grant admits the
+// request as the plan's; a hit refuses it with 429 usage_cap_exceeded naming the
+// window, its reset and the upgrade; neither leaves the request to the free
+// allowance; an error refuses with 503 limits_unavailable, because a limit that
+// cannot be read bounds nothing. nil (standalone ai) means no plans.
+type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitGrant, *LimitHit, error)
 
 // SpentFunc reports where subject stands against the free calls its plan allows
 // this period, within the org namespace: whether they are spent, and which window

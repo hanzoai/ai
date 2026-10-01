@@ -235,6 +235,36 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			model = sku
 		}
 	}
+	// A PLAN COVERS HANZO SKUS, and only from its consumer apps. A plan is a
+	// subscription: the host counts the request in the plan's windows and holds what
+	// its family may spend on paid upstream, and a request the plan covers meets
+	// neither the free allowance nor the wallet below. A spent window is refused here.
+	// Every other request — a third-party model, a caller without a plan, a call made
+	// with an API key — is left to the allowance and the wallet exactly as before.
+	//
+	// A plan that cannot be read covers nothing: the request goes on as a free one,
+	// under the allowance, holding no spend. Free models keep answering, and no money
+	// moves on a plan nobody could read.
+	if limits := object.Limits(); limits != nil {
+		if family := controllers.FamilyOf(model); family != "" {
+			grant, hit, err := limits(c.Context(), object.LimitAsk{
+				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
+				Family: family, Apps: controllers.Apps(c), Spend: controllers.ChatPath(path),
+			})
+			if err != nil {
+				log.Warning("limits: unreadable, serving as free subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
+			}
+			if hit != nil {
+				log.Info("limits: %s subject=%s namespace=%s actor=%s path=%s", hit.Name, subject, namespace, userKey, path)
+				return limitReached(c, hit, namespace)
+			}
+			if grant != nil {
+				controllers.Cover(c, grant)
+				return c.Continue()
+			}
+		}
+	}
+
 	if model != "" && controllers.ModelCostsNothing(model, namespace) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
 		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
@@ -262,24 +292,6 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
-	// The plan's AI limits come first for a priced MODEL call: a full window, or a
-	// caller whose plan covers no AI, is refused whatever else is true. Free models
-	// never ask, and a priced call that names no model (crawl, ingest) is the balance
-	// gate's alone. Fails CLOSED: a limit that cannot be read bounds nothing.
-	if limits := object.Limits(); limits != nil && model != "" {
-		hit, err := limits(c.Context(), object.LimitAsk{Subject: subject, Namespace: namespace, Actor: userKey, Model: model})
-		if err != nil {
-			log.Warning("limits: unreadable subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
-			c.SetHeader("Content-Type", "application/json")
-			return c.Bytes(http.StatusServiceUnavailable, []byte(
-				`{"error":{"message":"Unable to read your plan's usage limits right now. Please retry in a moment.","type":"api_error","code":"limits_unavailable"}}`))
-		}
-		if hit != nil {
-			log.Info("limits: %s subject=%s namespace=%s actor=%s path=%s", hit.Name, subject, namespace, userKey, path)
-			return limitReached(c, hit, namespace)
-		}
-	}
-
 	sufficient, deny, balance := balanceGate.checkBalance(c.Host(), subject, namespace, userKey)
 	if sufficient {
 		return c.Continue()
@@ -305,45 +317,41 @@ var decisionFree = controllers.DecisionFree
 // (controllers.DepthRoute), indirected so the gate's tests state the table directly.
 var depthRoute = controllers.DepthRoute
 
-// funds reports whether the caller pays for a priced call to model: the plan limits
-// cover it or leave it to bought credit, and the balance admits it. Any refusal or
-// unreadable answer is no, which leaves the caller on the free id it sent.
+// funds reports whether the caller pays for a priced call to model: no plans are
+// installed and the balance admits it. Any refusal or unreadable answer is no, which
+// leaves the caller on the free id it sent.
 func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey, model string) bool {
-	if limits := object.Limits(); limits != nil {
-		hit, err := limits(c.Context(), object.LimitAsk{Subject: subject, Namespace: namespace, Actor: userKey, Model: model})
-		if err != nil || hit != nil {
-			return false
-		}
+	// Where plans are installed a Hanzo SKU is a plan's, never a per-call charge: a
+	// plan reaches paid upstream through its family's paid rungs, within its budget,
+	// so nothing lifts a free id onto a priced one.
+	if object.Limits() != nil {
+		return false
 	}
 	sufficient, _, _ := g.checkBalance(c.Host(), subject, namespace, userKey)
 	return sufficient
 }
 
-// limitReached writes the 429 for a plan limit: which window, when it resets, and
-// Retry-After in seconds, so a client can wait or show the reset time.
+// limitReached writes a plan's refusal: 429 usage_cap_exceeded naming the spent
+// window, when it resets (Retry-After in seconds), and the plan that raises it.
+// Money is never the way on: a plan is not a balance.
 func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	body := struct {
 		Error struct {
 			Message    string `json:"message"`
 			Type       string `json:"type"`
 			Code       string `json:"code"`
-			Limit      string `json:"limit,omitempty"`
-			ResetsAt   string `json:"resets_at,omitempty"`
+			Limit      string `json:"limit"`
+			ResetsAt   string `json:"resets_at"`
 			UpgradeURL string `json:"upgrade_url,omitempty"`
 		} `json:"error"`
 	}{}
-	if hit.Name == "plan" {
-		body.Error.UpgradeURL = object.PayURL(c.Host(), org) + "/cart?plan=dev"
-		body.Error.Message = "Paid models need a plan. Free models keep working. Pick a plan at " + body.Error.UpgradeURL
-		body.Error.Type = "billing_error"
-		body.Error.Code = "plan_required"
-		raw, _ := json.Marshal(body)
-		c.SetHeader("Content-Type", "application/json")
-		return c.Bytes(http.StatusPaymentRequired, raw)
-	}
 	reset := hit.ResetsAt.UTC()
-	body.Error.Message = fmt.Sprintf("You've reached your plan's %s AI limit. It resets at %s, or add credits at %s to keep going now.",
-		limitNoun(hit.Name), reset.Format(time.RFC3339), object.PayURL(c.Host(), org))
+	body.Error.Message = fmt.Sprintf("You've used %s requests on your plan. They reset at %s.",
+		limitNoun(hit.Name), reset.Format(time.RFC3339))
+	if hit.Upgrade != "" {
+		body.Error.UpgradeURL = object.PayURL(c.Host(), org) + "/cart?plan=" + url.QueryEscape(hit.Upgrade)
+		body.Error.Message += " Upgrade for more at " + body.Error.UpgradeURL
+	}
 	body.Error.Type = "rate_limit_error"
 	body.Error.Code = "usage_cap_exceeded"
 	body.Error.Limit = hit.Name
@@ -368,14 +376,10 @@ func freeRefused(c *zip.Ctx, n object.FreeNotice) error {
 
 // limitNoun is how a window is named to a person.
 func limitNoun(name string) string {
-	switch name {
-	case "weekly_premium":
-		return "weekly premium-model"
-	case "month":
-		return "monthly"
-	default:
-		return name
+	if name == "day" {
+		return "today's"
 	}
+	return "this " + name + "'s"
 }
 
 // isReadMethod reports whether an HTTP method only READS — it lists or fetches a

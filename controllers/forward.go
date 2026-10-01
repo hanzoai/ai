@@ -434,6 +434,13 @@ func (c *ApiController) forward(p pass) bool {
 		}
 	}
 
+	// With the paid lane off a third-party route is offered nobody — its own vendors
+	// sell their answers and nothing stands in for the model named — so it is
+	// refused, plainly, rather than answered by something else.
+	if len(queue) == 0 && FreeOnly() && len(p.prior) == 0 {
+		c.ResponseFailure(paidLaneOff(sku))
+		return false
+	}
 	tried := p.prior
 	by := ""
 	for _, cand := range queue {
@@ -441,36 +448,6 @@ func (c *ApiController) forward(p pass) bool {
 		// money answering an empty room.
 		if err = ctx.Err(); err != nil {
 			break
-		}
-		// A family's candidate — the route's OpenRouter copy and the free floor — is the
-		// family pipe's to serve. The pipe keeps back the fields that would buy something
-		// on our account, states the terms a paid SKU is sold under, and names and prices
-		// a stand-in as what it is; a raw body sent to the same row would do none of it.
-		// With the paid lane off these are all a route is offered, so skipping them would
-		// leave every relayed route answering 503.
-		//
-		// Only with the paid lane off, which is when a route is offered nothing else.
-		// With it on, the route's own vendors are asked and a family row reached from
-		// here is passed over, as it always was. A customer's own row under the
-		// family's name is theirs, and goes through dial like any other.
-		if fam := familyNamed(cand.provider); fam != nil && !p.strict && FreeOnly() && !ownRow(snap.org, cand.provider) {
-			if why := unpiped(p); why != "" {
-				err, by = modelError("%s", why), ""
-				break
-			}
-			// The free tier's own door, not the route's id: the answer leaves wearing a
-			// name of ours and answering as a model of ours (freeDoor), never as the
-			// vendor's route that happened to answer.
-			door, id := freeDoor()
-			refused := c.pipeToFamily(door, "chat/completions", "openai", id, p.body, p.req.Stream, p.req.MaxTokens, snap.org, p.user, p.premium, p.hold, p.start)
-			if refused == nil {
-				if n := len(p.prior); len(tried) > n {
-					recordRefusals(snap, sku, tried[n:], p.user, p.premium, p.req.Stream, p.id, p.start)
-				}
-				return p.req.Stream
-			}
-			tried = append(tried, refused...)
-			continue
 		}
 		resp, whole, row, e := p.call(ctx, snap.org, rowFor(p.primary, cand), cand, d)
 		if e == nil {

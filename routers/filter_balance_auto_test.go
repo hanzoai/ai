@@ -67,35 +67,35 @@ func TestTheGateJudgesTheSKUAutoRoutesTo(t *testing.T) {
 		return b.Model
 	}
 
-	// A free org whose `auto` routes to a free SKU is served at $0: no plan, no
-	// credit, and nothing asks it for either.
+	// A free org whose `auto` routes to a free SKU is served at $0: the plan is asked
+	// about the SKU auto chose (it is a Hanzo SKU) and, holding none, leaves it to the
+	// free allowance.
 	routesAutoTo(t, "enso-free")
 	bg.ledger.SetBalance("acme", 0)
-	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitHit, error) {
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		asked = append(asked, q)
-		return &object.LimitHit{Name: "plan"}, nil
+		return nil, nil, nil
 	})
 	for _, id := range []string{"auto", "zen-router"} {
 		p := post(id)
-		if p.status() != http.StatusOK || servedAs(p) != "enso-free" || len(asked) != 0 {
+		if p.status() != http.StatusOK || servedAs(p) != "enso-free" || len(asked) != 1 || asked[0].Model != "enso-free" {
 			t.Errorf("free org on %s: status %d, served %q, limits asked %+v (%s)", id, p.status(), servedAs(p), asked, p.said())
 		}
 	}
 
-	// A plan holder with a full window and no credit, whose `auto` routes to a priced
-	// SKU, is refused at the window for that SKU. Month headroom does not admit it.
-	routesAutoTo(t, "vendor/priced")
-	bg.ledger.SetBalance("acme", 900) // bought 0 + what the month still covers
+	// A plan holder with a spent window, whose `auto` routes to a Hanzo SKU, is
+	// refused at the window for that SKU.
+	routesAutoTo(t, "enso-pro")
 	reset := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Second)
-	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitHit, error) {
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		asked = append(asked, q)
-		return &object.LimitHit{Name: "weekly", ResetsAt: reset}, nil
+		return nil, &object.LimitHit{Name: "session", ResetsAt: reset}, nil
 	})
 	p := post("auto")
 	if p.status() != http.StatusTooManyRequests {
-		t.Fatalf("full-window plan holder on auto: status %d, want 429 (%s)", p.status(), p.said())
+		t.Fatalf("spent-window plan holder on auto: status %d, want 429 (%s)", p.status(), p.said())
 	}
-	if len(asked) != 1 || asked[0].Model != "vendor/priced" {
+	if len(asked) != 1 || asked[0].Model != "enso-pro" {
 		t.Errorf("limits asked %+v, want one ask for the routed SKU", asked)
 	}
 }

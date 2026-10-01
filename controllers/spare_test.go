@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -339,63 +338,38 @@ func TestAFreeDoorClosesOnAnEmptyPool(t *testing.T) {
 	}
 }
 
-// THE DISCRIMINATION, which is the whole design. A vendor that cannot serve at all
-// — its account with us spent, or its own failure — moves the request to a free
-// route, because a route it charges nothing for is subject to neither. Everything
-// else fails as itself: a malformed body, a model this vendor has not got, refused
-// content are all facts the caller needs, and answering any of them with a smaller
-// model hides a real failure that cannot be debugged later.
+// A NAMED THIRD-PARTY MODEL IS SERVED AS ITSELF OR NOT AT ALL. Whatever its vendor
+// answers — out of credit, broken, busy, a malformed body, our own balance gate — the
+// request is never moved to another model: the refusal reaches the caller, or is
+// handed back so the same model can be tried at another vendor, and nothing else ever
+// answers in its name. Only a Hanzo SKU or the pool's own name is ours to route.
 //
-// A rate limit is the near miss. On a PRICED route it clears in seconds, so it is
-// waited out rather than downgraded (TestABusyFreeRouteIsServedByThePool holds
-// that). The routes here are FREE, and a free route nobody chose that is busy on
-// one account moves to the pool, which spends every account in turn.
-//
-// Each case drives the REAL relay against a real HTTP vendor, and the assertion
-// is on what the vendor was ASKED — so "it did not fall back" is a fact about the
-// wire, not about a branch nobody took.
-func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
+// Each case drives the REAL relay against a real HTTP vendor, and the assertion is on
+// what the vendor was ASKED — so "it did not move" is a fact about the wire.
+func TestANamedThirdPartyRouteIsNeverMoved(t *testing.T) {
 	const free = "vendor/big:free"
-	// A route bought under the SAME terms as the spare, so what is under test here
-	// is which refusals move a request and nothing else. Whether the terms permit
-	// the move at all is a separate rule with a test of its own
-	// (TestTermsAreNotTradedForAnAnswer).
 	const sku = "vendor/small:free"
-
-	// The 402 body is OpenRouter's own, measured from the live account.
 	const spent = `{"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402,"metadata":{"limit_source":"openrouter_credits"}}}`
 
 	for _, tc := range []struct {
 		name   string
 		status int
 		body   string
-		moves  bool
 	}{
-		{"out of credit", 402, spent, true},
-		{"payment required, bare", 402, `{"error":{"message":"payment required"}}`, true},
-
-		{"malformed request", 400, `{"error":{"message":"messages: invalid role"}}`, false},
-		{"model not carried", 404, `{"error":{"message":"No endpoints found for vendor/paid-a."}}`, false},
-		{"content refused", 422, `{"error":{"message":"content policy violation"}}`, false},
-		{"credential rejected", 401, `{"error":{"message":"unauthorized"}}`, false},
-		{"forbidden", 403, `{"error":{"message":"forbidden"}}`, false},
-		{"rate limited, and the route is free", 429, `{"error":{"message":"rate limit exceeded"}}`, true},
-
-		{"vendor broken", 500, `{"error":{"message":"internal server error"}}`, true},
-		{"bad gateway", 502, `{"error":{"message":"bad gateway"}}`, true},
-		{"gateway timeout", 504, `{"error":{"message":"gateway timeout"}}`, true},
-		// THE ONE THAT MATTERS MOST. The customer's own paywall, relayed by a
-		// service that fronts for us: same status, opposite fact. It is the
-		// customer who owes money, and serving them a free model instead would
-		// tell them their payment problem had fixed itself. Told apart by the
-		// CODE we stamp on every denial we make, which no vendor writes.
-		{"our own balance gate", 402, `{"error":{"message":"Insufficient balance. Add credits to your wallet at https://hanzo.ai/pay","type":"billing_error","code":"insufficient_balance"}}`, false},
-		{"our own balance lookup blip", 402, `{"error":{"message":"Unable to verify your balance right now.","type":"billing_error","code":"balance_unavailable"}}`, false},
+		{"out of credit", 402, spent},
+		{"payment required, bare", 402, `{"error":{"message":"payment required"}}`},
+		{"malformed request", 400, `{"error":{"message":"messages: invalid role"}}`},
+		{"model not carried", 404, `{"error":{"message":"No endpoints found for vendor/paid-a."}}`},
+		{"content refused", 422, `{"error":{"message":"content policy violation"}}`},
+		{"credential rejected", 401, `{"error":{"message":"unauthorized"}}`},
+		{"forbidden", 403, `{"error":{"message":"forbidden"}}`},
+		{"rate limited", 429, `{"error":{"message":"rate limit exceeded"}}`},
+		{"vendor broken", 500, `{"error":{"message":"internal server error"}}`},
+		{"bad gateway", 502, `{"error":{"message":"bad gateway"}}`},
+		{"gateway timeout", 504, `{"error":{"message":"gateway timeout"}}`},
+		{"our own balance gate", 402, `{"error":{"message":"Insufficient balance. Add credits to your wallet at https://hanzo.ai/pay","type":"billing_error","code":"insufficient_balance"}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// Both memories reset: a 401 rests the account's key for every scope, so
-			// without forgetKeys the case after "credential rejected" finds no key
-			// to ask with and never reaches the vendor at all.
 			cooled.forget()
 			forgetKeys()
 			fake := &refuses{status: tc.status, body: tc.body, free: free}
@@ -405,33 +379,14 @@ func TestOnlyAVendorThatCannotServeMovesTheRequest(t *testing.T) {
 
 			c, refusedBy := fake.pipe(t, fam, sku)
 
-			if len(fake.asked) == 0 {
-				t.Fatal("the vendor was never asked")
+			if len(fake.asked) != 1 || fake.asked[0] != sku {
+				t.Fatalf("asked=%v, want only the model the caller named", fake.asked)
 			}
-			moved := len(fake.asked) > 1
-			if moved != tc.moves {
-				t.Fatalf("asked=%v: moved=%v, want %v", fake.asked, moved, tc.moves)
+			if refusedBy == nil && sent(c) == "" {
+				t.Error("the refusal vanished")
 			}
-			if fake.asked[0] != sku {
-				t.Errorf("first ask was %q, want the SKU the caller named", fake.asked[0])
-			}
-			if !tc.moves {
-				// The refusal must reach somebody as itself: either relayed to the
-				// client, or handed back so another VENDOR can be tried. What it must
-				// never be is a quietly different model.
-				if refusedBy == nil && sent(c) == "" {
-					t.Error("the refusal vanished")
-				}
-				if strings.Contains(sent(c), free) {
-					t.Errorf("a %d was answered with the free route:\n%s", tc.status, sent(c))
-				}
-				return
-			}
-			if fake.asked[1] != free {
-				t.Errorf("second ask was %q, want the spare route", fake.asked[1])
-			}
-			if refusedBy != nil {
-				t.Errorf("the request was handed on after it had already been served: %v", refusedBy)
+			if strings.Contains(sent(c), free) || strings.Contains(sent(c), "enso-free") {
+				t.Errorf("a %d was answered by another model:\n%s", tc.status, sent(c))
 			}
 		})
 	}
@@ -485,25 +440,20 @@ func TestTermsAreNotTradedForAnAnswer(t *testing.T) {
 		})
 	}
 
-	// A route bought under `allow` moves to the pool, and its answer names the model
-	// that wrote it.
-	t.Run("allow moves, and says who answered", func(t *testing.T) {
+	// A route bought under `allow` does not move either: a named model is never
+	// answered by another.
+	t.Run("allow does not move a named model", func(t *testing.T) {
 		cooled.forget()
 		const alsoFree = "vendor/small:free"
 		fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
 		vendor := fake.serve(t)
 		defer vendor.Close()
 		fam := spareFamily(t, vendor.URL, free, alsoFree)
-
 		if word, stated := fam.collection(alsoFree); !stated || word != collectionAllow {
 			t.Fatalf("%q is bought under (%q, stated=%v), want %q", alsoFree, word, stated, collectionAllow)
 		}
-		c, _ := fake.pipe(t, fam, alsoFree)
-		if len(fake.asked) != 2 {
-			t.Fatalf("asked=%v — a route under %q was not offered the spare", fake.asked, collectionAllow)
-		}
-		if h := string(c.Fiber().Response().Header.Peek(servedHeader)); h != "enso-free" {
-			t.Errorf("%s = %q, want enso-free — the free tier, never the model behind it", servedHeader, h)
+		if _, _ = fake.pipe(t, fam, alsoFree); len(fake.asked) != 1 {
+			t.Fatalf("asked=%v — a named route was moved", fake.asked)
 		}
 	})
 }
@@ -519,7 +469,13 @@ func TestTermsAreNotTradedForAnAnswer(t *testing.T) {
 func TestTheWalkIsBoundedByTheCallersClockAndNotOnlyByItsCount(t *testing.T) {
 	cooled.forget()
 	const free = "vendor/big:free"
-	const sku = "vendor/small:free"
+	const first = "vendor/small:free"
+	door := func(url string) *modelFamily {
+		fam := spareFamily(t, url, free)
+		fam.spares = []string{first, free}
+		fam.byID[first] = zenModel{ID: first}
+		return fam
+	}
 	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
 	vendor := fake.serve(t)
 	defer vendor.Close()
@@ -527,10 +483,10 @@ func TestTheWalkIsBoundedByTheCallersClockAndNotOnlyByItsCount(t *testing.T) {
 	// A request that has already been running longer than one attempt is allowed to
 	// take. Nothing here is slow; what is under test is the rule, not the wait.
 	spent := time.Now().Add(-zenPipeHeader - time.Second)
-	c, refusedBy := fake.pipeSince(t, spareFamily(t, vendor.URL, free, sku), sku, spent)
+	c, refusedBy := fake.pipeSince(t, door(vendor.URL), freeID, spent)
 
-	if len(fake.asked) != 1 {
-		t.Errorf("asked=%v — the walk started another attempt on a request that had already spent its time", fake.asked)
+	if len(fake.asked) != 0 {
+		t.Errorf("asked=%v — the walk started an attempt on a request that had already spent its time", fake.asked)
 	}
 	// And it is a refusal, not silence: the caller gets an answer they can act on.
 	if refusedBy == nil && sent(c) == "" {
@@ -538,12 +494,12 @@ func TestTheWalkIsBoundedByTheCallersClockAndNotOnlyByItsCount(t *testing.T) {
 	}
 
 	// The same request on a fresh clock still walks — otherwise this asserts that
-	// the fallback is broken rather than that it is bounded.
+	// the walk is broken rather than that it is bounded.
 	cooled.forget()
 	fresh := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
 	freshVendor := fresh.serve(t)
 	defer freshVendor.Close()
-	if _, _ = fresh.pipe(t, spareFamily(t, freshVendor.URL, free, sku), sku); len(fresh.asked) != 2 {
+	if _, _ = fresh.pipe(t, door(freshVendor.URL), freeID); len(fresh.asked) != 2 {
 		t.Errorf("asked=%v — a request with time left did not walk the pool", fresh.asked)
 	}
 }
@@ -553,43 +509,15 @@ func TestTheWalkIsBoundedByTheCallersClockAndNotOnlyByItsCount(t *testing.T) {
 func TestTheHeaderStatesTheTermsThatServed(t *testing.T) {
 	cooled.forget()
 	const free = "vendor/big:free"
-	const alsoFree = "vendor/small:free"
 	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
 	vendor := fake.serve(t)
 	defer vendor.Close()
 
-	c, _ := fake.pipe(t, spareFamily(t, vendor.URL, free, alsoFree), alsoFree)
+	c, _ := fake.pipe(t, spareFamily(t, vendor.URL, free), freeID)
 
 	if got := string(c.Fiber().Response().Header.Peek(headerCollection)); got != collectionAllow {
 		t.Errorf("%s = %q, want %q — the spare that answered is served under %q",
 			headerCollection, got, collectionAllow, collectionAllow)
-	}
-}
-
-// A resale model that another model stood in for is answered in the name of the
-// model that wrote it, so the caller can tell from the answer itself. The ledger
-// still records Requested against Model.
-func TestAnAnswerNamesTheModelThatWroteIt(t *testing.T) {
-	cooled.forget()
-	const free = "vendor/big:free"
-	const sku = "vendor/small:free"
-	fake := &refuses{status: 402, body: `{"error":{"message":"Insufficient credits."}}`, free: free}
-	vendor := fake.serve(t)
-	defer vendor.Close()
-
-	c, _ := fake.pipe(t, spareFamily(t, vendor.URL, free, sku), sku)
-
-	var got map[string]any
-	if err := json.Unmarshal([]byte(sent(c)), &got); err != nil {
-		t.Fatalf("not JSON: %v\n%s", err, sent(c))
-	}
-	// The route really did answer — otherwise this asserts nothing about a
-	// substitution, only about a request that was served straight.
-	if len(fake.asked) != 2 || fake.asked[1] != free {
-		t.Fatalf("asked=%v — the spare did not serve this request", fake.asked)
-	}
-	if got["model"] != "enso-free" {
-		t.Errorf("model = %v, want enso-free — the Hanzo tier that answered, never the model behind it", got["model"])
 	}
 }
 
@@ -1258,10 +1186,9 @@ func TestBillingReadsTheSnapshotAndNeverTheVendor(t *testing.T) {
 	}
 }
 
-// A priced resale route its vendor cannot serve is answered first by the Enso SKU
-// closest to it: the answer names that SKU, the resale vendor's credential never
-// reaches the Enso service, and the free pool is not asked while Enso answers.
-func TestAPricedRouteIsAnsweredByTheClosestEnsoSKU(t *testing.T) {
+// A priced third-party route its vendor cannot serve is refused as itself: no Enso
+// SKU, no free route and none of our own compute answers in its name.
+func TestAPricedThirdPartyRouteIsNeverAnsweredByAnother(t *testing.T) {
 	cooled.forget()
 	forgetKeys()
 	const free = "vendor/big:free"
@@ -1275,17 +1202,14 @@ func TestAPricedRouteIsAnsweredByTheClosestEnsoSKU(t *testing.T) {
 	defer vendor.Close()
 	fam := spareFamily(t, vendor.URL, free, paid)
 
-	var mu sync.Mutex
-	var asked, auth []string
+	var asked []string
 	enso := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Model string `json:"model"`
 		}
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &in)
-		mu.Lock()
-		asked, auth = append(asked, in.Model), append(auth, r.Header.Get("Authorization"))
-		mu.Unlock()
+		asked = append(asked, in.Model)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"1","model":"` + in.Model + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
 	}))
@@ -1299,26 +1223,17 @@ func TestAPricedRouteIsAnsweredByTheClosestEnsoSKU(t *testing.T) {
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 
 	c, out := fake.pipe(t, fam, paid)
-	if out != nil {
-		t.Fatalf("attempts=%+v, want Enso to answer", out)
+	if len(asked) != 0 {
+		t.Fatalf("enso asked %v for a named third-party model", asked)
 	}
-	if len(asked) != 1 || asked[0] != "enso-pro" {
-		t.Fatalf("enso asked %v, want [enso-pro] — the vendor lists %q at 3/15, a frontier price", asked, paid)
+	if len(fake.asked) != 1 || fake.asked[0] != paid {
+		t.Fatalf("vendor asked %v, want only %q", fake.asked, paid)
 	}
-	if auth[0] != "" {
-		t.Errorf("the Enso service was sent an Authorization header: the resale vendor's key travelled")
+	if out == nil && sent(c) == "" {
+		t.Fatal("the refusal vanished")
 	}
-	for _, m := range fake.asked {
-		if m == free {
-			t.Errorf("the free pool was asked while Enso answered: %v", fake.asked)
-		}
-	}
-	var got map[string]any
-	if err := json.Unmarshal([]byte(sent(c)), &got); err != nil {
-		t.Fatalf("not JSON: %v\n%s", err, sent(c))
-	}
-	if got["model"] != "enso-pro" {
-		t.Errorf("model = %v, want enso-pro — the answer names the model that wrote it", got["model"])
+	if strings.Contains(sent(c), "enso-pro") || strings.Contains(sent(c), `"ok"`) {
+		t.Fatalf("another model answered in its name: %s", sent(c))
 	}
 }
 
@@ -1358,10 +1273,10 @@ func TestTheRouteThatRefusedIsNotAskedAgain(t *testing.T) {
 	engineFam.urlKey = "TEST_ENGINE_URL"
 	engineFam.providerFn = nil
 
-	body := []byte(`{"model":"` + free + `","messages":[{"role":"user","content":"2+2?"}]}`)
+	body := []byte(`{"model":"` + freeID + `","messages":[{"role":"user","content":"2+2?"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	c.pipeToFamily(fam, "chat/completions", "openai", free, body, false, 0, "acme", nil, false, nil, time.Now())
+	c.pipeToFamily(fam, "chat/completions", "openai", freeID, body, false, 0, "acme", nil, false, nil, time.Now())
 
 	if asked[free] != 1 {
 		t.Errorf("the refusing route was asked %d times, want 1 — the walk offered it its own request back", asked[free])
@@ -1471,81 +1386,34 @@ func TestAStandInCostsNoMoreThanTheModelNamed(t *testing.T) {
 	}
 }
 
-// A family that could not be reached is not asked again for its other routes, and
-// a transport failure on the family's own send moves the request like a refusal.
+// A Hanzo family that cannot be reached at all moves its request to the pool like a
+// refusal: its SKU is ours to route.
 func TestAnUnreachableFamilyIsAskedOnceAndItsCallerStillAnswered(t *testing.T) {
 	cooled.forget()
 	forgetKeys()
 	const free = "vendor/big:free"
-	const paid = "vendor/paid-a"
-	t.Setenv("OPENROUTER_API_KEY", "k1")
-	t.Setenv("OPENROUTER_API_KEY_2", "")
-	t.Setenv("OPENROUTER_API_KEY_3", "")
-
-	fake := &refuses{status: http.StatusPaymentRequired, body: `{"error":{"message":"Insufficient credits.","code":402}}`, free: free}
-	vendor := fake.serve(t)
-	defer vendor.Close()
-	fam := spareFamily(t, vendor.URL, free, paid)
-
-	// Enso is configured at an address nothing listens on.
 	dead := httptest.NewServer(http.NotFoundHandler())
 	deadURL := dead.URL
 	dead.Close()
-	restore(t, ensoFam)
-	ensoFam.providerFn = func() *object.Provider {
-		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: deadURL}
-	}
-	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 
-	// Our own compute answers.
-	var engineAsked []string
-	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var in struct {
-			Model string `json:"model"`
-		}
-		b, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(b, &in)
-		engineAsked = append(engineAsked, in.Model)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"1","model":"default","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
-	}))
-	defer engine.Close()
-	restore(t, engineFam)
-	t.Setenv("TEST_ENGINE_URL", engine.URL)
-	engineFam.urlKey = "TEST_ENGINE_URL"
-	engineFam.providerFn = nil
-
-	c, out := fake.pipe(t, fam, paid)
-	if out != nil {
-		t.Fatalf("attempts=%+v, want our own compute to answer", out)
-	}
-	if len(engineAsked) != 1 {
-		t.Fatalf("engine asked %v, want once", engineAsked)
-	}
-	if !strings.Contains(sent(c), `"ok"`) {
-		t.Fatalf("body %s, want the engine's answer", sent(c))
-	}
-
-	// The family itself unreachable: its own send fails, and the pool answers.
-	cooled.forget()
-	fake2 := &refuses{status: http.StatusServiceUnavailable, body: `{}`, free: free}
-	pool := fake2.serve(t)
+	fake := &refuses{status: http.StatusServiceUnavailable, body: `{}`, free: free}
+	pool := fake.serve(t)
 	defer pool.Close()
 	spareFamily(t, pool.URL, free)
 	gone := otherFamily(t, deadURL)
 	body := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"2+2?"}]}`)
-	c2 := visit(http.MethodPost, "/v1/chat/completions")
-	c2.Fiber().Request().SetBody(body)
-	if out := c2.pipeToFamily(gone, "chat/completions", "openai", "enso-flash", body, false, 0, "acme", nil, false, nil, time.Now()); out != nil {
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	c.Fiber().Request().SetBody(body)
+	if out := c.pipeToFamily(gone, "chat/completions", "openai", "enso-flash", body, false, 0, "acme", nil, false, nil, time.Now()); out != nil {
 		t.Fatalf("attempts=%+v, want the pool to answer an unreachable family", out)
 	}
-	if !strings.Contains(sent(c2), `"ok"`) {
-		t.Fatalf("body %s, want the pool's answer", sent(c2))
+	if !strings.Contains(sent(c), `"ok"`) {
+		t.Fatalf("body %s, want the pool's answer", sent(c))
 	}
 }
 
-// With the paid lane off, a priced route is never sent: the Enso SKU that stands in
-// for it answers, named as itself, and a free route is sent as ever.
+// With the paid lane off, a priced third-party route is never sent and nothing
+// answers in its place: it is refused, plainly. A free route is sent as ever.
 func TestWithThePaidLaneOffAPricedRouteIsNeverSent(t *testing.T) {
 	cooled.forget()
 	forgetKeys()
@@ -1571,7 +1439,6 @@ func TestWithThePaidLaneOffAPricedRouteIsNeverSent(t *testing.T) {
 		_ = json.Unmarshal(b, &in)
 		asked = append(asked, in.Model)
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set(servedHeader, "vendor/big:free")
 		_, _ = w.Write([]byte(`{"id":"1","model":"` + in.Model + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}`))
 	}))
 	defer enso.Close()
@@ -1583,20 +1450,13 @@ func TestWithThePaidLaneOffAPricedRouteIsNeverSent(t *testing.T) {
 
 	c, out := fake.pipe(t, fam, paid)
 	if out != nil {
-		t.Fatalf("attempts=%+v, want the stand-in to answer", out)
+		t.Fatalf("attempts=%+v, want the refusal answered here", out)
 	}
-	for _, m := range fake.asked {
-		if m == paid {
-			t.Fatalf("the priced route was sent with the paid lane off: %v", fake.asked)
-		}
+	if len(fake.asked) != 0 || len(asked) != 0 {
+		t.Fatalf("vendor asked %v, enso asked %v — nothing may be sent for a priced third-party route with the paid lane off", fake.asked, asked)
 	}
-	if len(asked) != 1 || asked[0] != "enso-pro" {
-		t.Fatalf("enso asked %v, want [enso-pro]", asked)
-	}
-	var got map[string]any
-	_ = json.Unmarshal([]byte(sent(c)), &got)
-	if got["model"] != "enso-pro" {
-		t.Errorf("model = %v, want enso-pro", got["model"])
+	if !strings.Contains(sent(c), "third-party models are not being served") {
+		t.Fatalf("body %s, want the plain reason", sent(c))
 	}
 
 	// A free route is sent as ever.
