@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -338,5 +339,84 @@ func TestThePlansSpendIsNeverSentTwice(t *testing.T) {
 	markOf(c.Ctx).tried.Store(true)
 	if got := spendFor(c.Ctx, ensoFam); got != "" {
 		t.Fatalf("after a paid rung was tried the request still sends spend %q", got)
+	}
+}
+
+// ensoAt points the Enso family at handler and shortens the wait for a family's
+// headers to wait, so a test can outlast it.
+func ensoAt(t *testing.T, wait time.Duration, handler http.HandlerFunc) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	restore(t, ensoFam)
+	ensoFam.providerFn = func() *object.Provider {
+		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
+	}
+	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro"}}
+	ensoFam.ids = []string{"enso-pro"}
+	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
+	prev := zenPipeClient
+	zenPipeClient = &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: wait}}
+	t.Cleanup(func() { zenPipeClient = prev })
+}
+
+// A dispatch that carried the plan's spend and got no answer back — its headers came
+// after ai stopped waiting, or the connection was cut — may have bought a paid
+// answer: the plan is charged the whole hold, once, and no later dispatch of the
+// request carries the spend again.
+func TestASpendWithNoAnswerSettlesTheWholeHold(t *testing.T) {
+	cases := map[string]func(http.ResponseWriter, *http.Request){
+		"headers past the wait": func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(300 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set(costRateHeader, "8.00,40.00,0.40")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"1","model":"enso-pro","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":8000}}`))
+		},
+		"connection cut": func(w http.ResponseWriter, r *http.Request) {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = conn.Close()
+			}
+		},
+	}
+	for name, answer := range cases {
+		t.Run(name, func(t *testing.T) {
+			var asked, spent atomic.Int32
+			ensoAt(t, 100*time.Millisecond, func(w http.ResponseWriter, r *http.Request) {
+				asked.Add(1)
+				if r.Header.Get(spendHeader) != "" {
+					spent.Add(1)
+				}
+				answer(w, r)
+			})
+			got := pipeCovered(t, 1_000_000_000)
+			charged := int64(0)
+			for _, n := range got {
+				charged += n
+			}
+			if len(got) == 0 || got[0] != 1_000_000_000 || charged != 1_000_000_000 {
+				t.Errorf("settled %v, want the whole 1000000000 hold first and once", got)
+			}
+			if spent.Load() != 1 {
+				t.Errorf("enso was sent the spend %d time(s) over %d dispatch(es), want once", spent.Load(), asked.Load())
+			}
+		})
+	}
+}
+
+// A dispatch that never carried the spend and got no answer charges the plan
+// nothing: no paid rung could have been asked.
+func TestNoSpendNoAnswerSettlesNothing(t *testing.T) {
+	ensoAt(t, 100*time.Millisecond, func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	})
+	for _, n := range pipeCovered(t, 0) {
+		if n != 0 {
+			t.Fatalf("a request that sent no spend was charged %d", n)
+		}
 	}
 }

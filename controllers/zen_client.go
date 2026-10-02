@@ -1524,8 +1524,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// on each key (family_open.go).
 		resp, err := f.send(r, p, f.free(s), stream || assemble)
 		// A Hanzo family that states a paid rung's rate answered from paid upstream,
-		// whatever its status: the request buys no second paid answer.
+		// whatever its status: the request buys no second paid answer. A dispatch that
+		// carried the spend and got no answer at all — its headers came after the wait,
+		// or the connection was cut — may have bought one just the same.
 		if resp != nil && hanzoFamily(f) && readCostRate(resp.Header) != nil {
+			pm.tried.Store(true)
+		}
+		if resp == nil && r.Header.Get(spendHeader) != "" {
 			pm.tried.Store(true)
 		}
 		// A family that answered a stream request whole is a whole answer: judged by
