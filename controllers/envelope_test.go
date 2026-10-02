@@ -179,7 +179,7 @@ func TestFamilyStreamIsOurs(t *testing.T) {
 
 	mk := ourMark()
 	to := toStream()
-	used, _, _, _ := relayZenStream(to.w, strings.NewReader(upstreamStream), mk)
+	used, _, _, _ := relayZenStream(to.w, strings.NewReader(upstreamStream), mk, nil)
 	prompt, completion := used.prompt(), used.completion
 
 	out := to.String()
@@ -392,7 +392,7 @@ func TestTheDoorKeepsWhatAClientActsOn(t *testing.T) {
 	t.Run("streamed delta", func(t *testing.T) {
 
 		to := toStream()
-		relayZenStream(to.w, strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark())
+		relayZenStream(to.w, strings.NewReader(toolStream+"\n\ndata: [DONE]\n\n"), ourMark(), nil)
 		out := to.String()
 		discloses(t, "streamed tool call", []byte(out))
 		for _, need := range []string{`"name":"get_weather"`, `"id":"call_1"`, `"tool_calls"`} {
@@ -458,7 +458,7 @@ func TestTheAnthropicDialectIsOurs(t *testing.T) {
 
 		mk := &mark{id: ourMsg, model: sku, seller: "hanzo", speaks: messageShape}
 		to := toStream()
-		relayZenStream(to.w, strings.NewReader(anthropicStream), mk)
+		relayZenStream(to.w, strings.NewReader(anthropicStream), mk, nil)
 
 		out := to.String()
 		discloses(t, "anthropic stream", []byte(out))

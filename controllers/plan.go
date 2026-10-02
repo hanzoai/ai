@@ -77,14 +77,20 @@ func FamilyOf(model string) string {
 	return ""
 }
 
-// planMark is what one covered request has done with its paid upstream: a family
-// answered it from a paid rung (tried) that can have cost at most owed, nano-dollars,
-// and that answer's cost was settled; or the spend went out and no answer came back
-// (asked). Either way the request buys no second paid answer.
+// planMark is what one covered request has done with its paid upstream. A family
+// committed its answer to a request that may buy a paid rung (tried), which can cost
+// at most bound, nano-dollars; owed is what the request is charged when that answer's
+// cost is never stated — bound once a paid rung's upstream accepted, nothing before —
+// and settled is set once a stated cost settled it. asked is a dispatch that carried
+// the spend and got no answer. Either way the request buys no second paid answer.
 type planMark struct {
 	tried, asked, settled atomic.Bool
-	owed                  atomic.Int64
+	bound, owed           atomic.Int64
 }
+
+// paid files that a paid rung's upstream accepted the request: its answer is charged
+// its bound unless its cost is stated.
+func (m *planMark) paid() { m.owed.Store(m.bound.Load()) }
 
 // markKey is where a covered request keeps its mark.
 type markKey struct{}
@@ -142,105 +148,74 @@ func ChatPath(path string) bool { return chatPaths[strings.ToLower(strings.TrimR
 // whose estimated cost fits.
 const spendHeader = "X-Hanzo-Spend"
 
-// costRateHeader is how a family tells ai what the paid rung that answered costs:
-// input, output and cache-read in USD per million tokens. It is set only when a paid
-// rung answered a request that carried spend.
-const costRateHeader = "X-Hanzo-Cost-Rate"
+// A family commits its answer to a request whose plan opened a paid rung at once,
+// before it asks any rung, so the request's paid upstream is never bought after ai
+// stopped waiting. It states three things, in USD:
+//
+//	costBoundHeader — on the commit: the most the request can cost.
+//	paidMarker      — an SSE comment, the moment a paid rung's upstream accepted. A
+//	                  whole answer carries none, so it is taken as accepted at the commit.
+//	costHeader      — a trailer, at the end: what the request's paid upstream cost,
+//	                  nothing when a free rung answered.
+//
+// An answer that ends with its cost settles that, never past the grant. One that does
+// not — cut, or its caller gone — is charged its bound once a paid rung accepted it.
+const (
+	costBoundHeader = "X-Hanzo-Cost-Bound"
+	costHeader      = "X-Hanzo-Cost"
+	paidMarker      = ": paid"
+)
 
-// costBoundHeader is the most a paid rung's answer can have cost, in USD, as its
-// family worked it out: the request's prompt and output limit at that rung's rate.
-// It travels with costRateHeader.
-const costBoundHeader = "X-Hanzo-Cost-Bound"
+// unstatedNanos is the most an answer is charged whose family committed it without a
+// bound it can read: $1, never what the plan's family has left.
+const unstatedNanos = 1_000_000_000
 
-// costRate is a paid rung's cost as its family stated it, in USD per million tokens,
-// and most, the most the answer can have cost in nano-dollars (costBoundHeader); 0
-// when the family stated none.
-type costRate struct {
-	in, out, cacheRead *big.Rat
-	most               int64
-}
-
-// readCostRate reads a family's cost-rate and cost-bound headers; nil when no rate was
-// set, which means a free rung answered.
-func readCostRate(h http.Header) *costRate {
-	parts := strings.Split(h.Get(costRateHeader), ",")
-	if len(parts) != 3 {
-		return nil
+// usdNanos reads a family's USD figure in nano-dollars, rounded up; false when it is
+// missing, malformed or negative.
+func usdNanos(s string) (int64, bool) {
+	v, ok := new(big.Rat).SetString(strings.TrimSpace(s))
+	if !ok || v.Sign() < 0 {
+		return 0, false
 	}
-	var r costRate
-	for i, dst := range []**big.Rat{&r.in, &r.out, &r.cacheRead} {
-		v, ok := new(big.Rat).SetString(strings.TrimSpace(parts[i]))
-		if !ok || v.Sign() < 0 {
-			return nil
-		}
-		*dst = v
-	}
-	// A rung that states no cache price charges a cached token at its input rate,
-	// the way the family prices it.
-	if r.cacheRead.Sign() == 0 {
-		r.cacheRead = r.in
-	}
-	if v, ok := new(big.Rat).SetString(strings.TrimSpace(h.Get(costBoundHeader))); ok && v.Sign() > 0 {
-		r.most = ceilNanos(v.Mul(v, big.NewRat(1_000_000_000, 1)))
-	}
-	return &r
-}
-
-// ceilNanos is v rounded up to a whole nano-dollar.
-func ceilNanos(v *big.Rat) int64 {
+	v.Mul(v, big.NewRat(1_000_000_000, 1))
 	q, rem := new(big.Int).QuoRem(v.Num(), v.Denom(), new(big.Int))
 	if rem.Sign() > 0 {
 		q.Add(q, big.NewInt(1))
 	}
 	if !q.IsInt64() {
-		return math.MaxInt64
+		return math.MaxInt64, true
 	}
-	return q.Int64()
+	return q.Int64(), true
 }
 
-// unknown is what an answer at this rate whose usage nobody reported is charged: the
-// most its family says it can have cost, never past the grant; the whole grant when
-// the family stated no bound.
-func (r *costRate) unknown(g *object.LimitGrant) int64 {
+// committedPlan reports whether a family's response is its commit to a request that
+// may buy a paid rung: it states the bound, or declares the cost it will state (the
+// client files a declared trailer under resp.Trailer, not the headers).
+func committedPlan(resp *http.Response) bool {
+	_, declared := resp.Trailer[costHeader]
+	return declared || resp.Header.Get(costBoundHeader) != ""
+}
+
+// boundOf is the most a committed answer is charged, in nano-dollars: its stated
+// bound, else unstatedNanos, never past the grant.
+func boundOf(h http.Header, g *object.LimitGrant) int64 {
 	if g == nil {
 		return 0
 	}
-	if r.most > 0 {
-		return min(r.most, g.Spend)
+	if b, ok := usdNanos(h.Get(costBoundHeader)); ok && b > 0 {
+		return min(b, g.Spend)
 	}
-	return g.Spend
+	return min(unstatedNanos, g.Spend)
 }
 
-// nanos is what tokens cost at the rate, in nano-dollars, rounded up: fresh prompt
-// tokens at the input rate, cached ones at the cache-read rate, completion at the
-// output rate.
-func (r *costRate) nanos(fresh, cached, completion int) int64 {
-	if r == nil {
+// planCost is what a covered answer's paid upstream cost, in nano-dollars: the cost
+// its family stated, never past the grant; nothing when none was stated, since the
+// request's mark charges an unstated cost (planMark).
+func planCost(g *object.LimitGrant, stated *int64) int64 {
+	if g == nil || stated == nil {
 		return 0
 	}
-	sum := new(big.Rat)
-	for _, t := range []struct {
-		n    int
-		rate *big.Rat
-	}{{fresh, r.in}, {cached, r.cacheRead}, {completion, r.out}} {
-		sum.Add(sum, new(big.Rat).Mul(big.NewRat(int64(t.n), 1), t.rate))
-	}
-	// USD per million tokens × tokens = micro-dollars; × 1000 = nano-dollars.
-	return ceilNanos(sum.Mul(sum, big.NewRat(1000, 1)))
-}
-
-// planCost is what a covered answer's paid upstream cost, in nano-dollars: nothing
-// when a free rung answered (no rate), the tokens at the stated rate when the
-// upstream reported the answer's usage, and the most its family says it can have cost
-// when it did not (costRate.unknown).
-func planCost(g *object.LimitGrant, rate *costRate, t tokens) int64 {
-	switch {
-	case g == nil || rate == nil:
-		return 0
-	case !t.reported:
-		return rate.unknown(g)
-	}
-	return min(rate.nanos(t.fresh, t.cached, t.completion), g.Spend)
+	return min(*stated, g.Spend)
 }
 
 // spendUSD renders nano-dollars as the decimal USD a family reads.

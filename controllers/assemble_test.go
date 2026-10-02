@@ -38,7 +38,7 @@ func TestAStreamIsAssembledIntoOneAnswer(t *testing.T) {
 	}()
 	var out bytes.Buffer
 	w := bufio.NewWriter(&out)
-	tk, _, _, _ := assembleZenStream(w, pr, nil, 20*time.Millisecond)
+	tk, _, _, _ := assembleZenStream(w, pr, nil, 20*time.Millisecond, nil)
 	raw := out.String()
 	if !strings.HasPrefix(raw, " ") {
 		t.Errorf("no heartbeat before the answer: %q", raw[:min(20, len(raw))])

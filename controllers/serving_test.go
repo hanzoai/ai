@@ -71,7 +71,7 @@ func TestTheStreamRelayMarksItsFirstChunk(t *testing.T) {
 		`data: {"id":"gen-1","choices":[{"delta":{"content":"4"}}]}` + "\n\n" +
 		`data: {"id":"gen-1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":6,"completion_tokens_details":{"reasoning_tokens":4}}}` + "\n\n" +
 		"data: [DONE]\n\n"
-	used, _, _, first := relayZenStream(to.w, strings.NewReader(body), nil)
+	used, _, _, first := relayZenStream(to.w, strings.NewReader(body), nil, nil)
 	if first.IsZero() || first.Before(before) {
 		t.Errorf("first = %v, want the moment the first data chunk was written", first)
 	}

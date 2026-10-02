@@ -16,6 +16,8 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -41,45 +43,81 @@ func TestFamilyOfNamesHanzoSKUsOnly(t *testing.T) {
 	}
 }
 
-// The rate a family states prices the tokens exactly, rounded up to the nano; a rung
-// that states no cache price charges a cached token at its input rate, as the family
-// does; a malformed header is no rate at all.
-func TestTheStatedRatePricesTheTokens(t *testing.T) {
-	h := http.Header{}
-	h.Set(costRateHeader, "0.5,1,0")
-	r := readCostRate(h)
-	if r == nil {
-		t.Fatal("a well-formed rate was not read")
-	}
-	// 1,000 fresh at $0.50/M + 2,000 out at $1/M = $0.0025; 1,000 cached at the input rate.
-	if got := r.nanos(1000, 0, 2000); got != 2_500_000 {
-		t.Errorf("nanos = %d, want 2500000", got)
-	}
-	if got := r.nanos(0, 1000, 0); got != 500_000 {
-		t.Errorf("cached nanos = %d, want 500000 (the input rate)", got)
-	}
-	h.Set(costRateHeader, "0.0015,0,0")
-	if got := readCostRate(h).nanos(1, 0, 0); got != 2 {
-		t.Errorf("one token at $0.0015/M = 1.5 nano, rounded up to 2; got %d", got)
-	}
-	for _, bad := range []string{"", "1,2", "a,b,c", "-1,1,1", "1,1,1,1"} {
-		h.Set(costRateHeader, bad)
-		if readCostRate(h) != nil {
-			t.Errorf("%q read as a rate", bad)
+// A family's stated cost reads in nano-dollars, rounded up; a missing, malformed or
+// negative figure is no figure at all.
+func TestAStatedCostReadsInNanos(t *testing.T) {
+	for in, want := range map[string]int64{"0.0025": 2_500_000, "0.0000000001": 1, "0": 0, "12.5": 12_500_000_000} {
+		if got, ok := usdNanos(in); !ok || got != want {
+			t.Errorf("usdNanos(%q) = %d, %t; want %d", in, got, ok, want)
 		}
 	}
-	var none *costRate
-	if none.nanos(1000, 1000, 1000) != 0 {
-		t.Error("no rate (a free rung) costs something")
+	for _, bad := range []string{"", "lots", "-1", "1,2"} {
+		if _, ok := usdNanos(bad); ok {
+			t.Errorf("%q read as a cost", bad)
+		}
 	}
 	if got := spendUSD(50_000_000); got != "0.050000000" {
 		t.Errorf("spendUSD = %q", got)
 	}
 }
 
+// committed answers the way a family answers a request its plan opened a paid rung
+// for: 200 at once with the most the request can cost (bound, none when empty) and
+// its cost declared as a trailer, then body, then the cost (none when cost is empty).
+func committed(w http.ResponseWriter, sse bool, bound, body, cost string) {
+	if sse {
+		w.Header().Set("Content-Type", "text/event-stream")
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	if bound != "" {
+		w.Header().Set(costBoundHeader, bound)
+	}
+	w.Header().Set("Trailer", costHeader)
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, body)
+	if cost != "" {
+		w.Header().Set(costHeader, cost)
+	}
+}
+
+// cutAfter writes a committed answer's head and body chunks by hand and drops the
+// connection before the body ends: no trailer ever arrives.
+func cutAfter(w http.ResponseWriter, sse bool, bound string, chunks ...string) {
+	conn, rw, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	ct := "application/json"
+	if sse {
+		ct = "text/event-stream"
+	}
+	head := "HTTP/1.1 200 OK\r\nContent-Type: " + ct + "\r\nTrailer: " + costHeader + "\r\nTransfer-Encoding: chunked\r\n"
+	if bound != "" {
+		head += costBoundHeader + ": " + bound + "\r\n"
+	}
+	_, _ = rw.WriteString(head + "\r\n")
+	for _, c := range chunks {
+		_, _ = fmt.Fprintf(rw, "%x\r\n%s\r\n", len(c), c)
+	}
+	_ = rw.Flush()
+}
+
+// paidSSE is a paid rung's whole answer on a committed stream: the paid marker, the
+// words, the usage and the end.
+const paidSSE = ": keep-alive\n\n: paid\n\n" +
+	`data: {"id":"x","model":"enso-pro","choices":[{"delta":{"content":"ok"}}]}` + "\n\n" +
+	`data: {"id":"x","choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":2000}}` + "\n\ndata: [DONE]\n\n"
+
+// freeSSE is a free rung's whole answer on a committed stream: no paid marker.
+const freeSSE = ": keep-alive\n\n" +
+	`data: {"id":"x","model":"enso-pro","choices":[{"delta":{"content":"ok"}}]}` + "\n\n" +
+	`data: {"id":"x","choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":2000}}` + "\n\ndata: [DONE]\n\n"
+
 // planEnso stands up an Enso service that records the spend each request carried and
-// answers with the given cost rate (none for a free rung).
-func planEnso(t *testing.T, rate string) (*httptest.Server, func() []string) {
+// answers it committed, from a paid rung when paid is set, at cost.
+func planEnso(t *testing.T, paid bool, cost string) (*httptest.Server, func() []string) {
 	t.Helper()
 	var mu sync.Mutex
 	var spends []string
@@ -87,14 +125,11 @@ func planEnso(t *testing.T, rate string) (*httptest.Server, func() []string) {
 		mu.Lock()
 		spends = append(spends, r.Header.Get(spendHeader))
 		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set(servedHeader, "enso-pro")
-		if rate != "" {
-			w.Header().Set(costRateHeader, rate)
+		body := freeSSE
+		if paid {
+			body = paidSSE
 		}
-		w.Header().Set(freeHeader, "true")
-		_, _ = w.Write([]byte(`{"id":"1","model":"enso-pro","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],` +
-			`"usage":{"prompt_tokens":1000,"completion_tokens":2000,"total_tokens":3000}}`))
+		committed(w, true, "0.004", body, cost)
 	}))
 	t.Cleanup(srv.Close)
 	restore(t, ensoFam)
@@ -108,21 +143,22 @@ func planEnso(t *testing.T, rate string) (*httptest.Server, func() []string) {
 }
 
 // A request its plan covers carries what the plan holds to Enso, and settles against
-// the plan at the rate Enso states for the paid rung that answered: the usage record
-// says the plan covered it, so no wallet is debited and no free allowance counted.
-// A free rung's answer states no rate and settles nothing.
-func TestAPlanCoveredFamilyCallCarriesSpendAndSettlesAtTheRate(t *testing.T) {
+// the plan at what Enso states the answer cost: the usage record says the plan covered
+// it, so no wallet is debited and no free allowance counted. A free rung's answer
+// costs nothing.
+func TestAPlanCoveredFamilyCallCarriesSpendAndSettlesItsCost(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		rate string
+		paid bool
+		cost string
 		want int64
 	}{
-		{"a paid rung answered", "0.5,1,0", 2_500_000},
-		{"a free rung answered", "", 0},
+		{"a paid rung answered", true, "0.0025", 2_500_000},
+		{"a free rung answered", false, "0", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cooled.forget()
-			_, spends := planEnso(t, tc.rate)
+			_, spends := planEnso(t, tc.paid, tc.cost)
 
 			var mu sync.Mutex
 			var events []object.UsageEvent
@@ -149,6 +185,7 @@ func TestAPlanCoveredFamilyCallCarriesSpendAndSettlesAtTheRate(t *testing.T) {
 			if out := c.pipeToFamily(ensoFam, "chat/completions", "openai", "enso-pro", body, false, 0, "acme", user, false, nil, time.Now()); out != nil {
 				t.Fatalf("attempts=%+v, want Enso to answer", out)
 			}
+			drain(t, c)
 
 			if got := spends(); len(got) != 1 || got[0] != "0.050000000" {
 				t.Fatalf("Enso was sent spend %v, want the plan's hold in USD", got)
@@ -179,12 +216,13 @@ func TestNoSpendTravelsWithoutAHold(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			cooled.forget()
-			_, spends := planEnso(t, "")
+			_, spends := planEnso(t, false, "0")
 			body := []byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)
 			c := visit(http.MethodPost, "/v1/chat/completions")
 			c.Fiber().Request().SetBody(body)
 			Cover(c.Ctx, grant)
 			c.pipeToFamily(ensoFam, "chat/completions", "openai", "enso-pro", body, false, 0, "acme", nil, false, nil, time.Now())
+			drain(t, c)
 			if got := spends(); len(got) != 1 || got[0] != "" {
 				t.Fatalf("Enso was sent spend %v, want none", got)
 			}
@@ -233,28 +271,10 @@ func TestTheSpendNeverReachesAnotherFamily(t *testing.T) {
 	}
 }
 
-// enso stands up an Enso service that answers status with body and, when rate is
-// set, states that a paid rung served at that rate.
-func enso(t *testing.T, status int, rate, body string) {
+// enso stands up an Enso service that answers every request with handler.
+func enso(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
-	ensoBound(t, status, rate, "", body)
-}
-
-// ensoBound is enso whose answer also states the most it can have cost (none when
-// bound is empty).
-func ensoBound(t *testing.T, status int, rate, bound, body string) {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if rate != "" {
-			w.Header().Set(costRateHeader, rate)
-		}
-		if bound != "" {
-			w.Header().Set(costBoundHeader, bound)
-		}
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(body))
-	}))
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	restore(t, ensoFam)
 	ensoFam.providerFn = func() *object.Provider {
@@ -265,9 +285,25 @@ func ensoBound(t *testing.T, status int, rate, bound, body string) {
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 }
 
-// pipeCovered sends one covered enso-pro request through the family pipe and
-// answers what its grant was settled with.
-func pipeCovered(t *testing.T, spend int64) []int64 {
+// drain runs a streamed answer's writer to its end, which is where it settles.
+func drain(t *testing.T, c *ApiController) string {
+	t.Helper()
+	s := toStream()
+	if err := c.Fiber().Response().BodyWriteTo(s.w); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.w.Flush()
+	return s.buf.String()
+}
+
+// pipeCovered sends one covered enso-pro chat request through the family pipe, asked
+// whole, and answers what its grant was settled with.
+func pipeCovered(t *testing.T, spend int64) []int64 { return pipeCoveredAs(t, spend, "openai") }
+
+// pipeCoveredAs is pipeCovered in dialect: "openai" (a chat completion, which ai asks
+// of the family as a stream), "openai-stream" (one the caller streams) or "anthropic"
+// (a message, asked whole).
+func pipeCoveredAs(t *testing.T, spend int64, dialect string) []int64 {
 	t.Helper()
 	cooled.forget()
 	var mu sync.Mutex
@@ -276,29 +312,42 @@ func pipeCovered(t *testing.T, spend int64) []int64 {
 	prev := object.UsageRecorder()
 	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { return nil })
 	t.Cleanup(func() { object.SetUsageRecorder(prev) })
+	path, apiPath := "/v1/chat/completions", "chat/completions"
 	body := []byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)
-	c := visit(http.MethodPost, "/v1/chat/completions")
+	stream := dialect == "openai-stream"
+	if stream {
+		dialect = "openai"
+	}
+	if dialect == "anthropic" {
+		path, apiPath = "/v1/messages", "messages"
+		body = []byte(`{"model":"enso-pro","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`)
+	}
+	c := visit(http.MethodPost, path)
 	c.Fiber().Request().SetBody(body)
 	Cover(c.Ctx, grant)
-	c.pipeToFamily(ensoFam, "chat/completions", "openai", "enso-pro", body, false, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, time.Now())
+	c.pipeToFamily(ensoFam, apiPath, dialect, "enso-pro", body, stream, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, time.Now())
+	drain(t, c)
 	mu.Lock()
 	defer mu.Unlock()
 	return append([]int64(nil), settled...)
 }
 
-// A paid rung's answer that reports no usage settles the whole hold: what it cost is
-// unknown, so the budget is charged the most it could have been.
-func TestAPaidAnswerWithoutUsageSettlesTheWholeHold(t *testing.T) {
-	enso(t, http.StatusOK, "0.5,1,0", `{"id":"1","model":"enso-pro","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
-	if got := pipeCovered(t, 50_000_000); len(got) == 0 || got[0] != 50_000_000 {
-		t.Fatalf("settled %v, want the whole 50000000 hold first", got)
+// charged is what settles add up to, and whether the first of them is all of it.
+func charged(got []int64) (sum int64, once bool) {
+	for _, n := range got {
+		sum += n
 	}
+	return sum, len(got) > 0 && got[0] == sum
 }
 
 // A covered request its family refuses, with nothing served, settles at nothing as
 // soon as it ends: its hold never waits out its keeper.
 func TestARefusedCoveredRequestSettlesAtNothing(t *testing.T) {
-	enso(t, http.StatusBadRequest, "", `{"error":{"message":"bad request"}}`)
+	enso(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"message":"bad request"}}`)
+	})
 	got := pipeCovered(t, 50_000_000)
 	if len(got) == 0 {
 		t.Fatal("a refused covered request was never settled")
@@ -306,27 +355,6 @@ func TestARefusedCoveredRequestSettlesAtNothing(t *testing.T) {
 	for _, n := range got {
 		if n != 0 {
 			t.Fatalf("settled %v, want nothing charged", got)
-		}
-	}
-}
-
-// A family refusal that states a paid rung's rate is a paid answer the family would
-// not relay: what it cost is unknown, so the plan is charged the whole hold, never
-// nothing, whatever the status.
-func TestARefusalCarryingThePaidRateSettlesTheWholeHold(t *testing.T) {
-	for _, status := range []int{http.StatusBadGateway, http.StatusInternalServerError, http.StatusOK} {
-		body := `{"error":{"message":"the model returned an unusable answer","type":"zen_error","code":502}}`
-		if status == http.StatusOK {
-			body = `{"id":"1","model":"enso-pro","choices":[]}`
-		}
-		enso(t, status, "8.00,40.00,0.40", body)
-		got := pipeCovered(t, 1_000_000_000)
-		charged := int64(0)
-		for _, n := range got {
-			charged += n
-		}
-		if charged != 1_000_000_000 {
-			t.Errorf("status %d with the paid rate settled %v, want the whole hold once", status, got)
 		}
 	}
 }
@@ -378,10 +406,7 @@ func TestASpendWithNoAnswerIsTheOnePaidAttempt(t *testing.T) {
 	cases := map[string]func(http.ResponseWriter, *http.Request){
 		"headers past the wait": func(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(300 * time.Millisecond)
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set(costRateHeader, "8.00,40.00,0.40")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"1","model":"enso-pro","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":8000}}`))
+			committed(w, true, "0.004", paidSSE, "0.0025")
 		},
 		"connection cut": func(w http.ResponseWriter, r *http.Request) {
 			conn, _, err := w.(http.Hijacker).Hijack()
@@ -428,34 +453,77 @@ func TestNoSpendNoAnswerSettlesNothing(t *testing.T) {
 	}
 }
 
-// An answer from a paid rung whose usage nobody reported is charged the most its family
-// says it can have cost — its prompt and output limit at that rung's rate — never the
-// whole of what the plan's family has left, and never past it. A family that states no
-// bound leaves the whole grant as the most it could have been.
-func TestAPaidAnswerOfUnknownCostSettlesItsBound(t *testing.T) {
-	const left = 1_000_000_000 // $1 the family has left this period
-	noUsage := `{"id":"1","model":"enso-pro","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`
-	refusal := `{"error":{"message":"the model returned an unusable answer","type":"zen_error","code":502}}`
+// A committed answer cut before its end states no cost: it is charged the most its
+// family said the request can cost once a paid rung's upstream accepted it — the paid
+// marker on a stream, the commit itself on a whole answer — and nothing before that.
+// A family that states no bound is charged at most unstatedNanos, never what its family
+// has left.
+func TestACutAnswerSettlesItsBoundOnceAPaidRungAccepted(t *testing.T) {
+	const left = 10_000_000_000 // $10 the family has left this period
+	words := `data: {"id":"x","choices":[{"delta":{"content":"ok"}}]}` + "\n\n"
 	for _, tc := range []struct {
-		name, bound, body string
-		status            int
-		want              int64
+		name, dialect string
+		answer        http.HandlerFunc
+		want          int64
 	}{
-		{"an answer without usage", "0.0025", noUsage, http.StatusOK, 2_500_000},
-		{"a refusal after the paid rung accepted", "0.0025", refusal, http.StatusBadGateway, 2_500_000},
-		{"a bound past what is left", "7.5", noUsage, http.StatusOK, left},
-		{"a bound of a fraction of a nano", "0.0000000001", noUsage, http.StatusOK, 1},
-		{"no bound stated", "", noUsage, http.StatusOK, left},
-		{"a malformed bound", "lots", refusal, http.StatusBadGateway, left},
+		{"a stream cut after the paid marker", "openai", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "0.004", ": keep-alive\n\n", ": paid\n\n", words)
+		}, 4_000_000},
+		{"a stream cut before any paid rung accepted", "openai", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "0.004", ": keep-alive\n\n", words)
+		}, 0},
+		{"a caller's stream cut after the paid marker", "openai-stream", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "0.004", ": keep-alive\n\n", ": paid\n\n", words)
+		}, 4_000_000},
+		{"a caller's stream cut before any paid rung accepted", "openai-stream", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "0.004", ": keep-alive\n\n", words)
+		}, 0},
+		{"a whole answer cut after its commit", "anthropic", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, false, "0.004", " ", `{"id":"msg_1",`)
+		}, 4_000_000},
+		{"a bound past what is left", "openai", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "75", ": paid\n\n", words)
+		}, left},
+		{"no bound stated", "openai", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "", ": paid\n\n", words)
+		}, unstatedNanos},
+		{"a malformed bound", "openai", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "lots", ": paid\n\n", words)
+		}, unstatedNanos},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ensoBound(t, tc.status, "8.00,40.00,0.40", tc.bound, tc.body)
-			got := pipeCovered(t, left)
-			charged := int64(0)
-			for _, n := range got {
-				charged += n
+			enso(t, tc.answer)
+			got := pipeCoveredAs(t, left, tc.dialect)
+			if sum, once := charged(got); sum != tc.want || (tc.want > 0 && !once) {
+				t.Errorf("settled %v, want %d first and once", got, tc.want)
 			}
-			if len(got) == 0 || got[0] != tc.want || charged != tc.want {
+		})
+	}
+}
+
+// A committed answer that ends whole is charged the cost its family states, never past
+// what the family has left, whatever the paid marker said; one that ends whole with no
+// stated cost is charged as a cut one.
+func TestAWholeAnswerSettlesItsStatedCost(t *testing.T) {
+	const left = 1_000_000_000 // $1
+	for _, tc := range []struct {
+		name, dialect, body, cost string
+		want                      int64
+	}{
+		{"a paid stream", "openai", paidSSE, "0.0025", 2_500_000},
+		{"a free stream", "openai", freeSSE, "0", 0},
+		{"a caller's paid stream", "openai-stream", paidSSE, "0.0025", 2_500_000},
+		{"a cost past what is left", "openai", paidSSE, "7.5", left},
+		{"a paid whole answer", "anthropic", ` {"id":"msg_1","type":"message","role":"assistant","model":"enso-pro","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":10,"output_tokens":5}}`, "0.0001", 100_000},
+		{"a free whole answer", "anthropic", ` {"id":"msg_1","type":"message","role":"assistant","model":"enso-pro","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":10,"output_tokens":5}}`, "0", 0},
+		{"a paid stream that states no cost", "openai", paidSSE, "", 4_000_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enso(t, func(w http.ResponseWriter, r *http.Request) {
+				committed(w, tc.dialect != "anthropic", "0.004", tc.body, tc.cost)
+			})
+			got := pipeCoveredAs(t, left, tc.dialect)
+			if sum, once := charged(got); sum != tc.want || (tc.want > 0 && !once) {
 				t.Errorf("settled %v, want %d first and once", got, tc.want)
 			}
 		})

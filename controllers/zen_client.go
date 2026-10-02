@@ -1326,10 +1326,9 @@ func familyBody(body []byte, apiPath string, maxTokens int) []byte {
 // nothing left running that would ever give them back.
 func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model string, rawBody []byte, stream bool, maxTokens int, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) []attempt {
 	// done ends the request here: the client has its answer, or has gone.
-	// A covered request's paid upstream: a family answer that states a paid rung's
-	// rate and was not settled from its own usage — refused, cut, or passed over for
-	// another route — is charged, once, the most its family says it can have cost,
-	// since what it cost is unknown.
+	// A covered request's paid upstream: a committed family answer whose cost was never
+	// stated — refused, cut, or its caller gone — is charged, once, what its mark owes:
+	// its bound once a paid rung accepted it, else nothing.
 	grant, pm := grantOf(c.Ctx), markOf(c.Ctx)
 	unsettled := func() {
 		if grant != nil && pm.tried.Load() && pm.settled.CompareAndSwap(false, true) {
@@ -1524,16 +1523,18 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// A stream's 200 arrives before its answer; send judges its opening frames
 		// on each key (family_open.go).
 		resp, err := f.send(r, p, f.free(s), stream || assemble)
-		// A Hanzo family that states a paid rung's rate answered from paid upstream,
-		// whatever its status, and states with it the most that answer can cost: the
-		// request buys no second paid answer. A dispatch that carried the spend and got
-		// no answer at all — its headers came after the wait, or the connection was cut —
-		// buys none either. It owes nothing: a family states the rate the moment a paid
-		// rung's upstream accepts, so no paid answer was accepted.
-		if resp != nil && hanzoFamily(f) {
-			if rate := readCostRate(resp.Header); rate != nil {
-				pm.owed.Store(rate.unknown(grant))
-				pm.tried.Store(true)
+		// A Hanzo family that committed its answer to a request that may buy a paid
+		// rung is the request's one paid attempt, whatever it then says: the request
+		// buys no second paid answer. A whole answer is taken as accepted by a paid rung
+		// at the commit; a stream says so with its paid marker. A dispatch that carried
+		// the spend and got no answer at all — its headers came after the wait, or the
+		// connection was cut — buys none either. It owes nothing: a family commits
+		// before it asks any rung, so nothing was bought.
+		if resp != nil && hanzoFamily(f) && committedPlan(resp) {
+			pm.bound.Store(boundOf(resp.Header, grant))
+			pm.tried.Store(true)
+			if !eventStream(resp) {
+				pm.paid()
 			}
 		}
 		if resp == nil && r.Header.Get(spendHeader) != "" {
@@ -1839,6 +1840,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// The rest of what the family said about this answer is for our records only:
 	// the vendor and the failed arms never reach the client.
 	sv := servingOf(resp.Header)
+	// answer is the response whose trailer states what a committed answer cost, read
+	// once its body has ended.
+	answer := resp
 	if word, stated := servingFamily(sku).collection(sku); stated {
 		c.SetHeader(headerCollection, word)
 	}
@@ -1885,8 +1889,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if !first.IsZero() {
 			sv.first = first.Sub(start)
 		}
-		// The answer relayed is the paid one: its usage record settles it (planCost).
-		if sv.rate != nil {
+		// A committed answer states its records and its cost once its body ended: its
+		// usage record settles it (planCost).
+		// One whose cost was never stated settles what its mark owes, here, so the
+		// usage record is the one settle of every answer that ended.
+		sv.merge(answer.Trailer)
+		if owed := pm.owed.Load(); sv.cost == nil && pm.tried.Load() {
+			sv.cost = &owed
+		}
+		if sv.cost != nil {
 			pm.settled.Store(true)
 		}
 		cents := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, bill, "success", "")
@@ -1924,7 +1935,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			defer upstream.Close()
 			defer hold.settle(0)
 			defer unsettled()
-			settle(relayZenStream(w, upstream, mk))
+			settle(relayZenStream(w, upstream, mk, pm.paid))
 		})
 		return nil
 	}
@@ -1940,7 +1951,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			defer upstream.Close()
 			defer hold.settle(0)
 			defer unsettled()
-			settle(assembleZenStream(w, upstream, mk, heartbeat))
+			settle(assembleZenStream(w, upstream, mk, heartbeat, pm.paid))
 		})
 		return nil
 	}
@@ -1984,9 +1995,31 @@ type serving struct {
 	arm, vendor, failover string
 	first                 time.Duration
 	free                  bool
-	// rate is what the paid rung that answered costs, set only when the request
-	// carried its plan's spend and a paid rung answered it.
-	rate *costRate
+	// cost is what a committed answer's paid upstream cost, nano-dollars, as its
+	// family stated it at the end (costHeader); nil when none was stated.
+	cost *int64
+}
+
+// merge reads what a family stated in its trailer, at an answer's end, over what its
+// headers said.
+func (sv *serving) merge(tr http.Header) {
+	if len(tr) == 0 {
+		return
+	}
+	for dst, k := range map[*string]string{&sv.arm: armHeader, &sv.vendor: providerHeader, &sv.failover: failoverHeader} {
+		if v := tr.Get(k); v != "" {
+			*dst = v
+		}
+	}
+	if sv.arm == "" {
+		sv.arm = tr.Get(servedHeader)
+	}
+	if tr.Get(freeHeader) == "true" {
+		sv.free = true
+	}
+	if n, ok := usdNanos(tr.Get(costHeader)); ok {
+		sv.cost = &n
+	}
 }
 
 // servingOf reads a family response's headers into a serving.
@@ -1995,7 +2028,7 @@ func servingOf(h http.Header) serving {
 	if arm == "" {
 		arm = h.Get(servedHeader)
 	}
-	return serving{arm: arm, vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true", rate: readCostRate(h)}
+	return serving{arm: arm, vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true"}
 }
 
 // armHeader is the upstream model a family says answered, for our records only.
@@ -2048,7 +2081,7 @@ func streamed(body []byte) []byte {
 // chat completion, stamped by mk. Until the answer is whole it writes a space every
 // beat, which a JSON reader skips as leading whitespace. An error frame after the
 // first becomes the answer's error object.
-func assembleZenStream(w *bufio.Writer, body io.Reader, mk *mark, beat time.Duration) (t tokens, served, respID string, first time.Time) {
+func assembleZenStream(w *bufio.Writer, body io.Reader, mk *mark, beat time.Duration, paid func()) (t tokens, served, respID string, first time.Time) {
 	type call struct {
 		ID       string `json:"id,omitempty"`
 		Type     string `json:"type"`
@@ -2073,6 +2106,9 @@ func assembleZenStream(w *bufio.Writer, body io.Reader, mk *mark, beat time.Dura
 		sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 		for sc.Scan() {
 			line := sc.Bytes()
+			if paid != nil && string(bytes.TrimSpace(line)) == paidMarker {
+				paid()
+			}
 			if !bytes.HasPrefix(line, zenDataPrefix) {
 				continue
 			}
@@ -2202,11 +2238,14 @@ wait:
 	return
 }
 
-func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark) (t tokens, served, respID string, first time.Time) {
+func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t tokens, served, respID string, first time.Time) {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
+		if paid != nil && string(bytes.TrimSpace(line)) == paidMarker {
+			paid()
+		}
 		// An SSE comment is a vendor keeping its connection open in its own words
 		// (": OPENROUTER PROCESSING"). The keep-alive goes on; the words do not.
 		if bytes.HasPrefix(line, []byte(":")) {
@@ -2431,7 +2470,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		CostNanoExact:   mk.cogs(),
 		BilledNanoExact: exact,
 		plan:            w.plan,
-		planNanos:       planCost(w.plan, sv.rate, t),
+		planNanos:       planCost(w.plan, sv.cost),
 	}
 	rec.bind(w.ctx, authUser)
 	recordUsage(rec)
