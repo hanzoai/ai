@@ -948,3 +948,156 @@ func TestACoveredRequestWithNoFreeRouteIsHeld(t *testing.T) {
 		t.Errorf("settled %v, want nothing", got)
 	}
 }
+
+// heard records when each write of a streamed answer reached the caller.
+type heard struct {
+	mu    sync.Mutex
+	buf   strings.Builder
+	times []time.Time
+}
+
+func (g *heard) Write(p []byte) (int, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.times = append(g.times, time.Now())
+	g.buf.Write(p)
+	return len(p), nil
+}
+
+// silence is the longest gap between two writes the caller saw.
+func (g *heard) silence() time.Duration {
+	var m time.Duration
+	for i := 1; i < len(g.times); i++ {
+		m = max(m, g.times[i].Sub(g.times[i-1]))
+	}
+	return m
+}
+
+// openCall sends one covered enso-pro request whose committed answer opens (openWait
+// and heartbeat shortened) and answers what the caller got and the longest silence.
+func openCall(t *testing.T, path, apiPath, dialect string, body []byte, stream bool) (string, time.Duration) {
+	t.Helper()
+	cooled.forget()
+	prev := object.UsageRecorder()
+	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { return nil })
+	t.Cleanup(func() { object.SetUsageRecorder(prev) })
+	c := visit(http.MethodPost, path)
+	c.Fiber().Request().SetBody(body)
+	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 1_000_000_000, Settle: func(int64) {}})
+	c.pipeToFamily(ensoFam, apiPath, dialect, "enso-pro", body, stream, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, time.Now())
+	g := &heard{}
+	_ = c.Fiber().Response().BodyWriteTo(g)
+	return g.buf.String(), g.silence()
+}
+
+// opened shortens openWait and heartbeat so a committed answer opens, and keeps alive,
+// within a test's time.
+func opened(t *testing.T) {
+	t.Helper()
+	prevOpen, prevBeat := openWait, heartbeat
+	openWait, heartbeat = 50*time.Millisecond, 40*time.Millisecond
+	t.Cleanup(func() { openWait, heartbeat = prevOpen, prevBeat })
+}
+
+// poolSays stands up the free pool answering every request with handler.
+func poolSays(t *testing.T, handler http.HandlerFunc) {
+	t.Helper()
+	cooled.forget()
+	forgetKeys()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	spareFamily(t, srv.URL, "vendor/big:free")
+}
+
+var (
+	chatWhole  = []byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)
+	chatStream = []byte(`{"model":"enso-pro","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	msgStream  = []byte(`{"model":"enso-pro","stream":true,"max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`)
+	unavail    = `data: {"error":{"message":"this model is temporarily unavailable","code":503}}` + "\n\n"
+)
+
+// An open answer the free pool cannot fill ends in the caller's dialect's error: a
+// JSON error frame on a chat stream, an Anthropic error event on a message stream, an
+// error object on a whole answer — never Go's words, never an empty completion.
+func TestAnOpenAnswerThePoolCannotFillEndsInTheDialectsError(t *testing.T) {
+	opened(t)
+	prev := commitWait
+	commitWait = 300 * time.Millisecond
+	t.Cleanup(func() { commitWait = prev })
+	poolSays(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"error":{"message":"busy"}}`)
+	})
+	for _, tc := range []struct {
+		name, path, api, dialect string
+		body                     []byte
+		stream                   bool
+		check                    func(string) bool
+	}{
+		{"chat stream", "/v1/chat/completions", "chat/completions", "openai", chatStream, true, func(s string) bool {
+			return strings.Contains(s, `data: {"error":{`) && !strings.Contains(s, "data: the family")
+		}},
+		{"chat whole", "/v1/chat/completions", "chat/completions", "openai", chatWhole, false, func(s string) bool {
+			return strings.HasPrefix(strings.TrimSpace(s), `{"error":{`)
+		}},
+		{"message stream", "/v1/messages", "messages", "anthropic", msgStream, true, func(s string) bool {
+			return strings.Contains(s, "event: error\ndata: {") && strings.Contains(s, `"type":"error"`)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enso(t, slowCommit(time.Hour, false, "", ""))
+			sent, _ := openCall(t, tc.path, tc.api, tc.dialect, tc.body, tc.stream)
+			if !tc.check(sent) {
+				t.Errorf("the caller was sent %q", sent)
+			}
+		})
+	}
+}
+
+// The free pool's answer given whole, inside an open answer, is the stream it adds up
+// to in the caller's dialect: each tool call its own, a whole Anthropic message as its
+// events. A commit's own event lines ahead of its refusal never reach the caller.
+func TestAWholePoolAnswerIsStreamedInTheCallersDialect(t *testing.T) {
+	opened(t)
+	whole := `{"id":"p","model":"vendor/big:free","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[` +
+		`{"id":"a","type":"function","function":{"name":"read","arguments":"{\"f\":1}"}},` +
+		`{"id":"b","type":"function","function":{"name":"write","arguments":"{\"g\":2}"}}]}}]}`
+	poolSays(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, whole)
+	})
+	enso(t, slowCommit(200*time.Millisecond, false, unavail, "0"))
+	sent, _ := openCall(t, "/v1/chat/completions", "chat/completions", "openai", chatWhole, false)
+	if strings.Contains(sent, "readwrite") || !strings.Contains(sent, `"name":"read"`) || !strings.Contains(sent, `"name":"write"`) {
+		t.Errorf("the two tool calls arrived as %s", strings.TrimSpace(sent))
+	}
+
+	freePool(t) // answers /messages with a whole Anthropic message
+	fail := "event: error\n" + `data: {"type":"error","error":{"type":"overloaded_error","message":"this model is temporarily unavailable"}}` + "\n\n"
+	enso(t, slowCommit(200*time.Millisecond, false, fail, "0"))
+	sent, _ = openCall(t, "/v1/messages", "messages", "anthropic", msgStream, true)
+	if !strings.Contains(sent, "from-pool") || strings.Contains(sent, "event: error") || !strings.Contains(sent, "event: message_stop") {
+		t.Errorf("the caller was sent %q", sent)
+	}
+}
+
+// While the free pool works on an open stream's answer, the caller keeps hearing
+// keep-alives.
+func TestThePoolKeepsTheCallerAlive(t *testing.T) {
+	opened(t)
+	const slow = 600 * time.Millisecond
+	poolSays(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		time.Sleep(slow)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"id":"p","choices":[{"delta":{"content":"from-pool"}}]}`+"\n\ndata: [DONE]\n\n")
+	})
+	enso(t, slowCommit(200*time.Millisecond, false, unavail, "0"))
+	sent, gap := openCall(t, "/v1/chat/completions", "chat/completions", "openai", chatStream, true)
+	if !strings.Contains(sent, "from-pool") || gap >= slow/2 {
+		t.Errorf("the caller heard nothing for %v (pool answered: %t)", gap.Round(time.Millisecond), strings.Contains(sent, "from-pool"))
+	}
+}

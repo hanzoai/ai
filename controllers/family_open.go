@@ -211,11 +211,12 @@ var drainWait = 5 * time.Second
 // for a refusal that comes once the caller's answer is open. Each is safe to use from
 // a stream's writer, after the request itself is gone.
 type waiting struct {
-	pm     *planMark
-	spend  int64
-	settle func()
-	fill   func(status int, body []byte) (*http.Response, string)
-	fills  func() bool // whether fill has routes to walk at all
+	pm      *planMark
+	spend   int64
+	dialect string // the caller's: "openai" or "anthropic"
+	settle  func()
+	fill    func(status int, body []byte) (*http.Response, string)
+	fills   func() bool // whether fill has routes to walk at all
 }
 
 // awaitCommitted reads a family's committed answer (committedPlan) until it begins,
@@ -282,6 +283,8 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 		accept  atomic.Bool // a paid rung accepted: no hang-up
 		hung    atomic.Bool
 	)
+	// beat is read here, on the request's goroutine: the watcher outlives it.
+	beat := heartbeat
 	hangup := time.AfterFunc(commitWait, func() {
 		if !accept.Load() {
 			hung.Store(true)
@@ -308,20 +311,51 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 	go func() {
 		br := bufio.NewReaderSize(resp.Body, 64<<10)
 		var head bytes.Buffer
-		sent := 0 // how much of head the open answer has been written
-		relay := func() {
-			if b := head.Bytes()[sent:]; len(b) > 0 {
-				_, _ = pw.Write(b)
-				sent = head.Len()
+		// queued are the lines read that the open answer has not been written: its
+		// keep-alives go out as they come, and anything else waits for the answer it
+		// belongs to — an event line ahead of a refusal never reaches the caller.
+		var queued [][]byte
+		relay := func(all bool) {
+			keep := queued[:0]
+			for _, l := range queued {
+				if all || bytes.HasPrefix(l, []byte(":")) {
+					_, _ = pw.Write(l)
+				} else {
+					keep = append(keep, l)
+				}
 			}
+			queued = keep
 		}
 		// answer is the open answer's end once the commit refused: the free pool's
-		// answer, else the refusal itself as the stream's error.
+		// answer in the caller's dialect, else the dialect's error. The caller hears
+		// keep-alives while the pool works.
 		answer := func(status int, body []byte) {
 			w.settle()
+			var wmu sync.Mutex
+			stop := make(chan struct{})
+			go func() {
+				tick := time.NewTicker(beat)
+				defer tick.Stop()
+				for {
+					select {
+					case <-stop:
+						return
+					case <-tick.C:
+						wmu.Lock()
+						_, err := io.WriteString(pw, ": keep-alive\n\n")
+						wmu.Unlock()
+						if err != nil {
+							return
+						}
+					}
+				}
+			}()
 			r, route := w.fill(status, body)
+			close(stop)
+			wmu.Lock()
+			defer wmu.Unlock()
 			if r == nil {
-				_, _ = fmt.Fprintf(pw, "data: %s\n\n", bytes.TrimSpace(body))
+				_, _ = pw.Write(openError(w.dialect, status, body))
 				_ = pw.Close()
 				return
 			}
@@ -333,12 +367,17 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 				return
 			}
 			b, _ := io.ReadAll(r.Body)
-			_, _ = pw.Write(asStream(b))
+			if w.dialect == "anthropic" {
+				_, _ = pw.Write(asMessageStream(b))
+			} else {
+				_, _ = pw.Write(asStream(b))
+			}
 			_ = pw.Close()
 		}
 		for {
 			line, err := br.ReadBytes('\n')
 			head.Write(line)
+			queued = append(queued, line)
 			if string(bytes.TrimSpace(line)) == paidMarker {
 				accept.Store(true)
 				pm.paid()
@@ -350,7 +389,7 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 				if decide(rejoined(resp, head.Bytes(), br)) {
 					return
 				}
-				relay()
+				relay(true)
 				_, cerr := io.Copy(pw, br)
 				for k, v := range resp.Trailer {
 					open.Trailer[k] = v
@@ -358,11 +397,10 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 				_ = pw.CloseWithError(cerr)
 				return
 			case hung.Load():
-				err := fmt.Errorf("the family did not begin its answer within %s", commitWait)
 				if decide(nil) {
 					return
 				}
-				answer(0, []byte(err.Error()))
+				answer(0, []byte(`{"error":{"message":"the model did not begin its answer in time"}}`))
 				return
 			case said == frameError, said == frameEnd, err != nil:
 				hangup.Stop()
@@ -381,7 +419,7 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 			isOpen := opened
 			mu.Unlock()
 			if isOpen {
-				relay()
+				relay(false)
 			}
 		}
 	}()
@@ -408,25 +446,56 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 	}
 }
 
+// openError is the error an open stream ends with in dialect: an OpenAI error
+// frame, or an Anthropic error event — the family's own words when it gave any, and
+// 504 when it never began.
+func openError(dialect string, status int, body []byte) []byte {
+	msg := upstreamErrorMessage(body)
+	if msg == "" {
+		msg = string(bytes.TrimSpace(body))
+	}
+	if status == 0 {
+		status = http.StatusGatewayTimeout
+	}
+	if dialect == "anthropic" {
+		b, _ := json.Marshal(map[string]any{"type": "error", "error": map[string]any{"type": "api_error", "message": msg}})
+		return []byte("event: error\ndata: " + string(b) + "\n\n")
+	}
+	b, _ := json.Marshal(map[string]any{"error": map[string]any{"message": msg, "type": "upstream_error", "code": status}})
+	return []byte("data: " + string(b) + "\n\n")
+}
+
 // asStream is a whole chat completion as the one-chunk stream that says the same,
-// for an answer the pool gave whole to a request asked as a stream.
+// for an answer the pool gave whole to a request asked as a stream: each tool call
+// keeps its own index.
 func asStream(whole []byte) []byte {
 	var c struct {
 		ID      string          `json:"id"`
 		Model   string          `json:"model"`
 		Usage   json.RawMessage `json:"usage"`
 		Choices []struct {
-			Index   int             `json:"index"`
-			Message json.RawMessage `json:"message"`
-			Finish  string          `json:"finish_reason"`
+			Index   int                        `json:"index"`
+			Message map[string]json.RawMessage `json:"message"`
+			Finish  string                     `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if json.Unmarshal(whole, &c) != nil {
-		return []byte("data: " + emptyAnswer + "\n\n")
+		return openError("openai", http.StatusBadGateway, []byte(emptyAnswer))
 	}
 	choices := make([]map[string]any, 0, len(c.Choices))
 	for _, ch := range c.Choices {
-		choices = append(choices, map[string]any{"index": ch.Index, "delta": ch.Message, "finish_reason": ch.Finish})
+		delta := map[string]any{}
+		for k, v := range ch.Message {
+			delta[k] = v
+		}
+		var calls []map[string]any
+		if json.Unmarshal(ch.Message["tool_calls"], &calls) == nil && len(calls) > 0 {
+			for i := range calls {
+				calls[i]["index"] = i
+			}
+			delta["tool_calls"] = calls
+		}
+		choices = append(choices, map[string]any{"index": ch.Index, "delta": delta, "finish_reason": ch.Finish})
 	}
 	chunk := map[string]any{"id": c.ID, "model": c.Model, "object": "chat.completion.chunk", "choices": choices}
 	if len(c.Usage) > 0 {
@@ -434,6 +503,61 @@ func asStream(whole []byte) []byte {
 	}
 	b, _ := json.Marshal(chunk)
 	return append(append([]byte("data: "), b...), []byte("\n\ndata: [DONE]\n\n")...)
+}
+
+// asMessageStream is a whole Anthropic message as the events that stream it: its
+// start, each block's start, delta and stop, then its stop reason and end.
+func asMessageStream(whole []byte) []byte {
+	var m struct {
+		ID      string `json:"id"`
+		Model   string `json:"model"`
+		Content []struct {
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
+		} `json:"content"`
+		StopReason string `json:"stop_reason"`
+		Usage      struct {
+			In  int `json:"input_tokens"`
+			Out int `json:"output_tokens"`
+		} `json:"usage"`
+	}
+	if json.Unmarshal(whole, &m) != nil || m.Content == nil {
+		return openError("anthropic", http.StatusBadGateway, whole)
+	}
+	var out bytes.Buffer
+	event := func(name string, v any) {
+		b, _ := json.Marshal(v)
+		fmt.Fprintf(&out, "event: %s\ndata: %s\n\n", name, b)
+	}
+	event("message_start", map[string]any{"type": "message_start", "message": map[string]any{
+		"id": m.ID, "type": "message", "role": "assistant", "model": m.Model, "content": []any{},
+		"stop_reason": nil, "usage": map[string]int{"input_tokens": m.Usage.In, "output_tokens": 0}}})
+	for i, b := range m.Content {
+		switch b.Type {
+		case "tool_use":
+			event("content_block_start", map[string]any{"type": "content_block_start", "index": i,
+				"content_block": map[string]any{"type": "tool_use", "id": b.ID, "name": b.Name, "input": map[string]any{}}})
+			input := string(b.Input)
+			if input == "" {
+				input = "{}"
+			}
+			event("content_block_delta", map[string]any{"type": "content_block_delta", "index": i,
+				"delta": map[string]any{"type": "input_json_delta", "partial_json": input}})
+		default:
+			event("content_block_start", map[string]any{"type": "content_block_start", "index": i,
+				"content_block": map[string]any{"type": "text", "text": ""}})
+			event("content_block_delta", map[string]any{"type": "content_block_delta", "index": i,
+				"delta": map[string]any{"type": "text_delta", "text": b.Text}})
+		}
+		event("content_block_stop", map[string]any{"type": "content_block_stop", "index": i})
+	}
+	event("message_delta", map[string]any{"type": "message_delta",
+		"delta": map[string]any{"stop_reason": m.StopReason, "stop_sequence": nil}, "usage": map[string]int{"output_tokens": m.Usage.Out}})
+	event("message_stop", map[string]any{"type": "message_stop"})
+	return out.Bytes()
 }
 
 // errorObject reports whether a whole answer is an error object, in either dialect.

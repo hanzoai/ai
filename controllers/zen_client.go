@@ -1562,7 +1562,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			if grant != nil {
 				spend = grant.Spend
 			}
-			if resp, err = awaitCommitted(resp, waiting{pm: pm, spend: spend, settle: unsettled, fill: fill, fills: fills}); resp == nil || resp.StatusCode != http.StatusOK {
+			if resp, err = awaitCommitted(resp, waiting{pm: pm, spend: spend, dialect: dialect, settle: unsettled, fill: fill, fills: fills}); resp == nil || resp.StatusCode != http.StatusOK {
 				unsettled()
 			}
 		}
