@@ -15,9 +15,14 @@
 package controllers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"time"
+
+	"github.com/golang-jwt/jwt/v4"
 )
 
 // Without an IAM to check a bearer against there must be no socket at all.
@@ -60,5 +65,53 @@ func TestVoiceSessionRefusesAnonymous(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/voice/session", nil))
 	if rec.Code == http.StatusOK {
 		t.Error("a session was minted for a request carrying no bearer")
+	}
+}
+
+// The keys come from the IAM this pod reaches and the issuer a bearer names is the
+// brand it was minted under, which are different addresses in production: the
+// cloud pod reaches IAM at http://127.0.0.1:8000 while hanzo.id signs as
+// https://hanzo.id. Taking the address for the issuer refused every real bearer.
+func TestVoiceSessionAcceptsABearerFromTheBrandIssuer(t *testing.T) {
+	p := withIAM(t)
+	h := VoiceHandler()
+	if h == nil {
+		t.Fatal("no handler with an IAM configured")
+	}
+	// What IAM signs for a person: a subject and a membership set, home org first.
+	bearer := func(issuer string) string {
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss":  issuer,
+			"sub":  "alice",
+			"aud":  []string{iamTestAudience},
+			"iat":  time.Now().Add(-time.Minute).Unix(),
+			"exp":  time.Now().Add(time.Hour).Unix(),
+			"orgs": []map[string]string{{"org": "acme", "role": "owner"}},
+		})
+		token.Header["kid"] = iamTestKid
+		signed, err := token.SignedString(p.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return "Bearer " + signed
+	}
+	session := func(issuer string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/v1/voice/session", nil)
+		req.Header.Set("Authorization", bearer(issuer))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := session("https://hanzo.id")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session answered %d %s, want 200 with a ticket", rec.Code, rec.Body)
+	}
+	var got struct{ Ticket string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Ticket == "" {
+		t.Fatalf("no ticket in %s", rec.Body)
+	}
+	if rec := session("https://elsewhere.example"); rec.Code == http.StatusOK {
+		t.Fatal("a bearer from an untrusted issuer was handed a ticket")
 	}
 }

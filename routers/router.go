@@ -152,6 +152,11 @@ func registerAPI(app *zip.App) {
 	// /v1/videos/generations all OpenAI-shaped on the one router.
 	route(app, "/v1/audio/speech", "POST:AudioSpeech")
 	route(app, "/v1/audio/transcriptions", "POST:AudioTranscriptions")
+	// The growing transcript (controllers/zap_transcript.go): POST opens, POST to
+	// /:id pushes pcm16, DELETE closes. Its one implementation is the ZAP gateway
+	// handler; this is its HTTP binding, the same bridge the router nouns use.
+	route(app, "/v1/audio/transcript", "POST:AudioTranscript")
+	route(app, "/v1/audio/transcript/:id", "POST:AudioTranscript;DELETE:AudioTranscript")
 	// Zen-native generative audio verbs: voice (TTS), music, foley.
 	route(app, "/v1/audio/voice", "POST:AudioMedia")
 	route(app, "/v1/audio/music", "POST:AudioMedia")

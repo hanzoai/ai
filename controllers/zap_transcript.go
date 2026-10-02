@@ -131,6 +131,12 @@ func mintNonce() string {
 	return hex.EncodeToString(b)
 }
 
+// AudioTranscript serves the growing transcript over HTTP: POST opens one, POST to
+// its id pushes raw pcm16 at 16 kHz, and DELETE closes it with the settled text.
+// The one implementation is zapTranscriptHandler below; this binds it to
+// api.hanzo.ai through the in-process gateway bridge, as the router nouns are.
+func (c *ApiController) AudioTranscript() { c.RouterConfigBridge() }
+
 // zapTranscriptHandler serves the three calls. It declines nothing: the whole
 // /v1/audio/transcript subtree is this file's.
 func zapTranscriptHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {

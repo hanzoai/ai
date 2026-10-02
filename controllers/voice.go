@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/ai/conf"
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/voice"
 )
 
@@ -82,14 +83,19 @@ func voiceModel() string { return voiceSetting("VOICE_MODEL", "zen-omni") }
 // microphone session as whoever is signed in. Absent a gate the right surface is
 // no surface, and the router simply answers 404 as it did before.
 func VoiceHandler() http.Handler {
-	issuer := strings.TrimRight(voiceSetting("IAM_URL", ""), "/")
-	if issuer == "" {
+	iam := strings.TrimRight(voiceSetting("IAM_URL", ""), "/")
+	if iam == "" {
 		return nil
 	}
 	speech := voiceSetting("SPEECH_URL", "http://speech.hanzo.svc")
 
+	// The keys come from the IAM this pod reaches; the issuers a bearer may name
+	// are the ones every other door here trusts. IAM_URL is where IAM is served
+	// (in the cloud pod, http://127.0.0.1:8000), not what it signs as
+	// (https://hanzo.id and its brands), so naming it as the issuer refused every
+	// real bearer with 401.
 	v := &voice.Voice{
-		Gate:   voice.NewGate(issuer+"/v1/iam/.well-known/jwks", []string{issuer}, nil),
+		Gate:   voice.NewGate(iam+"/v1/iam/.well-known/jwks", object.TrustedJWTIssuers(), nil),
 		Desk:   voice.NewDesk(),
 		Room:   voice.NewFloorspace(voice.Capacity, voice.Share),
 		Speech: voice.NewSpeech(speech),
@@ -100,7 +106,9 @@ func VoiceHandler() http.Handler {
 		Think: func(w voice.Who) (voice.Mind, voice.Turn) {
 			return &voice.Pipe{
 				Speech: voice.NewSpeech(speech),
-				STT:    voiceSetting("VOICE_STT", "whisper"),
+				// Parakeet, which hands a language it lacks to Whisper inside the
+				// speech service: RTF 0.055 against Whisper's 0.31 on the pod.
+				STT: voiceSetting("VOICE_STT", "parakeet"),
 				Prompt: voiceSetting("VOICE_PROMPT",
 					"You are a voice assistant. Answer in one or two short sentences."),
 				Chat: &voice.Chat{

@@ -89,7 +89,12 @@ var brandNames = []string{"hanzo", "lux", "zoo", "pars"}
 // white-label brand issuers and any WHITELABEL_ISSUERS override. A token whose
 // `iss` is any of these passes the issuer check. The union is fail-secure: it only
 // ADDS the known-good brand issuers; it never accepts an arbitrary issuer.
-func trustedJWTIssuers() []string {
+func trustedJWTIssuers() []string { return TrustedJWTIssuers() }
+
+// TrustedJWTIssuers is trustedJWTIssuers for a verifier outside this package that
+// must accept exactly the issuers the request-auth policy accepts — the voice
+// socket's gate is one. One set, so no door trusts a different issuer.
+func TrustedJWTIssuers() []string {
 	out := []string{expectedJWTIssuer()}
 	add := func(v string) {
 		v = strings.TrimSpace(v)
