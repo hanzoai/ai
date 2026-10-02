@@ -106,16 +106,29 @@ func markOf(c *zip.Ctx) *planMark {
 	return m
 }
 
-// spendFor is the spend a dispatch of this request to f carries, in USD: the plan's
-// hold, to a Hanzo family only, and only until a paid rung was tried — one request
-// buys at most one paid answer. "" sends none.
-func spendFor(c *zip.Ctx, f *modelFamily) string {
+// spendFor is the spend a dispatch of this request to f for sku carries, in USD: the
+// plan's hold, to a Hanzo family only, for a SKU that family lists as plan-capable
+// (zenModel.Plan), and only until a paid rung was tried — one request buys at most one
+// paid answer. "" sends none.
+//
+// The listing is the family saying it speaks the committed answer; the TE: trailers
+// every spend travels with is ai saying the same (planTE). A plan opens a paid rung
+// only between two sides that both said so, so a catalog that gains plan rungs pays
+// for nothing until both run the committed answer.
+func spendFor(c *zip.Ctx, f *modelFamily, sku string) string {
 	g := grantOf(c)
 	if m := markOf(c); g == nil || g.Spend <= 0 || !hanzoFamily(f) || m.tried.Load() || m.asked.Load() {
 		return ""
 	}
+	if m, ok := f.lookup(sku); !ok || !m.Plan {
+		return ""
+	}
 	return spendUSD(g.Spend)
 }
+
+// planTE is the TE a spend travels with: ai reads the trailers a committed answer
+// states its cost in (RFC 9110 §10.1.4).
+const planTE = "trailers"
 
 // hanzoFamily reports whether f is one of Hanzo's own families, whose routing is
 // ours to choose.

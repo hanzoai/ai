@@ -604,8 +604,11 @@ type zenModel struct {
 	// can take spends a real-cash balance; "" means credits. It is a different KIND of
 	// floor from MinTier and is enforced differently — see familyFundingAllowed.
 	Funding string
-	Base    zenTier   // headline RETAIL price (the in-window tier)
-	Tiers   []zenTier // full ladder, ascending by MaxCtx — the billing contract
+	// Plan is whether the family opens paid plan rungs for this SKU to a host that
+	// reads the cost its committed answer states (its listing's "plan").
+	Plan  bool
+	Base  zenTier   // headline RETAIL price (the in-window tier)
+	Tiers []zenTier // full ladder, ascending by MaxCtx — the billing contract
 
 	// CostIn/CostOut are the upstream COGS ($/MTok) behind Base, when the family
 	// discloses what the SKU costs us. Zero means undisclosed, which modelPrice
@@ -748,6 +751,7 @@ type zenWireModel struct {
 	Access        string `json:"access"`   // "" | "waitlist" — access gating advertised by the family
 	MinTier       string `json:"min_tier"` // "" | "free" | "trial" | "paid" — min subscription tier advertised for this SKU (Seams A/B)
 	Funding       string `json:"funding"`  // "prepaid" = every path this SKU can take spends a real-cash balance
+	Plan          bool   `json:"plan"`     // the family opens plan rungs for this SKU to a host that reads its cost trailer
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
 		Input     decimal.Decimal `json:"input"`
@@ -767,7 +771,7 @@ type zenWireModel struct {
 
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
-		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier, Funding: w.Funding,
+		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier, Funding: w.Funding, Plan: w.Plan,
 		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output, CacheRead: w.Pricing.CacheRead},
 	}
 	for _, t := range w.PricingTiers {
@@ -1476,8 +1480,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
 	// the family may answer from a paid rung whose cost fits, and tells us its rate.
-	if spend := spendFor(c.Ctx, fam); spend != "" {
+	if spend := spendFor(c.Ctx, fam, model); spend != "" {
 		req.Header.Set(spendHeader, spend)
+		req.Header.Set("TE", planTE)
 	}
 
 	// dispatch offers this request to ONE route of ONE family: the family decides the
@@ -1506,10 +1511,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// The credential is the family's own: another family's never travels.
 			r.Header.Del("Authorization")
 		}
-		if spend := spendFor(c.Ctx, f); spend != "" {
+		if spend := spendFor(c.Ctx, f, s); spend != "" {
 			r.Header.Set(spendHeader, spend)
+			r.Header.Set("TE", planTE)
 		} else {
 			r.Header.Del(spendHeader)
+			r.Header.Del("TE")
 		}
 		upstream.Authorize(r, p)
 		// The vendor is sent its own id for the SKU. An alias is ours, so it goes

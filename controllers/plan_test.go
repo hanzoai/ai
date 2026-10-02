@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,7 +138,7 @@ func planEnso(t *testing.T, paid bool, cost string) (*httptest.Server, func() []
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
 	}
-	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro"}}
+	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro", Plan: true}}
 	ensoFam.ids = []string{"enso-pro"}
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 	return srv, func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), spends...) }
@@ -281,7 +282,7 @@ func enso(t *testing.T, handler http.HandlerFunc) {
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
 	}
-	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro"}}
+	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro", Plan: true}}
 	ensoFam.ids = []string{"enso-pro"}
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 }
@@ -373,22 +374,67 @@ func TestARefusedCoveredRequestSettlesAtNothing(t *testing.T) {
 
 // Once a paid rung was tried, no later dispatch of the request carries the plan's
 // spend: one request buys at most one paid answer. Only a Hanzo family is ever sent
-// it, and only while the grant holds something.
+// it, only for a SKU its family lists as plan-capable, and only while the grant holds
+// something.
 func TestThePlansSpendIsNeverSentTwice(t *testing.T) {
+	restore(t, ensoFam)
+	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro", Plan: true}, "enso-flash": {ID: "enso-flash"}}
+	ensoFam.ids = []string{"enso-pro", "enso-flash"}
+	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 	c := visit(http.MethodPost, "/v1/chat/completions")
-	if got := spendFor(c.Ctx, ensoFam); got != "" {
+	if got := spendFor(c.Ctx, ensoFam, "enso-pro"); got != "" {
 		t.Fatalf("no grant sent spend %q", got)
 	}
 	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 1_000_000_000, Settle: func(int64) {}})
-	if got := spendFor(c.Ctx, ensoFam); got != "1.000000000" {
+	if got := spendFor(c.Ctx, ensoFam, "enso-pro"); got != "1.000000000" {
 		t.Fatalf("a covered request sent spend %q, want the hold", got)
 	}
-	if got := spendFor(c.Ctx, freeFamily()); got != "" {
+	if got := spendFor(c.Ctx, ensoFam, "enso-flash"); got != "" {
+		t.Fatalf("a SKU its family does not list as plan-capable was sent spend %q", got)
+	}
+	if got := spendFor(c.Ctx, freeFamily(), "vendor/big:free"); got != "" {
 		t.Fatalf("a borrowed family was sent spend %q", got)
 	}
 	markOf(c.Ctx).tried.Store(true)
-	if got := spendFor(c.Ctx, ensoFam); got != "" {
+	if got := spendFor(c.Ctx, ensoFam, "enso-pro"); got != "" {
 		t.Fatalf("after a paid rung was tried the request still sends spend %q", got)
+	}
+}
+
+// A family says which SKUs it opens plan rungs for in its listing, and ai says it
+// reads the cost a committed answer states (TE: trailers) with every spend it sends.
+// A SKU listed without it, as every listing from a family that predates the committed
+// answer is, is sent no spend: a plan opens no paid rung until both sides run it.
+func TestASpendTravelsOnlyBetweenSidesThatSpeakTheCommittedAnswer(t *testing.T) {
+	var got struct{ spend, te string }
+	for _, tc := range []struct {
+		name            string
+		plan            bool
+		wantSpend, want string
+	}{
+		{"a SKU listed as plan-capable", true, "1.000000000", "trailers"},
+		{"a SKU listed without it", false, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enso(t, func(w http.ResponseWriter, r *http.Request) {
+				got.spend, got.te = r.Header.Get(spendHeader), r.Header.Get("TE")
+				committed(w, true, "0.004", freeSSE, "0")
+			})
+			ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro", Plan: tc.plan}}
+			pipeCovered(t, 1_000_000_000)
+			if got.spend != tc.wantSpend || got.te != tc.want {
+				t.Errorf("Enso was sent spend %q and TE %q, want %q and %q", got.spend, got.te, tc.wantSpend, tc.want)
+			}
+		})
+	}
+	var listed struct {
+		Data []zenWireModel `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(`{"data":[{"id":"enso-pro","plan":true},{"id":"enso-flash"}]}`), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if !listed.Data[0].model().Plan || listed.Data[1].model().Plan {
+		t.Errorf("listing read as plan %t/%t, want true/false", listed.Data[0].model().Plan, listed.Data[1].model().Plan)
 	}
 }
 
@@ -402,7 +448,7 @@ func ensoAt(t *testing.T, wait time.Duration, handler http.HandlerFunc) {
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
 	}
-	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro"}}
+	ensoFam.byID = map[string]zenModel{"enso-pro": {ID: "enso-pro", Plan: true}}
 	ensoFam.ids = []string{"enso-pro"}
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 	prev := zenPipeClient
