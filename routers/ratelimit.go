@@ -423,16 +423,17 @@ func limitSubject(c *zip.Ctx) []address.Bucket {
 	// A caller who IS named pays this nothing: their answer was held, and they
 	// returned above.
 	//
-	// The address lane is every lane the address is counted on — an IPv6 caller's /64
-	// and the /48 it sits in — and a caller is held by the first that is closed.
+	// ONLY THE NARROWEST LANE DECIDES THE ROUND TRIP. An IPv6 caller's /48 is shared
+	// by every /64 inside it, so a neighbour can close it, and a paying key is never
+	// refused for a neighbour's junk before IAM names it. The /64 is the caller's own:
+	// junk keys from it drain it and are then refused unasked. Admit charges the wider
+	// lanes only to a caller who stays anonymous.
 	lanes := controllers.Lanes(c)
 	if len(lanes) == 0 {
 		lanes = one(unaddressed)
 	}
-	for _, l := range lanes {
-		if !rateLimiterInstance.Open(l.Key) {
-			return lanes
-		}
+	if !rateLimiterInstance.Open(lanes[0].Key) {
+		return lanes
 	}
 
 	if subject, _, _ := resolveBillingKey(c); subject != "" {

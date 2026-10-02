@@ -322,6 +322,81 @@ func TestOneCallersRefusalsDoNotEmptyItsSite(t *testing.T) {
 	}
 }
 
+// A NEIGHBOUR CANNOT CLOSE A PAYING KEY'S SITE. Junk across a /48's /64s keeps
+// their shared lane empty; a paying sk- key this process has never resolved,
+// arriving from a fresh /64 of that /48, is asked about on its own /64 and served
+// as itself.
+func TestANeighbourCannotCloseAPayingKeysSite(t *testing.T) {
+	const key = "sk-owned-by-victim"
+	iamDoor(t, map[string]iam.User{key: {Owner: "victim", Name: "v"}}, nil)
+	billing(t)
+	ceilings(t)
+
+	at := func(addr string) probe {
+		return ask(http.MethodPost, "/v1/messages").body([]byte(`{}`)).with(address.Header, addr)
+	}
+	// The flood, held: the /48 refills at sixteen a second, so a reservation empties it
+	// for the length of the test where replaying the flood would race the refill.
+	site := controllers.Lanes(at("2001:470:1f00:beef::7").Ctx)[1]
+	e := rateLimiterInstance.getOrCreate(site.Key, site.Scale)
+	for range 5 {
+		e.limiter.ReserveN(time.Now(), e.limiter.Burst())
+	}
+	if rateLimiterInstance.Open(site.Key) {
+		t.Fatal("the /48 is open; this test proves nothing")
+	}
+	if p := at("2001:470:1f00:beef::7").with("x-api-key", key).through(RateLimitFilter); p.status() == http.StatusTooManyRequests {
+		t.Fatal("a paying key was refused by its /48's anonymous lane before IAM named it")
+	}
+	// What stays anonymous is still held by the site: a key IAM does not own, from a
+	// fresh /64 of the drained /48.
+	if p := at("2001:470:1f00:f00d::7").with("x-api-key", "sk-live-nobody-owns-this").through(RateLimitFilter); p.status() != http.StatusTooManyRequests {
+		t.Fatalf("a key nobody owns from a drained /48 was answered %d, want 429", p.status())
+	}
+}
+
+// A STALE KEY IS SERVED WHILE IT IS RE-CHECKED. Past its lifetime the held answer
+// still names the caller, so a key in steady use never drops behind the address
+// lanes; one background resolve replaces it with what IAM says now. Past twice its
+// lifetime it is a miss.
+func TestAStaleKeyIsServedWhileItIsRechecked(t *testing.T) {
+	const key = "sk-owned-by-acme"
+	now := iam.User{Owner: "acme", Name: "bob"}
+	iamDoor(t, map[string]iam.User{key: now}, nil)
+	billing(t)
+
+	seed := func(age time.Duration) {
+		balanceGate.userKeyMu.Lock()
+		balanceGate.userKeyCache[userKeyCacheKey(key, "")] = &userKeyCacheEntry{
+			subject: "acme/alice", namespace: "acme", userKey: "acme/alice", fetchedAt: time.Now().Add(-age),
+		}
+		balanceGate.userKeyMu.Unlock()
+	}
+	held := func() string {
+		balanceGate.userKeyMu.RLock()
+		defer balanceGate.userKeyMu.RUnlock()
+		return balanceGate.userKeyCache[userKeyCacheKey(key, "")].subject
+	}
+	c := func() *zip.Ctx { return ask(http.MethodPost, "/v1/messages").with("x-api-key", key).Ctx }
+
+	seed(userKeyCacheTTL + time.Second)
+	if s, _, _, ok := billingKey(c()); !ok || s != "acme/alice" {
+		t.Fatalf("a stale key answered (%q, held=%v); want the held answer while it is re-checked", s, ok)
+	}
+	want := now.PayerSubject("")
+	for deadline := time.Now().Add(5 * time.Second); held() != want; {
+		if time.Now().After(deadline) {
+			t.Fatalf("the re-check never landed: still %q, want %q", held(), want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	seed(2*userKeyCacheTTL + time.Second)
+	if _, _, _, ok := billingKey(c()); ok {
+		t.Fatal("a key past twice its lifetime was served from memory; it must be asked about")
+	}
+}
+
 // NOBODY NAMES THEIR OWN BUCKET.
 //
 // The address a caller arrived from is the one thing on a request they could not

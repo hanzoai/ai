@@ -79,8 +79,9 @@ type BalanceGate struct {
 	userKeyMu    sync.RWMutex
 	userKeyCache map[string]*userKeyCacheEntry
 
-	// inflight tracks user keys currently being refreshed to deduplicate
-	// concurrent async fetches.
+	// inflight tracks what is being refreshed in the background — a subject's
+	// balance, or a token's identity (recheckUserKey) — so concurrent stale reads
+	// start one fetch.
 	inflightMu sync.Mutex
 	inflight   map[string]struct{}
 
@@ -828,16 +829,54 @@ func (bg *BalanceGate) fetchBalance(subject, namespace string) (int64, error) {
 func userKeyCacheKey(token, org string) string { return token + "\x00" + org }
 
 // getUserKeyCached returns the cached (subject, namespace, userKey) for a token
-// acting in org. The bool is false on miss/stale.
+// acting in org. The bool is false on a miss.
+//
+// A STALE ANSWER IS SERVED WHILE ONE RE-CHECK RUNS. Past userKeyCacheTTL, up to the
+// 2×TTL cleanupLoop evicts at, the held answer is returned and recheckUserKey
+// replaces it in the background, so a key in steady use never drops back behind the
+// address lanes limitSubject asks before a round trip. It names a payer and nothing
+// more: the controller authenticates the key on its own one-minute answer.
 func (bg *BalanceGate) getUserKeyCached(token, org string) (subject, namespace, userKey string, ok bool) {
 	bg.userKeyMu.RLock()
 	entry, found := bg.userKeyCache[userKeyCacheKey(token, org)]
 	bg.userKeyMu.RUnlock()
 
-	if !found || time.Since(entry.fetchedAt) > userKeyCacheTTL {
+	if !found {
 		return "", "", "", false
 	}
+	age := time.Since(entry.fetchedAt)
+	if age > 2*userKeyCacheTTL {
+		return "", "", "", false
+	}
+	if age > userKeyCacheTTL {
+		bg.recheckUserKey(token, org)
+	}
 	return entry.subject, entry.namespace, entry.userKey, true
+}
+
+// recheckUserKey resolves token afresh in the background and holds IAM's answer,
+// whatever it is — a revoked key comes back a miss. One re-check per (token, org) at
+// a time; inflight dedupes it beside the balance refreshes, under a key no subject
+// can spell.
+func (bg *BalanceGate) recheckUserKey(token, org string) {
+	id := "\x00" + userKeyCacheKey(token, org)
+	bg.inflightMu.Lock()
+	if _, running := bg.inflight[id]; running {
+		bg.inflightMu.Unlock()
+		return
+	}
+	bg.inflight[id] = struct{}{}
+	bg.inflightMu.Unlock()
+
+	go func() {
+		defer func() {
+			bg.inflightMu.Lock()
+			delete(bg.inflight, id)
+			bg.inflightMu.Unlock()
+		}()
+		subject, namespace, userKey := bg.resolveIAMKeySubject(token)
+		bg.setUserKeyCache(token, org, subject, namespace, userKey)
+	}()
 }
 
 // setUserKeyCache stores a (token, org) -> (subject, namespace, userKey) mapping.
