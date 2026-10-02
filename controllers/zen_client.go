@@ -1328,11 +1328,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// done ends the request here: the client has its answer, or has gone.
 	// A covered request's paid upstream: a family answer that states a paid rung's
 	// rate and was not settled from its own usage — refused, cut, or passed over for
-	// another route — is charged the whole hold, once, since what it cost is unknown.
+	// another route — is charged, once, the most its family says it can have cost,
+	// since what it cost is unknown.
 	grant, pm := grantOf(c.Ctx), markOf(c.Ctx)
 	unsettled := func() {
 		if grant != nil && pm.tried.Load() && pm.settled.CompareAndSwap(false, true) {
-			grant.Settle(grant.Spend)
+			grant.Settle(pm.owed.Load())
 		}
 	}
 	done := func() []attempt {
@@ -1524,14 +1525,19 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// on each key (family_open.go).
 		resp, err := f.send(r, p, f.free(s), stream || assemble)
 		// A Hanzo family that states a paid rung's rate answered from paid upstream,
-		// whatever its status: the request buys no second paid answer. A dispatch that
-		// carried the spend and got no answer at all — its headers came after the wait,
-		// or the connection was cut — may have bought one just the same.
-		if resp != nil && hanzoFamily(f) && readCostRate(resp.Header) != nil {
-			pm.tried.Store(true)
+		// whatever its status, and states with it the most that answer can cost: the
+		// request buys no second paid answer. A dispatch that carried the spend and got
+		// no answer at all — its headers came after the wait, or the connection was cut —
+		// buys none either. It owes nothing: a family states the rate the moment a paid
+		// rung's upstream accepts, so no paid answer was accepted.
+		if resp != nil && hanzoFamily(f) {
+			if rate := readCostRate(resp.Header); rate != nil {
+				pm.owed.Store(rate.unknown(grant))
+				pm.tried.Store(true)
+			}
 		}
 		if resp == nil && r.Header.Get(spendHeader) != "" {
-			pm.tried.Store(true)
+			pm.asked.Store(true)
 		}
 		// A family that answered a stream request whole is a whole answer: judged by
 		// its status like any buffered one, and relayed as it came.

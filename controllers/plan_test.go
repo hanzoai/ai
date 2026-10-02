@@ -237,10 +237,20 @@ func TestTheSpendNeverReachesAnotherFamily(t *testing.T) {
 // set, states that a paid rung served at that rate.
 func enso(t *testing.T, status int, rate, body string) {
 	t.Helper()
+	ensoBound(t, status, rate, "", body)
+}
+
+// ensoBound is enso whose answer also states the most it can have cost (none when
+// bound is empty).
+func ensoBound(t *testing.T, status int, rate, bound, body string) {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if rate != "" {
 			w.Header().Set(costRateHeader, rate)
+		}
+		if bound != "" {
+			w.Header().Set(costBoundHeader, bound)
 		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
@@ -361,10 +371,10 @@ func ensoAt(t *testing.T, wait time.Duration, handler http.HandlerFunc) {
 }
 
 // A dispatch that carried the plan's spend and got no answer back — its headers came
-// after ai stopped waiting, or the connection was cut — may have bought a paid
-// answer: the plan is charged the whole hold, once, and no later dispatch of the
-// request carries the spend again.
-func TestASpendWithNoAnswerSettlesTheWholeHold(t *testing.T) {
+// after ai stopped waiting, or the connection was cut — is the request's one paid
+// attempt: no later dispatch carries the spend again. It is charged nothing, since a
+// family states a paid rung's rate and bound the moment that rung's upstream accepts.
+func TestASpendWithNoAnswerIsTheOnePaidAttempt(t *testing.T) {
 	cases := map[string]func(http.ResponseWriter, *http.Request){
 		"headers past the wait": func(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(300 * time.Millisecond)
@@ -390,13 +400,10 @@ func TestASpendWithNoAnswerSettlesTheWholeHold(t *testing.T) {
 				}
 				answer(w, r)
 			})
-			got := pipeCovered(t, 1_000_000_000)
-			charged := int64(0)
-			for _, n := range got {
-				charged += n
-			}
-			if len(got) == 0 || got[0] != 1_000_000_000 || charged != 1_000_000_000 {
-				t.Errorf("settled %v, want the whole 1000000000 hold first and once", got)
+			for _, n := range pipeCovered(t, 1_000_000_000) {
+				if n != 0 {
+					t.Errorf("a dispatch with no answer was charged %d", n)
+				}
 			}
 			if spent.Load() != 1 {
 				t.Errorf("enso was sent the spend %d time(s) over %d dispatch(es), want once", spent.Load(), asked.Load())
@@ -418,5 +425,39 @@ func TestNoSpendNoAnswerSettlesNothing(t *testing.T) {
 		if n != 0 {
 			t.Fatalf("a request that sent no spend was charged %d", n)
 		}
+	}
+}
+
+// An answer from a paid rung whose usage nobody reported is charged the most its family
+// says it can have cost — its prompt and output limit at that rung's rate — never the
+// whole of what the plan's family has left, and never past it. A family that states no
+// bound leaves the whole grant as the most it could have been.
+func TestAPaidAnswerOfUnknownCostSettlesItsBound(t *testing.T) {
+	const left = 1_000_000_000 // $1 the family has left this period
+	noUsage := `{"id":"1","model":"enso-pro","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`
+	refusal := `{"error":{"message":"the model returned an unusable answer","type":"zen_error","code":502}}`
+	for _, tc := range []struct {
+		name, bound, body string
+		status            int
+		want              int64
+	}{
+		{"an answer without usage", "0.0025", noUsage, http.StatusOK, 2_500_000},
+		{"a refusal after the paid rung accepted", "0.0025", refusal, http.StatusBadGateway, 2_500_000},
+		{"a bound past what is left", "7.5", noUsage, http.StatusOK, left},
+		{"a bound of a fraction of a nano", "0.0000000001", noUsage, http.StatusOK, 1},
+		{"no bound stated", "", noUsage, http.StatusOK, left},
+		{"a malformed bound", "lots", refusal, http.StatusBadGateway, left},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ensoBound(t, tc.status, "8.00,40.00,0.40", tc.bound, tc.body)
+			got := pipeCovered(t, left)
+			charged := int64(0)
+			for _, n := range got {
+				charged += n
+			}
+			if len(got) == 0 || got[0] != tc.want || charged != tc.want {
+				t.Errorf("settled %v, want %d first and once", got, tc.want)
+			}
+		})
 	}
 }

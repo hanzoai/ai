@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"math"
 	"math/big"
 	"net/http"
 	"strings"
@@ -77,8 +78,13 @@ func FamilyOf(model string) string {
 }
 
 // planMark is what one covered request has done with its paid upstream: a family
-// answered it from a paid rung (tried), and that answer's cost was settled.
-type planMark struct{ tried, settled atomic.Bool }
+// answered it from a paid rung (tried) that can have cost at most owed, nano-dollars,
+// and that answer's cost was settled; or the spend went out and no answer came back
+// (asked). Either way the request buys no second paid answer.
+type planMark struct {
+	tried, asked, settled atomic.Bool
+	owed                  atomic.Int64
+}
 
 // markKey is where a covered request keeps its mark.
 type markKey struct{}
@@ -99,7 +105,7 @@ func markOf(c *zip.Ctx) *planMark {
 // buys at most one paid answer. "" sends none.
 func spendFor(c *zip.Ctx, f *modelFamily) string {
 	g := grantOf(c)
-	if g == nil || g.Spend <= 0 || !hanzoFamily(f) || markOf(c).tried.Load() {
+	if m := markOf(c); g == nil || g.Spend <= 0 || !hanzoFamily(f) || m.tried.Load() || m.asked.Load() {
 		return ""
 	}
 	return spendUSD(g.Spend)
@@ -141,11 +147,21 @@ const spendHeader = "X-Hanzo-Spend"
 // rung answered a request that carried spend.
 const costRateHeader = "X-Hanzo-Cost-Rate"
 
-// costRate is a paid rung's cost as its family stated it, in USD per million tokens.
-type costRate struct{ in, out, cacheRead *big.Rat }
+// costBoundHeader is the most a paid rung's answer can have cost, in USD, as its
+// family worked it out: the request's prompt and output limit at that rung's rate.
+// It travels with costRateHeader.
+const costBoundHeader = "X-Hanzo-Cost-Bound"
 
-// readCostRate reads a family's cost-rate header; nil when none was set, which means
-// a free rung answered.
+// costRate is a paid rung's cost as its family stated it, in USD per million tokens,
+// and most, the most the answer can have cost in nano-dollars (costBoundHeader); 0
+// when the family stated none.
+type costRate struct {
+	in, out, cacheRead *big.Rat
+	most               int64
+}
+
+// readCostRate reads a family's cost-rate and cost-bound headers; nil when no rate was
+// set, which means a free rung answered.
 func readCostRate(h http.Header) *costRate {
 	parts := strings.Split(h.Get(costRateHeader), ",")
 	if len(parts) != 3 {
@@ -164,7 +180,35 @@ func readCostRate(h http.Header) *costRate {
 	if r.cacheRead.Sign() == 0 {
 		r.cacheRead = r.in
 	}
+	if v, ok := new(big.Rat).SetString(strings.TrimSpace(h.Get(costBoundHeader))); ok && v.Sign() > 0 {
+		r.most = ceilNanos(v.Mul(v, big.NewRat(1_000_000_000, 1)))
+	}
 	return &r
+}
+
+// ceilNanos is v rounded up to a whole nano-dollar.
+func ceilNanos(v *big.Rat) int64 {
+	q, rem := new(big.Int).QuoRem(v.Num(), v.Denom(), new(big.Int))
+	if rem.Sign() > 0 {
+		q.Add(q, big.NewInt(1))
+	}
+	if !q.IsInt64() {
+		return math.MaxInt64
+	}
+	return q.Int64()
+}
+
+// unknown is what an answer at this rate whose usage nobody reported is charged: the
+// most its family says it can have cost, never past the grant; the whole grant when
+// the family stated no bound.
+func (r *costRate) unknown(g *object.LimitGrant) int64 {
+	if g == nil {
+		return 0
+	}
+	if r.most > 0 {
+		return min(r.most, g.Spend)
+	}
+	return g.Spend
 }
 
 // nanos is what tokens cost at the rate, in nano-dollars, rounded up: fresh prompt
@@ -182,24 +226,19 @@ func (r *costRate) nanos(fresh, cached, completion int) int64 {
 		sum.Add(sum, new(big.Rat).Mul(big.NewRat(int64(t.n), 1), t.rate))
 	}
 	// USD per million tokens × tokens = micro-dollars; × 1000 = nano-dollars.
-	sum.Mul(sum, big.NewRat(1000, 1))
-	q, rem := new(big.Int).QuoRem(sum.Num(), sum.Denom(), new(big.Int))
-	if rem.Sign() > 0 {
-		q.Add(q, big.NewInt(1))
-	}
-	return q.Int64()
+	return ceilNanos(sum.Mul(sum, big.NewRat(1000, 1)))
 }
 
 // planCost is what a covered answer's paid upstream cost, in nano-dollars: nothing
 // when a free rung answered (no rate), the tokens at the stated rate when the
-// upstream reported the answer's usage, and the whole hold when it did not — what an
-// answer cost that nobody stated is charged at the most it could have been.
+// upstream reported the answer's usage, and the most its family says it can have cost
+// when it did not (costRate.unknown).
 func planCost(g *object.LimitGrant, rate *costRate, t tokens) int64 {
 	switch {
 	case g == nil || rate == nil:
 		return 0
 	case !t.reported:
-		return g.Spend
+		return rate.unknown(g)
 	}
 	return min(rate.nanos(t.fresh, t.cached, t.completion), g.Spend)
 }
