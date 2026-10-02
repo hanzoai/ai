@@ -753,10 +753,17 @@ func parseProblem(err error) string {
 // lane is off: nothing free stands in for it on this path.
 // paying reports whether a call to provider spends Hanzo's money while the paid lane
 // is off: every provider but a family's own service (zen, enso), whose catalog
-// decides for itself what it spends.
+// decides for itself what it spends, and a service we operate (operated).
 func paying(p *object.Provider) bool {
-	return FreeOnly() && p != nil && p.Type != "Zen" && p.Type != "Enso"
+	return FreeOnly() && p != nil && p.Type != "Zen" && p.Type != "Enso" &&
+		!(p.Owner == "admin" && operated[p.Name])
 }
+
+// operated names the global provider rows that are services we run on our own
+// hardware: a call to one pays no vendor, so the paid lane being off does not reach
+// it. speech is the CPU speech service (object/init.go). An org's own row of the
+// same name is that org's key, not ours, so only the admin-owned row counts.
+var operated = map[string]bool{"speech": true}
 
 func paidLaneOff(model string) error {
 	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,

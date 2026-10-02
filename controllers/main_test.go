@@ -26,6 +26,13 @@ func TestPayingIsEveryProviderButAFamilys(t *testing.T) {
 			t.Fatalf("paying(%q) = %v, want %v", typ, got, want)
 		}
 	}
+	// Our own speech service pays no vendor; an org's row that borrows its name does.
+	if paying(&object.Provider{Owner: "admin", Name: "speech", Type: "OpenAI"}) {
+		t.Fatal("the paid lane being off refused our own speech service")
+	}
+	if !paying(&object.Provider{Owner: "acme", Name: "speech", Type: "OpenAI"}) {
+		t.Fatal("an org's provider named speech was taken for ours")
+	}
 	FreeOnly = func() bool { return false }
 	if paying(&object.Provider{Type: "OpenAI"}) {
 		t.Fatal("a paid lane that is on refused a priced provider")
