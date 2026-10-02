@@ -1492,6 +1492,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// same routes a refusal moves to, with no clock on the walk, since the caller is
 	// kept waiting with keep-alives rather than with silence. Set below, after pool.
 	var fill func(status int, body []byte) (*http.Response, string)
+	fills := func() bool {
+		return len(fallback(fam, sku, &apiError{status: http.StatusBadGateway, msg: "unavailable"}, nil)) > 0
+	}
 
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
@@ -1559,7 +1562,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			if grant != nil {
 				spend = grant.Spend
 			}
-			if resp, err = awaitCommitted(resp, waiting{pm: pm, spend: spend, settle: unsettled, fill: fill}); resp == nil || resp.StatusCode != http.StatusOK {
+			if resp, err = awaitCommitted(resp, waiting{pm: pm, spend: spend, settle: unsettled, fill: fill, fills: fills}); resp == nil || resp.StatusCode != http.StatusOK {
 				unsettled()
 			}
 		}

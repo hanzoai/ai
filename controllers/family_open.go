@@ -215,6 +215,7 @@ type waiting struct {
 	spend  int64
 	settle func()
 	fill   func(status int, body []byte) (*http.Response, string)
+	fills  func() bool // whether fill has routes to walk at all
 }
 
 // awaitCommitted reads a family's committed answer (committedPlan) until it begins,
@@ -234,7 +235,9 @@ type waiting struct {
 // family is slow to begin is (opening): the caller's answer opens with the keep-alives
 // it carries, and the commit is watched on from the stream's writer. Its answer is
 // relayed when it begins; a refusal, or the hang-up, is answered there from the free
-// pool (fill) — nothing but keep-alives has reached the caller by then.
+// pool (fill) — nothing but keep-alives has reached the caller by then. A request with
+// no free route to fill from is held as before, so a refusal still goes back to its
+// route's other providers.
 func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 	pm := w.pm
 	// owe reads a refused commit to its end and files what it owes: the cost its
@@ -390,7 +393,7 @@ func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
 		return r, nil
 	case <-time.After(openWait):
 		mu.Lock()
-		if len(decided) == 0 {
+		if len(decided) == 0 && (w.fills == nil || w.fills()) {
 			opened = true
 		}
 		mu.Unlock()

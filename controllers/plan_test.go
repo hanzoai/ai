@@ -811,7 +811,9 @@ func slowCommit(think time.Duration, paid bool, tail, cost string) http.HandlerF
 
 // A covered caller is answered on the clock an uncovered one is: its status and
 // keep-alives go out once openWait passes, however long the committed answer takes
-// to begin, and the answer follows in the same response.
+// to begin, and the answer follows in the same response. With no free route to answer
+// a refusal from, the request is held instead, so a refusal still goes back to its
+// route's other providers.
 func TestACoveredCallerIsAnsweredOnTheUncoveredClock(t *testing.T) {
 	prev := openWait
 	openWait = 50 * time.Millisecond
@@ -820,6 +822,7 @@ func TestACoveredCallerIsAnsweredOnTheUncoveredClock(t *testing.T) {
 	words := `data: {"id":"x","model":"enso-pro","choices":[{"delta":{"content":"paid words"}}]}` + "\n\ndata: [DONE]\n\n"
 	for _, d := range []string{"openai-stream", "openai"} {
 		t.Run(d, func(t *testing.T) {
+			freePool(t)
 			enso(t, slowCommit(think, true, words, "0.002"))
 			spend := int64(1_000_000_000)
 			got, sent, waited := planCall(t, &spend, d, time.Now())
@@ -918,5 +921,30 @@ func TestAWholeCommitIsPaidOnlyPastItsTab(t *testing.T) {
 				t.Errorf("settled %v, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// A covered request with no free route to answer a refusal from is held until its
+// committed answer begins or refuses, and a refusal goes back to its route's other
+// providers, as an uncovered caller's does.
+func TestACoveredRequestWithNoFreeRouteIsHeld(t *testing.T) {
+	prev := openWait
+	openWait = 50 * time.Millisecond
+	t.Cleanup(func() { openWait = prev })
+	restore(t, freeFamily())
+	freeFamily().spares, freeFamily().loaded, freeFamily().fetchedAt = nil, true, time.Now()
+	fail := `data: {"error":{"message":"this model is temporarily unavailable","code":503}}` + "\n\n"
+	enso(t, slowCommit(200*time.Millisecond, false, fail, "0"))
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	body := []byte(`{"model":"enso-pro","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	c.Fiber().Request().SetBody(body)
+	var got []int64
+	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 1_000_000_000, Settle: func(n int64) { got = append(got, n) }})
+	out := c.pipeToFamily(ensoFam, "chat/completions", "openai", "enso-pro", body, true, 0, "acme", nil, false, nil, time.Now())
+	if out == nil {
+		t.Fatalf("the refusal was not handed back to the route; the caller was sent %q", drain(t, c))
+	}
+	if sum, _ := charged(got); sum != 0 {
+		t.Errorf("settled %v, want nothing", got)
 	}
 }
