@@ -142,11 +142,10 @@ func TestAPricedCallSpendsMoneyAndNoAllowance(t *testing.T) {
 
 // A ZERO THAT IS NOT A PRICE IS NOT A FREE CALL.
 //
-// Transcription and synthesis carry no configured rate — that is a revenue decision
-// left open on purpose (sttPricePerMinuteCents) — so an audio call computes a cost of
-// zero while being neither free nor priced. Reading that zero as a free call would
-// spend a paying customer's daily allowance on the audio traffic they are paying for,
-// and empty their free tier by using the product normally.
+// An audio id with no configured rate (sttNanoPerSecond) computes a cost of zero
+// while being neither free nor priced. Reading that zero as a free call would spend
+// a paying customer's daily allowance on traffic they are paying for, and empty their
+// free tier by using the product normally.
 //
 // The same guard covers a vendor that answers an ERROR on a priced model: no tokens
 // come back, so the cost computes zero, and only asking what the ROUTE costs tells a

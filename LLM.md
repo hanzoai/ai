@@ -926,6 +926,13 @@ upstream with their own key), a free route, speech on hardware we already own. N
 the absence of one: image and video have a per-unit PRICE table and no vendor invoice
 behind it, and a token model that states no COGS has told us nothing.
 
+**Speech sells at the published rates, in nano.** `sttNanoPerSecond` (100,000 =
+$0.006/min) and `ttsNanoPerChar` (15,000 = $15 per 1M characters) are hanzo.ai/pricing's
+Speech-to-Text and Text-to-Speech rows, keyed by every id that reaches the speech
+service. Nano because a dictated sentence is seconds long and a per-call cent would bill
+it at twelve times the rate. The speech routes carry no token price, so the balance gate
+asks for a funded caller.
+
 ### Where a cost is registered
 
 `object.ModelRoute.CostInPerMillion` / `CostOutPerMillion` — the route row, which the

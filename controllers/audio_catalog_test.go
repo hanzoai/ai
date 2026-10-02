@@ -28,12 +28,12 @@ import (
 // same set the route table must carry — adding a speech model to one without the
 // other fails a test rather than shipping a name nothing can serve.
 var (
-	sttModels = []string{"zen-scribe", "zen-scribe-mini"}
+	sttModels = []string{"zen-scribe"}
 	ttsModels = []string{"zen-voice-mini"}
 	// The upstream ids these replaced. Still routed and still callable — a
 	// rename that 404s the name people already send is a wire break — but out
 	// of the listing, where a name we do not own must not appear.
-	retiredAudioModels = []string{"whisper", "whisper-small", "kokoro"}
+	retiredAudioModels = []string{"zen-scribe-mini", "parakeet", "whisper", "whisper-small", "kokoro"}
 )
 
 // A LISTED speech model may not wear somebody else's name. Both halves are the

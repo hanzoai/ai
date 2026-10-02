@@ -113,18 +113,24 @@ var modelRoutes = map[string]modelRoute{
 	// the house rule forbids: it puts somebody else's model name on our catalog
 	// AND claims it as ours. The embeddings it was reasoned from are not the same
 	// case — they carry owned_by do-ai, so they are attributed rather than
-	// claimed. Free, because it is CPU inference on nodes we already run.
-	"zen-voice-mini":  {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo"},
-	"zen-scribe":      {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo"},
-	"zen-scribe-mini": {providerName: "speech", upstreamModel: "whisper-small", ownedBy: "hanzo"},
+	// claimed. Priced per second heard and per character spoken (sttNanoPerSecond,
+	// ttsNanoPerChar); `outputs` keeps a chat picker from offering either.
+	//
+	// zen-scribe is Parakeet, which hears 25 European languages and hands any
+	// other to Whisper inside the speech service, so one id covers every language.
+	"zen-voice-mini": {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo", outputs: []string{"audio"}},
+	"zen-scribe":     {providerName: "speech", upstreamModel: "parakeet", ownedBy: "hanzo", outputs: []string{"transcript"}},
 
-	// The upstream ids stay CALLABLE and leave the listing, the same shape every
-	// other upstream-named route here takes. A rename that 404s the name people
-	// are already sending is a wire break; a rename that stops advertising it is
-	// not.
-	"kokoro":        {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo", hidden: true},
-	"whisper":       {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo", hidden: true},
-	"whisper-small": {providerName: "speech", upstreamModel: "whisper-small", ownedBy: "hanzo", hidden: true},
+	// The upstream ids and the retired zen-scribe-mini stay CALLABLE and leave the
+	// listing, the same shape every other upstream-named route here takes. A rename
+	// that 404s the name people are already sending is a wire break; a rename that
+	// stops advertising it is not. whisper-small names a model the service no longer
+	// carries, so it reaches Whisper.
+	"zen-scribe-mini": {providerName: "speech", upstreamModel: "parakeet", ownedBy: "hanzo", hidden: true, outputs: []string{"transcript"}},
+	"parakeet":        {providerName: "speech", upstreamModel: "parakeet", ownedBy: "hanzo", hidden: true, outputs: []string{"transcript"}},
+	"whisper":         {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo", hidden: true, outputs: []string{"transcript"}},
+	"whisper-small":   {providerName: "speech", upstreamModel: "whisper", ownedBy: "hanzo", hidden: true, outputs: []string{"transcript"}},
+	"kokoro":          {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo", hidden: true, outputs: []string{"audio"}},
 
 	// ── DO-AI image (diffusion) ── Stable Diffusion 3.5 Large ────────────
 	// Unlike the fal FLUX/SDXL models (async-invoke), SD 3.5 Large is served on

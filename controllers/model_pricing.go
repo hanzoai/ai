@@ -279,88 +279,57 @@ var videoPricePerVideoCents = map[string]int64{
 	"wan2-2-t2v-a14b": 40,
 }
 
-// ── Audio ── transcription bills per MINUTE, synthesis per MILLION CHARACTERS ─
+// ── Audio ── transcription bills per SECOND heard, synthesis per CHARACTER spoken ─
 //
-// Two maps, not one, because the two directions are priced in different units by
-// every vendor that sells them: transcription per minute of audio (OpenAI's
-// Whisper API, AWS Transcribe, Deepgram) and synthesis per million characters
-// (OpenAI tts, AWS Polly, ElevenLabs). Collapsing them would force one of the two
-// into a unit its market does not quote.
+// Two tables, not one, because the two directions are sold in different units:
+// transcription by the length of the audio, synthesis by the length of the text.
+// Collapsing them would force one of the two into a unit its market does not quote.
 //
-// Rates are deliberately EMPTY. The metering is the part that was broken — the
-// quantity never reached the record — and it is fixed independently of what we
-// decide to charge. An empty map means no configured rate, which makes
-// recordUnpriced flag the row rather than invent a number, so audio traffic is
-// visible and honest while priced at nothing.
+// THE RATES ARE THE PUBLISHED ONES: hanzo.ai/pricing lists Speech-to-Text at $0.006
+// per minute and Text-to-Speech at $15 per 1M characters, and these tables are that
+// list in nano-USD (1 USD = 1e9) — 100,000 per second and 15,000 per character. Nano
+// because a dictated sentence is a few seconds, and a per-call cent would bill it at
+// twelve times the published rate; the debit is exact (usageBilledUSD), so the
+// quoted rate and the booked one are the same number. Sell prices, not COGS: speech
+// runs on our own hardware, so the margin is the whole price (providerCostNano).
 //
-// THE DECISION THAT IS OPEN, and the numbers it needs. sttPricePerMinuteCents is
-// CENTS PER MINUTE of audio submitted; ttsPricePerMillionCharsCents is CENTS PER
-// 1,000,000 CHARACTERS synthesized. Both are sell prices, not COGS — speech runs
-// on our own hardware, so there is no upstream invoice to pass through and the
-// number is a margin choice rather than a markup.
-//
-// What the cost side measures, on four idle cores (distil-small.en, int8):
-//
-//   - STREAMING re-decodes its window as it fills, so it does SEVERAL times the
-//     decoding a batch call does for the same audio. Measured, audio-seconds
-//     decoded per audio-second submitted: 6.04 at one concurrent session, 2.64 at
-//     four, 1.79 at eight — the amplification falls as load rises, because a busy
-//     pod completes fewer re-decodes of the same window. Batch is 1.0 by
-//     definition.
-//   - At the operating point (four concurrent, the largest count whose backlog
-//     does not grow) that is 0.91 CPU-seconds per audio-second, and 2.83 at one.
-//
-// So the two are not one product priced by one number, and the direction is worth
-// stating plainly: the SAME audio costs multiples more through the streaming
-// endpoint, and costs LESS per second the busier the pod is. A single per-minute
-// rate would sell live transcription under water while leaving batch overpriced.
-//
-// The batch side has no clean CPU-second figure yet — the earlier one was measured
-// against a contended box and is withdrawn rather than quoted. Setting a rate needs
-// it, and it is a short measurement, not a research project.
-//
-// What the market quotes per audio-minute, for the shape of the band rather than
-// as a rate to copy: OpenAI Whisper 0.6 cents, Deepgram ~0.43 cents, AWS
-// Transcribe 2.4 cents. Synthesis is quoted per million characters: AWS Polly
-// $4 standard / $16 neural, OpenAI tts $15.
-//
-// Until the choice is made, an empty map is the honest state: seconds and
-// characters ARE recorded, the row is flagged Unpriced, and the traffic is
-// therefore visible and back-billable. Setting a rate here is a revenue decision,
-// not a code change waiting to be finished.
-var sttPricePerMinuteCents = map[string]int64{}
-
-var ttsPricePerMillionCharsCents = map[string]int64{}
-
-// sttCostCents prices a transcription from the audio duration it consumed,
-// rounding UP to the cent so a sub-cent call is never free once a rate is set.
-// No configured rate costs nothing (and the row is flagged Unpriced) rather than
-// falling back to an invented floor: unlike an unknown image model, audio here is
-// OUR service, so an absent rate is a decision not yet made, not a gap to paper
-// over.
-func sttCostCents(model string, seconds float64) int64 {
-	if seconds <= 0 {
-		return 0
-	}
-	perMinute, ok := sttPricePerMinuteCents[strings.ToLower(model)]
-	if !ok || perMinute <= 0 {
-		return 0
-	}
-	minutes := seconds / 60.0
-	return int64(math.Ceil(minutes * float64(perMinute)))
+// Keyed by every id a caller can send that reaches the speech service — the SKU we
+// list and the upstream ids that stay callable — so no spelling of the same model is
+// cheaper than another. A name absent here meters its quantity and is flagged
+// Unpriced by recordUnpriced, never billed at an invented rate.
+var sttNanoPerSecond = map[string]int64{
+	"zen-scribe":      100_000,
+	"zen-scribe-mini": 100_000,
+	"parakeet":        100_000,
+	"whisper":         100_000,
+	"whisper-small":   100_000,
 }
 
-// ttsCostCents prices a synthesis from the characters it spoke, rounding UP to
-// the cent. Same absent-rate rule as sttCostCents.
-func ttsCostCents(model string, chars int) int64 {
-	if chars <= 0 {
+var ttsNanoPerChar = map[string]int64{
+	"zen-voice-mini": 15_000,
+	"kokoro":         15_000,
+}
+
+// sttCostNano prices a transcription from the seconds of audio it heard, rounding
+// UP to the nano. No rate costs nothing (and the row is flagged Unpriced) rather
+// than falling back to an invented floor: audio here is OUR service, so an absent
+// rate is a decision not made, not a gap to paper over.
+func sttCostNano(model string, seconds float64) int64 {
+	rate := sttNanoPerSecond[strings.ToLower(model)]
+	if seconds <= 0 || rate <= 0 {
 		return 0
 	}
-	perMillion, ok := ttsPricePerMillionCharsCents[strings.ToLower(model)]
-	if !ok || perMillion <= 0 {
+	return int64(math.Ceil(seconds * float64(rate)))
+}
+
+// ttsCostNano prices a synthesis from the characters it spoke. Same absent-rate
+// rule as sttCostNano.
+func ttsCostNano(model string, chars int) int64 {
+	rate := ttsNanoPerChar[strings.ToLower(model)]
+	if chars <= 0 || rate <= 0 {
 		return 0
 	}
-	return int64(math.Ceil(float64(chars) * float64(perMillion) / 1_000_000.0))
+	return int64(chars) * rate
 }
 
 // audioPriced reports whether a configured rate exists for the model in the
@@ -370,17 +339,7 @@ func ttsCostCents(model string, chars int) int64 {
 // edit at the call sites.
 func audioPriced(model string, seconds float64, chars int) bool {
 	m := strings.ToLower(model)
-	if seconds > 0 {
-		if rate, ok := sttPricePerMinuteCents[m]; ok && rate > 0 {
-			return true
-		}
-	}
-	if chars > 0 {
-		if rate, ok := ttsPricePerMillionCharsCents[m]; ok && rate > 0 {
-			return true
-		}
-	}
-	return false
+	return seconds > 0 && sttNanoPerSecond[m] > 0 || chars > 0 && ttsNanoPerChar[m] > 0
 }
 
 // recordIsAudio reports whether the record measured an audio quantity, in either
@@ -390,12 +349,12 @@ func recordIsAudio(record *usageRecord) bool {
 	return record.AudioSeconds > 0 || record.AudioChars > 0
 }
 
-// audioCostCents prices an audio record from whichever quantity it carries. A
+// audioCostNano prices an audio record from whichever quantity it carries. A
 // record carries at most one direction (a call either transcribes or
 // synthesizes), so the two are summed rather than branched.
-func audioCostCents(record *usageRecord) int64 {
-	return sttCostCents(record.Model, record.AudioSeconds) +
-		ttsCostCents(record.Model, record.AudioChars)
+func audioCostNano(record *usageRecord) int64 {
+	return sttCostNano(record.Model, record.AudioSeconds) +
+		ttsCostNano(record.Model, record.AudioChars)
 }
 
 // videoDefaultCostCents is the conservative per-video floor for an unknown video
@@ -558,12 +517,10 @@ func recordUnpriced(record *usageRecord) bool {
 	if record.ImageCount > 0 || record.VideoCount > 0 {
 		return false
 	}
-	// Audio is priced per minute / per million characters, not per token, so the
-	// token table cannot answer for it. The flag follows the audio rate table:
-	// while no rate is configured the row is honestly Unpriced, and setting one
-	// prices the traffic without touching a single emit site. This replaced a
-	// hardcoded `Unpriced: true` at each audio emitter, which said "no price"
-	// even after a price existed.
+	// Audio is priced per second heard / per character spoken, not per token, so
+	// the token table cannot answer for it. The flag follows the audio rate table:
+	// an id with no rate is honestly Unpriced, and setting one prices the traffic
+	// without touching a single emit site.
 	if recordIsAudio(record) {
 		return !audioPriced(record.Model, record.AudioSeconds, record.AudioChars)
 	}

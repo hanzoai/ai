@@ -311,52 +311,57 @@ models:
   # virtual SKUs with no HF weights and no working upstream — removed
 
   # ── Hanzo Speech ── the in-cluster speech service (ghcr.io/hanzoai/speech) ──
-  # faster-whisper transcribes at /v1/audio/transcriptions, kokoro synthesizes at
-  # /v1/audio/speech. The SKU carries the Zen name it is sold under; `upstream` is
-  # the id the speech service answers to, so the engine behind it stays an
-  # implementation detail and can change without renaming the product.
-  # pricing 0: the audio handlers meter every call Unpriced (there is no upstream
-  # per-call cost — this runs on CPU nodes we already run), and a declared zero is
-  # the honest figure rather than inheriting default_pricing's chat rate.
-
-  # Speech recognition (ASR) — scribe writes down what it hears
+  # sherpa-onnx on CPU: Parakeet (Whisper for the languages it lacks) transcribes at
+  # /v1/audio/transcriptions, Kokoro speaks at /v1/audio/speech. The SKU carries
+  # the Zen name it is sold under; `upstream` is the id the speech service answers
+  # to, so the engine behind it is an implementation detail.
+  # No token price: audio bills per second heard and per character spoken
+  # (controllers sttNanoPerSecond / ttsNanoPerChar, the published rates), and a
+  # declared zero here would let a caller with no balance past the gate.
+  # `outputs` keeps a chat picker from offering either for a chat turn.
   zen-scribe:
     provider: speech
-    upstream: whisper
+    upstream: parakeet
     owned_by: hanzo
-    pricing: {input: 0.00, output: 0.00}
-  zen-scribe-mini:
-    provider: speech
-    upstream: whisper-small
-    owned_by: hanzo
-    pricing: {input: 0.00, output: 0.00}
-
-  # Text-to-speech (TTS) — voice speaks
+    outputs: [transcript]
   zen-voice-mini:
     provider: speech
     upstream: kokoro
     owned_by: hanzo
-    pricing: {input: 0.00, output: 0.00}
+    outputs: [audio]
 
-  # The upstream ids stay CALLABLE and leave the listing, so a caller already
-  # sending `whisper` keeps working while the catalog advertises the Zen name.
+  # The upstream ids and the retired zen-scribe-mini stay CALLABLE and leave the
+  # listing, so a caller already sending one keeps working while the catalog
+  # advertises the Zen names. whisper-small reaches Whisper.
+  zen-scribe-mini:
+    provider: speech
+    upstream: parakeet
+    owned_by: hanzo
+    outputs: [transcript]
+    hidden: true
+  parakeet:
+    provider: speech
+    upstream: parakeet
+    owned_by: hanzo
+    outputs: [transcript]
+    hidden: true
   whisper:
     provider: speech
     upstream: whisper
     owned_by: hanzo
-    pricing: {input: 0.00, output: 0.00}
+    outputs: [transcript]
     hidden: true
   whisper-small:
     provider: speech
-    upstream: whisper-small
+    upstream: whisper
     owned_by: hanzo
-    pricing: {input: 0.00, output: 0.00}
+    outputs: [transcript]
     hidden: true
   kokoro:
     provider: speech
     upstream: kokoro
     owned_by: hanzo
-    pricing: {input: 0.00, output: 0.00}
+    outputs: [audio]
     hidden: true
 
   # ── Hanzo Decision ── the decision service (KAI_URL), POST /v1/decisions ──

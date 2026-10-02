@@ -5,9 +5,8 @@ import "testing"
 // speechSKUs is the speech lineup as the catalog sells it: the Zen name callers see,
 // and the id the in-cluster speech service answers to.
 var speechSKUs = map[string]string{
-	"zen-scribe":      "whisper",
-	"zen-scribe-mini": "whisper-small",
-	"zen-voice-mini":  "kokoro",
+	"zen-scribe":     "parakeet",
+	"zen-voice-mini": "kokoro",
 }
 
 // TestSpeechCatalog asserts the shipped conf/models.yaml — the catalog /v1/models

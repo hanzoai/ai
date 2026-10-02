@@ -107,7 +107,7 @@ func usageCostNano(record *usageRecord) int64 {
 	case record.DecisionCount > 0:
 		return decisionCostNano(record.Model, record.PromptTokens)
 	case recordIsAudio(record):
-		return audioCostCents(record) * 10_000_000
+		return audioCostNano(record)
 	default:
 		return tokenCostNano(record.Model, record.PromptTokens, record.CompletionTokens,
 			record.CacheReadTokens, record.CacheWriteTokens)
@@ -265,11 +265,11 @@ func usageBilledUSD(record *usageRecord) string {
 //   - It billed nothing. The wallet's question, read from the same margin
 //     usageBilledUSD renders, so free and $0 are one answer and not two that drift.
 //
-//   - The zero is a PRICE and not a missing one. A model whose rate is not set yet —
-//     transcription and synthesis are exactly that, deliberately (see
-//     sttPricePerMinuteCents) — computes zero and is UNPRICED, not free. Counting it
-//     would spend a customer's free calls on traffic we have simply not billed yet,
-//     and empty their day on the work they are paying for.
+//   - The zero is a PRICE and not a missing one. A model whose rate is not set —
+//     an audio id absent from sttNanoPerSecond, say — computes zero and is
+//     UNPRICED, not free. Counting it would spend a customer's free calls on
+//     traffic we have simply not billed, and empty their day on the work they are
+//     paying for.
 //
 //   - The route is free by DECLARATION or by the TABLE. costsNothing is the same
 //     question the balance gate asks before the call, so the gate and the counter

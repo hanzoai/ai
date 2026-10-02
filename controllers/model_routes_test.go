@@ -39,7 +39,7 @@ func TestResolveModelRoute_KnownModels(t *testing.T) {
 		{"bge-m3", "do-ai", "bge-m3", false},
 		{"wan2-2-t2v-a14b", "do-ai", "wan2-2-t2v-a14b", true},
 		{"router:general", "do-ai", "router:general", false},
-		{"zen-scribe", "speech", "whisper", false},
+		{"zen-scribe", "speech", "parakeet", false},
 	}
 
 	for _, tc := range cases {
