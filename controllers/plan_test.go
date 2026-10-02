@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -305,6 +306,14 @@ func pipeCovered(t *testing.T, spend int64) []int64 { return pipeCoveredAs(t, sp
 // (a message, asked whole).
 func pipeCoveredAs(t *testing.T, spend int64, dialect string) []int64 {
 	t.Helper()
+	settled, _ := coveredCall(t, spend, dialect)
+	return settled
+}
+
+// coveredCall is pipeCoveredAs that also answers what the caller was sent: the body,
+// with the status ahead of it when it is not 200.
+func coveredCall(t *testing.T, spend int64, dialect string) ([]int64, string) {
+	t.Helper()
 	cooled.forget()
 	var mu sync.Mutex
 	var settled []int64
@@ -326,10 +335,13 @@ func pipeCoveredAs(t *testing.T, spend int64, dialect string) []int64 {
 	c.Fiber().Request().SetBody(body)
 	Cover(c.Ctx, grant)
 	c.pipeToFamily(ensoFam, apiPath, dialect, "enso-pro", body, stream, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, time.Now())
-	drain(t, c)
+	sent := drain(t, c)
+	if st := c.Fiber().Response().StatusCode(); st != http.StatusOK {
+		sent = fmt.Sprintf("%d %s", st, sent)
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	return append([]int64(nil), settled...)
+	return append([]int64(nil), settled...), sent
 }
 
 // charged is what settles add up to, and whether the first of them is all of it.
@@ -527,5 +539,188 @@ func TestAWholeAnswerSettlesItsStatedCost(t *testing.T) {
 				t.Errorf("settled %v, want %d first and once", got, tc.want)
 			}
 		})
+	}
+}
+
+// freePool stands up the free pool answering every request with "from-pool", in the
+// shape it was asked for, and counts the requests it was sent.
+func freePool(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	cooled.forget()
+	forgetKeys()
+	var asked atomic.Int32
+	const free = "vendor/big:free"
+	pool := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		b, _ := io.ReadAll(r.Body)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/messages"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"msg_p","type":"message","role":"assistant","model":"`+free+`","content":[{"type":"text","text":"from-pool"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}`)
+		case strings.Contains(string(b), `"stream":true`):
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, `data: {"id":"p","model":"`+free+`","choices":[{"delta":{"content":"from-pool"}}]}`+"\n\n"+
+				`data: {"id":"p","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}`+"\n\ndata: [DONE]\n\n")
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"p","model":"`+free+`","choices":[{"index":0,"message":{"role":"assistant","content":"from-pool"},"finish_reason":"stop"}]}`)
+		}
+	}))
+	t.Cleanup(pool.Close)
+	spareFamily(t, pool.URL, free)
+	return &asked
+}
+
+// A committed answer that fails before it says anything is a refusal like any other
+// family's: it falls to the free pool, exactly as it would for a caller no plan
+// covers, and it is charged what its family states it cost — nothing when no paid
+// rung accepted it, whatever bound it was committed under. Late or whole, it is the
+// same: a covered caller never sees an error a caller with no plan would not.
+func TestACommittedFailureFallsToThePool(t *testing.T) {
+	prev := openWait
+	openWait = 50 * time.Millisecond
+	t.Cleanup(func() { openWait = prev })
+	fail := `data: {"error":{"message":"this model is temporarily unavailable","code":503}}` + "\n\n"
+	late := func(w http.ResponseWriter, sse bool, tail, cost string) {
+		if sse {
+			w.Header().Set("Content-Type", "text/event-stream")
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.Header().Set(costBoundHeader, "0.75")
+		w.Header().Set("Trailer", costHeader)
+		w.WriteHeader(http.StatusOK)
+		for i := 0; i < 6; i++ { // the family's keep-alives while it walks, past openWait
+			if sse {
+				_, _ = io.WriteString(w, ": keep-alive\n\n")
+			} else {
+				_, _ = io.WriteString(w, " ")
+			}
+			w.(http.Flusher).Flush()
+			time.Sleep(20 * time.Millisecond)
+		}
+		_, _ = io.WriteString(w, tail)
+		w.Header().Set(costHeader, cost)
+	}
+	for _, tc := range []struct {
+		name, dialect string
+		answer        http.HandlerFunc
+		want          int64
+	}{
+		{"a stream that fails before any paid rung", "openai", func(w http.ResponseWriter, r *http.Request) {
+			committed(w, true, "0.75", ": keep-alive\n\n"+fail, "0")
+		}, 0},
+		{"a caller's stream that fails before any paid rung", "openai-stream", func(w http.ResponseWriter, r *http.Request) {
+			committed(w, true, "0.75", ": keep-alive\n\n"+fail, "0")
+		}, 0},
+		{"a stream that fails past openWait", "openai-stream", func(w http.ResponseWriter, r *http.Request) {
+			late(w, true, fail, "0")
+		}, 0},
+		{"a stream that ends empty", "openai", func(w http.ResponseWriter, r *http.Request) {
+			committed(w, true, "0.75", ": keep-alive\n\ndata: [DONE]\n\n", "0")
+		}, 0},
+		{"a paid rung that accepted, then failed", "openai-stream", func(w http.ResponseWriter, r *http.Request) {
+			committed(w, true, "0.75", ": paid\n\n"+fail, "0.004")
+		}, 4_000_000},
+		{"a paid rung that accepted, then failed, its cost lost", "openai-stream", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, true, "0.004", ": paid\n\n", fail)
+		}, 4_000_000},
+		{"a whole answer that is an error object", "anthropic", func(w http.ResponseWriter, r *http.Request) {
+			late(w, false, `{"type":"error","error":{"type":"api_error","message":"this model is temporarily unavailable"}}`, "0")
+		}, 0},
+		{"a whole answer that is an error object, a paid rung having failed", "anthropic", func(w http.ResponseWriter, r *http.Request) {
+			committed(w, false, "0.75", ` {"error":{"message":"the model returned an unusable answer","type":"zen_error","code":502}}`, "0.004")
+		}, 4_000_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asked := freePool(t)
+			enso(t, tc.answer)
+			got, sent := coveredCall(t, 1_000_000_000, tc.dialect)
+			if !strings.Contains(sent, "from-pool") || strings.Contains(sent, "temporarily unavailable") || strings.Contains(sent, "unusable") {
+				t.Errorf("the caller was sent %q (pool asked %d), want the free pool's answer", sent, asked.Load())
+			}
+			if sum, once := charged(got); sum != tc.want || (tc.want > 0 && !once) {
+				t.Errorf("settled %v, want %d first and once", got, tc.want)
+			}
+		})
+	}
+}
+
+// A committed answer that has not begun by the time ai stops waiting for a family is
+// abandoned exactly as a family that sent no headers would be: the family is hung up
+// on, which stops its walk before any paid rung, the free pool answers, and nothing is
+// charged. Once a paid rung accepted, ai waits for its answer however long it takes.
+func TestACommittedAnswerThatNeverBeginsFallsToThePool(t *testing.T) {
+	prev := commitWait
+	commitWait = 100 * time.Millisecond
+	t.Cleanup(func() { commitWait = prev })
+	hungUp := make(chan struct{}, 1)
+	asked := freePool(t)
+	enso(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set(costBoundHeader, "0.75")
+		w.Header().Set("Trailer", costHeader)
+		w.WriteHeader(http.StatusOK)
+		for {
+			if _, err := io.WriteString(w, ": keep-alive\n\n"); err != nil {
+				hungUp <- struct{}{}
+				return
+			}
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+				hungUp <- struct{}{}
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+	})
+	got, sent := coveredCall(t, 1_000_000_000, "openai-stream")
+	if !strings.Contains(sent, "from-pool") {
+		t.Errorf("the caller was sent %q (pool asked %d), want the free pool's answer", sent, asked.Load())
+	}
+	if sum, _ := charged(got); sum != 0 {
+		t.Errorf("settled %v, want nothing", got)
+	}
+	select {
+	case <-hungUp:
+	case <-time.After(2 * time.Second):
+		t.Error("the family was never hung up on: its walk goes on")
+	}
+
+	slow := `data: {"id":"x","choices":[{"delta":{"content":"paid words"}}]}` + "\n\n"
+	enso(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set(costBoundHeader, "0.75")
+		w.Header().Set("Trailer", costHeader)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, ": paid\n\n")
+		w.(http.Flusher).Flush()
+		time.Sleep(300 * time.Millisecond) // the paid rung thinks past commitWait
+		_, _ = io.WriteString(w, slow+"data: [DONE]\n\n")
+		w.Header().Set(costHeader, "0.002")
+	})
+	got, sent = coveredCall(t, 1_000_000_000, "openai-stream")
+	if !strings.Contains(sent, "paid words") {
+		t.Errorf("the caller was sent %q, want the paid rung's answer", sent)
+	}
+	if sum, _ := charged(got); sum != 2_000_000 {
+		t.Errorf("settled %v, want the stated 2000000", got)
+	}
+}
+
+// A committed refusal the caller caused — a request no vendor would serve — reaches
+// the caller with its status, as it would with no plan, and charges nothing.
+func TestACommittedRefusalTheCallerCausedReachesTheCaller(t *testing.T) {
+	asked := freePool(t)
+	enso(t, func(w http.ResponseWriter, r *http.Request) {
+		committed(w, true, "0.75", ": keep-alive\n\n"+`data: {"error":{"message":"messages must not be empty","code":400}}`+"\n\n", "0")
+	})
+	got, sent := coveredCall(t, 1_000_000_000, "openai")
+	if !strings.HasPrefix(sent, "400 ") || asked.Load() != 0 {
+		t.Errorf("the caller was sent %q and the pool asked %d times; want the 400 and no pool", sent, asked.Load())
+	}
+	if sum, _ := charged(got); sum != 0 {
+		t.Errorf("settled %v, want nothing", got)
 	}
 }

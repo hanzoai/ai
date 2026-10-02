@@ -34,6 +34,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -64,7 +65,9 @@ const (
 // returns a response that relays every byte it read and the rest. A stream that
 // opened with an error or ended empty comes back as that error with its status.
 func opening(resp *http.Response) *http.Response {
-	if resp == nil || resp.StatusCode != http.StatusOK {
+	// A committed answer is judged by awaitCommitted, which knows what a refusal
+	// inside it cost.
+	if resp == nil || resp.StatusCode != http.StatusOK || committedPlan(resp) {
 		return resp
 	}
 	// Only an event stream has frames to judge. A whole answer to a stream request
@@ -195,4 +198,101 @@ func errorStatus(payload []byte) int {
 		}
 	}
 	return http.StatusBadGateway
+}
+
+// drainWait bounds how long a committed answer that refused is read on to its end,
+// where its family states what it cost.
+var drainWait = 5 * time.Second
+
+// awaitCommitted reads a family's committed answer (committedPlan) until it begins,
+// and answers it as any other family's answer would be answered at its status:
+//
+//   - its first answer frame (or, for a whole answer, a body that is not an error
+//     object): the answer, every byte read relayed;
+//   - an error, an empty end, or a cut before any answer: a refusal with that error's
+//     status and no commit about it, which falls to the free pool exactly as a family's
+//     refusal does. It is read on to its end first, so pm owes what the family states
+//     it cost, never past spend — nothing when no paid rung accepted it;
+//   - wait passing before a paid rung accepted it (": paid") and before any answer:
+//     the family is hung up on, which stops its walk, and the attempt is unreached.
+//
+// A paid rung that accepted is waited for however long its answer takes.
+func awaitCommitted(resp *http.Response, pm *planMark, spend int64, wait time.Duration) (*http.Response, error) {
+	refused := func(status int, body []byte) (*http.Response, error) {
+		stop := time.AfterFunc(drainWait, func() { resp.Body.Close() })
+		_, _ = io.Copy(io.Discard, resp.Body)
+		stop.Stop()
+		resp.Body.Close()
+		if n, ok := usdNanos(resp.Trailer.Get(costHeader)); ok {
+			pm.owed.Store(min(n, spend))
+		}
+		out := refusal(resp, status, body)
+		out.Header.Del(costBoundHeader)
+		return out, nil
+	}
+	if !eventStream(resp) {
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return refused(http.StatusBadGateway, []byte(emptyAnswer))
+		}
+		if whole := bytes.TrimSpace(b); errorObject(whole) {
+			return refused(errorStatus(whole), whole)
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(b))
+		return resp, nil
+	}
+	type read struct {
+		line []byte
+		err  error
+	}
+	br := bufio.NewReaderSize(resp.Body, 64<<10)
+	lines, more := make(chan read, 1), make(chan bool, 1)
+	go func() {
+		for {
+			line, err := br.ReadBytes('\n')
+			lines <- read{line, err}
+			if err != nil || !<-more {
+				return
+			}
+		}
+	}()
+	var head bytes.Buffer
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+	expired := deadline.C
+	for {
+		select {
+		case <-expired:
+			resp.Body.Close()
+			<-lines
+			return nil, fmt.Errorf("the family did not begin its answer within %s", wait)
+		case r := <-lines:
+			head.Write(r.line)
+			if string(bytes.TrimSpace(r.line)) == paidMarker {
+				pm.paid()
+				expired = nil
+			}
+			switch said, payload := judge(r.line); {
+			case said == frameAnswer:
+				more <- false
+				return rejoined(resp, head.Bytes(), br), nil
+			case said == frameError:
+				more <- false
+				return refused(errorStatus(payload), payload)
+			case said == frameEnd, r.err != nil:
+				more <- false
+				return refused(http.StatusBadGateway, []byte(emptyAnswer))
+			}
+			more <- true
+		}
+	}
+}
+
+// errorObject reports whether a whole answer is an error object, in either dialect.
+func errorObject(b []byte) bool {
+	var e struct {
+		Type  string          `json:"type"`
+		Error json.RawMessage `json:"error"`
+	}
+	return json.Unmarshal(b, &e) == nil && (present(e.Error) || e.Type == "error")
 }

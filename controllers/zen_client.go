@@ -1195,6 +1195,10 @@ func (f *modelFamily) freeInfo(now int64) []modelInfo {
 // staying on the line is the only honest measure of whether it is still wanted.
 const zenPipeHeader = 120 * time.Second
 
+// commitWait is how long ai waits for a committed answer to begin before a paid rung
+// accepted it: as long as it waits for any family's headers.
+var commitWait = zenPipeHeader
+
 // zenPipeClient forwards inference to a family. No client-level timeout: that would
 // count the body, which is the part that is long on purpose.
 var zenPipeClient = &http.Client{
@@ -1530,11 +1534,21 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// the spend and got no answer at all — its headers came after the wait, or the
 		// connection was cut — buys none either. It owes nothing: a family commits
 		// before it asks any rung, so nothing was bought.
+		// The commit is judged here, before any byte reaches the caller, so a refusal
+		// inside it is as movable as any family's: what the attempt cost is settled
+		// now, and the request goes on to the free pool like any other.
 		if resp != nil && hanzoFamily(f) && committedPlan(resp) {
 			pm.bound.Store(boundOf(resp.Header, grant))
 			pm.tried.Store(true)
 			if !eventStream(resp) {
 				pm.paid()
+			}
+			spend := int64(0)
+			if grant != nil {
+				spend = grant.Spend
+			}
+			if resp, err = awaitCommitted(resp, pm, spend, commitWait); resp == nil || resp.StatusCode != http.StatusOK {
+				unsettled()
 			}
 		}
 		if resp == nil && r.Header.Get(spendHeader) != "" {
@@ -1892,13 +1906,14 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// A committed answer states its records and its cost once its body ended: its
 		// usage record settles it (planCost).
 		// One whose cost was never stated settles what its mark owes, here, so the
-		// usage record is the one settle of every answer that ended.
+		// usage record is the one settle of every answer that ended. A paid attempt
+		// already settled — refused, and this answer the pool's — charges nothing more.
 		sv.merge(answer.Trailer)
 		if owed := pm.owed.Load(); sv.cost == nil && pm.tried.Load() {
 			sv.cost = &owed
 		}
-		if sv.cost != nil {
-			pm.settled.Store(true)
+		if sv.cost != nil && !pm.settled.CompareAndSwap(false, true) {
+			sv.cost = nil
 		}
 		cents := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, bill, "success", "")
 		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, cents, start)
