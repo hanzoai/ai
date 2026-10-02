@@ -315,10 +315,19 @@ func pipeCoveredAs(t *testing.T, spend int64, dialect string) []int64 {
 // with the status ahead of it when it is not 200.
 func coveredCall(t *testing.T, spend int64, dialect string) ([]int64, string) {
 	t.Helper()
+	settled, sent, _ := planCall(t, &spend, dialect, time.Now())
+	return settled, sent
+}
+
+// planCall sends one enso-pro request through the family pipe, covered by a grant of spend
+// when spend is set, as if it began at start, and answers what settled, what the caller
+// was sent, and how long the caller waited for its status: pipeToFamily returning is
+// the moment the status and the first bytes can leave.
+func planCall(t *testing.T, spend *int64, dialect string, start time.Time) ([]int64, string, time.Duration) {
+	t.Helper()
 	cooled.forget()
 	var mu sync.Mutex
 	var settled []int64
-	grant := &object.LimitGrant{Plan: "max-20x", Spend: spend, Settle: func(n int64) { mu.Lock(); settled = append(settled, n); mu.Unlock() }}
 	prev := object.UsageRecorder()
 	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { return nil })
 	t.Cleanup(func() { object.SetUsageRecorder(prev) })
@@ -334,15 +343,19 @@ func coveredCall(t *testing.T, spend int64, dialect string) ([]int64, string) {
 	}
 	c := visit(http.MethodPost, path)
 	c.Fiber().Request().SetBody(body)
-	Cover(c.Ctx, grant)
-	c.pipeToFamily(ensoFam, apiPath, dialect, "enso-pro", body, stream, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, time.Now())
+	if spend != nil {
+		Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: *spend, Settle: func(n int64) { mu.Lock(); settled = append(settled, n); mu.Unlock() }})
+	}
+	began := time.Now()
+	c.pipeToFamily(ensoFam, apiPath, dialect, "enso-pro", body, stream, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, start)
+	waited := time.Since(began)
 	sent := drain(t, c)
 	if st := c.Fiber().Response().StatusCode(); st != http.StatusOK {
 		sent = fmt.Sprintf("%d %s", st, sent)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	return append([]int64(nil), settled...), sent
+	return append([]int64(nil), settled...), sent, waited
 }
 
 // charged is what settles add up to, and whether the first of them is all of it.
@@ -513,7 +526,7 @@ func TestNoSpendNoAnswerSettlesNothing(t *testing.T) {
 
 // A committed answer cut before its end states no cost: it is charged the most its
 // family said the request can cost once a paid rung's upstream accepted it — the paid
-// marker on a stream, the commit itself on a whole answer — and nothing before that.
+// marker on a stream, a tab ahead of a whole answer — and nothing before that.
 // A family that states no bound is charged at most unstatedNanos, never what its family
 // has left.
 func TestACutAnswerSettlesItsBoundOnceAPaidRungAccepted(t *testing.T) {
@@ -536,8 +549,8 @@ func TestACutAnswerSettlesItsBoundOnceAPaidRungAccepted(t *testing.T) {
 		{"a caller's stream cut before any paid rung accepted", "openai-stream", func(w http.ResponseWriter, r *http.Request) {
 			cutAfter(w, true, "0.004", ": keep-alive\n\n", words)
 		}, 0},
-		{"a whole answer cut after its commit", "anthropic", func(w http.ResponseWriter, r *http.Request) {
-			cutAfter(w, false, "0.004", " ", `{"id":"msg_1",`)
+		{"a whole answer cut after a paid rung accepted", "anthropic", func(w http.ResponseWriter, r *http.Request) {
+			cutAfter(w, false, "0.004", " \t", `{"id":"msg_1",`)
 		}, 4_000_000},
 		{"a bound past what is left", "openai", func(w http.ResponseWriter, r *http.Request) {
 			cutAfter(w, true, "75", ": paid\n\n", words)
@@ -768,5 +781,142 @@ func TestACommittedRefusalTheCallerCausedReachesTheCaller(t *testing.T) {
 	}
 	if sum, _ := charged(got); sum != 0 {
 		t.Errorf("settled %v, want nothing", got)
+	}
+}
+
+// slowCommit answers a committed stream that keeps its host waiting for think — its
+// family walking its rungs, keep-alives meanwhile — then ends with tail and states
+// cost (none when empty). paid writes the paid marker first.
+func slowCommit(think time.Duration, paid bool, tail, cost string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set(costBoundHeader, "0.004")
+		w.Header().Set("Trailer", costHeader)
+		w.WriteHeader(http.StatusOK)
+		if paid {
+			_, _ = io.WriteString(w, ": paid\n\n")
+		}
+		for end := time.Now().Add(think); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+			if _, err := io.WriteString(w, ": keep-alive\n\n"); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+		}
+		_, _ = io.WriteString(w, tail)
+		if cost != "" {
+			w.Header().Set(costHeader, cost)
+		}
+	}
+}
+
+// A covered caller is answered on the clock an uncovered one is: its status and
+// keep-alives go out once openWait passes, however long the committed answer takes
+// to begin, and the answer follows in the same response.
+func TestACoveredCallerIsAnsweredOnTheUncoveredClock(t *testing.T) {
+	prev := openWait
+	openWait = 50 * time.Millisecond
+	t.Cleanup(func() { openWait = prev })
+	const think = 400 * time.Millisecond
+	words := `data: {"id":"x","model":"enso-pro","choices":[{"delta":{"content":"paid words"}}]}` + "\n\ndata: [DONE]\n\n"
+	for _, d := range []string{"openai-stream", "openai"} {
+		t.Run(d, func(t *testing.T) {
+			enso(t, slowCommit(think, true, words, "0.002"))
+			spend := int64(1_000_000_000)
+			got, sent, waited := planCall(t, &spend, d, time.Now())
+			if waited >= think/2 {
+				t.Errorf("the covered caller waited %v for its status, past openWait", waited.Round(time.Millisecond))
+			}
+			if !strings.Contains(sent, "paid words") {
+				t.Errorf("the caller was sent %q, want the answer", sent)
+			}
+			if sum, once := charged(got); sum != 2_000_000 || !once {
+				t.Errorf("settled %v, want the stated 2000000 once", got)
+			}
+		})
+	}
+}
+
+// A committed answer that refuses after the caller's answer opened — its family's
+// rungs all failed, or a paid rung accepted and then failed — is answered from the free
+// pool inside that open answer, never with the error, and charged what its family
+// states: nothing when no paid rung accepted it. One ai stops waiting for (commitWait)
+// is hung up on and answered the same way, whenever the request began.
+func TestARefusalAfterTheAnswerOpenedIsAnsweredFromThePool(t *testing.T) {
+	prevOpen, prevCommit := openWait, commitWait
+	openWait, commitWait = 50*time.Millisecond, 2*time.Second
+	t.Cleanup(func() { openWait, commitWait = prevOpen, prevCommit })
+	fail := `data: {"error":{"message":"this model is temporarily unavailable","code":503}}` + "\n\n"
+	for _, tc := range []struct {
+		name, dialect string
+		answer        http.HandlerFunc
+		wait          time.Duration
+		want          int64
+	}{
+		{"every rung failed", "openai-stream", slowCommit(300*time.Millisecond, false, fail, "0"), 0, 0},
+		{"every rung failed, asked whole", "openai", slowCommit(300*time.Millisecond, false, fail, "0"), 0, 0},
+		{"a paid rung accepted, then failed", "openai-stream", slowCommit(300*time.Millisecond, true, fail, "0.004"), 0, 4_000_000},
+		{"ai stopped waiting before any paid rung", "openai-stream", slowCommit(time.Hour, false, "", ""), 200 * time.Millisecond, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.wait > 0 {
+				commitWait = tc.wait
+				t.Cleanup(func() { commitWait = 2 * time.Second })
+			}
+			asked := freePool(t)
+			enso(t, tc.answer)
+			spend := int64(1_000_000_000)
+			// The request began long ago: the pool still answers inside an open answer.
+			got, sent, waited := planCall(t, &spend, tc.dialect, time.Now().Add(-3*time.Minute))
+			if waited >= 200*time.Millisecond {
+				t.Errorf("the covered caller waited %v for its status, past openWait", waited.Round(time.Millisecond))
+			}
+			if !strings.Contains(sent, "from-pool") || strings.Contains(sent, "temporarily unavailable") {
+				t.Errorf("the caller was sent %q (pool asked %d), want the free pool's answer", sent, asked.Load())
+			}
+			if sum, once := charged(got); sum != tc.want || (tc.want > 0 && !once) {
+				t.Errorf("settled %v, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// A covered request its family refuses without committing, handed back to the route's
+// other providers, settles its grant before it goes: what it owes, else nothing. No
+// hold outlives it.
+func TestARefusalHandedBackSettlesTheGrant(t *testing.T) {
+	enso(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"error":{"message":"this model is temporarily unavailable","code":503}}`)
+	})
+	for _, d := range []string{"openai-stream", "openai"} {
+		spend := int64(1_000_000_000)
+		got, _, _ := planCall(t, &spend, d, time.Now())
+		if len(got) == 0 {
+			t.Errorf("%s: the request was handed back with its grant unsettled", d)
+		}
+	}
+}
+
+// A whole committed answer cut before it ends is charged its bound only when a paid
+// rung accepted it, which a whole answer says with a tab ahead of its body.
+func TestAWholeCommitIsPaidOnlyPastItsTab(t *testing.T) {
+	for _, tc := range []struct {
+		name, lead string
+		want       int64
+	}{
+		{"cut before any paid rung", " ", 0},
+		{"cut after a paid rung accepted", " \t", 4_000_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			freePool(t)
+			enso(t, func(w http.ResponseWriter, r *http.Request) {
+				cutAfter(w, false, "0.004", tc.lead, " ")
+			})
+			got := pipeCoveredAs(t, 1_000_000_000, "anthropic")
+			if sum, _ := charged(got); sum != tc.want {
+				t.Errorf("settled %v, want %d", got, tc.want)
+			}
+		})
 	}
 }

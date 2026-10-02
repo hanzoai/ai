@@ -39,6 +39,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -204,6 +206,17 @@ func errorStatus(payload []byte) int {
 // where its family states what it cost.
 var drainWait = 5 * time.Second
 
+// waiting is what awaitCommitted needs from its request beyond the answer: the plan's
+// mark and spend, the settle of an attempt that refused, and the free pool's answer
+// for a refusal that comes once the caller's answer is open. Each is safe to use from
+// a stream's writer, after the request itself is gone.
+type waiting struct {
+	pm     *planMark
+	spend  int64
+	settle func()
+	fill   func(status int, body []byte) (*http.Response, string)
+}
+
 // awaitCommitted reads a family's committed answer (committedPlan) until it begins,
 // and answers it as any other family's answer would be answered at its status:
 //
@@ -211,81 +224,213 @@ var drainWait = 5 * time.Second
 //     object): the answer, every byte read relayed;
 //   - an error, an empty end, or a cut before any answer: a refusal with that error's
 //     status and no commit about it, which falls to the free pool exactly as a family's
-//     refusal does. It is read on to its end first, so pm owes what the family states
-//     it cost, never past spend — nothing when no paid rung accepted it;
-//   - wait passing before a paid rung accepted it (": paid") and before any answer:
-//     the family is hung up on, which stops its walk, and the attempt is unreached.
+//     refusal does. It is read on to its end first, so the mark owes what the family
+//     states it cost, never past spend — nothing when no paid rung accepted it;
+//   - commitWait passing before a paid rung accepted it (": paid") and before any
+//     answer: the family is hung up on, which stops its walk, and the attempt is
+//     unreached. A paid rung that accepted is waited for however long it takes.
 //
-// A paid rung that accepted is waited for however long its answer takes.
-func awaitCommitted(resp *http.Response, pm *planMark, spend int64, wait time.Duration) (*http.Response, error) {
-	refused := func(status int, body []byte) (*http.Response, error) {
+// A stream that has not begun when openWait passes is answered then, as a stream any
+// family is slow to begin is (opening): the caller's answer opens with the keep-alives
+// it carries, and the commit is watched on from the stream's writer. Its answer is
+// relayed when it begins; a refusal, or the hang-up, is answered there from the free
+// pool (fill) — nothing but keep-alives has reached the caller by then.
+func awaitCommitted(resp *http.Response, w waiting) (*http.Response, error) {
+	pm := w.pm
+	// owe reads a refused commit to its end and files what it owes: the cost its
+	// family states, else what its mark owes already.
+	owe := func(br io.Reader) {
 		stop := time.AfterFunc(drainWait, func() { resp.Body.Close() })
-		_, _ = io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, br)
 		stop.Stop()
 		resp.Body.Close()
 		if n, ok := usdNanos(resp.Trailer.Get(costHeader)); ok {
-			pm.owed.Store(min(n, spend))
+			pm.owed.Store(min(n, w.spend))
 		}
+	}
+	refusalOf := func(status int, body []byte) *http.Response {
 		out := refusal(resp, status, body)
 		out.Header.Del(costBoundHeader)
-		return out, nil
+		return out
 	}
 	if !eventStream(resp) {
 		b, err := io.ReadAll(resp.Body)
+		// A whole answer says a paid rung accepted it with a tab ahead of its body.
+		if lead := b[:len(b)-len(bytes.TrimLeft(b, " \t\r\n"))]; bytes.IndexByte(lead, '\t') >= 0 {
+			pm.paid()
+		}
 		if err != nil {
-			return refused(http.StatusBadGateway, []byte(emptyAnswer))
+			resp.Body.Close()
+			return refusalOf(http.StatusBadGateway, []byte(emptyAnswer)), nil
 		}
 		if whole := bytes.TrimSpace(b); errorObject(whole) {
-			return refused(errorStatus(whole), whole)
+			owe(resp.Body)
+			return refusalOf(errorStatus(whole), whole), nil
 		}
 		resp.Body = io.NopCloser(bytes.NewReader(b))
 		return resp, nil
 	}
-	type read struct {
-		line []byte
-		err  error
+
+	var (
+		mu      sync.Mutex
+		opened  bool // the caller's answer is open: the watcher answers it
+		decided = make(chan *http.Response, 1)
+		pr, pw  = io.Pipe()
+		accept  atomic.Bool // a paid rung accepted: no hang-up
+		hung    atomic.Bool
+	)
+	hangup := time.AfterFunc(commitWait, func() {
+		if !accept.Load() {
+			hung.Store(true)
+			resp.Body.Close()
+		}
+	})
+	// The caller's answer, once open: the commit's headers, the watcher's bytes, and
+	// the commit's trailer when its own answer is what the caller is sent.
+	open := &http.Response{
+		Status: resp.Status, StatusCode: resp.StatusCode, Proto: resp.Proto, ProtoMajor: resp.ProtoMajor, ProtoMinor: resp.ProtoMinor,
+		Header: resp.Header.Clone(), Body: pr, Trailer: http.Header{}, Request: resp.Request,
 	}
-	br := bufio.NewReaderSize(resp.Body, 64<<10)
-	lines, more := make(chan read, 1), make(chan bool, 1)
+	// decide hands a verdict to the request while it still waits; false once the
+	// caller's answer is open and the verdict is the watcher's to answer.
+	decide := func(r *http.Response) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if opened {
+			return false
+		}
+		decided <- r
+		return true
+	}
 	go func() {
+		br := bufio.NewReaderSize(resp.Body, 64<<10)
+		var head bytes.Buffer
+		sent := 0 // how much of head the open answer has been written
+		relay := func() {
+			if b := head.Bytes()[sent:]; len(b) > 0 {
+				_, _ = pw.Write(b)
+				sent = head.Len()
+			}
+		}
+		// answer is the open answer's end once the commit refused: the free pool's
+		// answer, else the refusal itself as the stream's error.
+		answer := func(status int, body []byte) {
+			w.settle()
+			r, route := w.fill(status, body)
+			if r == nil {
+				_, _ = fmt.Fprintf(pw, "data: %s\n\n", bytes.TrimSpace(body))
+				_ = pw.Close()
+				return
+			}
+			defer r.Body.Close()
+			open.Trailer.Set(armHeader, route)
+			if eventStream(r) {
+				_, err := io.Copy(pw, r.Body)
+				_ = pw.CloseWithError(err)
+				return
+			}
+			b, _ := io.ReadAll(r.Body)
+			_, _ = pw.Write(asStream(b))
+			_ = pw.Close()
+		}
 		for {
 			line, err := br.ReadBytes('\n')
-			lines <- read{line, err}
-			if err != nil || !<-more {
+			head.Write(line)
+			if string(bytes.TrimSpace(line)) == paidMarker {
+				accept.Store(true)
+				pm.paid()
+			}
+			said, payload := judge(line)
+			switch {
+			case said == frameAnswer:
+				hangup.Stop()
+				if decide(rejoined(resp, head.Bytes(), br)) {
+					return
+				}
+				relay()
+				_, cerr := io.Copy(pw, br)
+				for k, v := range resp.Trailer {
+					open.Trailer[k] = v
+				}
+				_ = pw.CloseWithError(cerr)
 				return
+			case hung.Load():
+				err := fmt.Errorf("the family did not begin its answer within %s", commitWait)
+				if decide(nil) {
+					return
+				}
+				answer(0, []byte(err.Error()))
+				return
+			case said == frameError, said == frameEnd, err != nil:
+				hangup.Stop()
+				status, body := errorStatus(payload), payload
+				if said != frameError {
+					status, body = http.StatusBadGateway, []byte(emptyAnswer)
+				}
+				owe(br)
+				if decide(refusalOf(status, body)) {
+					return
+				}
+				answer(status, body)
+				return
+			}
+			mu.Lock()
+			isOpen := opened
+			mu.Unlock()
+			if isOpen {
+				relay()
 			}
 		}
 	}()
-	var head bytes.Buffer
-	deadline := time.NewTimer(wait)
-	defer deadline.Stop()
-	expired := deadline.C
-	for {
-		select {
-		case <-expired:
-			resp.Body.Close()
-			<-lines
-			return nil, fmt.Errorf("the family did not begin its answer within %s", wait)
-		case r := <-lines:
-			head.Write(r.line)
-			if string(bytes.TrimSpace(r.line)) == paidMarker {
-				pm.paid()
-				expired = nil
-			}
-			switch said, payload := judge(r.line); {
-			case said == frameAnswer:
-				more <- false
-				return rejoined(resp, head.Bytes(), br), nil
-			case said == frameError:
-				more <- false
-				return refused(errorStatus(payload), payload)
-			case said == frameEnd, r.err != nil:
-				more <- false
-				return refused(http.StatusBadGateway, []byte(emptyAnswer))
-			}
-			more <- true
+	select {
+	case r := <-decided:
+		if r == nil {
+			return nil, fmt.Errorf("the family did not begin its answer within %s", commitWait)
 		}
+		return r, nil
+	case <-time.After(openWait):
+		mu.Lock()
+		if len(decided) == 0 {
+			opened = true
+		}
+		mu.Unlock()
+		if !opened {
+			r := <-decided
+			if r == nil {
+				return nil, fmt.Errorf("the family did not begin its answer within %s", commitWait)
+			}
+			return r, nil
+		}
+		return open, nil
 	}
+}
+
+// asStream is a whole chat completion as the one-chunk stream that says the same,
+// for an answer the pool gave whole to a request asked as a stream.
+func asStream(whole []byte) []byte {
+	var c struct {
+		ID      string          `json:"id"`
+		Model   string          `json:"model"`
+		Usage   json.RawMessage `json:"usage"`
+		Choices []struct {
+			Index   int             `json:"index"`
+			Message json.RawMessage `json:"message"`
+			Finish  string          `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(whole, &c) != nil {
+		return []byte("data: " + emptyAnswer + "\n\n")
+	}
+	choices := make([]map[string]any, 0, len(c.Choices))
+	for _, ch := range c.Choices {
+		choices = append(choices, map[string]any{"index": ch.Index, "delta": ch.Message, "finish_reason": ch.Finish})
+	}
+	chunk := map[string]any{"id": c.ID, "model": c.Model, "object": "chat.completion.chunk", "choices": choices}
+	if len(c.Usage) > 0 {
+		chunk["usage"] = c.Usage
+	}
+	b, _ := json.Marshal(chunk)
+	return append(append([]byte("data: "), b...), []byte("\n\ndata: [DONE]\n\n")...)
 }
 
 // errorObject reports whether a whole answer is an error object, in either dialect.

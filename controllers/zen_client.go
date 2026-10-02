@@ -1337,9 +1337,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// A covered request's paid upstream: a committed family answer whose cost was never
 	// stated — refused, cut, or its caller gone — is charged, once, what its mark owes:
 	// its bound once a paid rung accepted it, else nothing.
-	grant, pm := grantOf(c.Ctx), markOf(c.Ctx)
+	// ctx is the request's context, read once: dispatch and pool also run from a
+	// stream's writer (awaitCommitted's fill), after fiber has recycled c.
+	grant, pm, ctx := grantOf(c.Ctx), markOf(c.Ctx), c.Context()
 	unsettled := func() {
-		if grant != nil && pm.tried.Load() && pm.settled.CompareAndSwap(false, true) {
+		if grant != nil && pm.settled.CompareAndSwap(false, true) {
 			grant.Settle(pm.owed.Load())
 		}
 	}
@@ -1485,6 +1487,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		req.Header.Set("TE", planTE)
 	}
 
+	// fill answers a covered request from the free pool once its committed answer
+	// refused inside an answer the caller already holds open (awaitCommitted): the
+	// same routes a refusal moves to, with no clock on the walk, since the caller is
+	// kept waiting with keep-alives rather than with silence. Set below, after pool.
+	var fill func(status int, body []byte) (*http.Response, string)
+
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
 	// the request is the caller's own. That is what lets a route on a DIFFERENT
@@ -1502,7 +1510,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 				return nil, &apiError{status: http.StatusServiceUnavailable, msg: f.name + " service is not configured"}
 			}
 		}
-		r, rErr := http.NewRequestWithContext(c.Context(), http.MethodPost, p.ProviderUrl+"/v1/"+apiPath, nil)
+		r, rErr := http.NewRequestWithContext(ctx, http.MethodPost, p.ProviderUrl+"/v1/"+apiPath, nil)
 		if rErr != nil {
 			return nil, rErr
 		}
@@ -1511,7 +1519,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// The credential is the family's own: another family's never travels.
 			r.Header.Del("Authorization")
 		}
-		if spend := spendFor(c.Ctx, f, s); spend != "" {
+		if spend := spendOf(grant, pm, f, s); spend != "" {
 			r.Header.Set(spendHeader, spend)
 			r.Header.Set("TE", planTE)
 		} else {
@@ -1547,14 +1555,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if resp != nil && hanzoFamily(f) && committedPlan(resp) {
 			pm.bound.Store(boundOf(resp.Header, grant))
 			pm.tried.Store(true)
-			if !eventStream(resp) {
-				pm.paid()
-			}
 			spend := int64(0)
 			if grant != nil {
 				spend = grant.Spend
 			}
-			if resp, err = awaitCommitted(resp, pm, spend, commitWait); resp == nil || resp.StatusCode != http.StatusOK {
+			if resp, err = awaitCommitted(resp, waiting{pm: pm, spend: spend, settle: unsettled, fill: fill}); resp == nil || resp.StatusCode != http.StatusOK {
 				unsettled()
 			}
 		}
@@ -1580,7 +1585,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// answer — and bounded because every try is a round trip the caller waits
 	// through, so worst-case latency is a property of spareTries rather than of how
 	// many free routes a vendor happens to advertise.
-	pool := func(routes []spare, skip string) (*http.Response, spare) {
+	pool := func(routes []spare, skip string, bounded bool) (*http.Response, spare) {
 		// The pool holds routes that hold a CONVERSATION. An embeddings request has
 		// no free chat route to fall to, and offering it three anyway spends three
 		// round trips of the caller's time to be told three times that a chat model
@@ -1593,7 +1598,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// routes sit behind the same address, so they are not asked again.
 		unreached := map[*modelFamily]bool{}
 		for _, alt := range routes {
-			if strings.EqualFold(alt.id, skip) || c.Context().Err() != nil || unreached[alt.fam] {
+			if strings.EqualFold(alt.id, skip) || ctx.Err() != nil || unreached[alt.fam] {
 				continue
 			}
 			// A stand-in answers only a caller its own gate admits.
@@ -1616,7 +1621,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// more local call is the difference between an answer and a refusal —
 			// but that rule is about a SHORT walk, and this only fires where the
 			// walk has already stopped being short.
-			if time.Since(start) > zenPipeHeader {
+			if bounded && time.Since(start) > zenPipeHeader {
 				break
 			}
 			// The budget bounds how many BORROWED routes we ask, because each is a
@@ -1644,6 +1649,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			r.Body.Close()
 		}
 		return nil, spare{}
+	}
+
+	fill = func(status int, body []byte) (*http.Response, string) {
+		routes := fallback(fam, sku, &apiError{status: status, msg: upstreamErrorMessage(body)}, body)
+		if len(routes) == 0 {
+			return nil, ""
+		}
+		r, alt := pool(routes, sku, false)
+		return r, alt.id
 	}
 
 	// spared offers the SAME request to a free route once this vendor cannot serve
@@ -1675,7 +1689,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if len(routes) == 0 || c.Context().Err() != nil {
 			return nil, spare{}, false
 		}
-		r, alt := pool(routes, sku)
+		r, alt := pool(routes, sku, true)
 		return r, alt, true
 	}
 
@@ -1734,7 +1748,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	var resp *http.Response
 	stood, by := false, fam
 	if fam.frontDoor(sku) {
-		r, alt := pool(freeRoutes(), "")
+		r, alt := pool(freeRoutes(), "", true)
 		if r == nil {
 			if c.Context().Err() != nil {
 				return done()
@@ -1754,7 +1768,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	} else if !lane && FreeOnly() {
 		// The paid lane is off: a priced Hanzo SKU is never sent to its paid route, and
 		// the Hanzo routes that stand in for it answer in its place.
-		r, alt := pool(standIn(fam, sku), sku)
+		r, alt := pool(standIn(fam, sku), sku, true)
 		if r == nil {
 			if c.Context().Err() != nil {
 				return done()
