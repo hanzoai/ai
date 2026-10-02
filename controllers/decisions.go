@@ -746,7 +746,17 @@ func (h *handleCosts) note(org, id string, tokens int) {
 
 // decisionsClient carries every call to the decision service. A decision is one
 // forward pass, or one upstream call for a forwarded model.
-var decisionsClient = &http.Client{Timeout: 120 * time.Second}
+//
+// Each call opens its own connection. The service scales out under load, and its
+// Service balances connections, not requests: over kept-alive connections every
+// caller stayed on the replicas that existed when load arrived, and the ones added
+// for it sat idle (measured 2026-10-02: two of four replicas busy, so the
+// autoscaler saw half its target and added no more). A dial inside the cluster is
+// a fraction of a millisecond beside a forward pass.
+var decisionsClient = &http.Client{
+	Timeout:   120 * time.Second,
+	Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, DisableKeepAlives: true},
+}
 
 // Relayed are the service's headers a caller is owed: the request id, and how long
 // to wait before asking again.
