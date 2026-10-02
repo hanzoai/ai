@@ -591,7 +591,7 @@ func TestTheLaneRefusesAtTheCeiling(t *testing.T) {
 // ONE SITE IS ONE ALLOWANCE AT SITE SCALE. A /48 holds 65,536 /64s and Hurricane
 // Electric hands one out free, so a lane counting only the /64 gives one tunnel
 // 65,536 days of free messages. The /48 lane every /64 inside it shares is held to
-// sixteen visitors' worth; once it is spent, a /64 the lane has never seen is spent
+// siteDay visitors' worth; once it is spent, a /64 the lane has never seen is spent
 // with it.
 func TestASiteIsHeldByItsSlash48(t *testing.T) {
 	t.Setenv("PUBLIC_CHAT_DAILY", "5")
@@ -601,15 +601,36 @@ func TestASiteIsHeldByItsSlash48(t *testing.T) {
 	site := "visitor:" + hex.EncodeToString(sum[:])[:32]
 
 	saved := publicCount
-	publicCount = &dayCount{day: utcDay(time.Now()), seen: map[string]int{site: 16 * 5}}
+	publicCount = &dayCount{day: utcDay(time.Now()), seen: map[string]int{site: siteDay * 5}}
 	t.Cleanup(func() { publicCount = saved })
 
 	status, code := refusalOf(t, publicCall(t, "[2001:470:1f00:beef::1]:9000", ""))
 	if status != http.StatusPaymentRequired || code != "public_allowance_spent" {
 		t.Fatalf("a fresh /64 inside a spent /48 got %d/%s, want 402/public_allowance_spent", status, code)
 	}
-	if n := publicCount.seen[site]; n != 16*5 {
+	if n := publicCount.seen[site]; n != siteDay*5 {
 		t.Fatalf("the refusal moved the site's count to %d; refusals are not usage", n)
+	}
+}
+
+// A CARRIER'S SEVENTEENTH VISITOR IS SERVED. Sixteen strangers behind one carrier or
+// Private Relay /48 take their whole day; the seventeenth has sent nothing and is
+// not refused for what they spent. The day holds a site to siteDay visitors, not to
+// the sixteen a minute does.
+func TestACarriersSeventeenthVisitorIsServed(t *testing.T) {
+	d := &dayCount{}
+	const day, limit = "2026-10-01", 5
+	for v := range 16 {
+		lanes := publicLanes(fmt.Sprintf("2607:fb90:a3c1:%x::1", v))
+		for range limit {
+			if d.out(lanes, day, limit) {
+				t.Fatalf("visitor %d refused inside their own day", v+1)
+			}
+			d.serve(lanes, day, limit)
+		}
+	}
+	if d.out(publicLanes("2607:fb90:a3c1:ffff::1"), day, limit) {
+		t.Fatal("a visitor who sent nothing today was refused because sixteen strangers in their /48 spent theirs")
 	}
 }
 
@@ -618,15 +639,15 @@ func TestASiteIsHeldByItsSlash48(t *testing.T) {
 func TestAServedCallCountsOnEveryLane(t *testing.T) {
 	d := &dayCount{}
 	const day, limit = "2026-08-15", 2
-	for i := range 16 * limit {
+	for i := range siteDay * limit {
 		lanes := publicLanes(fmt.Sprintf("2001:470:1f00:%x::1", i))
 		if d.out(lanes, day, limit) {
-			t.Fatalf("call %d of %d across fresh /64s was refused before the /48 was spent", i+1, 16*limit)
+			t.Fatalf("call %d of %d across fresh /64s was refused before the /48 was spent", i+1, siteDay*limit)
 		}
 		d.serve(lanes, day, limit)
 	}
 	if !d.out(publicLanes("2001:470:1f00:ffff::1"), day, limit) {
-		t.Fatal("a /48 that spent sixteen visitors' worth still admits a fresh /64")
+		t.Fatal("a /48 that spent siteDay visitors' worth still admits a fresh /64")
 	}
 	if d.out(publicLanes("2001:470:1f01::1"), day, limit) {
 		t.Fatal("the neighbouring /48 is spent by the first one's count")

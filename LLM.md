@@ -804,6 +804,14 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   (`bootstrap.go` panics if `CLOUD_API_REPLICAS > 1`). To scale out you MUST first
   move Reserve/Settle behind a Commerce-atomic conditional reserve.
 
+- **Address lanes** (`address.Buckets`) — IPv4 whole; IPv6 its /64, then its /48 at
+  16×, the wider charged only for what the narrower admitted. The router asks only
+  the /64 before buying an IAM round trip for an unresolved key, and charges the /48
+  only to a caller who stays anonymous, so a neighbour cannot close a paying key's
+  /48. A resolved key stays named past its 5-minute TTL (up to 2×) while one
+  background re-check replaces it. The free lane's DAY holds a /48 to `siteDay`
+  (256) visitors, not 16: sixteen strangers a day is a quiet carrier /48.
+
 - **Single-request reservation** (`controllers/billing_reserve.go`) — an uncapped
   `max_tokens` is clamped (`clampMaxTokens`) and the reservation covers the larger
   of the clamped ceiling and the QueryText pipeline's fixed completion cap

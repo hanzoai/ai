@@ -161,14 +161,35 @@ func (d *dayCount) count(visitor, day string, limit int) {
 	d.seen[visitor] = used + 1
 }
 
+// siteDay is how many visitors' days a lane shared across a site — an IPv6 /48 —
+// may spend. address.Buckets' sixteen is a site's MINUTE: sixteen callers at once is
+// a busy site, while sixteen strangers in a day is a quiet carrier /48 or one
+// Private Relay block. 256 serves those strangers and still holds an HE tunnel's
+// 65,536 /64s to 256 days.
+//
+// A multiplier, not a threshold on distinct /64s: a carrier's visitors are distinct
+// /64s too, so a threshold cannot tell them from a rotating tunnel, and it costs a
+// per-/48 set the day must hold and bound.
+const siteDay = 256
+
+// dayScale is how many visitors' days a lane may spend: one for a caller's own lane,
+// siteDay for one shared across a site.
+func dayScale(l address.Bucket) int {
+	if l.Scale > 1 {
+		return siteDay
+	}
+	return 1
+}
+
 // out reports whether a visitor has taken their day on any of their lanes, each held
-// to limit times its scale. A visitor with no lane names nobody this count can hold.
+// to limit times its dayScale. A visitor with no lane names nobody this count can
+// hold.
 func (d *dayCount) out(lanes []address.Bucket, day string, limit int) bool {
 	if len(lanes) == 0 {
 		return true
 	}
 	for _, l := range lanes {
-		if d.spent(l.Key, day, limit*l.Scale) {
+		if d.spent(l.Key, day, limit*dayScale(l)) {
 			return true
 		}
 	}
@@ -178,7 +199,7 @@ func (d *dayCount) out(lanes []address.Bucket, day string, limit int) bool {
 // serve records one served call on every lane the visitor is charged to.
 func (d *dayCount) serve(lanes []address.Bucket, day string, limit int) {
 	for _, l := range lanes {
-		d.count(l.Key, day, limit*l.Scale)
+		d.count(l.Key, day, limit*dayScale(l))
 	}
 }
 
