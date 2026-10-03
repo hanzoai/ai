@@ -50,29 +50,12 @@ type UsageEvent struct {
 	// Actor is the member who made the call, "<org>/<name>". A pooled org pays from
 	// one subject; the plan's per-member limits count by this.
 	Actor string
-	// Allowance is the subject whose free-call allowance this call counts against. It
-	// is set only when a model ANSWERED and charged nothing for doing so. Empty means
-	// this call spent no allowance: it spent money, or it reached a vendor and came
-	// back with an error, which is billed at what it cost and counts against no
-	// ceiling.
+	// Plan says the caller's plan covered this call (LimitGrant): it debits no wallet,
+	// the plan having counted it when it was admitted.
 	//
-	// ONE EVENT SAYS WHAT A CALL SPENT — money, or one of a plan's free calls — so
-	// counting a free call and recording that a call happened are the same act and
-	// cannot come apart. recordUsage is its only producer, and it fills this field
-	// only for a call a model answered, which is what makes a count impossible
-	// without a model behind it.
-	//
-	// The allowance bounds exactly the calls a wallet cannot: the ones that cost
-	// nothing. So a zero amount IS the free call, said in the currency the bound is
-	// about, rather than as a second opinion about what the catalog charges.
-	//
-	// The subject is the payer's, except where the request named its own — the
-	// public lane counts a visitor, and one shared subject would let a single caller
-	// empty every visitor's day.
-	Allowance string
-	// Plan says the caller's plan covered this call (LimitGrant): it debits no wallet
-	// and counts against no free allowance, the plan having counted it when it was
-	// admitted.
+	// A free call carries nothing here either. Its unit was taken at admission
+	// (SpentFunc), before any model was reached, so the record of a call is money
+	// alone and no count can ride on it.
 	Plan bool
 	// RequestID names the metered call so a warehouse row, a span and a support
 	// question can be tied back to it.
@@ -150,33 +133,32 @@ type LimitHit struct {
 // cannot be read bounds nothing. nil (standalone ai) means no plans.
 type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitGrant, *LimitHit, error)
 
-// SpentFunc reports where subject stands against the free calls its plan allows
-// this period, within the org namespace: whether they are spent, and which window
-// binds and when it starts again, so a refusal can say when the free lane reopens.
+// SpentFunc ADMITS one free call and answers where the caller stands after it: the
+// host takes the unit when it is called, before any model is reached, and Spent says
+// THIS call was past the ceiling and is refused. Window, Limit, Used and Resets
+// describe the window that binds, so a refusal can say when the free lane reopens
+// and an admitted call can say what is left.
 //
 // It is the bound on the ONE thing a wallet cannot bound. A route priced at zero
 // leaves the balance gate nothing to refuse (see BalanceGateFilter), so a caller on
-// the free pool is otherwise unlimited — and the free pool runs on our own compute.
-// The allowance is that ceiling: a COUNT of calls, per subject, per period, from the
-// caller's plan. Money and count never stand in for each other, so nothing here reads
-// a balance and nothing in the wallet reads a count.
+// the free pool is otherwise unlimited — and the free pool runs on our own compute and
+// our vendors' free quotas. The allowance is that ceiling: on the Free plan, fifty
+// calls per person per UTC day; call fifty-one and every one after it is refused
+// until 00:00 UTC. Money and count never stand in for each other, so nothing here
+// reads a balance and nothing in the wallet reads a count.
 //
-// IT ONLY READS, and that is the whole shape of the thing. A ceiling on SPEND is
-// reached when a model is reached, so the count belongs to the answer and not to the
-// attempt: it rides on UsageEvent.Allowance, a field on the record of a call that
-// served. Asking here therefore costs the caller nothing, a subject at the ceiling
-// keeps their count where it is, and a request that dies before any model — an
-// unresolvable route, a vendor that never answered, a deployment mid-roll — leaves
-// the caller exactly as many free calls as it found.
+// THE COUNT BELONGS TO THE ADMISSION, NOT TO THE ANSWER. A call whose upstream then
+// fails has still spent its unit, which is the owner's rule and the only one that
+// bounds a loop retrying a failing model: counted at the answer, that loop ran free
+// forever on a pool every free user shares. It also closes the overshoot an
+// answer-time count had, where every call in flight read the ceiling before any of
+// them was counted. A call refused at the ceiling counts nothing.
 //
-// THE TRADE IS DELIBERATE, AND IT IS NOT A SMALL ONE. Every call a subject has in
-// flight reads the ceiling before any of them has been counted, so all of them are
-// admitted: the overshoot is the subject's CONCURRENCY, not one or two. What bounds it
-// is the edge's per-IP flood cap ahead of this, and how long an answer takes — not
-// this read. Undershoot is the error going the other way, and it is the one a caller
-// feels while we never see it: a day spent on a route that 404'd looks, from here,
-// exactly like a day spent on answers. The direction of the error is chosen rather
-// than left to chance, and the size of it is a number to watch.
+// THE PERSON IS NAMED BY ctx. The host keys the count by the caller's IAM home org
+// and user id, which it reads with zip.CallerOf, so the gate hands it a context bound
+// to the request in flight ((*zip.Ctx).Forward); subject and namespace say which
+// wallet sets the ceiling. The public lane names no person: it passes the visitor as
+// subject under the reserved org, and the host counts the visitor.
 //
 // AN ERROR IS ALLOWED THROUGH, and WHO gets that benefit is the host's call, not
 // this module's. A route stated at zero is not always served by our own compute — a
@@ -190,10 +172,11 @@ type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitGrant, *LimitHit, er
 // spent. nil (the default, standalone ai) → no allowance, behavior unchanged.
 type SpentFunc func(ctx context.Context, subject, namespace string) (Standing, error)
 
-// Standing is a subject's free-call allowance as the host counts it.
+// Standing is a caller's free-call allowance as the host counted it on admission.
 //
-// Window names the ceiling the numbers describe — "hour" or "day" — and is the one
-// that refused where one did. Limit 0 means no window bounds the subject.
+// Window names the ceiling the numbers describe — "day" on the Free plan — and is
+// the one that refused where one did. Used counts this call when it was admitted.
+// Limit 0 means no window bounds the caller.
 type Standing struct {
 	Spent  bool
 	Window string
@@ -222,7 +205,7 @@ func SetTierReader(f TierReaderFunc) { tierReader = f }
 // SetLimits installs the host's plan AI limits (nil clears them).
 func SetLimits(f LimitFunc) { limits = f }
 
-// SetSpent installs the host's native plan-allowance read (nil clears it).
+// SetSpent installs the host's native free-call admission (nil clears it).
 func SetSpent(f SpentFunc) { spent = f }
 
 // BalanceReader returns the installed native reader, or nil when unset (standalone).
@@ -237,5 +220,5 @@ func TierReader() TierReaderFunc { return tierReader }
 // Limits returns the installed plan AI limits, or nil when unset.
 func Limits() LimitFunc { return limits }
 
-// Spent returns the installed native allowance read, or nil when unset.
+// Spent returns the installed native free-call admission, or nil when unset.
 func Spent() SpentFunc { return spent }

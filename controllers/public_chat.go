@@ -381,11 +381,10 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	// BOTH COUNTS ARE READ HERE AND TAKEN NOWHERE. A day is spent on answers, so the
-	// call is counted where it is answered — recordUsage, which fills an allowance only
-	// for a call that came back — and this asks only whether the visitor is already
-	// out. A request that dies short of a model leaves them every call they arrived
-	// with.
+	// TWO COUNTS, AND THEY RISE AT DIFFERENT MOMENTS. The host's allowance counts the
+	// visitor as the lane admits the call: asking it is taking, so a call that then
+	// fails has still spent its unit. This lane's own count rises on an answer
+	// (recordUsage) and holds by address and by site while the host is unreachable.
 	//
 	// OUR OWN BOUND FIRST, and it decides. It is kept in this process and asks
 	// nothing, so it holds while anything else is down.
@@ -395,7 +394,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 		return
 	}
 
-	// The host's allowance is the counter that REPORTS a free tier, read under a
+	// The host's allowance is the counter that REPORTS a free tier, taken under a
 	// subject of the visitor's own — one shared subject would let a single caller
 	// starve every visitor's tier. It may refuse; it may not admit, which is why its
 	// silence is not consulted.

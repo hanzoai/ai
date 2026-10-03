@@ -18,24 +18,28 @@ import (
 	stdcontext "context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/zap-proto/zip"
 )
 
 // A ZERO-PRICED ROUTE IS BOUNDED BY THE PLAN ALLOWANCE, AND BY NOTHING ELSE.
 //
 // The wallet has nothing to refuse at zero, so without this the free pool is
-// unlimited for anyone who can name a free model. The allowance is a count of calls
-// per subject per period; when it is spent the caller is refused 402 allowance_spent
-// — a code distinct from insufficient_balance, because the caller is not broke, they
-// are done for the period, and the cure is a plan rather than a top-up.
+// unlimited for anyone who can name a free model. The allowance is fifty calls per
+// person per UTC day, and the host counts each call as it admits it: asking is
+// taking. Call fifty-one is refused 429 allowance_spent — a code distinct from
+// insufficient_balance, because the caller is not broke, they are done for the day,
+// and the cure is waiting for 00:00 UTC or adding credits rather than a top-up.
 //
-// It fails OPEN, and the direction is safe only here: the route costs nothing, so an
-// unreadable allowance hands out our own compute and never a paid vendor call.
+// It fails OPEN for a caller the host can name, and the direction is safe only here:
+// the route costs nothing, so an unanswerable allowance hands out our own compute
+// and never a paid vendor call.
 func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user") // resolveBillingKey → subject "acme"
@@ -46,73 +50,90 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	t.Cleanup(func() { balanceGate = prev })
 	t.Cleanup(func() { object.SetSpent(nil) }) // never leak the hook into other tests
 
-	post := func(body string) (int, string) {
-		// The body is already in memory on a fasthttp request, so there is nothing to
-		// copy before the gate reads it.
-		p := ask(http.MethodPost, "/v1/chat/completions").
-			with("Authorization", "Bearer tok").
-			body([]byte(body))
-		p = p.through(BalanceGateFilter)
-		return p.status(), p.said()
-	}
-
 	free := `{"model":"enso-free","messages":[]}`
-
-	// 1. No hook installed (standalone ai): the free route is served, unchanged.
-	if code, _ := post(free); code == http.StatusPaymentRequired {
-		t.Error("no allowance installed refused a free route — the default must be unchanged behavior")
+	call := func() probe {
+		// The identity boundary in front stamps the person; the probe stands in for it.
+		return ask(http.MethodPost, "/v1/chat/completions").
+			with("Authorization", "Bearer tok").
+			with(zip.HeaderUserOwner, "acme").
+			with(zip.HeaderUser, "u-ann").
+			body([]byte(free)).
+			through(BalanceGateFilter)
 	}
 
-	// 2. Allowance left: served, and the read saw the right subject and org.
-	var saw struct{ subject, namespace string }
-	object.SetSpent(func(_ stdcontext.Context, subject, namespace string) (object.Standing, error) {
-		saw.subject, saw.namespace = subject, namespace
-		return object.Standing{}, nil
+	// 1. No hook installed (standalone ai): the free route is served, unchanged, and
+	//    says nothing about a ceiling it does not have.
+	if p := call(); p.status() != http.StatusOK || p.replied("X-RateLimit-Limit") != "" {
+		t.Errorf("no allowance installed: status %d, X-RateLimit-Limit %q — the default must be unchanged behavior",
+			p.status(), p.replied("X-RateLimit-Limit"))
+	}
+
+	// 2. Admitted: served, and the host was told who pays AND who is calling. The
+	//    person is read off the context with zip.CallerOf, so the hook must be handed
+	//    one bound to the request in flight — a raw handler's own context names nobody,
+	//    and the host would count every member of acme as one.
+	resets := time.Now().Add(5 * time.Hour).UTC().Truncate(time.Second)
+	var saw struct {
+		subject, namespace string
+		who                zip.Caller
+		restated           string
+	}
+	object.SetSpent(func(ctx stdcontext.Context, subject, namespace string) (object.Standing, error) {
+		saw.subject, saw.namespace, saw.who = subject, namespace, zip.CallerOf(ctx)
+		// The host restates the org its plane call is for; with a request behind the
+		// context that statement would be ignored and the request's headers forwarded.
+		saw.restated = zip.CallerOf(zip.WithCaller(ctx, zip.Caller{Org: "billing"})).Org
+		return object.Standing{Window: "day", Limit: 50, Used: 12, Resets: resets}, nil
 	})
-	if code, _ := post(free); code == http.StatusPaymentRequired {
-		t.Error("a caller with allowance left was refused")
-	}
-	if saw.subject != "acme" || saw.namespace != "acme" {
-		t.Errorf("allowance got subject=%q namespace=%q, want acme/acme", saw.subject, saw.namespace)
-	}
 
-	// THE GATE ASKS AND NEVER TAKES. A request that dies past this point — an
-	// unresolvable route, a vendor that never answered, a pod being rolled — must
-	// leave the caller every call they arrived with, so nothing the gate does may
-	// raise the count. The count is a field on the record of a SERVED call
-	// (object.UsageEvent.Allowance), and the only thing that writes one is the usage
-	// recorder, which no gate may reach.
+	// THE GATE RECORDS NO USAGE. The hook is the count and the usage recorder is the
+	// money; a free call spends its unit in the one and nothing in the other.
 	t.Cleanup(func() { object.SetUsageRecorder(nil) })
 	object.SetUsageRecorder(func(_ stdcontext.Context, u object.UsageEvent) error {
 		t.Errorf("the balance gate recorded usage %+v; only a served call may be recorded", u)
 		return nil
 	})
-	if code, _ := post(free); code == http.StatusPaymentRequired {
-		t.Error("a caller with allowance left was refused")
+
+	p := call()
+	if p.status() != http.StatusOK {
+		t.Fatalf("a caller with calls left was refused: %d (%s)", p.status(), p.said())
+	}
+	if saw.subject != "acme" || saw.namespace != "acme" {
+		t.Errorf("allowance got subject=%q namespace=%q, want acme/acme", saw.subject, saw.namespace)
+	}
+	if saw.restated != "billing" {
+		t.Errorf("the hook's context carries the request: a restated org reads %q, so the host's plane call would forward a request that may name no org", saw.restated)
+	}
+	if saw.who.Owner != "acme" || saw.who.User != "u-ann" {
+		t.Errorf("the hook's context names owner=%q user=%q, want acme/u-ann — the host cannot count a person it cannot see",
+			saw.who.Owner, saw.who.User)
+	}
+	for h, want := range map[string]string{
+		"X-RateLimit-Limit":     "50",
+		"X-RateLimit-Remaining": "38",
+		"X-RateLimit-Reset":     fmt.Sprint(resets.Unix()),
+	} {
+		if got := p.replied(h); got != want {
+			t.Errorf("admitted: %s = %q, want %q", h, got, want)
+		}
 	}
 
-	// 3. Allowance spent: 402 with the distinct code, so the product can offer a plan
-	//    rather than a top-up — and the refusal is NOT usage, which the recorder
-	//    installed above is standing by to catch.
-	resets := time.Now().Add(40 * time.Minute).UTC().Truncate(time.Second)
+	// 3. Spent: 429 with the distinct code and the rule in one sentence, the pay page
+	//    beside it, and nothing left in the headers.
+	midnight := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
 	object.SetSpent(func(_ stdcontext.Context, _, _ string) (object.Standing, error) {
-		return object.Standing{Spent: true, Window: "hour", Limit: 10, Used: 10, Resets: resets}, nil
+		return object.Standing{Spent: true, Window: "day", Limit: 50, Used: 50, Resets: midnight}, nil
 	})
-	p := ask(http.MethodPost, "/v1/chat/completions").
-		with("Authorization", "Bearer tok").
-		body([]byte(free)).
-		through(BalanceGateFilter)
+	p = call()
 	code, body := p.status(), p.said()
-	if code != http.StatusPaymentRequired {
-		t.Fatalf("a spent allowance returned %d, want 402", code)
+	if code != http.StatusTooManyRequests {
+		t.Fatalf("a spent allowance returned %d, want 429 (%s)", code, body)
 	}
-	if !strings.Contains(body, `"code":"allowance_spent"`) {
-		t.Errorf("refusal body %q does not carry code allowance_spent", body)
-	}
-	// THE REFUSAL SAYS WHAT THE FREE PLAN IS, WHEN IT REFILLS, AND WHERE TO PAY.
 	var got struct {
 		Error struct {
 			Message    string `json:"message"`
+			Type       string `json:"type"`
+			Code       string `json:"code"`
 			ResetsAt   string `json:"resets_at"`
 			UpgradeURL string `json:"upgrade_url"`
 		} `json:"error"`
@@ -120,31 +141,56 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatalf("refusal body %q: %v", body, err)
 	}
-	for _, want := range []string{"this hour's 10 free messages", "pool shared by all free users", resets.Format("15:04 UTC")} {
-		if !strings.Contains(got.Error.Message, want) {
-			t.Errorf("message %q does not say %q", got.Error.Message, want)
-		}
+	if want := "Free tier: 50 calls per day. Resets at 00:00 UTC. Add credits to use paid models."; got.Error.Message != want {
+		t.Errorf("message %q, want %q", got.Error.Message, want)
 	}
-	if got.Error.ResetsAt != resets.Format(time.RFC3339) {
-		t.Errorf("resets_at = %q, want %q", got.Error.ResetsAt, resets.Format(time.RFC3339))
+	if got.Error.Code != "allowance_spent" || got.Error.Type != "insufficient_quota" {
+		t.Errorf("refusal code=%q type=%q, want allowance_spent/insufficient_quota", got.Error.Code, got.Error.Type)
+	}
+	if got.Error.ResetsAt != midnight.Format(time.RFC3339) {
+		t.Errorf("resets_at = %q, want %q", got.Error.ResetsAt, midnight.Format(time.RFC3339))
 	}
 	if got.Error.UpgradeURL != object.PayURL("", "acme") || got.Error.UpgradeURL == "" {
 		t.Errorf("upgrade_url = %q, want the pay page %q", got.Error.UpgradeURL, object.PayURL("", "acme"))
 	}
 	if ra := p.replied("Retry-After"); ra == "" || ra == "0" {
-		t.Errorf("Retry-After = %q, want the seconds until the window refills", ra)
+		t.Errorf("Retry-After = %q, want the seconds until 00:00 UTC", ra)
+	}
+	for h, want := range map[string]string{
+		"X-RateLimit-Limit":     "50",
+		"X-RateLimit-Remaining": "0",
+		"X-RateLimit-Reset":     fmt.Sprint(midnight.Unix()),
+	} {
+		if got := p.replied(h); got != want {
+			t.Errorf("refused: %s = %q, want %q", h, got, want)
+		}
 	}
 	if strings.Contains(body, "insufficient_balance") {
 		t.Error("a spent allowance was reported as an empty wallet — the two have different cures")
 	}
 
-	// 4. Reader error: fails OPEN. The route costs nothing, so an unreadable
-	//    allowance can only ever hand out our own compute.
+	// 4. Retrieval is not counted: an embedding or a rerank on the same free route
+	//    never asks the allowance, spent or not.
+	for _, path := range []string{"/v1/embeddings", "/v1/rerank"} {
+		p := ask(http.MethodPost, path).
+			with("Authorization", "Bearer tok").
+			with(zip.HeaderUserOwner, "acme").
+			with(zip.HeaderUser, "u-ann").
+			body([]byte(`{"model":"enso-free","input":"x"}`)).
+			through(BalanceGateFilter)
+		if p.status() != http.StatusOK || p.replied("X-RateLimit-Limit") != "" {
+			t.Errorf("%s with the day spent: status %d, X-RateLimit-Limit %q — retrieval must not spend or be refused by the allowance",
+				path, p.status(), p.replied("X-RateLimit-Limit"))
+		}
+	}
+
+	// 5. Reader error: fails OPEN, and states no standing it does not have.
 	object.SetSpent(func(_ stdcontext.Context, _, _ string) (object.Standing, error) {
-		return object.Standing{Spent: true}, errors.New("store unreachable")
+		return object.Standing{Spent: true, Limit: 50}, errors.New("store unreachable")
 	})
-	if code, _ := post(free); code == http.StatusPaymentRequired {
-		t.Error("an allowance read error refused a free route — it must fail open")
+	if p := call(); p.status() != http.StatusOK || p.replied("X-RateLimit-Limit") != "" {
+		t.Errorf("an allowance read error: status %d, X-RateLimit-Limit %q — it must fail open and say nothing",
+			p.status(), p.replied("X-RateLimit-Limit"))
 	}
 }
 

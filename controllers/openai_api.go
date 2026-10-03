@@ -971,24 +971,11 @@ type usageRecord struct {
 	// and the wire already carries the subject it resolves to.
 	Payer account.Account `json:"-"`
 
-	// Visitor is the lanes whose free calls this one counts against, narrowest
-	// first, when the request named a subject of its own. The public lane does: it
-	// counts a visitor, and one shared subject would let a single caller empty every
-	// visitor's day. Everyone else counts against their payer, so this is empty on an
-	// ordinary call. Not serialized — it addresses the count, it does not describe
-	// the row.
+	// Visitor is the lanes a public-lane call is counted on, narrowest first. Only
+	// the public lane puts one on the request (withVisitor); every other call is
+	// empty here. Not serialized — it addresses the lane's count, it does not
+	// describe the row.
 	Visitor []address.Bucket `json:"-"`
-}
-
-// allowance answers whose free calls this one counts against: the visitor the request
-// named, by their narrowest lane, or the payer. Free calls and money are bounded per
-// subject, and this is the one expression that says which subject, so the two
-// counters cannot drift apart.
-func (r *usageRecord) allowance() string {
-	if len(r.Visitor) > 0 {
-		return r.Visitor[0].Key
-	}
-	return r.payer().Subject()
 }
 
 // reached answers whether a vendor was committed to this call — the question the money
@@ -1007,8 +994,8 @@ func (r *usageRecord) allowance() string {
 // than no row at all for one that did.
 func (r *usageRecord) reached() bool { return r.Provider != "" }
 
-// answered reports that a model produced a result for this call. It is a different
-// question from reached, and only the free allowance asks it — see recordUsage.
+// answered reports that a model produced a result for this call. Only the public
+// lane's own count asks it — see recordUsage.
 func (r *usageRecord) answered() bool { return r.Status == "success" }
 
 // spent reports the tokens a call produced, for a call that then failed.
@@ -1095,10 +1082,7 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 		return
 	}
 	r.Payer = u.Payer(r.Owner)
-	// Whose free calls this one counts against is the same question as whose money
-	// it spends, so it is answered here, from the same request, and not resolved a
-	// second time somewhere downstream. Only the public lane puts a subject on the
-	// request; every other caller counts against the payer just resolved.
+	// The public lane's visitor, read from the request the lane alone writes it on.
 	r.Visitor = visitorOf(ctx)
 
 	self := u.Owner + "/" + u.Name
@@ -1296,40 +1280,22 @@ func recordUsage(record *usageRecord) error {
 	}
 	subject := record.payer().Subject()
 
-	// WHAT THIS CALL SPENT: money, or one of the caller's free calls. A call that
-	// debited nothing is exactly the call a wallet cannot bound, which is the whole
-	// job of the plan allowance — so what the call BILLED decides it. usageFree reads
-	// the same margin usageBilledUSD renders below, so the debit and the count cannot
-	// hold different opinions about what this call was.
-	//
-	// THE ALLOWANCE COUNTS ANSWERS, WHICH IS WHY IT ASKS A DIFFERENT QUESTION THAN THE
-	// MONEY ABOVE. A ceiling of N calls a day is a promise about answers, and a caller
-	// whose day was emptied by a vendor's bad afternoon got none of them. There is also
-	// nothing to make them whole with: on the free lane the count IS the price, so
-	// charging a failure here would be charging the full price of a call for a failure,
-	// where a paid caller is charged what their failure actually cost — usually
-	// nothing. The gate upstream only READS the same count, so a refusal at the ceiling
-	// does not raise it either.
 	// A call the caller's plan covers settles against the plan: what it spent on
 	// paid upstream, against the budget the plan held for it. It debits no wallet and
 	// counts against no free allowance — the plan counted it when it was admitted.
 	if record.plan != nil {
 		record.plan.Settle(record.planNanos)
 	}
-	free := ""
-	if record.plan == nil && record.answered() && usageFree(record) {
-		free = record.allowance()
-		// The public lane keeps its own count in this process so its ceiling holds
-		// while the host is unreachable. Both counts rise at this one moment.
-		//
-		// A VISITOR ON THE RECORD IS WHAT SAYS THIS IS THAT LANE. Only the lane puts
-		// one there, and nothing on the request can name one. The org would be the
-		// obvious test and is the wrong one: it is resolved from X-Org-Id, which any
-		// caller sets, so a bound that read it could be steered out of the lane it
-		// bounds.
-		if len(record.Visitor) > 0 {
-			publicCount.serve(record.Visitor, utcDay(time.Now()), publicChatDaily())
-		}
+	// The public lane keeps its own count in this process, by the visitor's address
+	// and the site it shares, so its ceiling holds while the host is unreachable. It
+	// rises on an answer; the host's count was taken when the lane admitted the call.
+	//
+	// A VISITOR ON THE RECORD IS WHAT SAYS THIS IS THAT LANE. Only the lane puts one
+	// there, and nothing on the request can name one. The org would be the obvious
+	// test and is the wrong one: it is resolved from X-Org-Id, which any caller sets,
+	// so a bound that read it could be steered out of the lane it bounds.
+	if record.plan == nil && record.answered() && len(record.Visitor) > 0 && usageFree(record) {
+		publicCount.serve(record.Visitor, utcDay(time.Now()), publicChatDaily())
 	}
 
 	// Native in-proc finance debit — the ONE money path when co-resident with the
@@ -1352,7 +1318,6 @@ func recordUsage(record *usageRecord) error {
 			Model:     record.Model,
 			Provider:  record.Provider,
 			Actor:     record.User,
-			Allowance: free,
 			Plan:      record.plan != nil,
 			RequestID: record.RequestID,
 			Ref:       record.ref,
@@ -1367,18 +1332,15 @@ func recordUsage(record *usageRecord) error {
 		return nil
 	}
 
-	// The SAME two facts the native event carries, in the shape Commerce reads them.
-	// `allowance` travels with `amount` because they are one answer to one question —
-	// what this call spent — and a writer that carried only the money would leave every
-	// free call on this path indistinguishable from a paid one that happened to round to
-	// zero. Which writer a build has is a deployment fact; what a call spent is not, and
-	// must not depend on it.
+	// The SAME facts the native event carries, in the shape Commerce reads them. Money
+	// alone: a free call's count was taken at admission (object.SpentFunc), so no
+	// writer carries one, and what a call spent does not depend on which writer a
+	// build has.
 	payload := map[string]any{
 		"user":             subject,
 		"actor":            record.User,
 		"currency":         "usd",
 		"amount":           amount,
-		"allowance":        free,
 		"model":            record.Model,
 		"provider":         record.Provider,
 		"promptTokens":     record.PromptTokens,

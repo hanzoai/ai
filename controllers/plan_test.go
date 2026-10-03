@@ -202,8 +202,8 @@ func TestAPlanCoveredFamilyCallCarriesSpendAndSettlesItsCost(t *testing.T) {
 					t.Fatalf("settled %v: a later settle charged more", settled)
 				}
 			}
-			if len(events) != 1 || !events[0].Plan || events[0].Allowance != "" {
-				t.Fatalf("usage events %+v, want one marked as the plan's, counting no allowance", events)
+			if len(events) != 1 || !events[0].Plan {
+				t.Fatalf("usage events %+v, want one marked as the plan's", events)
 			}
 		})
 	}

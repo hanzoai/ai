@@ -117,12 +117,12 @@ func report(t *testing.T, what string, record *usageRecord) []object.UsageEvent 
 		t.Logf("%s: LEDGER WROTE NOTHING", what)
 	}
 	for _, e := range events {
-		t.Logf("%s: ledger usd=%q allowance=%q subject=%q model=%q provider=%q",
-			what, e.USD, e.Allowance, e.Subject, e.Model, e.Provider)
+		t.Logf("%s: ledger usd=%q subject=%q model=%q provider=%q",
+			what, e.USD, e.Subject, e.Model, e.Provider)
 	}
 	for _, p := range enqueued(t, record) {
-		t.Logf("%s: commerce amount=%v allowance=%v status=%v",
-			what, p["amount"], p["allowance"], p["status"])
+		t.Logf("%s: commerce amount=%v status=%v",
+			what, p["amount"], p["status"])
 	}
 	return events
 }
@@ -152,29 +152,6 @@ func TestAPricedCallIsBilledWhatItCost(t *testing.T) {
 	}
 	if want := usageBilledUSD(rec); events[0].USD != want {
 		t.Fatalf("billed %q, want %q — the ledger and the span read ONE cost", events[0].USD, want)
-	}
-	if events[0].Allowance != "" {
-		t.Fatalf("a priced call counted %q against the free allowance; the wallet bounds those", events[0].Allowance)
-	}
-}
-
-// TestAFreeCallCarriesTheAllowanceItSpent: on the free pool there is no money to bill,
-// so the allowance IS the record of what the call consumed. It has to survive to
-// whichever writer is installed — a fact that reaches one of the two and not the other
-// is a fact the business cannot ask about.
-func TestAFreeCallCarriesTheAllowanceItSpent(t *testing.T) {
-	events := report(t, "free success", free("acme", "acme/alice"))
-	if len(events) != 1 || events[0].Allowance != "acme" {
-		t.Fatalf("the native ledger saw %+v, want one row counting acme", events)
-	}
-
-	payloads := enqueued(t, free("acme", "acme/alice"))
-	if len(payloads) != 1 {
-		t.Fatalf("commerce received %d bodies, want exactly 1", len(payloads))
-	}
-	if got := payloads[0]["allowance"]; got != "acme" {
-		t.Fatalf("commerce received allowance=%v, want acme — a free call whose row does not "+
-			"say which allowance it spent leaves free-tier consumption invisible", got)
 	}
 }
 

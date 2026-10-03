@@ -22,12 +22,15 @@ import (
 )
 
 // The Free plan is limited usage served from ONE pool every free user shares: the
-// platform's vendor accounts for free models, spent in turn. It refuses two ways,
+// platform's vendor accounts for free models, spent in turn. It refuses three ways,
 // and each says which, when it clears, and where to upgrade:
 //
-//	allowance_spent  402  this person's own share for the window is used
+//	allowance_spent  429  this person's free calls for the day are used
 //	pool_busy        429  the shared pool is at its vendor limit for a minute
 //	pool_exhausted   429  the shared pool is spent until the vendor resets it
+//
+// All three are 429 because none is about money owed: the call was well formed and
+// asked too often, and each clears by waiting. The code says which wait it is.
 //
 // Clients switch on the code, never on the sentence.
 const (
@@ -47,27 +50,27 @@ type FreeNotice struct {
 	Upgrade string
 }
 
-// AllowanceSpent is the refusal for a subject whose own share of the free pool is
-// used for the window that binds them.
+// AllowanceSpent is the refusal for a person whose free calls for the window are
+// used: fifty a UTC day on the Free plan, counted by the host as each was admitted.
+//
+// THE SENTENCE IS THE RULE, stated once and the same everywhere it is refused: the
+// ceiling, when it reopens, and the way on. The day always reopens at 00:00 UTC, so
+// it says so in those words; any other window names its own reset. The pay page is
+// not in the sentence — it rides beside it as upgrade_url (ErrorJSON), where a
+// client can link it without parsing English.
 func AllowanceSpent(host, org string, s Standing) FreeNotice {
-	pay := PayURL(host, org)
-	span := map[string]string{"hour": "this hour's", "day": "today's"}[s.Window]
-	used := "your free messages"
-	if span != "" && s.Limit > 0 {
-		used = fmt.Sprintf("%s %d free messages", span, s.Limit)
-	}
-	when := "soon"
-	if !s.Resets.IsZero() {
-		when = "at " + clock(s.Resets)
+	msg := fmt.Sprintf("Free tier: %d calls per day. Resets at 00:00 UTC. Add credits to use paid models.", s.Limit)
+	if s.Window != "day" {
+		msg = fmt.Sprintf("Free tier: %d calls per %s. Resets at %s UTC. Add credits to use paid models.",
+			s.Limit, s.Window, s.Resets.UTC().Format("15:04"))
 	}
 	return FreeNotice{
-		Message: fmt.Sprintf("You've used %s. The Free plan is limited usage from a pool shared by all free users; yours refills %s. Upgrade at %s to keep going now.",
-			used, when, pay),
+		Message: msg,
 		Code:    CodeAllowanceSpent,
 		Type:    "insufficient_quota",
-		Status:  http.StatusPaymentRequired,
+		Status:  http.StatusTooManyRequests,
 		Resets:  s.Resets,
-		Upgrade: pay,
+		Upgrade: PayURL(host, org),
 	}
 }
 

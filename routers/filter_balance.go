@@ -282,26 +282,44 @@ func BalanceGateFilter(c *zip.Ctx) error {
 
 	if model != "" && costsNothing(model, namespace) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
-		// plan's ALLOWANCE is what bounds this lane: a count of calls per subject per
-		// period, held by the host. It is the one gate a free caller meets, and the
+		// plan's ALLOWANCE is what bounds this lane: a count of calls per person per
+		// day, held by the host. It is the one gate a free caller meets, and the
 		// moment to offer them a plan.
 		//
-		// THIS ONLY READS IT. The ceiling bounds spend, and spend is incurred when a
-		// model is reached — so the call is counted where it is served (recordUsage,
-		// which runs for a success and nothing else) and this asks only whether the
-		// caller is already out. A request refused here costs nothing, and so does one
-		// that dies on an unresolvable route or a vendor that never answered: a caller
-		// pays for answers, never for an outage of ours.
+		// THE HOST COUNTS THE CALL AS IT ADMITS IT. Asking is taking: the hook spends
+		// one of the person's calls before any model is reached, and Spent says THIS
+		// call was the one past the ceiling. So a call that dies after this point — an
+		// unresolvable route, a vendor that never answered, a pod mid-roll — has still
+		// spent its unit. That is the rule, and it is the point: a loop retrying a
+		// failing model spends its own fifty, not the shared pool, and calls in flight
+		// cannot all slip past the last unit because none of them waited to be counted.
+		//
+		// THE PERSON IS NAMED BY THE REQUEST (person). The host keys the count by the
+		// caller's IAM home org and user, read with zip.CallerOf, and a raw handler's
+		// own context carries no caller — handed c.Context(), the host could name
+		// nobody and would count every member of an org as one. subject and namespace
+		// still say which wallet sets the ceiling.
+		//
+		// Where the caller stands rides on the answer, admitted or refused, as
+		// X-RateLimit-*: a client shows what is left without asking twice.
 		//
 		// An error is allowed through, and WHO gets that benefit is the host's call:
 		// it holds the tenancy vocabulary, so it answers spent for a caller it cannot
 		// name and returns the error only for one it can. A priced route never
 		// reaches this branch, so nothing here can free a metered call.
-		if spent := object.Spent(); spent != nil {
-			if out, err := spent(c.Context(), subject, namespace); err == nil && out.Spent {
-				log.Info("allowance: period allowance spent subject=%s namespace=%s window=%s path=%s",
-					subject, namespace, out.Window, path)
-				return freeRefused(c, object.AllowanceSpent(c.Host(), namespace, out))
+		//
+		// RETRIEVAL IS NOT A CALL THE ALLOWANCE COUNTS. An embedding or a rerank is
+		// what the platform runs many of to answer one question — a file's chunks, a
+		// search's documents — so counting each would spend a person's day on one
+		// upload. Only a call that asks a model to answer is counted.
+		if spent := object.Spent(); spent != nil && !retrieval(path) {
+			if out, err := spent(person(c), subject, namespace); err == nil {
+				standing(c, out)
+				if out.Spent {
+					log.Info("allowance: free calls spent subject=%s namespace=%s window=%s path=%s",
+						subject, namespace, out.Window, path)
+					return freeRefused(c, object.AllowanceSpent(c.Host(), namespace, out))
+				}
 			}
 		}
 		return c.Continue()
@@ -382,6 +400,25 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	}
 	c.SetHeader("Content-Type", "application/json")
 	return c.Bytes(http.StatusTooManyRequests, raw)
+}
+
+// standing says on the response where a bounded caller's free calls stand: the
+// ceiling, what is left of it, and when it resets, in unix seconds. A refused call
+// has nothing left, whatever the count says. A caller no window bounds (Limit 0)
+// gets none of the three.
+func standing(c *zip.Ctx, s object.Standing) {
+	if s.Limit <= 0 {
+		return
+	}
+	left := max(s.Limit-s.Used, 0)
+	if s.Spent {
+		left = 0
+	}
+	c.SetHeader("X-RateLimit-Limit", fmt.Sprint(s.Limit))
+	c.SetHeader("X-RateLimit-Remaining", fmt.Sprint(left))
+	if !s.Resets.IsZero() {
+		c.SetHeader("X-RateLimit-Reset", fmt.Sprint(s.Resets.Unix()))
+	}
 }
 
 // freeRefused writes a Free-plan refusal with Retry-After when it says when it
@@ -933,4 +970,24 @@ func (bg *BalanceGate) cleanupLoop() {
 		}
 		bg.userKeyMu.Unlock()
 	}
+}
+
+// retrieval reports whether path is an embedding or a rerank.
+func retrieval(path string) bool {
+	switch strings.ToLower(strings.TrimRight(path, "/")) {
+	case "/v1/embeddings", "/v1/rerank":
+		return true
+	}
+	return false
+}
+
+// person is the context the allowance hook is handed: the request's caller, STATED
+// on a context with no request behind it. Stated, because the host names the person
+// with zip.CallerOf and a raw handler's context carries none. With no request behind
+// it, because a context carrying the request forwards that request's headers on the
+// host's own plane call, and a request with no X-Org-Id — a sibling's completion,
+// a machine token — would reach the allowance naming no org, be refused, and be
+// admitted uncounted. Stated, the host addresses its call to the wallet's org.
+func person(c *zip.Ctx) stdcontext.Context {
+	return zip.WithCaller(c.Context(), zip.CallerOf(c.Forward()))
 }
