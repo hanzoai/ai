@@ -17,6 +17,7 @@ package stt
 
 import (
 	"context"
+	"errors"
 	"io"
 )
 
@@ -92,4 +93,22 @@ func GetSpeechToTextProvider(typ string, subType string, clientSecret string, pr
 		return nil, err
 	}
 	return p, nil
+}
+
+// ErrTooLong is an upstream refusing audio longer than the caller was held to.
+var ErrTooLong = errors.New("stt: the audio is longer than this request allows")
+
+type longestKey struct{}
+
+// WithLongest holds a transcription to seconds of audio. A relay whose upstream
+// can enforce it (the speech service's max_seconds) asks it to, so the bound is
+// on the work and not only on the answer.
+func WithLongest(ctx context.Context, seconds float64) context.Context {
+	return context.WithValue(ctx, longestKey{}, seconds)
+}
+
+// longestOf is the hold WithLongest placed on ctx, or 0 for none.
+func longestOf(ctx context.Context) float64 {
+	seconds, _ := ctx.Value(longestKey{}).(float64)
+	return seconds
 }

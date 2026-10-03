@@ -822,6 +822,9 @@ func TestAdmissionKeyComesFromTheCredential(t *testing.T) {
 		"c.GetOrg()":             true,
 		"orgOf(who)":             true,
 		"org":                    true,
+		// publicOrg — the public lanes' reserved account, a constant: no caller can
+		// move it, and each visitor is bounded by their own count before it.
+		"publicOrg": true,
 	}
 	// Both entry points, because a wrapper that was not walked would be a way in
 	// with no attested key at all.

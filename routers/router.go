@@ -152,6 +152,9 @@ func registerAPI(app *zip.App) {
 	// /v1/videos/generations all OpenAI-shaped on the one router.
 	route(app, "/v1/audio/speech", "POST:AudioSpeech")
 	route(app, "/v1/audio/transcriptions", "POST:AudioTranscriptions")
+	// The visitor's mic: a minute of audio on our own transcriber, bounded per
+	// visitor per day (controllers/public_scribe.go). Closed unless PUBLIC_SCRIBE_DAILY.
+	route(app, "/v1/audio/transcriptions/public", "POST:AudioTranscriptionsPublic")
 	// The growing transcript (controllers/zap_transcript.go): POST opens, POST to
 	// /:id pushes pcm16, DELETE closes. Its one implementation is the ZAP gateway
 	// handler; this is its HTTP binding, the same bridge the router nouns use.

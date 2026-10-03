@@ -86,16 +86,17 @@ var answers = map[string]Answer{
 	// The OpenAI-compatible surface. These proxy an upstream or rebuild its
 	// answer, so the shape is that wire format — our own fork of the Go types
 	// every client of it already holds.
-	"ChatCompletions":       whole(openai.ChatCompletionResponse{}),
-	"ChatCompletionsPublic": whole(openai.ChatCompletionResponse{}),
-	"Embeddings":            whole(openai.EmbeddingResponse{}),
-	"ImagesGenerations":     whole(openai.ImageResponse{}),
-	"AudioTranscriptions":   whole(openai.AudioResponse{}),
-	"ListModels":            whole(modelList{}),
-	"Rerank":                whole(ranking{}),
-	"Decisions":             {Shape: decisionsResponse{}, Refusals: decisionRefusals(), Traced: true},
-	"VideosGenerations":     whole(videoStatus{}),
-	"RetrieveVideo":         whole(videoStatus{}),
+	"ChatCompletions":           whole(openai.ChatCompletionResponse{}),
+	"ChatCompletionsPublic":     whole(openai.ChatCompletionResponse{}),
+	"Embeddings":                whole(openai.EmbeddingResponse{}),
+	"ImagesGenerations":         whole(openai.ImageResponse{}),
+	"AudioTranscriptions":       whole(openai.AudioResponse{}),
+	"AudioTranscriptionsPublic": whole(openai.AudioResponse{}),
+	"ListModels":                whole(modelList{}),
+	"Rerank":                    whole(ranking{}),
+	"Decisions":                 {Shape: decisionsResponse{}, Refusals: decisionRefusals(), Traced: true},
+	"VideosGenerations":         whole(videoStatus{}),
+	"RetrieveVideo":             whole(videoStatus{}),
 
 	"Responses": whole(responsesResource{}),
 

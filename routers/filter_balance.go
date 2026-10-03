@@ -460,7 +460,7 @@ func isBalanceExempt(path, method string) bool {
 	// counters. It also reads the model from the BODY, which is the one thing that
 	// lane promises to ignore. Exempt from BALANCE, never from bounds — the ceiling
 	// lives in the handler and is taken there exactly once.
-	case path == "/v1/chat/public":
+	case path == "/v1/chat/public", path == "/v1/audio/transcriptions/public":
 		return true
 	case path == "/v1/health" || path == "/health":
 		return true

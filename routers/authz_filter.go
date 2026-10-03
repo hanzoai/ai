@@ -167,6 +167,8 @@ var anonymousEndpoints = map[string]struct{}{
 	"metrics":          {}, // scrape target
 	"ai/traffic/globe": {}, // public view
 	"chat/public":      {},
+	// The visitor's mic, bounded per visitor in its handler like chat/public.
+	"audio/transcriptions/public": {},
 }
 
 // isAnonymous reports whether an endpoint is reachable with no credential.

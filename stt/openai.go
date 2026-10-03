@@ -22,6 +22,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,6 +86,11 @@ func (p *OpenAISpeechToTextProvider) ProcessAudio(audioData io.Reader, ctx conte
 			return nil, nil, err
 		}
 	}
+	if longest := longestOf(ctx); longest > 0 {
+		if err := w.WriteField("max_seconds", strconv.FormatFloat(longest, 'f', -1, 64)); err != nil {
+			return nil, nil, err
+		}
+	}
 	if p.language != "" {
 		if err := w.WriteField("language", p.language); err != nil {
 			return nil, nil, err
@@ -132,6 +138,9 @@ func (p *OpenAISpeechToTextProvider) ProcessAudio(audioData io.Reader, ctx conte
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, err
+	}
+	if resp.StatusCode == http.StatusRequestEntityTooLarge && longestOf(ctx) > 0 {
+		return nil, nil, fmt.Errorf("%w: %s", ErrTooLong, strings.TrimSpace(string(respBody)))
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("stt: upstream returned %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))

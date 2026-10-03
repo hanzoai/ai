@@ -943,6 +943,14 @@ the upgrade's connection (zip v1.37.26+). The socket's ticket is its credential,
 in `VOICE_ORIGINS`. The speech provider row `speech` is `operated`: the paid lane being
 off never refuses it.
 
+**The visitor's mic is a public lane** (`controllers/public_scribe.go`,
+`POST /v1/audio/transcriptions/public`): no credential, the model assigned
+(`zen-scribe`), the audio held to 60 s by the speech service's `max_seconds` (it stops
+decoding just past it, `stt.WithLongest`), and a day per visitor in its own `dayCount`
+keyed by `Lanes` (the /64 and the /48 at `siteDay`). `PUBLIC_SCRIBE_DAILY` is the
+switch and the ceiling; 0 closes it. It never reaches a vendor: a `zen-scribe` route to
+a provider that is not `operated` closes the lane. Nothing is kept or logged.
+
 ### Where a cost is registered
 
 `object.ModelRoute.CostInPerMillion` / `CostOutPerMillion` — the route row, which the
