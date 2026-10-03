@@ -54,3 +54,15 @@ func TestAListedOriginPasses(t *testing.T) {
 		t.Errorf("no Origin = %d, want 200", q.status())
 	}
 }
+
+// The rooms are drawn on hanzo.team and lux.chat as well as hanzo.ai, and the talk
+// socket's upgrade reaches this filter with the page's Origin: an unlisted one is
+// a 403 before the socket's own origin check is ever asked.
+func TestTheRoomsHostsPass(t *testing.T) {
+	for _, origin := range []string{"https://hanzo.team", "https://www.hanzo.team", "https://lux.chat"} {
+		q := ask(http.MethodGet, "/v1/voice").with("Origin", origin).through(CorsFilter)
+		if q.status() != http.StatusOK {
+			t.Errorf("%s = %d, want 200", origin, q.status())
+		}
+	}
+}
