@@ -58,7 +58,7 @@ require (
 	github.com/hanzoai/tasks v1.52.9
 	github.com/hanzoai/thinking v0.1.1
 	github.com/hanzoai/types v0.1.0
-	github.com/hanzoai/voice v0.1.1-0.20260815163030-30c22bcbd91a
+	github.com/hanzoai/voice v0.1.1
 	github.com/hanzokv/go/v9 v9.22.0
 	github.com/hanzos3/go v1.0.0
 	github.com/henomis/lingoose v0.1.0
