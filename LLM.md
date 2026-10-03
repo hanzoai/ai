@@ -933,6 +933,16 @@ service. Nano because a dictated sentence is seconds long and a per-call cent wo
 it at twelve times the rate. The speech routes carry no token price, so the balance gate
 asks for a funded caller.
 
+**Three speech doors, one service.** `/v1/audio/transcriptions` and `/v1/audio/speech`
+are controllers; `/v1/audio/transcript` (the growing transcript) is the ZAP gateway
+handler in `zap_transcript.go`, bound to HTTP by `AudioTranscript` through the
+in-process bridge; `/v1/voice` is hanzoai/voice behind `zip.AdaptNetHTTP`, which takes
+the upgrade's connection (zip v1.37.26+). The socket's ticket is its credential, so
+`voice` is anonymous at the bearer filter; its gate trusts `object.TrustedJWTIssuers`
+(IAM_URL is where IAM is reached, not what it signs as) and admits the browser origins
+in `VOICE_ORIGINS`. The speech provider row `speech` is `operated`: the paid lane being
+off never refuses it.
+
 ### Where a cost is registered
 
 `object.ModelRoute.CostInPerMillion` / `CostOutPerMillion` — the route row, which the
