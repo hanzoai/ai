@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -201,6 +202,15 @@ func reserveBudget(subject string, est int64) (*budgetHold, bool) {
 		return nil, false
 	}
 	return &budgetHold{subject: subject, est: est}, true
+}
+
+// reserveFor is reserveBudget for the request on ctx: a request the plan or a free
+// cap pays for holds nothing, because no wallet pays for it.
+func reserveFor(ctx context.Context, subject string, est int64) (*budgetHold, bool) {
+	if covered(ctx) {
+		return &budgetHold{}, true
+	}
+	return reserveBudget(subject, est)
 }
 
 // settle releases the hold and applies the ACTUAL spend (actualCents) to the

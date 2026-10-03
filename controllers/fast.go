@@ -67,11 +67,11 @@ func (c *ApiController) wantsFast() bool {
 // and settle none.
 func (c *ApiController) widthFor(user *iam.User, subject string, est int64) (*budgetHold, int, bool) {
 	if user != nil && c.wantsFast() {
-		if hold, ok := reserveBudget(subject, est*fastWidth); ok {
+		if hold, ok := reserveFor(c.Context(), subject, est*fastWidth); ok {
 			return hold, fastWidth, true
 		}
 	}
-	hold, ok := reserveBudget(subject, est)
+	hold, ok := reserveFor(c.Context(), subject, est)
 	return hold, 1, ok
 }
 

@@ -672,7 +672,7 @@ func (c *ApiController) AnthropicMessages() {
 		subject := authUser.PayerSubject(ledger)
 		est := holdCents(request.Model, reservation(c.Body(), completionCeiling(provider, &request)))
 		var ok bool
-		if hold, ok = reserveBudget(subject, est); !ok {
+		if hold, ok = reserveFor(c.Context(), subject, est); !ok {
 			c.respondAnthropicError("billing_error", object.InsufficientBalance(c.Host(), ledger, "request cost").Message, http.StatusPaymentRequired)
 			return
 		}

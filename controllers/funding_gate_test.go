@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -76,7 +77,7 @@ func TestBreakerRefusesAFundedCallerAtTheCeiling(t *testing.T) {
 	// Control: disarmed, the funded caller is admitted.
 	reads := fundedLedger(t)
 	armBreaker(t, funding.State{})
-	if err := enforceBalanceGate(user, "acme", "glm-5.2"); err != nil {
+	if err := enforceBalanceGate(context.Background(), user, "acme", "glm-5.2"); err != nil {
 		t.Fatalf("disarmed breaker refused a funded caller: %v", err)
 	}
 	if got := reads.Load(); got != 1 {
@@ -91,7 +92,7 @@ func TestBreakerRefusesAFundedCallerAtTheCeiling(t *testing.T) {
 		CeilingCents: 200_00,
 		Until:        time.Now().Add(time.Hour),
 	})
-	err := enforceBalanceGate(user, "acme", "glm-5.2")
+	err := enforceBalanceGate(context.Background(), user, "acme", "glm-5.2")
 	if err == nil {
 		t.Fatal("breaker at its ceiling admitted a request — the ceiling is not enforced")
 	}
@@ -138,7 +139,7 @@ func TestBreakerDoesNotRefuseBelowTheCeiling(t *testing.T) {
 		CeilingCents: 200_00,
 		Until:        time.Now().Add(time.Hour),
 	})
-	if err := enforceBalanceGate(&iam.User{Owner: "acme", Name: "bob"}, "acme", "glm-5.2"); err != nil {
+	if err := enforceBalanceGate(context.Background(), &iam.User{Owner: "acme", Name: "bob"}, "acme", "glm-5.2"); err != nil {
 		t.Fatalf("breaker refused a cent below its ceiling: %v", err)
 	}
 }
@@ -153,7 +154,7 @@ func TestBreakerStillOnPromoCreditDoesNotRefuse(t *testing.T) {
 		CeilingCents: 200_00,
 		Until:        time.Now().Add(time.Hour),
 	})
-	if err := enforceBalanceGate(&iam.User{Owner: "acme", Name: "bob"}, "acme", "glm-5.2"); err != nil {
+	if err := enforceBalanceGate(context.Background(), &iam.User{Owner: "acme", Name: "bob"}, "acme", "glm-5.2"); err != nil {
 		t.Fatalf("breaker refused while still on promo credit: %v", err)
 	}
 }
@@ -175,7 +176,7 @@ func TestStaleBreakerReadingAdmits(t *testing.T) {
 		CeilingCents: 200_00,
 		Until:        time.Now().Add(-time.Minute), // ...but nobody has said so lately
 	})
-	if err := enforceBalanceGate(&iam.User{Owner: "acme", Name: "bob"}, "acme", "glm-5.2"); err != nil {
+	if err := enforceBalanceGate(context.Background(), &iam.User{Owner: "acme", Name: "bob"}, "acme", "glm-5.2"); err != nil {
 		t.Fatalf("a stale breaker reading refused a funded caller: %v", err)
 	}
 	if got := reads.Load(); got != 1 {

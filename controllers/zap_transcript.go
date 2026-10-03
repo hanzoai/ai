@@ -197,7 +197,7 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 	// The SAME prepaid gate every other audio endpoint takes. It runs at OPEN, so a
 	// caller with no balance is refused before a window exists to push into —
 	// the alternative is discovering it 250 ms at a time.
-	if gateErr := enforceBalanceGate(authUser, "", req.Model); gateErr != nil {
+	if gateErr := enforceBalanceGate(ctx, authUser, "", req.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
 	if provider.Type == "Zen" {

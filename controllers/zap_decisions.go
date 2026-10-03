@@ -116,7 +116,7 @@ func zapDecisionPrincipal(token, model, asked string) (*iam.User, string, bool, 
 		premium = route.premium
 	}
 	if isJwtToken(token) {
-		_, user, _, err := resolveProviderFromJwt(token, asked, model, "en")
+		_, user, _, err := resolveProviderFromJwt(context.Background(), token, asked, model, "en")
 		if err != nil {
 			return nil, "", false, err
 		}
@@ -138,7 +138,7 @@ func zapDecisionPrincipal(token, model, asked string) (*iam.User, string, bool, 
 		if user, err = providerKeyBillingUser(provider); err != nil {
 			return nil, "", false, err
 		}
-		if err := enforceBalanceGate(user, user.Owner, model); err != nil {
+		if err := enforceBalanceGate(context.Background(), user, user.Owner, model); err != nil {
 			return nil, "", false, err
 		}
 	}

@@ -57,6 +57,9 @@ type UsageEvent struct {
 	// (SpentFunc), before any model was reached, so the record of a call is money
 	// alone and no count can ride on it.
 	Plan bool
+	// Cash says only the wallet's cash pays: the model's policy refuses granted
+	// credit (LimitGrant.Cash), so the host draws nothing from a grant for it.
+	Cash bool
 	// RequestID names the metered call so a warehouse row, a span and a support
 	// question can be tied back to it.
 	//
@@ -87,50 +90,105 @@ type UsageEvent struct {
 // commerce blip never locks a paying caller out of a SKU they already had.
 type TierReaderFunc func(ctx context.Context, subject, namespace string) (name string, err error)
 
-// LimitAsk names one request for a Hanzo SKU that a plan may cover: who pays, which
-// member, which model and family, which app the caller signed in through, and
-// whether the request may reach paid upstream.
+// LimitAsk names one request the host's usage policy decides: who pays, which
+// member, which model, its class and Hanzo family, which app the caller signed in
+// through, and whether it may reach paid upstream.
 type LimitAsk struct {
 	Subject   string // the billing subject the balance gate reads
 	Namespace string // the org whose ledger pays
 	Actor     string // the member making the call, "<org>/<name>"
 	Model     string // the model the call names
-	// Family is the Hanzo family that serves the model: "enso" or "zen".
+	// Family is the Hanzo family that serves the model: "enso" or "zen", "" for any
+	// other model. A covered family request may spend on that family's paid rungs.
 	Family string
+	// Class is the model's class as this module's catalog reads it (ClassPremium,
+	// ClassOurs, ClassFree). The host's policy may set another per model.
+	Class string
+	// Priced says the call has a list price: something must pay for it.
+	Priced bool
 	// Apps are the registered apps the caller's validated token was minted for (its
-	// `aud`); empty for an API key. A plan covers only its consumer apps' requests.
+	// `aud`); empty for an API key.
 	Apps []string
 	// Spend says the request may reach its family's paid upstream within the plan's
 	// budget (a chat request); without it the family answers from free models only.
 	Spend bool
 }
 
-// LimitGrant is a request the caller's plan covers. The wallet is never asked about
-// it: no balance gate, no reservation, no debit, no free allowance. Spend is what
-// its family may spend on paid upstream for it, in nano-dollars; zero means free
-// models only. Settle records, once per answer, what paid upstream actually cost in
-// nano-dollars; the first settle gives back what the request held and did not use.
+// The classes a model is sold in. A plan includes usage of the first two, measured
+// at list price; the free class is the free lane.
+const (
+	ClassPremium = "premium" // third-party frontier models
+	ClassOurs    = "ours"    // Hanzo's own models
+	ClassFree    = "free"    // the free lane
+)
+
+// Who pays for a request the host admitted (LimitGrant.Pays).
+const (
+	PaysPlan    = "plan"    // the plan's included usage: no wallet is asked
+	PaysPrepaid = "prepaid" // the wallet, cash first
+	PaysCredits = "credits" // the wallet's granted credit
+	PaysFree    = "free"    // a capped free request: no wallet is asked
+)
+
+// LimitGrant is the host's answer for an admitted request: who pays, in which class,
+// and how that class stands after it.
+//
+// PaysPlan and PaysFree are covered: the wallet is never asked about them — no
+// balance gate, no reservation, no debit, no free allowance. Spend is what a Hanzo
+// family may spend on paid upstream for a covered request, in nano-dollars; zero
+// means free models only. Settle records, once per answer, what the request used of
+// the plan in nano-dollars — its list price, or for a model sold at zero what its
+// paid upstream cost — and the first settle gives back what it held and did not use.
+//
+// PaysPrepaid and PaysCredits go on to the wallet exactly as an uncovered request
+// does; Cash says only cash may pay, so the debit carries UsageEvent.Cash.
 type LimitGrant struct {
 	Plan   string
+	Pays   string
+	Class  string
+	State  string // ok, near or limited: where the class stands, for the response
+	Cash   bool
 	Spend  int64
-	Settle func(costNanos int64)
+	Settle func(nanos int64)
 }
 
-// LimitHit is why a plan refuses a request: "session" or "day" when the plan's
-// request window is spent, when it resets, and the plan that raises it ("" when none
-// does).
+// Covered reports whether the wallet is left out of the request: the plan or a free
+// cap pays for it.
+func (g *LimitGrant) Covered() bool {
+	return g != nil && (g.Pays == PaysPlan || g.Pays == PaysFree)
+}
+
+// LimitHit is why the host refuses a request.
+//
+// Code names it: "usage_cap_exceeded" when a session or day window of the plan is
+// spent (Name says which), "plan_allowance_used" when the plan's included usage of
+// the class is used and nothing else may pay, "paid_plan_required" when the model
+// needs a paid plan or prepaid balance, "free_plan_cap" when a free plan's daily cap
+// on the model is used. Message is the caller-facing sentence, which names no
+// figure; ResetsAt is when the refusal lifts, zero when only money lifts it; Upgrade
+// is the plan that raises it.
 type LimitHit struct {
+	Code     string
 	Name     string
+	Class    string
+	Message  string
 	ResetsAt time.Time
 	Upgrade  string
 }
 
-// LimitFunc answers one request for a Hanzo SKU before it is served. The host
-// (hanzoai/cloud) owns the plans, their windows and their budgets. A grant admits the
-// request as the plan's; a hit refuses it with 429 usage_cap_exceeded naming the
-// window, its reset and the upgrade; neither leaves the request to the free
-// allowance; an error refuses with 503 limits_unavailable, because a limit that
-// cannot be read bounds nothing. nil (standalone ai) means no plans.
+// The codes a LimitHit refuses with. Clients switch on these, never on the message.
+const (
+	CodeUsageCap      = "usage_cap_exceeded"
+	CodePlanAllowance = "plan_allowance_used"
+	CodePaidPlan      = "paid_plan_required"
+	CodeFreePlanCap   = "free_plan_cap"
+)
+
+// LimitFunc decides who pays for one request before it is served. The host
+// (hanzoai/cloud) owns the plans, the model policy and their counts: a grant admits
+// the request and says who pays; a hit refuses it; neither leaves the request to the
+// free allowance and the wallet as before. An error leaves it the same way — the
+// wallet still gates every priced call. nil (standalone ai) means no plans.
 type LimitFunc func(ctx context.Context, q LimitAsk) (*LimitGrant, *LimitHit, error)
 
 // SpentFunc ADMITS one free call and answers where the caller stands after it: the

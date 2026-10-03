@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -74,7 +75,7 @@ func TestEnforceBalanceGate(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			available = tc.cents
-			err := enforceBalanceGate(principal(), "", "glm-5.2")
+			err := enforceBalanceGate(context.Background(), principal(), "", "glm-5.2")
 			if tc.want == ok {
 				if err != nil {
 					t.Fatalf("want allowed, got blocked: %v (status %d)", err, statusOf(err))
@@ -113,7 +114,7 @@ func TestOurSpendCeilingIsNotTheCallersBill(t *testing.T) {
 	t.Setenv("commerceToken", "test-svc-token")
 	cash := armed(t)
 
-	err := enforceBalanceGate(&iam.User{Owner: "funded-org", Type: "application"}, "", "glm-5.2")
+	err := enforceBalanceGate(context.Background(), &iam.User{Owner: "funded-org", Type: "application"}, "", "glm-5.2")
 	if err == nil {
 		t.Fatal("an armed, breached ceiling must refuse — it is the whole point of the breaker")
 	}
@@ -152,7 +153,7 @@ func TestAnEmptyWalletIsStillTheCallersBill(t *testing.T) {
 	t.Setenv("commerceEndpoint", fakeCommerceBalance(t, &available))
 	t.Setenv("commerceToken", "test-svc-token")
 
-	err := enforceBalanceGate(&iam.User{Owner: "broke-org", Type: "application"}, "", "glm-5.2")
+	err := enforceBalanceGate(context.Background(), &iam.User{Owner: "broke-org", Type: "application"}, "", "glm-5.2")
 	if err == nil {
 		t.Fatal("a zero balance must be refused")
 	}
@@ -188,7 +189,7 @@ func TestEnforceBalanceGate_NoAutoGrantOnFirstUse(t *testing.T) {
 	t.Setenv("commerceToken", "test-svc-token")
 
 	newSubject := &iam.User{Owner: "brand-new-org", Name: "first-timer", Type: "user"}
-	err := enforceBalanceGate(newSubject, "", "glm-5.2")
+	err := enforceBalanceGate(context.Background(), newSubject, "", "glm-5.2")
 
 	// Refused, not handed free usage.
 	if err == nil {
@@ -241,7 +242,7 @@ func TestEnforceBalanceGate_GatedSKUIsPaid(t *testing.T) {
 
 	// Zero balance on the gated SKU → 402. No comp escape exists.
 	available = 0
-	if err := enforceBalanceGate(user, "", "enso"); err == nil {
+	if err := enforceBalanceGate(context.Background(), user, "", "enso"); err == nil {
 		t.Fatal("gated SKU at $0 balance must 402 — the comp bypass is removed (Enso is PAID)")
 	} else if got := statusOf(err); got != http.StatusPaymentRequired {
 		t.Fatalf("status=%d, want 402 for the gated SKU at $0; err=%v", got, err)
@@ -249,7 +250,7 @@ func TestEnforceBalanceGate_GatedSKUIsPaid(t *testing.T) {
 
 	// Funded → allowed, same as any paid model.
 	available = 100000
-	if err := enforceBalanceGate(user, "", "enso"); err != nil {
+	if err := enforceBalanceGate(context.Background(), user, "", "enso"); err != nil {
 		t.Fatalf("funded caller must be allowed on the gated SKU, got blocked: %v", err)
 	}
 }
@@ -260,7 +261,7 @@ func TestEnforceBalanceGate_GatedSKUIsPaid(t *testing.T) {
 func TestEnforceBalanceGate_FailClosedOnLookupError(t *testing.T) {
 	t.Setenv("commerceEndpoint", "") // unconfigured → getUserBalance errors
 
-	err := enforceBalanceGate(&iam.User{Owner: "gate-noverify", Type: "application"}, "", "glm-5.2")
+	err := enforceBalanceGate(context.Background(), &iam.User{Owner: "gate-noverify", Type: "application"}, "", "glm-5.2")
 	if err == nil {
 		t.Fatal("balance unverifiable must fail closed, got nil (would grant free access)")
 	}
@@ -277,7 +278,7 @@ func TestEnforceBalanceGate_NoExemptBypass(t *testing.T) {
 	t.Setenv("commerceEndpoint", "")                // gate must still consult balance → errors
 	t.Setenv("BALANCE_EXEMPT_USERS", "gate-exempt") // set but IGNORED: the concept is removed
 
-	err := enforceBalanceGate(&iam.User{Owner: "gate-exempt", Type: "application"}, "", "glm-5.2")
+	err := enforceBalanceGate(context.Background(), &iam.User{Owner: "gate-exempt", Type: "application"}, "", "glm-5.2")
 	if err == nil {
 		t.Fatal("no principal may bypass the prepaid gate; formerly-exempt must fail closed, got nil")
 	}

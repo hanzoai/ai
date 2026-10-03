@@ -174,7 +174,7 @@ func TestAPlanCoveredFamilyCallCarriesSpendAndSettlesItsCost(t *testing.T) {
 			t.Cleanup(func() { object.SetUsageRecorder(prev) })
 
 			var settled []int64
-			grant := &object.LimitGrant{Plan: "max-20x", Spend: 50_000_000, Settle: func(n int64) {
+			grant := &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 50_000_000, Settle: func(n int64) {
 				mu.Lock()
 				settled = append(settled, n)
 				mu.Unlock()
@@ -214,7 +214,7 @@ func TestAPlanCoveredFamilyCallCarriesSpendAndSettlesItsCost(t *testing.T) {
 func TestNoSpendTravelsWithoutAHold(t *testing.T) {
 	for name, grant := range map[string]*object.LimitGrant{
 		"no plan":             nil,
-		"a plan holding none": {Plan: "max-20x", Spend: 0, Settle: func(int64) {}},
+		"a plan holding none": {Plan: "max-20x", Pays: object.PaysPlan, Spend: 0, Settle: func(int64) {}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cooled.forget()
@@ -261,7 +261,7 @@ func TestTheSpendNeverReachesAnotherFamily(t *testing.T) {
 	body := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 50_000_000, Settle: func(int64) {}})
+	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 50_000_000, Settle: func(int64) {}})
 	c.pipeToFamily(ensoFam, "chat/completions", "openai", "enso-flash", body, false, 0, "acme", nil, false, nil, time.Now())
 	if len(poolSpend) == 0 {
 		t.Fatal("the pool was never asked — this test proves nothing")
@@ -344,7 +344,7 @@ func planCall(t *testing.T, spend *int64, dialect string, start time.Time) ([]in
 	c := visit(http.MethodPost, path)
 	c.Fiber().Request().SetBody(body)
 	if spend != nil {
-		Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: *spend, Settle: func(n int64) { mu.Lock(); settled = append(settled, n); mu.Unlock() }})
+		Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: *spend, Settle: func(n int64) { mu.Lock(); settled = append(settled, n); mu.Unlock() }})
 	}
 	began := time.Now()
 	c.pipeToFamily(ensoFam, apiPath, dialect, "enso-pro", body, stream, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, start)
@@ -398,7 +398,7 @@ func TestThePlansSpendIsNeverSentTwice(t *testing.T) {
 	if got := spendFor(c.Ctx, ensoFam, "enso-pro"); got != "" {
 		t.Fatalf("no grant sent spend %q", got)
 	}
-	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 1_000_000_000, Settle: func(int64) {}})
+	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 1_000_000_000, Settle: func(int64) {}})
 	if got := spendFor(c.Ctx, ensoFam, "enso-pro"); got != "1.000000000" {
 		t.Fatalf("a covered request sent spend %q, want the hold", got)
 	}
@@ -939,7 +939,7 @@ func TestACoveredRequestWithNoFreeRouteIsHeld(t *testing.T) {
 	body := []byte(`{"model":"enso-pro","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
 	c.Fiber().Request().SetBody(body)
 	var got []int64
-	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 1_000_000_000, Settle: func(n int64) { got = append(got, n) }})
+	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 1_000_000_000, Settle: func(n int64) { got = append(got, n) }})
 	out := c.pipeToFamily(ensoFam, "chat/completions", "openai", "enso-pro", body, true, 0, "acme", nil, false, nil, time.Now())
 	if out == nil {
 		t.Fatalf("the refusal was not handed back to the route; the caller was sent %q", drain(t, c))
@@ -983,7 +983,7 @@ func openCall(t *testing.T, path, apiPath, dialect string, body []byte, stream b
 	t.Cleanup(func() { object.SetUsageRecorder(prev) })
 	c := visit(http.MethodPost, path)
 	c.Fiber().Request().SetBody(body)
-	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Spend: 1_000_000_000, Settle: func(int64) {}})
+	Cover(c.Ctx, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 1_000_000_000, Settle: func(int64) {}})
 	c.pipeToFamily(ensoFam, apiPath, dialect, "enso-pro", body, stream, 0, "acme", &iam.User{Owner: "acme", Name: "ann"}, false, nil, time.Now())
 	g := &heard{}
 	_ = c.Fiber().Response().BodyWriteTo(g)

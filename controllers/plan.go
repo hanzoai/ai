@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"math"
 	"math/big"
 	"net/http"
@@ -25,31 +26,79 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// A plan is a subscription to Hanzo's own models. The host admits each Enso or Zen
-// request a plan covers before it is served (routers' BalanceGateFilter asks
-// object.Limits) and leaves the grant on the request. A covered request meets no
-// wallet and no free allowance; its family may answer it from paid upstream within
-// what the grant holds, and what that cost settles against the plan's budget when its
-// usage is recorded (recordFamilyUsage).
+// The host decides who pays for each request the usage policy governs before it is
+// served (routers' BalanceGateFilter asks object.Limits) and leaves its grant on the
+// request. A covered request — the plan's included usage, or a capped free request —
+// meets no wallet and no free allowance; a Hanzo family may answer it from paid
+// upstream within what the grant holds, and what it used settles against the plan
+// when its usage is recorded. A grant that sends the request to the wallet rides the
+// request too, so its debit draws only what the grant lets pay (UsageEvent.Cash).
 
-// planKey is where the gate leaves the plan's grant on a request.
+// planKey is where the gate leaves the host's grant on a request.
 type planKey struct{}
 
-// Cover marks a request its caller's plan covers.
+// Cover leaves the host's grant on a request: on its locals and on the context its
+// handlers and their usage records read.
 func Cover(c *zip.Ctx, g *object.LimitGrant) {
 	if c != nil && g != nil {
 		c.Locals(planKey{}, g)
+		c.SetContext(context.WithValue(c.Context(), planKey{}, g))
 	}
 }
 
-// grantOf is the plan's grant on the request, nil when no plan covers it.
+// grantOf is the grant that covers the request, nil when nothing covers it: a grant
+// that sends the request to the wallet covers nothing.
 func grantOf(c *zip.Ctx) *object.LimitGrant {
 	if c == nil {
 		return nil
 	}
 	g, _ := c.Locals(planKey{}).(*object.LimitGrant)
+	if !g.Covered() {
+		return nil
+	}
 	return g
 }
+
+// grantFrom is the host's grant on a request's context, covering or not; nil when
+// the policy said nothing about the request.
+func grantFrom(ctx context.Context) *object.LimitGrant {
+	if ctx == nil {
+		return nil
+	}
+	g, _ := ctx.Value(planKey{}).(*object.LimitGrant)
+	return g
+}
+
+// covered reports whether the request on ctx is paid by the plan or a free cap, so
+// no wallet is asked about it.
+func covered(ctx context.Context) bool { return grantFrom(ctx).Covered() }
+
+// ClassOf is the class this module's catalog sells model in: free when it costs
+// nothing, ours when a Hanzo family or the decision service serves it or Hanzo owns
+// it, premium otherwise. The host's policy may put a model in another class.
+func ClassOf(model string) string {
+	m := strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case m == "":
+		return ""
+	case costsNothing(m, ""):
+		return object.ClassFree
+	case FamilyOf(m) != "":
+		return object.ClassOurs
+	}
+	if r := resolveModelRoute(m); r != nil && (r.providerName == object.KaiName || strings.EqualFold(r.ownedBy, "hanzo")) {
+		return object.ClassOurs
+	}
+	return object.ClassPremium
+}
+
+// FreeModel is the free lane's model id: what a conversation in limited mode is
+// answered by.
+const FreeModel = freeID
+
+// Entitled reports whether path is one whose requests the usage policy decides: a
+// conversation, or a decision.
+func Entitled(path string) bool { return ChatPath(path) || DecisionPath(path) }
 
 // FamilyOf names the Hanzo family that serves model — "enso" or "zen" — or "" for a
 // model that is not a Hanzo SKU. The platform's own name for the free pool is Enso's

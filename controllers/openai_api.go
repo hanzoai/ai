@@ -140,7 +140,7 @@ func isPublishableKey(token string) bool {
 // the ONE auth path that can honor an org switch, because it is the one that
 // holds the signed `orgs` claim proving membership — the ledger is resolved here,
 // from those claims, rather than re-parsing the token downstream.
-func resolveProviderFromJwt(token string, requested string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
+func resolveProviderFromJwt(ctx context.Context, token string, requested string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// Signature + issuer/audience validation (never raw iam.ParseJwtToken), so a
 	// token minted for a foreign app/issuer cannot authenticate a paid request.
 	claims, err := object.ParseAndValidateJWT(token)
@@ -157,7 +157,7 @@ func resolveProviderFromJwt(token string, requested string, requestedModel strin
 		return nil, nil, "", forbiddenError("organization %q is not available to this principal", requested)
 	}
 	ledger := account.LedgerOrg(effective, user.Owner, util.IsSuperAdmin(user))
-	return resolveProviderForUser(user, ledger, requestedModel, lang)
+	return resolveProviderForUser(ctx, user, ledger, requestedModel, lang)
 }
 
 // resolveProviderFromIAMKey validates an IAM API key (sk-{accessKey})
@@ -165,7 +165,7 @@ func resolveProviderFromJwt(token string, requested string, requestedModel strin
 //
 // An IAM key carries no signed `orgs` claim, so it can never switch org: it bills
 // the org that owns the key, which is its home org.
-func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
+func resolveProviderFromIAMKey(ctx context.Context, apiKey string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// The whole token, prefix included, IS the accessKey IAM resolves.
 	accessKey := apiKey
 
@@ -183,7 +183,7 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 			// fallback identity for debugging without leaking the credential.
 			log.Warn("[iam-fallback] IAM returned %q; using cloud-agent fallback identity (owner=%s name=%s)",
 				err.Error(), fallbackUser.Owner, fallbackUser.Name)
-			return resolveProviderForUser(fallbackUser, fallbackUser.Owner, requestedModel, lang)
+			return resolveProviderForUser(ctx, fallbackUser, fallbackUser.Owner, requestedModel, lang)
 		}
 		return nil, nil, "", authError("API key validation failed: %s", err.Error())
 	}
@@ -191,7 +191,7 @@ func resolveProviderFromIAMKey(apiKey string, requestedModel string, lang string
 		return nil, nil, "", authError("invalid API key")
 	}
 
-	return resolveProviderForUser(user, user.Owner, requestedModel, lang)
+	return resolveProviderForUser(ctx, user, user.Owner, requestedModel, lang)
 }
 
 // tryCloudAgentKeyFallback checks whether apiKey matches the known cloud-agent
@@ -242,7 +242,7 @@ func tryCloudAgentKeyFallback(apiKey string) *iam.User {
 // the org's own BYOK provider and the wallet the balance gate reads, so a request
 // billed to an org is served with that org's connected key — the two cannot name
 // different tenants.
-func resolveProviderForUser(user *iam.User, ledger string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
+func resolveProviderForUser(ctx context.Context, user *iam.User, ledger string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// Look up the model in the static routing table. A valid caller asking for
 	// an unknown model is a client error (400), not an auth failure.
 	route := resolveModelRoute(requestedModel)
@@ -268,7 +268,7 @@ func resolveProviderForUser(user *iam.User, ledger string, requestedModel string
 	// Prepaid-balance gate. Extracted into enforceBalanceGate so the provider-key
 	// (sk-) path in authResolveProvider enforces the IDENTICAL policy — no auth
 	// path can drift (M1).
-	if gateErr := enforceBalanceGate(user, ledger, requestedModel); gateErr != nil {
+	if gateErr := enforceBalanceGate(ctx, user, ledger, requestedModel); gateErr != nil {
 		return nil, user, "", gateErr
 	}
 
@@ -295,7 +295,7 @@ func resolveProviderForUser(user *iam.User, ledger string, requestedModel string
 // gate on the selected org and the debit on the home org would check one balance
 // and drain another. An empty ledger means the caller could not resolve one, and
 // falls back to the home org — the behavior before the org switch existed.
-func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) error {
+func enforceBalanceGate(ctx context.Context, user *iam.User, ledger string, requestedModel string) error {
 	if user == nil {
 		return nil
 	}
@@ -311,6 +311,10 @@ func enforceBalanceGate(user *iam.User, ledger string, requestedModel string) er
 	// one asks somebody to add funds for a call that will cost $0.00, which is how a
 	// free plan came to be unable to reach the free routes we publish for it.
 	if costsNothing(requestedModel, ledger) {
+		return nil
+	}
+	// Nor does a request the plan or a free cap pays for: no wallet is asked about it.
+	if covered(ctx) {
 		return nil
 	}
 
@@ -794,6 +798,9 @@ type usageRecord struct {
 	// is what its paid upstream cost, settled against the plan's budget (planCost).
 	plan      *object.LimitGrant
 	planNanos int64
+	// cash says the host's grant lets only the wallet's cash pay for this call: the
+	// model's policy refuses granted credit (object.UsageEvent.Cash).
+	cash bool
 
 	// Requested is the model the caller ASKED for, set only when a different route
 	// answered — today, when a vendor's account was spent and it served the request
@@ -1084,6 +1091,15 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 	r.Payer = u.Payer(r.Owner)
 	// The public lane's visitor, read from the request the lane alone writes it on.
 	r.Visitor = visitorOf(ctx)
+	// Who the host said pays: a covered call settles against its grant and debits no
+	// wallet; one sent to the wallet carries whether only cash may pay.
+	if g := grantFrom(ctx); g.Covered() {
+		if r.plan == nil {
+			r.plan = g
+		}
+	} else if g != nil {
+		r.cash = g.Cash
+	}
 
 	self := u.Owner + "/" + u.Name
 	// account.IsMachine is the ONE predicate for "is this credential a program",
@@ -1284,7 +1300,7 @@ func recordUsage(record *usageRecord) error {
 	// paid upstream, against the budget the plan held for it. It debits no wallet and
 	// counts against no free allowance — the plan counted it when it was admitted.
 	if record.plan != nil {
-		record.plan.Settle(record.planNanos)
+		record.plan.Settle(planUse(record))
 	}
 	// The public lane keeps its own count in this process, by the visitor's address
 	// and the site it shares, so its ceiling holds while the host is unreachable. It
@@ -1319,6 +1335,7 @@ func recordUsage(record *usageRecord) error {
 			Provider:  record.Provider,
 			Actor:     record.User,
 			Plan:      record.plan != nil,
+			Cash:      record.cash,
 			RequestID: record.RequestID,
 			Ref:       record.ref,
 		}); err != nil {
@@ -1537,6 +1554,7 @@ func providerKeyBillingUser(provider *object.Provider) (*iam.User, error) {
 // premium. Errors are returned pre-formatted for ResponseError.
 func (c *ApiController) authResolveProvider(token, requestedModel, orgId string) (provider *object.Provider, authUser *iam.User, upstreamModel string, isPremium bool, err error) {
 	lang := c.GetAcceptLanguage()
+	ctx := c.Context()
 
 	switch {
 	case isRunKey(token):
@@ -1545,7 +1563,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// user, so it authenticates nobody and opens no other surface; see run.go.
 		// The org rides the TOKEN, never orgId, so a run cannot be pointed at
 		// another tenant's balance by a header.
-		provider, authUser, upstreamModel, err = resolveProviderFromRunKey(token, requestedModel, lang)
+		provider, authUser, upstreamModel, err = resolveProviderFromRunKey(ctx, token, requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
 			return
@@ -1558,7 +1576,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// contract as the IAM key path. The raw X-Org-Id goes in unvalidated: the
 		// resolver holds the signed `orgs` claim and is the only place allowed to
 		// decide whether the request may act — and pay — in that org.
-		provider, authUser, upstreamModel, err = resolveProviderFromJwt(token, strings.TrimSpace(c.Header("X-Org-Id")), requestedModel, lang)
+		provider, authUser, upstreamModel, err = resolveProviderFromJwt(ctx, token, strings.TrimSpace(c.Header("X-Org-Id")), requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
 			return
@@ -1582,7 +1600,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 			Type:           iam.Machine, // attribution: no person is behind a page key
 			BillingAccount: account.Org(org).String(),
 		}
-		provider, authUser, upstreamModel, err = resolveProviderForUser(machine, org, requestedModel, lang)
+		provider, authUser, upstreamModel, err = resolveProviderForUser(ctx, machine, org, requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
 			return
@@ -1607,7 +1625,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 			// principal. resolveProviderFromIAMKey returns a typed apiError (401
 			// invalid key / 400 bad model / 402 balance / 500 misconfig); wrapAuth
 			// preserves it and 401s any untyped error.
-			provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(token, requestedModel, lang)
+			provider, authUser, upstreamModel, err = resolveProviderFromIAMKey(ctx, token, requestedModel, lang)
 			if err != nil {
 				err = wrapAuth(err)
 				return
@@ -1644,7 +1662,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// upstreams without a positive balance. The billed owner is authUser (the
 		// provider-row owner resolved just above), and a provider key carries no
 		// membership claim — it always bills the org that minted it.
-		if gateErr := enforceBalanceGate(authUser, authUser.Owner, requestedModel); gateErr != nil {
+		if gateErr := enforceBalanceGate(ctx, authUser, authUser.Owner, requestedModel); gateErr != nil {
 			err = gateErr
 			return
 		}
@@ -2783,4 +2801,14 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	}
 
 	c.answerBody(jsonResponse)
+}
+
+// planUse is what a covered call used of its plan, in nano-dollars: its list price,
+// what the caller would have paid; for a model sold at zero, what its paid upstream
+// cost us (planNanos), since its list price says nothing about what it spent.
+func planUse(record *usageRecord) int64 {
+	if billed := usageMargin(record).BilledNano; billed > 0 {
+		return billed
+	}
+	return record.planNanos
 }

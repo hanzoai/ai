@@ -986,6 +986,32 @@ so its difference was always exactly zero and it could neither fire honestly nor
 quiet honestly. It now has a cost to compare against, or a flag saying there is none.
 
 
+## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
+
+On every chat path and `/v1/decisions` the gate asks the host's usage policy
+(`object.LimitFunc`, cloud `apps/ai/limits`) with the model's `Class`
+(`controllers.ClassOf`: free when it costs nothing, ours for Enso/Zen/the decision
+service/`owned_by: hanzo`, premium otherwise) and whether it is `Priced`. The
+answer is a `LimitGrant` with `Pays`:
+
+- `plan` / `free` — **covered**: `Cover` puts the grant on the request locals AND
+  context; `reserveFor`, `enforceBalanceGate` and the decision hold skip the
+  wallet; `usageRecord.bind` picks the grant up from the context, the record
+  carries `Plan`, and `recordUsage` settles `planUse` (list price; COGS for a
+  model sold at zero) against the grant.
+- `prepaid` / `credits` — the wallet gates as before; `Cash` on the grant rides
+  the record to `UsageEvent.Cash` so the host draws cash only.
+
+A `LimitHit` refuses by `Code` with no figure: 429 `usage_cap_exceeded` (a plan
+window, the free lane included — limited mode cannot be farmed), 429
+`free_plan_cap`, 402 `plan_allowance_used`, 402 `paid_plan_required`. A
+conversation from a signed-in app (token `aud`) or a client sending
+`X-Hanzo-Fallback: allow` is answered by `FreeModel` instead of
+`plan_allowance_used`/`paid_plan_required`, marked `X-Hanzo-Fallback`. Served
+calls carry `X-Hanzo-Usage`, `X-Hanzo-Usage-Class`, `X-Hanzo-Paid-By`. An
+unreadable policy decides nothing (the wallet gates). ZAP twins have no gate
+verdict, so they stay wallet-only.
+
 ## The paid lane has ONE switch — the zen catalog's `paid` line
 
 `controllers.FreeOnly` is the only switch, and ai does not own it: the host sets it

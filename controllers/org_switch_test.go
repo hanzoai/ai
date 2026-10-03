@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -91,7 +92,7 @@ func TestBalanceGateWalletIsTheLedger(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			probe := newBalanceProbe(t)
-			if err := enforceBalanceGate(tc.user, tc.ledger, "glm-5.2"); err != nil {
+			if err := enforceBalanceGate(context.Background(), tc.user, tc.ledger, "glm-5.2"); err != nil {
 				t.Fatalf("gate refused a funded subject: %v", err)
 			}
 			subject, org := probe.seen()
@@ -111,13 +112,13 @@ func TestBalanceGateUnresolvedLedgerIsHome(t *testing.T) {
 	user := &iam.User{Owner: "hanzo", Name: "alice"}
 
 	probe := newBalanceProbe(t)
-	if err := enforceBalanceGate(user, "", "glm-5.2"); err != nil {
+	if err := enforceBalanceGate(context.Background(), user, "", "glm-5.2"); err != nil {
 		t.Fatalf("gate refused: %v", err)
 	}
 	blank, blankOrg := probe.seen()
 
 	probe = newBalanceProbe(t)
-	if err := enforceBalanceGate(user, user.Owner, "glm-5.2"); err != nil {
+	if err := enforceBalanceGate(context.Background(), user, user.Owner, "glm-5.2"); err != nil {
 		t.Fatalf("gate refused: %v", err)
 	}
 	home, homeOrg := probe.seen()
@@ -270,7 +271,7 @@ func TestGateAndDebitAddressOneWallet(t *testing.T) {
 			user := &iam.User{Owner: tc.home, Name: tc.who}
 
 			probe := newBalanceProbe(t)
-			if err := enforceBalanceGate(user, tc.ledger, "glm-5.2"); err != nil {
+			if err := enforceBalanceGate(context.Background(), user, tc.ledger, "glm-5.2"); err != nil {
 				t.Fatalf("gate refused: %v", err)
 			}
 			gateSubject, gateOrg := probe.seen()

@@ -943,7 +943,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		tokens = max(tokens, handled.cost(d.ledger, h.handle))
 	}
 	est := (decisionCostNano(d.model, tokens) + nanoPerCent - 1) / nanoPerCent
-	hold, admitted := reserveBudget(d.user.PayerSubject(d.ledger), max(est, 1))
+	hold, admitted := reserveFor(ctx, d.user.PayerSubject(d.ledger), max(est, 1))
 	if !admitted {
 		return refused(d.rid, decline(http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
 	}

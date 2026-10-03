@@ -86,28 +86,24 @@ func freeModels(t *testing.T, ids ...string) {
 	t.Cleanup(func() { costsNothing = prev })
 }
 
-// A spent window on a model that costs nothing refuses nothing: the request falls
-// through to the free allowance, as a caller with no plan's would, holding nothing.
-// Free AI always works.
-func TestASpentWindowFallsThroughToTheFreeAllowance(t *testing.T) {
+// A spent window refuses the free lane too: limited mode answers from free models,
+// and the plan's request windows are what keep that lane from being farmed. The free
+// allowance is never reached for a caller whose plan said no.
+func TestASpentWindowRefusesTheFreeLaneToo(t *testing.T) {
 	gateWith(t, 0)
 	freeModels(t, "enso")
 	reset := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second)
 	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-		return nil, &object.LimitHit{Name: "session", ResetsAt: reset, Upgrade: "max-20x"}, nil
+		return nil, &object.LimitHit{Code: object.CodeUsageCap, Name: "session", ResetsAt: reset, Upgrade: "max-20x"}, nil
 	})
 	read := 0
-	spent := false
 	object.SetSpent(func(stdcontext.Context, string, string) (object.Standing, error) {
 		read++
-		return object.Standing{Spent: spent, Window: "day", Limit: 50}, nil
+		return object.Standing{Window: "day", Limit: 50}, nil
 	})
-	if p := chatWith("enso", "/v1/chat/completions"); p.status() != http.StatusOK || read != 1 {
-		t.Fatalf("spent window on a free model: status %d, allowance read %d (%s), want served under the allowance", p.status(), read, p.said())
-	}
-	spent = true
-	if p := chatWith("enso", "/v1/chat/completions"); p.status() == http.StatusOK || refusalOf(t, p.said()).Error.Code == "usage_cap_exceeded" {
-		t.Fatalf("spent window and spent allowance: status %d (%s), want the allowance's own refusal", p.status(), p.said())
+	p := chatWith("enso", "/v1/chat/completions")
+	if p.status() != http.StatusTooManyRequests || refusalOf(t, p.said()).Error.Code != object.CodeUsageCap || read != 0 {
+		t.Fatalf("spent window on a free model: status %d, allowance read %d (%s), want the window's 429", p.status(), read, p.said())
 	}
 }
 
@@ -165,10 +161,10 @@ func TestASpentWindowIs429WithTheUpgrade(t *testing.T) {
 	}
 }
 
-// The plan is asked about Hanzo SKUs only, told the family, the apps the caller's
-// token was minted for, and whether the request may reach paid upstream (a chat
-// endpoint). A third-party model is never the plan's.
-func TestThePlanIsAskedAboutHanzoSKUsOnly(t *testing.T) {
+// The policy is asked about every model on a chat endpoint, told its class, its
+// Hanzo family, whether it is priced, the caller and whether it may reach paid
+// upstream. Who pays is the host's answer for every class, not only Hanzo's SKUs.
+func TestThePolicyIsAskedAboutEveryModelWithItsClass(t *testing.T) {
 	gateWith(t, 100000)
 	var asked []object.LimitAsk
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
@@ -178,15 +174,17 @@ func TestThePlanIsAskedAboutHanzoSKUsOnly(t *testing.T) {
 	chatWith("enso-pro", "/v1/chat/completions")
 	chatWith("zen5", "/v1/messages")
 	chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
-	chatWith("vendor/small:free", "/v1/chat/completions")
-	if len(asked) != 2 {
-		t.Fatalf("asked %d times (%+v), want two: the Hanzo SKUs alone", len(asked), asked)
+	if len(asked) != 3 {
+		t.Fatalf("asked %d times (%+v), want every model", len(asked), asked)
 	}
-	if asked[0].Family != "enso" || !asked[0].Spend || asked[0].Subject != "acme" || asked[0].Namespace != "acme" || asked[0].Actor != "acme/ann" {
+	if asked[0].Family != "enso" || asked[0].Class != object.ClassOurs || !asked[0].Spend || asked[0].Subject != "acme" || asked[0].Namespace != "acme" || asked[0].Actor != "acme/ann" {
 		t.Errorf("enso on chat asked %+v", asked[0])
 	}
-	if asked[1].Family != "zen" || !asked[1].Spend {
+	if asked[1].Family != "zen" || asked[1].Class != object.ClassOurs || !asked[1].Spend {
 		t.Errorf("zen on messages asked %+v", asked[1])
+	}
+	if asked[2].Family != "" || asked[2].Class != object.ClassPremium || !asked[2].Priced {
+		t.Errorf("a third-party model asked %+v", asked[2])
 	}
 }
 
@@ -200,7 +198,7 @@ func TestACoveredRequestMeetsNoAllowanceAndNoWallet(t *testing.T) {
 		return object.Standing{Spent: true, Window: "day", Limit: 50}, nil
 	})
 	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-		return &object.LimitGrant{Plan: "max-20x", Spend: 1, Settle: func(int64) {}}, nil, nil
+		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 1, Settle: func(int64) {}}, nil, nil
 	})
 	if p := chatWith("enso", "/v1/chat/completions"); p.status() != http.StatusOK {
 		t.Errorf("enso under a plan: status %d (%s)", p.status(), p.said())
@@ -274,7 +272,7 @@ func TestTheGateReadsTheOrgTheCallerIsWorkingIn(t *testing.T) {
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		asked = append(asked, q)
 		if q.Namespace == "webby-ai" {
-			return &object.LimitGrant{Plan: "max-20x", Settle: func(int64) {}}, nil, nil
+			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Settle: func(int64) {}}, nil, nil
 		}
 		return nil, &object.LimitHit{Name: "day", ResetsAt: time.Now().Add(time.Hour)}, nil
 	})
@@ -314,7 +312,7 @@ func TestACoveredRequestSettlesWhenItsAnswerIsWhole(t *testing.T) {
 	gateWith(t, 0)
 	var settled []int64
 	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-		return &object.LimitGrant{Plan: "max-20x", Spend: 7, Settle: func(n int64) { settled = append(settled, n) }}, nil, nil
+		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 7, Settle: func(n int64) { settled = append(settled, n) }}, nil, nil
 	})
 	chatWith("enso", "/v1/chat/completions")
 	if len(settled) != 1 || settled[0] != 0 {

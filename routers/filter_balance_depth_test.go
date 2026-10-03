@@ -77,7 +77,7 @@ func TestTheDefaultIdTakesThePaidLadderOnlyWhenTheCallerFundsIt(t *testing.T) {
 	bg.ledger.SetBalance("acme", 500)
 	for name, limit := range map[string]object.LimitFunc{
 		"a covering plan": func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-			return &object.LimitGrant{Plan: "max-20x", Spend: 100, Settle: func(int64) {}}, nil, nil
+			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Spend: 100, Settle: func(int64) {}}, nil, nil
 		},
 		"no plan": func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 			return nil, nil, nil

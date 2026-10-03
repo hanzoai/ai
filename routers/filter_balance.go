@@ -216,8 +216,11 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// A decision body is decoded here, once its sender is known, and left plain —
 	// unless the ledger already holds the wallet empty and no decision model is free
 	// to it, when the refusal the decode would end in is given without it.
+	//
+	// Where the host decides who pays (object.Limits), an empty wallet is no answer on
+	// its own — the plan may pay — so the body is decoded and the policy asked.
 	if controllers.DecisionPath(path) {
-		if avail, empty := balanceGate.empty(subject, namespace); empty && !decisionFree(namespace) {
+		if avail, empty := balanceGate.empty(subject, namespace); empty && object.Limits() == nil && !decisionFree(namespace) {
 			return denied(c, object.InsufficientBalance(c.Host(), namespace, ""), subject, namespace, avail, path)
 		}
 		if _, err := controllers.DecisionBody(c); err != nil {
@@ -236,47 +239,63 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			model = sku
 		}
 	}
-	// A PLAN COVERS HANZO SKUS, and only from its consumer apps. A plan is a
-	// subscription: the host counts the request in the plan's windows and holds what
-	// its family may spend on paid upstream, and a request the plan covers meets
-	// neither the free allowance nor the wallet below. A spent window is refused here.
-	// Every other request — a third-party model, a caller without a plan, a call made
-	// with an API key — is left to the allowance and the wallet exactly as before.
+	// WHO PAYS IS THE HOST'S CALL. Its usage policy puts every model in a class and
+	// spends, in order: the plan's included usage for that class, then prepaid cash,
+	// then granted credit where the model takes it, then a model's daily cap on a plan
+	// that cannot pay; past all of them the caller is in limited mode. A covered request
+	// — the plan or a free cap pays — meets no wallet below; one the wallet pays goes on
+	// to it carrying what may pay; a refused one is answered here.
 	//
-	// A plan that cannot be read covers nothing: the request goes on as a free one,
-	// under the allowance, holding no spend. Free models keep answering, and no money
-	// moves on a plan nobody could read.
+	// LIMITED MODE KEEPS A CONVERSATION GOING. A chat request from a signed-in app
+	// (or a client that asks for it) the plan can no longer pay for is answered by the
+	// free model instead, saying so in X-Hanzo-Fallback; the free model is still held
+	// to the plan's request windows, so the free lane is not a way around them.
 	//
-	// A spent window on a model that costs nothing refuses nothing either: the request
-	// goes on as one no plan covers, under the free allowance, holding no spend. Free
-	// AI always works; the window bounds what the plan buys.
-	if limits := object.Limits(); limits != nil && controllers.ChatPath(path) {
-		if family := controllers.FamilyOf(model); family != "" {
+	// A policy that cannot be read decides nothing: the wallet and the free allowance
+	// below gate the request exactly as they would with no plans at all.
+	if limits := object.Limits(); limits != nil && model != "" && controllers.Entitled(path) {
+		for try := 0; try < 2; try++ {
+			priced := !costsNothing(model, namespace)
 			grant, hit, err := limits(c.Context(), object.LimitAsk{
 				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
-				Family: family, Apps: controllers.Apps(c), Spend: true,
+				Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: priced,
+				Apps: controllers.Apps(c), Spend: controllers.ChatPath(path),
 			})
 			if err != nil {
-				log.Warning("limits: unreadable, serving as free subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
-			}
-			if hit != nil && !costsNothing(model, namespace) {
-				log.Info("limits: %s subject=%s namespace=%s actor=%s path=%s", hit.Name, subject, namespace, userKey, path)
-				return limitReached(c, hit, namespace)
+				log.Warning("limits: unreadable, leaving the request to the wallet subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
+				break
 			}
 			if hit != nil {
-				log.Info("limits: %s spent, serving from the free allowance subject=%s namespace=%s actor=%s path=%s", hit.Name, subject, namespace, userKey, path)
-			}
-			if grant != nil {
-				controllers.Cover(c, grant)
-				err := c.Continue()
-				// A whole answer is over once its handler is: the grant ends, at nothing
-				// more than its usage record already settled. A streamed answer is
-				// settled by its own writer when the stream ends.
-				if !c.Fiber().Response().IsBodyStream() {
-					grant.Settle(0)
+				log.Info("limits: %s %s subject=%s namespace=%s actor=%s path=%s model=%s", hit.Code, hit.Name, subject, namespace, userKey, path, model)
+				if priced && try == 0 && fallback(c, path, hit) {
+					if body, ok := controllers.WithModel(c.Body(), controllers.FreeModel); ok {
+						c.Fiber().Request().SetBody(body)
+						c.Fiber().Request().Header.Del("Content-Encoding")
+						c.SetHeader("X-Hanzo-Fallback", controllers.FreeModel)
+						c.SetHeader("X-Hanzo-Usage-Reason", hit.Code)
+						c.SetHeader("X-Hanzo-Usage", "limited")
+						model = controllers.FreeModel
+						continue
+					}
 				}
-				return err
+				return limitReached(c, hit, namespace)
 			}
+			if grant == nil {
+				break
+			}
+			usage(c, grant)
+			controllers.Cover(c, grant)
+			if !grant.Covered() {
+				break // the wallet pays: on to it, carrying what may pay
+			}
+			err = c.Continue()
+			// A whole answer is over once its handler is: the grant ends, at nothing
+			// more than its usage record already settled. A streamed answer is
+			// settled by its own writer when the stream ends.
+			if !c.Fiber().Response().IsBodyStream() {
+				grant.Settle(0)
+			}
+			return err
 		}
 	}
 
@@ -369,37 +388,110 @@ func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey, model strin
 	return sufficient
 }
 
-// limitReached writes a plan's refusal: 429 usage_cap_exceeded naming the spent
-// window, when it resets (Retry-After in seconds), and the plan that raises it.
-// Money is never the way on: a plan is not a balance.
+// limitReached writes the host's refusal, named by its code and never by a figure:
+// 429 usage_cap_exceeded when a window of the plan is spent, 429 free_plan_cap when a
+// free plan's daily cap on the model is used, 402 plan_allowance_used when the plan's
+// included usage of the class is used and nothing else may pay, 402
+// paid_plan_required when the model needs a paid plan or prepaid balance. It names
+// when it lifts (Retry-After where it lifts by itself) and what lifts it sooner.
 func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
+	type action struct {
+		Kind  string `json:"kind"`
+		Label string `json:"label"`
+		URL   string `json:"url"`
+		Plan  string `json:"plan,omitempty"`
+	}
 	body := struct {
 		Error struct {
-			Message    string `json:"message"`
-			Type       string `json:"type"`
-			Code       string `json:"code"`
-			Limit      string `json:"limit"`
-			ResetsAt   string `json:"resets_at"`
-			UpgradeURL string `json:"upgrade_url,omitempty"`
+			Message    string   `json:"message"`
+			Type       string   `json:"type"`
+			Code       string   `json:"code"`
+			Class      string   `json:"class,omitempty"`
+			Limit      string   `json:"limit,omitempty"`
+			ResetsAt   string   `json:"resets_at,omitempty"`
+			UpgradeURL string   `json:"upgrade_url,omitempty"`
+			Actions    []action `json:"actions,omitempty"`
 		} `json:"error"`
 	}{}
-	reset := hit.ResetsAt.UTC()
-	body.Error.Message = fmt.Sprintf("You've used %s requests on your plan. They reset at %s.",
-		limitNoun(hit.Name), reset.Format(time.RFC3339))
-	if hit.Upgrade != "" {
-		body.Error.UpgradeURL = object.PayURL(c.Host(), org) + "/cart?plan=" + url.QueryEscape(hit.Upgrade)
-		body.Error.Message += " Upgrade for more at " + body.Error.UpgradeURL
+	pay := object.PayURL(c.Host(), org)
+	code := hit.Code
+	if code == "" {
+		code = object.CodeUsageCap
 	}
-	body.Error.Type = "rate_limit_error"
-	body.Error.Code = "usage_cap_exceeded"
-	body.Error.Limit = hit.Name
-	body.Error.ResetsAt = reset.Format(time.RFC3339)
+	status := http.StatusPaymentRequired
+	body.Error.Type = "billing_error"
+	if code == object.CodeUsageCap || code == object.CodeFreePlanCap {
+		status = http.StatusTooManyRequests
+		body.Error.Type = "rate_limit_error"
+	}
+	msg := hit.Message
+	if msg == "" && code == object.CodeUsageCap {
+		msg = fmt.Sprintf("You've used %s requests on your plan.", limitNoun(hit.Name))
+		body.Error.Limit = hit.Name
+	}
+	if msg == "" {
+		msg = "This request is outside what your plan includes."
+	}
+	if !hit.ResetsAt.IsZero() {
+		reset := hit.ResetsAt.UTC()
+		body.Error.ResetsAt = reset.Format(time.RFC3339)
+		if code == object.CodeUsageCap {
+			msg += " They reset at " + body.Error.ResetsAt + "."
+		}
+		if wait := int64(time.Until(reset).Seconds()); wait > 0 && status == http.StatusTooManyRequests {
+			c.SetHeader("Retry-After", fmt.Sprint(wait))
+		}
+	}
+	if hit.Upgrade != "" {
+		body.Error.UpgradeURL = pay + "/cart?plan=" + url.QueryEscape(hit.Upgrade)
+		body.Error.Actions = append(body.Error.Actions, action{Kind: "upgrade", Label: "Upgrade your plan", URL: body.Error.UpgradeURL, Plan: hit.Upgrade})
+	}
+	if code != object.CodeUsageCap {
+		body.Error.Actions = append(body.Error.Actions, action{Kind: "topup", Label: "Add prepaid credit", URL: pay})
+	}
+	switch {
+	case body.Error.UpgradeURL != "" && code == object.CodeUsageCap:
+		msg += " Upgrade for more at " + body.Error.UpgradeURL
+	case code != object.CodeUsageCap:
+		msg += " " + pay
+	}
+	body.Error.Message = msg
+	body.Error.Code = code
+	body.Error.Class = hit.Class
 	raw, _ := json.Marshal(body)
-	if wait := int64(time.Until(reset).Seconds()); wait > 0 {
-		c.SetHeader("Retry-After", fmt.Sprint(wait))
+	c.SetHeader("X-Hanzo-Usage", "limited")
+	if hit.Class != "" {
+		c.SetHeader("X-Hanzo-Usage-Class", hit.Class)
 	}
 	c.SetHeader("Content-Type", "application/json")
-	return c.Bytes(http.StatusTooManyRequests, raw)
+	return c.Bytes(status, raw)
+}
+
+// usage says on the response who paid and where the class stands, never a figure.
+func usage(c *zip.Ctx, g *object.LimitGrant) {
+	if g.State != "" {
+		c.SetHeader("X-Hanzo-Usage", g.State)
+	}
+	if g.Class != "" {
+		c.SetHeader("X-Hanzo-Usage-Class", g.Class)
+	}
+	if g.Pays != "" {
+		c.SetHeader("X-Hanzo-Paid-By", g.Pays)
+	}
+}
+
+// fallback reports whether a refused request is answered by the free model instead:
+// a conversation the plan can no longer pay for, from a signed-in app or a client
+// that sent X-Hanzo-Fallback: allow. An API key gets the refusal unless it asks — a
+// program is told, not silently answered by another model.
+func fallback(c *zip.Ctx, path string, hit *object.LimitHit) bool {
+	if !controllers.ChatPath(path) {
+		return false
+	}
+	if hit.Code != object.CodePlanAllowance && hit.Code != object.CodePaidPlan {
+		return false
+	}
+	return len(controllers.Apps(c)) > 0 || strings.EqualFold(strings.TrimSpace(c.Header("X-Hanzo-Fallback")), "allow")
 }
 
 // standing says on the response where a bounded caller's free calls stand: the

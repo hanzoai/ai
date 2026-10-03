@@ -37,6 +37,7 @@ package controllers
 // the correct behaviour for a deployment that has no run orchestrator.
 
 import (
+	"context"
 	"strings"
 	"sync/atomic"
 
@@ -112,7 +113,7 @@ func resolveRun(token string) (Run, bool) {
 // The ledger is the org itself. A run has no home/effective split to make — that
 // distinction exists for a SuperAdmin acting inside another tenant, and a run is
 // not a person and never acts for one.
-func resolveProviderFromRunKey(token, requestedModel, lang string) (*object.Provider, *iam.User, string, error) {
+func resolveProviderFromRunKey(ctx context.Context, token, requestedModel, lang string) (*object.Provider, *iam.User, string, error) {
 	r, ok := resolveRun(token)
 	if !ok {
 		return nil, nil, "", authError("invalid or expired run key")
@@ -121,5 +122,5 @@ func resolveProviderFromRunKey(token, requestedModel, lang string) (*object.Prov
 	// resolve the billing subject to the ORG account rather than to a person who
 	// does not exist.
 	user := &iam.User{Owner: r.Org, Type: "application", Name: "run"}
-	return resolveProviderForUser(user, r.Org, requestedModel, lang)
+	return resolveProviderForUser(ctx, user, r.Org, requestedModel, lang)
 }

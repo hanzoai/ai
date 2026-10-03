@@ -47,7 +47,7 @@ func gateAndDebit(t *testing.T, user *iam.User, ledger string) (gated, debited s
 	})
 	t.Cleanup(func() { object.SetUsageRecorder(prevUsage) })
 
-	if err := enforceBalanceGate(user, ledger, "gpt-4"); err != nil {
+	if err := enforceBalanceGate(context.Background(), user, ledger, "gpt-4"); err != nil {
 		t.Fatalf("enforceBalanceGate: %v", err)
 	}
 
