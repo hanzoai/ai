@@ -242,6 +242,22 @@ func TestMemoryIsNeverAnonymous(t *testing.T) {
 	}
 }
 
+// THE TALK SOCKET IS NOT ASKED FOR A BEARER, because a browser cannot send one on a
+// WebSocket: its credential is the ticket in the URL, which the voice handler
+// redeems. Gating the GET on a bearer refused every upgrade a page made, after
+// the session call that minted its ticket had answered 200.
+func TestTheTalkSocketPassesOnItsTicket(t *testing.T) {
+	q := asUser(t, "GET", "/v1/voice?ticket=t-1", nil).through(permissionFilter)
+	if q.status() == http.StatusUnauthorized {
+		t.Error("an anonymous upgrade to /v1/voice was refused at the filter; its ticket is the voice handler's to judge")
+	}
+	// The session that mints a ticket still wants its bearer.
+	q = asUser(t, "POST", "/v1/voice/session", nil).through(permissionFilter)
+	if q.status() != http.StatusUnauthorized {
+		t.Errorf("anonymous POST /v1/voice/session = %d; want 401 — a ticket is minted from a bearer", q.status())
+	}
+}
+
 // ── C-1: path-normalization bypass regression ───────────────────────────────
 //
 // the router path.Cleans the request path before dispatch, so slash/dot variants of a

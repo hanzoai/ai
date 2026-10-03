@@ -160,6 +160,10 @@ var anonymousEndpoints = map[string]struct{}{
 	"models/providers": {},
 	"health":           {}, // probes
 	"voice/health":     {},
+	// The talk socket. A browser cannot put a header on a WebSocket, so its
+	// credential is the one-use ticket POST /v1/voice/session minted from a
+	// bearer, and the voice handler refuses any upgrade without a live one.
+	"voice":            {},
 	"metrics":          {}, // scrape target
 	"ai/traffic/globe": {}, // public view
 	"chat/public":      {},
