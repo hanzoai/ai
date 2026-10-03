@@ -606,7 +606,7 @@ func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, re
 		_ = c.SendStreamWriter(func(w *bufio.Writer) {
 			defer upstreamBody.Close()
 			defer p.hold.settle(0)
-			settle(streamCaptureUsage(upstreamBody, w, func() { _ = w.Flush() }, wants, strip, mk))
+			settle(streamCaptureUsage(upstreamBody, w, w.Flush, wants, strip, mk))
 		})
 		return true
 	}

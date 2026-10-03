@@ -2086,12 +2086,6 @@ func publicName(asked, by *modelFamily, sku string) string {
 	return ensoFam.freeName
 }
 
-// relayZenStream copies a family's SSE response to the client and captures the final
-// usage for billing. The family already emits correct dialect SSE, so ai does not
-// translate — it reads usage as it passes and, for the one dialect whose envelope is
-// ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
-// completion is stamped from the same mark, so the id a client correlates on holds
-// for the whole stream. first is when the first data chunk was written.
 // eventStream reports whether resp is a server-sent event stream.
 func eventStream(resp *http.Response) bool {
 	return resp != nil && strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
@@ -2120,7 +2114,10 @@ func streamed(body []byte) []byte {
 // chat completion, stamped by mk. Until the answer is whole it writes a space every
 // beat, which a JSON reader skips as leading whitespace. An error frame after the
 // first becomes the answer's error object.
-func assembleZenStream(w *bufio.Writer, body io.Reader, mk *mark, beat time.Duration, paid func()) (t tokens, served, respID string, first time.Time) {
+//
+// A beat that cannot be written means the client is gone: body is closed then, which
+// hangs up on the family so its model stops, and what was read so far is returned.
+func assembleZenStream(w *bufio.Writer, body io.ReadCloser, mk *mark, beat time.Duration, paid func()) (t tokens, served, respID string, first time.Time) {
 	type call struct {
 		ID       string `json:"id,omitempty"`
 		Type     string `json:"type"`
@@ -2234,7 +2231,14 @@ wait:
 			break wait
 		case <-tick.C:
 			_, _ = w.WriteString(" ")
-			_ = w.Flush()
+			if w.Flush() != nil {
+				_ = body.Close()
+				<-done
+				if said := content.Len() + reasoning.Len(); !t.reported && said > 0 {
+					t.completion = said/4 + 1
+				}
+				return
+			}
 		}
 	}
 	var out []byte
@@ -2277,7 +2281,21 @@ wait:
 	return
 }
 
+// relayZenStream copies a family's SSE response to the client and captures the final
+// usage for billing. The family already emits correct dialect SSE, so ai does not
+// translate — it reads usage as it passes and, for the one dialect whose envelope is
+// ours (a non-nil mark), stamps each event before it goes out. Every chunk of one
+// completion is stamped from the same mark, so the id a client correlates on holds
+// for the whole stream. first is when the first data chunk was written.
+//
+// A write that fails ends the relay: the client is gone, and the caller's close of
+// body is what hangs up on the family, so its model stops generating rather than
+// running to max_tokens for nobody. The request's context cannot say this — a
+// fasthttp request's context does not end when its client leaves — so the failed
+// write is the only signal there is. The usage a family states arrives last, so an
+// answer cut before it is billed for the text that was relayed.
 func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t tokens, served, respID string, first time.Time) {
+	said := 0 // characters of answer relayed
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
@@ -2294,6 +2312,7 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t t
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
 				sniffZenUsage(payload, &t)
+				said += answerChars(payload)
 				if served == "" {
 					served = sniffZenModel(payload)
 				}
@@ -2307,12 +2326,56 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t t
 		}
 		_, _ = w.Write(line)
 		_, _ = w.Write(zenNewline)
-		w.Flush()
+		if w.Flush() != nil {
+			if !t.reported && said > 0 {
+				t.completion = said/4 + 1
+			}
+			return
+		}
 		if first.IsZero() && bytes.HasPrefix(line, zenDataPrefix) {
 			first = time.Now()
 		}
 	}
 	return
+}
+
+// answerChars is how many characters of answer one stream frame carries, in either
+// dialect a family speaks: an OpenAI chunk's content, reasoning and tool-call
+// arguments, or an Anthropic delta's text, thinking and partial JSON.
+func answerChars(payload []byte) int {
+	var f struct {
+		Choices []struct {
+			Delta struct {
+				Content          string `json:"content"`
+				Reasoning        string `json:"reasoning"`
+				ReasoningContent string `json:"reasoning_content"`
+				ToolCalls        []struct {
+					Function struct {
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"delta"`
+		} `json:"choices"`
+		Delta *struct {
+			Text        string `json:"text"`
+			Thinking    string `json:"thinking"`
+			PartialJSON string `json:"partial_json"`
+		} `json:"delta"`
+	}
+	if json.Unmarshal(payload, &f) != nil {
+		return 0
+	}
+	n := 0
+	for _, c := range f.Choices {
+		n += len(c.Delta.Content) + len(c.Delta.Reasoning) + len(c.Delta.ReasoningContent)
+		for _, tc := range c.Delta.ToolCalls {
+			n += len(tc.Function.Arguments)
+		}
+	}
+	if d := f.Delta; d != nil {
+		n += len(d.Text) + len(d.Thinking) + len(d.PartialJSON)
+	}
+	return n
 }
 
 // sniffZenModel reads the top-level "model" (or Anthropic's message.model) from a

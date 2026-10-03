@@ -62,7 +62,7 @@ type sseStreamChunk struct {
 // A line may be as long as the family relay allows (relayZenStream). A scanner that
 // meets a longer one stops, and everything after it — the rest of the answer and
 // the usage that bills it — would be dropped without an error anyone sees.
-func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage bool, strip *model.ReasoningStripper, mk *mark) (t tokens, completionText string) {
+func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWantsUsage bool, strip *model.ReasoningStripper, mk *mark) (t tokens, completionText string) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	var sb strings.Builder
@@ -120,9 +120,13 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func(), clientWantsUsage
 			line = "data: " + string(mk.stamp([]byte(strings.TrimPrefix(line, "data: "))))
 		}
 
-		_, _ = fmt.Fprintf(w, "%s\n", line)
-		if flush != nil {
-			flush()
+		// A write that fails is the client gone: return, and the caller's close of r
+		// hangs up on the vendor so its model stops. The text so far is what bills.
+		if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+			break
+		}
+		if flush != nil && flush() != nil {
+			break
 		}
 	}
 	return t, sb.String()
