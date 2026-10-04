@@ -571,6 +571,9 @@ million input tokens — the same row in `model_pricing.go`,
 - **A handle belongs to the org that observed it.** `observe`/`handle` are sent as
   `<org>/<id>`; `unscope` takes the prefix off anything said back. An answer with no
   handle in it goes back byte for byte.
+- **The service is told the org.** Every call `send` makes carries `X-Org-Id`: the
+  ledger org, the same one handles are prefixed with. The service routes by it. The
+  request is built in `send`, so the caller's own `X-Org-Id` never reaches it.
 - **One body bound, shared with the service.** `decisionBodyBytes` (16 MiB) is the
   decision service's `BODY_BYTES`; change both together. A body past it is 422
   `request_too_long`, after authentication. ai's socket admits
@@ -604,7 +607,12 @@ million input tokens — the same row in `model_pricing.go`,
 - **Held answers are per org.** `decisioncache.go` is an LRU of Kai answers for an
   identical body (whitespace-insensitive, order kept) from the same org within a
   minute, under a fresh `id`, billed like a miss. Each org holds at most an eighth of
-  it and evicts its own. Never across orgs. Handle requests are never held.
+  it and evicts its own. Never across orgs. Handle requests are never held. The key's
+  revision is the weights (`routing.sha256`), plus `routing.capability` {name,
+  sha256} when the org's capability answered. A lookup uses the capability that
+  last answered that org (kept on its share), so once a capability answers, the
+  base answers the org held stop being served. An answer without the field keeps
+  the weights-only key.
 - **`Restate` is the wording rule**: every refusal in the service's shape,
   `Retry-After` + `Retry-After-Ms` on 402/429/529, `X-Request-Id` on everything; the
   service's `X-Request-Id` passes through. The `Dialect` filter sits OUTSIDE

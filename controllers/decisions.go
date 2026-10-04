@@ -769,8 +769,11 @@ type decided struct {
 	header map[string]string
 	usage  decisionsUsage
 	sha256 string // routing.sha256 of an answer Kai gave in process
-	fault  *decisionRefusal
-	exp    time.Time
+	// capability is the routing.capability that answered, name NUL sha256; "" when
+	// the base answered alone.
+	capability string
+	fault      *decisionRefusal
+	exp        time.Time
 }
 
 // consult sends body to the decision service, naming model by the id its route
@@ -810,9 +813,9 @@ func consult(ctx context.Context, kai *object.Provider, model, version, org, rid
 	return d
 }
 
-// send posts body to the decision service's /v1/decisions, under the caller's
-// request id, and reads its reply.
-func send(ctx context.Context, kai *object.Provider, rid string, body []byte) decided {
+// send posts body to the decision service's /v1/decisions, for org under the
+// caller's request id, and reads its reply.
+func send(ctx context.Context, kai *object.Provider, org, rid string, body []byte) decided {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+decisionsPath, bytes.NewReader(body))
 	if err != nil {
 		log.Error("decisions: build request to the decision service request_id=%s: %v", rid, err)
@@ -820,6 +823,10 @@ func send(ctx context.Context, kai *object.Provider, rid string, body []byte) de
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-Id", rid)
+	// The service routes by the org that pays: the one the gateway resolved from the
+	// credential and every handle is named by (scope). The request is built here, so
+	// no header the caller sent reaches the service.
+	req.Header.Set("X-Org-Id", org)
 	upstream.Authorize(req, kai)
 	// Where the service lives is ours to know: a failure to reach it is logged with
 	// its address and answered without one.
@@ -842,13 +849,22 @@ func send(ctx context.Context, kai *object.Provider, rid string, body []byte) de
 	}
 	if resp.StatusCode == http.StatusOK {
 		var answer struct {
-			Usage   decisionsUsage    `json:"usage"`
-			Routing *decisionsRouting `json:"routing"`
+			Usage   decisionsUsage `json:"usage"`
+			Routing *struct {
+				decisionsRouting
+				Capability *struct {
+					Name   string `json:"name"`
+					Sha256 string `json:"sha256"`
+				} `json:"capability"`
+			} `json:"routing"`
 		}
 		_ = json.Unmarshal(b, &answer)
 		d.usage = answer.Usage
 		if r := answer.Routing; r != nil && r.Backend == "kai" {
 			d.sha256 = r.Sha256
+			if c := r.Capability; c != nil {
+				d.capability = c.Name + "\x00" + c.Sha256
+			}
 		}
 	}
 	return d

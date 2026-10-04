@@ -374,6 +374,120 @@ func TestDecisionHeldAnswers(t *testing.T) {
 	}
 }
 
+// The service is told the org that pays, as X-Org-Id, on every call it is sent —
+// a body naming a handle, a body no answer is held for yet, and one asked once
+// for everyone in flight — through either door. It is the org the gateway
+// resolved, never the one the caller wrote.
+func TestDecisionServiceIsToldTheOrg(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	told := func(status int, body, want string) {
+		t.Helper()
+		fake.mu.Lock()
+		got := fake.org
+		fake.org = ""
+		fake.mu.Unlock()
+		if status != http.StatusOK || got != want {
+			t.Fatalf("=> %d %s; the service was told org %q, want %q", status, body, got, want)
+		}
+	}
+
+	// An sk- key carries no membership: the org it writes is not the org that pays.
+	status, body, _ := drive(t, "Bearer "+decisionsKey, decisionBody, map[string]string{"X-Org-Id": otherOrg})
+	told(status, body, decisionsOrg)
+	fake.answer = heldAnswer
+	status, body, _ = drive(t, "Bearer "+decisionsKey, decisionBody, nil)
+	told(status, body, decisionsOrg)
+	other := strings.Replace(decisionBody, "twice", "three times", 1)
+	status, body, _ = drive(t, "Bearer "+decisionsKey, other, map[string]string{"X-Org-Id": otherOrg})
+	told(status, body, decisionsOrg)
+	observe := strings.Replace(decisionBody, `}}}`, `}},"observe":"s1"}`, 1)
+	status, body, _ = drive(t, "Bearer "+decisionsKey, observe, map[string]string{"X-Org-Id": otherOrg})
+	told(status, body, decisionsOrg)
+
+	// A member acting in an org its signed membership covers is that org, on both doors.
+	tok := mintUsageJWTWithOrgs(t, "beta", "bob", "beta", decisionsOrg)
+	status, body, _ = drive(t, "Bearer "+tok, observe, map[string]string{"X-Org-Id": decisionsOrg})
+	told(status, body, decisionsOrg)
+	msg, err := gateway(nil)(context.Background(), "", gatewayCall(t, decisionsPath,
+		map[string]string{"Authorization": "Bearer " + tok, "X-Org-Id": decisionsOrg}, observe))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settled(t)
+	told(int(msg.Root().Uint32(object.GatewayRespStatus)), string(msg.Root().Bytes(object.GatewayRespBody)), decisionsOrg)
+}
+
+// capabilityAnswer is heldAnswer as an org's capability gave it, at sha.
+func capabilityAnswer(sha string) string {
+	return strings.Replace(heldAnswer, `"sha256":"abc",`, `"sha256":"abc","capability":{"name":"triage","sha256":"`+sha+`"},`, 1)
+}
+
+// An answer is held under the weights and the capability that gave it. Once an
+// org's capability answers, the base answers it held are not given again, nor the
+// answers of a capability since republished; another org's are untouched. An
+// answer no capability gave is held under the weights alone, the key it always had.
+func TestHeldAnswersFollowTheCapability(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	kai := object.KaiProvider()
+	ctx := context.Background()
+	ask := func(n int) []byte {
+		return []byte(strings.Replace(decisionBody, "twice", fmt.Sprintf("twice %d", n), 1))
+	}
+	sent := func(org string, body []byte, want bool, answer string) {
+		t.Helper()
+		before, _, _ := fake.seen()
+		d := recall(ctx, kai, "kai", org, "r", body)
+		after, _, _ := fake.seen()
+		if (after > before) != want {
+			t.Fatalf("%s asked %s: reached the service %v, want %v", org, body, after > before, want)
+		}
+		if top(t, string(d.body), "routing") != top(t, answer, "routing") {
+			t.Fatalf("%s was answered by %s, want %s", org, top(t, string(d.body), "routing"), top(t, answer, "routing"))
+		}
+	}
+	holds := func(org string, body []byte, rev string) {
+		t.Helper()
+		norm, _ := holdable(body)
+		decisionCache.mu.Lock()
+		defer decisionCache.mu.Unlock()
+		if _, ok := decisionCache.m[decisionKey(org, "kai", rev, norm)]; !ok {
+			t.Fatalf("%s's answer to %s is not held under revision %q", org, body, rev)
+		}
+	}
+
+	base, c1, c2 := heldAnswer, capabilityAnswer("c1"), capabilityAnswer("c2")
+	fake.answer = base
+	sent("acme", ask(1), true, base)
+	sent("globex", ask(1), true, base)
+	holds("acme", ask(1), "abc")
+	sent("acme", ask(1), false, base)
+
+	// acme's capability is installed and answers.
+	fake.answer = c1
+	sent("acme", ask(2), true, c1)
+	holds("acme", ask(2), "abc\x00triage\x00c1")
+	sent("acme", ask(1), true, c1)
+	sent("acme", ask(1), false, c1)
+	sent("globex", ask(1), false, base)
+
+	// It is republished.
+	fake.answer = c2
+	sent("acme", ask(3), true, c2)
+	sent("acme", ask(1), true, c2)
+	sent("acme", ask(1), false, c2)
+
+	// The base answers acme alone again: held, and asked for, under the weights alone.
+	fake.answer = base
+	sent("acme", ask(4), true, base)
+	holds("acme", ask(4), "abc")
+	sent("acme", ask(4), false, base)
+	decisionCache.mu.Lock()
+	defer decisionCache.mu.Unlock()
+	if c := decisionCache.orgs["acme"].capability["kai"]; c != "" {
+		t.Fatalf("acme is still answered by capability %q", c)
+	}
+}
+
 // Restate words any refusal in the service's error shape, and leaves one already in
 // it alone.
 func TestRestate(t *testing.T) {

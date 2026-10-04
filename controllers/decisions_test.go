@@ -57,6 +57,7 @@ type fakeDecisions struct {
 	path   string
 	body   []byte
 	rid    string
+	org    string // X-Org-Id
 	status int
 	answer string
 	header map[string]string
@@ -67,7 +68,7 @@ func (f *fakeDecisions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
 	f.calls++
-	f.path, f.body, f.rid = r.URL.Path, b, r.Header.Get("X-Request-Id")
+	f.path, f.body, f.rid, f.org = r.URL.Path, b, r.Header.Get("X-Request-Id"), r.Header.Get("X-Org-Id")
 	status, answer, serve := f.status, f.answer, f.serve
 	for k, v := range f.header {
 		w.Header().Set(k, v)
