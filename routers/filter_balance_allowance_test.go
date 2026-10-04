@@ -229,3 +229,40 @@ func TestAllowanceLeavesThePaywallAlone(t *testing.T) {
 		t.Error("the allowance was read for a PRICED call — it bounds the free lane only")
 	}
 }
+
+// A free call that was not served gives its unit back: an answer of 400 or above
+// releases what the host took, and a served one keeps it.
+func TestAnUnservedFreeCallGivesBackItsUnit(t *testing.T) {
+	bg := newTestGate("http://unused", "", balanceCacheTTL)
+	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
+	bg.ledger.SetBalance("acme", 0)
+	prev := balanceGate
+	balanceGate = bg
+	t.Cleanup(func() { balanceGate = prev })
+	t.Cleanup(func() { object.SetSpent(nil) })
+
+	given := 0
+	object.SetSpent(func(stdcontext.Context, string, string) (object.Standing, error) {
+		return object.Standing{Window: "day", Limit: 50, Used: 1, Release: func() { given++ }}, nil
+	})
+	answer := func(code int) zip.Handler {
+		return func(c *zip.Ctx) error { c.Fiber().Status(code); return nil }
+	}
+	call := func(code int) {
+		ask(http.MethodPost, "/v1/chat/completions").
+			with("Authorization", "Bearer tok").
+			with(zip.HeaderUserOwner, "acme").
+			with(zip.HeaderUser, "u-ann").
+			body([]byte(`{"model":"enso-free","messages":[]}`)).
+			through(BalanceGateFilter, answer(code))
+	}
+	call(http.StatusBadGateway)
+	call(http.StatusBadRequest)
+	if given != 2 {
+		t.Fatalf("two unserved calls gave back %d units, want 2", given)
+	}
+	call(http.StatusOK)
+	if given != 2 {
+		t.Errorf("a served call gave its unit back (%d)", given)
+	}
+}

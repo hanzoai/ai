@@ -251,12 +251,16 @@ type SpentFunc func(ctx context.Context, subject, namespace string) (Standing, e
 // Window names the ceiling the numbers describe — "day" on the Free plan — and is
 // the one that refused where one did. Used counts this call when it was admitted.
 // Limit 0 means no window bounds the caller.
+//
+// Release gives back the unit this call took, for a call that was not served; nil
+// when it took none.
 type Standing struct {
-	Spent  bool
-	Window string
-	Limit  int64
-	Used   int64
-	Resets time.Time
+	Spent   bool
+	Window  string
+	Limit   int64
+	Used    int64
+	Resets  time.Time
+	Release func()
 }
 
 var (

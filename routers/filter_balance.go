@@ -301,7 +301,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			usage(c, grant)
 			controllers.Cover(c, grant)
 			// A request that was not served keeps nothing it was counted against.
-			defer release(c, grant)
+			defer release(c, grant.Release)
 			if !grant.Covered() {
 				break // the wallet pays: on to it, carrying what may pay
 			}
@@ -324,11 +324,9 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		//
 		// THE HOST COUNTS THE CALL AS IT ADMITS IT. Asking is taking: the hook spends
 		// one of the person's calls before any model is reached, and Spent says THIS
-		// call was the one past the ceiling. So a call that dies after this point — an
-		// unresolvable route, a vendor that never answered, a pod mid-roll — has still
-		// spent its unit. That is the rule, and it is the point: a loop retrying a
-		// failing model spends its own fifty, not the shared pool, and calls in flight
-		// cannot all slip past the last unit because none of them waited to be counted.
+		// call was the one past the ceiling, so calls in flight cannot all slip past
+		// the last unit because none of them waited to be counted. A call that was not
+		// served — an answer of 400 or above — gives its unit back (Standing.Release).
 		//
 		// THE PERSON IS NAMED BY THE REQUEST (person). The host keys the count by the
 		// caller's IAM home org and user, read with zip.CallerOf, and a raw handler's
@@ -356,6 +354,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 						subject, namespace, out.Window, path)
 					return freeRefused(c, object.AllowanceSpent(c.Host(), namespace, out))
 				}
+				defer release(c, out.Release)
 			}
 		}
 		return c.Continue()
@@ -505,13 +504,10 @@ var sessionModel = controllers.TranscriptModel
 
 // release hands back what a request was counted against when it was not served:
 // any answer of 400 or above, the gate's own refusals below included. A stream is
-// served from its first byte, and stands.
-func release(c *zip.Ctx, g *object.LimitGrant) {
-	if g == nil || g.Release == nil {
-		return
-	}
-	if code := c.Fiber().Response().StatusCode(); code >= http.StatusBadRequest {
-		g.Release()
+// served from its first byte, and stands. give is nil when nothing was counted.
+func release(c *zip.Ctx, give func()) {
+	if give != nil && c.Fiber().Response().StatusCode() >= http.StatusBadRequest {
+		give()
 	}
 }
 
