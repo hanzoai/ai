@@ -74,8 +74,10 @@ func grantFrom(ctx context.Context) *object.LimitGrant {
 func covered(ctx context.Context) bool { return grantFrom(ctx).Covered() }
 
 // ClassOf is the class this module's catalog sells model in: free when it costs
-// nothing, ours when a Hanzo family or the decision service serves it or Hanzo owns
-// it, premium otherwise. The host's policy may put a model in another class.
+// nothing, ours when a Hanzo family serves it or Hanzo owns its route, premium
+// otherwise. The decision service serves Kai and forwards Jev; Hanzo owns Kai, so Kai
+// is ours, and Jev is TypeSafe's, so Jev is premium. The host's policy may put a
+// model in another class.
 func ClassOf(model string) string {
 	m := strings.ToLower(strings.TrimSpace(model))
 	switch {
@@ -86,7 +88,7 @@ func ClassOf(model string) string {
 	case FamilyOf(m) != "":
 		return object.ClassOurs
 	}
-	if r := resolveModelRoute(m); r != nil && (r.providerName == object.KaiName || strings.EqualFold(r.ownedBy, "hanzo")) {
+	if r := resolveModelRoute(m); r != nil && strings.EqualFold(r.ownedBy, "hanzo") {
 		return object.ClassOurs
 	}
 	return object.ClassPremium
@@ -147,22 +149,19 @@ func FamilyOf(model string) string {
 }
 
 // lineage is the `family` /v1/models names for a listed model: the Hanzo family it
-// belongs to, or "" for a third-party model. FamilyOf names Enso's and Zen's SKUs, and
-// is what the usage policy is asked about; three more families are listed beside them:
-// kai, the decision service's route Hanzo owns; jev, TypeSafe's Jev ids; and zoo,
-// whatever Zoo owns.
+// belongs to, or "" for anyone else's. FamilyOf names Enso's and Zen's SKUs, and is
+// what the usage policy is asked about; two more are listed beside them: kai, the
+// decision service's route Hanzo owns, and zoo, whatever Zoo owns. Jev, which the
+// decision service forwards for TypeSafe, is not a Hanzo family.
 func lineage(id, owner string) string {
 	if f := FamilyOf(id); f != "" {
 		return f
 	}
-	m := strings.ToLower(strings.TrimSpace(id))
 	switch {
-	case strings.HasPrefix(strings.TrimPrefix(m, "~"), "typesafe/jev-"):
-		return "jev"
 	case strings.EqualFold(owner, "zoo"), strings.EqualFold(owner, "zooai"):
 		return "zoo"
 	case strings.EqualFold(owner, "hanzo"):
-		if r := resolveModelRoute(m); r != nil && r.providerName == object.KaiName && strings.EqualFold(r.ownedBy, "hanzo") {
+		if r := resolveModelRoute(strings.ToLower(strings.TrimSpace(id))); r != nil && r.providerName == object.KaiName && strings.EqualFold(r.ownedBy, "hanzo") {
 			return "kai"
 		}
 	}

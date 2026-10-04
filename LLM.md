@@ -639,7 +639,7 @@ million input tokens — the same row in `model_pricing.go`,
   canonicalizing at the entry first.
 - **A UI reads a model's kind from `/v1/models`, never from its id**: every row
   carries `class` (`ClassOf`, the policy's own answer) and, for Hanzo's, `family`
-  (`lineage`: enso/zen from `FamilyOf`, kai, jev, zoo). OpenRouter rows add `name`
+  (`lineage`: enso/zen from `FamilyOf`, kai, zoo; Jev is TypeSafe's, premium, no family). OpenRouter rows add `name`
   (vendor lead cut), `description`, `inputs`, `supports_tools`/`supports_reasoning`
   (from `supported_parameters`); family rows add `outputs` from their `mode` and
   `supports_vision`; our own routes state a `description` in models.yaml. Class and
@@ -998,8 +998,9 @@ quiet honestly. It now has a cost to compare against, or a flag saying there is 
 
 On every chat path and `/v1/decisions` the gate asks the host's usage policy
 (`object.LimitFunc`, cloud `apps/ai/limits`) with the model's `Class`
-(`controllers.ClassOf`: free when it costs nothing, ours for Enso/Zen/the decision
-service/`owned_by: hanzo`, premium otherwise) and whether it is `Priced`. The
+(`controllers.ClassOf`: free when it costs nothing, ours for Enso/Zen and any route
+`owned_by: hanzo` — Kai, not the Jev ids the decision service forwards — premium
+otherwise) and whether it is `Priced`. The
 answer is a `LimitGrant` with `Pays`:
 
 - `plan` / `free` — **covered**: `Cover` puts the grant on the request locals AND

@@ -360,7 +360,7 @@ type modelInfo struct {
 	// Additive enrichment (omitempty — present only when ai has the datum).
 	CanonicalSlug     string            `json:"canonical_slug,omitempty"`     // the id qualified by its maker, OpenRouter's field and form ("hanzo/kai", "anthropic/claude-sonnet-4"); see canonicalSlug
 	Class             string            `json:"class,omitempty"`              // premium | ours | free: ClassOf, the class the usage policy is asked about; every listed row carries it
-	Family            string            `json:"family,omitempty"`             // the Hanzo family the model belongs to (enso, zen, kai, jev, zoo); absent for a third-party model. See lineage
+	Family            string            `json:"family,omitempty"`             // the Hanzo family the model belongs to (enso, zen, kai, zoo); absent for anyone else's model. See lineage
 	Name              string            `json:"name,omitempty"`               // display name where the source states one (OpenRouter's, without its "<Vendor>: " lead — owned_by carries the vendor)
 	Description       string            `json:"description,omitempty"`        // what the source says the model is: OpenRouter's description, the family's, or one sentence on a route of our own
 	Provider          string            `json:"provider,omitempty"`           // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)

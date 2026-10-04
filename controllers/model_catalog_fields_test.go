@@ -145,7 +145,7 @@ func TestListedRowsNameClassAndFamily(t *testing.T) {
 		"enso":                      {object.ClassOurs, "enso"},
 		"zen5":                      {object.ClassOurs, "zen"},
 		"kai":                       {object.ClassOurs, "kai"},
-		"typesafe/jev-router":       {object.ClassPremium, "jev"},
+		"typesafe/jev-router":       {object.ClassPremium, ""},
 		"anthropic/claude-sonnet-4": {object.ClassPremium, ""},
 		"free":                      {object.ClassFree, "enso"},
 		"bge-m3":                    {object.ClassPremium, ""},
@@ -170,7 +170,7 @@ func TestListedRowsNameClassAndFamily(t *testing.T) {
 }
 
 // lineage is one function over the id and its owner: kai is the decision service's
-// route Hanzo owns, jev TypeSafe's Jev ids under either spelling, zoo whatever Zoo owns.
+// route Hanzo owns, zoo whatever Zoo owns, and TypeSafe's Jev ids are no Hanzo family.
 func TestLineageNamesHanzoFamilies(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "models.yaml")
 	if err := os.WriteFile(path, []byte(fieldsYAML+`  typesafe/jev-1.13:
@@ -183,9 +183,9 @@ func TestLineageNamesHanzoFamilies(t *testing.T) {
 	useCatalog(t, path)
 	for _, tc := range []struct{ id, owner, want string }{
 		{"kai", "hanzo", "kai"},
-		{"typesafe/jev-1.13", "typesafe", "jev"}, // on the decision service, owned by TypeSafe: Jev, not Kai
-		{"~typesafe/jev-latest", "typesafe", "jev"},
-		{"typesafe/jev-router", "typesafe", "jev"},
+		{"typesafe/jev-1.13", "typesafe", ""}, // on the decision service, owned by TypeSafe: not Kai, not ours
+		{"~typesafe/jev-latest", "typesafe", ""},
+		{"typesafe/jev-router", "typesafe", ""},
 		{"zoo/eco-1", "zoo", "zoo"},
 		{"eco-2", "ZooAI", "zoo"},
 		{"bge-m3", "hanzo", ""}, // owned by Hanzo but not on the decision service
@@ -195,6 +195,60 @@ func TestLineageNamesHanzoFamilies(t *testing.T) {
 		if got := lineage(tc.id, tc.owner); got != tc.want {
 			t.Errorf("lineage(%q, %q) = %q, want %q", tc.id, tc.owner, got, tc.want)
 		}
+	}
+}
+
+// Jev is TypeSafe's model, so it is premium and in no Hanzo family, whether the decision
+// service forwards it (typesafe/jev-1.13, ~typesafe/jev-latest) or OpenRouter lists it
+// (typesafe/jev-router). Kai, which the same service serves and Hanzo owns, stays ours
+// and in the kai family. Both Jev decision ids are listed: they are callable models.
+func TestJevIsPremiumAndNoHanzoFamily(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.yaml")
+	if err := os.WriteFile(path, []byte(fieldsYAML+`  typesafe/jev-1.13:
+    provider: kai
+    upstream: typesafe/jev-1.13
+    owned_by: typesafe
+    outputs: [decision]
+    pricing: {input: 0.042, output: 0}
+  "~typesafe/jev-latest":
+    provider: kai
+    upstream: "~typesafe/jev-latest"
+    owned_by: typesafe
+    outputs: [decision]
+    pricing: {input: 0.042, output: 0}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	useCatalog(t, path)
+	withOpenRouter(t, fieldsOR)
+	byID := indexModels(listAvailableModels())
+
+	for id, want := range map[string]struct{ class, family string }{
+		"typesafe/jev-1.13":    {object.ClassPremium, ""},
+		"~typesafe/jev-latest": {object.ClassPremium, ""},
+		"typesafe/jev-router":  {object.ClassPremium, ""},
+		"kai":                  {object.ClassOurs, "kai"},
+	} {
+		m, ok := byID[id]
+		if !ok {
+			t.Errorf("%s is not listed", id)
+			continue
+		}
+		if m.Class != want.class || m.Family != want.family {
+			t.Errorf("%s lists class %q family %q, want %q %q", id, m.Class, m.Family, want.class, want.family)
+		}
+		if got := ClassOf(id); got != want.class {
+			t.Errorf("ClassOf(%q) = %q, want %q", id, got, want.class)
+		}
+		if want.family == "" && jsonKeys(t, m)["family"] {
+			t.Errorf("%s publishes a family", id)
+		}
+	}
+	if p := byID["typesafe/jev-1.13"].Pricing; p == nil || p.InputPerMillion != 0.042 {
+		t.Errorf("typesafe/jev-1.13 lists pricing %+v, want 0.042 per 1M input", p)
+	}
+	if p := byID["kai"].Pricing; p == nil || p.InputPerMillion != 0.021 {
+		t.Errorf("kai lists pricing %+v, want 0.021 per 1M input", p)
 	}
 }
 
