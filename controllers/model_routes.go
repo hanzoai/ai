@@ -49,6 +49,7 @@ type modelRoute struct {
 	tools         bool                 // Supports function/tool calling — set only from a live probe
 	outputs       []string             // Kinds of answer the model produces (e.g. "decision"); nil = not advertised
 	created       int64                // When the model was released (Unix seconds); 0 = not recorded
+	name          string               // Display name ("Jev 1.13"); "" = none stated
 	description   string               // One plain sentence on what the model is, for a route of our own; "" = none stated
 }
 
@@ -638,6 +639,7 @@ func staticModels() []modelInfo {
 			SupportsVision:  route.vision,
 			SupportsTools:   route.tools,
 			Outputs:         route.outputs,
+			Name:            route.name,
 			Description:     route.description,
 		})
 	}

@@ -642,7 +642,7 @@ million input tokens — the same row in `model_pricing.go`,
   (`lineage`: enso/zen from `FamilyOf`, kai, zoo; Jev is TypeSafe's, premium, no family). OpenRouter rows add `name`
   (vendor lead cut), `description`, `inputs`, `supports_tools`/`supports_reasoning`
   (from `supported_parameters`); family rows add `outputs` from their `mode` and
-  `supports_vision`; our own routes state a `description` in models.yaml. Class and
+  `supports_vision`; a models.yaml row may state a `name` and a `description`. Class and
   family resolve routes, so `build` stamps them after it stores the slugs —
   before, the first build waits on its own lock (`TestFirstBuildDoesNotWaitOnItself`).
 - **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is

@@ -166,6 +166,9 @@ type ModelDef struct {
 	// `created`. Absent ⇒ the listing's own time, as for every model whose release
 	// nothing here records.
 	Released string `yaml:"released,omitempty"`
+	// Name is the model's display name, surfaced in /v1/models as `name` ("Jev 1.13").
+	// Absent ⇒ none stated, and a reader shows the id.
+	Name string `yaml:"name,omitempty"`
 	// Description is one plain sentence on what the model is, surfaced in /v1/models
 	// as `description`, for a model of our own. Absent ⇒ none stated.
 	Description string `yaml:"description,omitempty"`
@@ -293,6 +296,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 				vision:        def.Vision,
 				tools:         def.Tools,
 				outputs:       def.Outputs,
+				name:          def.Name,
 				description:   def.Description,
 			}
 			for _, fb := range def.Fallbacks {
@@ -621,6 +625,7 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 			SupportsVision:  route.vision,
 			SupportsTools:   route.tools,
 			Outputs:         route.outputs,
+			Name:            route.name,
 			Description:     route.description,
 		})
 	}

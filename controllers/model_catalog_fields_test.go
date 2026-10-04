@@ -252,6 +252,43 @@ func TestJevIsPremiumAndNoHanzoFamily(t *testing.T) {
 	}
 }
 
+// A config row's `name` is its display name on the listing, the way its description
+// is; a row that states none publishes none, and a reader shows the id.
+func TestConfigRowCarriesItsName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.yaml")
+	if err := os.WriteFile(path, []byte(`version: 1
+models:
+  kai:
+    provider: kai
+    upstream: kai
+    owned_by: hanzo
+    name: Kai
+    pricing: {input: 0.021, output: 0}
+  typesafe/jev-1.13:
+    provider: kai
+    upstream: typesafe/jev-1.13
+    owned_by: typesafe
+    name: Jev 1.13
+    pricing: {input: 0.042, output: 0}
+  bge-m3:
+    provider: do-ai
+    upstream: bge-m3
+    pricing: {input: 0.02, output: 0}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	useCatalog(t, path)
+	byID := indexModels(listAvailableModels())
+	for id, want := range map[string]string{"kai": "Kai", "typesafe/jev-1.13": "Jev 1.13", "bge-m3": ""} {
+		if got := byID[id].Name; got != want {
+			t.Errorf("%s lists name %q, want %q", id, got, want)
+		}
+	}
+	if jsonKeys(t, byID["bge-m3"])["name"] {
+		t.Error("bge-m3 publishes a name its row never stated")
+	}
+}
+
 // A Hanzo family SKU lists its image input as the family states it, the kind of answer
 // its mode names, and the description the family sends, absent where it sends none.
 func TestFamilyRowCarriesVisionModeAndDescription(t *testing.T) {
