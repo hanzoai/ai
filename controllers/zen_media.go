@@ -139,12 +139,17 @@ func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, is
 	if authUser == nil {
 		return
 	}
+	// The unit price is the charge: carried as the exact billed amount, which is what
+	// every reader of the money asks (usageCostNano), so the debit is what the hold
+	// settled at rather than a token count this call does not have.
+	billed := cents * 10_000_000 // 1¢ = 1e7 nano
 	rec := &usageRecord{
 		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
 		Model: model, Provider: "zen",
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Status: status, ErrorMsg: errMsg,
 		ClientIP: c.Fiber().IP(), RequestID: reqID, Account: "hanzo",
+		TotalTokens: units, BilledNanoExact: &billed,
 	}
 	rec.bind(c.Context(), authUser)
 	recordUsage(rec)

@@ -1,13 +1,16 @@
 package routers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
 )
 
@@ -107,9 +110,15 @@ func NewQuota(tierFunc func(string) Tier, cleanupInterval time.Duration) *Quota 
 // what a caller needs to know to come back. A REFUSED request is charged to
 // nothing: one exhausted ceiling must not go on burning down the longer ones,
 // which would let a caller who is out for eight hours lose their whole month.
+//
+// On a host with shared counts (object.SetCounters) the windows are kept there, so
+// every replica counts one caller together and a restart forgets nothing.
 func (q *Quota) Spend(key string, now time.Time) (ok bool, refused string, until time.Time) {
 	now = now.UTC()
 	limits, capped := tierQuotas[q.tierOf(key)]
+	if quota, _ := object.Counts(); quota != nil {
+		return q.spendShared(quota, key, now, limits, capped)
+	}
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -144,6 +153,43 @@ func (q *Quota) Spend(key string, now time.Time) (ok bool, refused string, until
 	}
 	q.totalAllowed.Add(1)
 	return true, "", time.Time{}
+}
+
+// spendShared is Spend on the host's shared counts: one window per capped period,
+// keyed by the period's start, charged together or not at all.
+func (q *Quota) spendShared(quota object.QuotaFunc, key string, now time.Time, limits []int, capped bool) (bool, string, time.Time) {
+	var ws []object.CountWindow
+	var at []int
+	for i, p := range periods {
+		if !capped || i >= len(limits) || limits[i] == 0 {
+			continue
+		}
+		start, end := p.window(now)
+		ws = append(ws, object.CountWindow{
+			Key:   "quota:" + key + ":" + p.name + ":" + strconv.FormatInt(start.Unix(), 10),
+			Limit: limits[i],
+			TTL:   end.Sub(now) + time.Hour,
+		})
+		at = append(at, i)
+	}
+	if len(ws) == 0 {
+		q.totalAllowed.Add(1)
+		return true, "", time.Time{}
+	}
+	used, ok := quota(context.Background(), ws)
+	if ok {
+		q.totalAllowed.Add(1)
+		return true, "", time.Time{}
+	}
+	q.totalDenied.Add(1)
+	for j, i := range at {
+		if j < len(used) && used[j] >= limits[i] {
+			_, end := periods[i].window(now)
+			return false, periods[i].name, end
+		}
+	}
+	_, end := periods[at[0]].window(now)
+	return false, periods[at[0]].name, end
 }
 
 // Metrics reports the running allowed and denied counts.

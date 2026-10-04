@@ -1099,3 +1099,29 @@ OpenRouter accounts named by `object.OpenRouterKeys` (`OPENROUTER_API_KEY`,
   and the rate limiter re-asks a free entry's tier: it is the one answer a
   payment changes, so a paying org is rated as what it bought by the time
   checkout brings it back.
+
+## No escape hatch: the gate refuses what it cannot decide, and every call is a row
+
+- **Fail closed.** A usage policy (`object.LimitFunc`) or free allowance (`object.SpentFunc`)
+  that errors refuses 503 `usage_unavailable` (`object.UsageUnavailable`), on free and
+  priced models alike — an outage of the counts is never a way past them.
+- **No configured tier.** `RATE_LIMIT_TIERS` is deleted: a tier is the caller's
+  recorded subscription (commerce), never an operator mapping.
+- **Shared counts.** `object.SetCounters(QuotaFunc, TakeFunc)` puts `RateLimiter`
+  (per-minute buckets) and `Quota` (8h/week/month) on the host's store, so every
+  replica counts together and a restart forgets nothing; with none installed they
+  count in process (standalone).
+- **One transcript lookup.** `controllers.TranscriptModel` is the only one; the rate
+  filter and the plan gate both ask it.
+- **Limited mode is one rule.** `fallback(c, path, code)`: in chat, from a signed-in app
+  or `X-Hanzo-Fallback: allow`, any refusal for want of payment — `plan_allowance_used`,
+  `paid_plan_required`, `model_cap`, `insufficient_balance` (the wallet's own 402) — is
+  answered by the free model, with `X-Hanzo-Fallback` (lane), `X-Hanzo-Usage-Reason` (the
+  real code), `X-Hanzo-Usage: limited`, `X-Hanzo-Topup-Url`, `X-Hanzo-Upgrade-Url`; the
+  handler names the concrete model in `X-Hanzo-Served`. Non-chat callers keep their 402.
+- **Every served call is billed and described.** A unit-priced call (Zen media, scrape,
+  crawl, RAG chat) carries its charge as `BilledNanoExact` — `Cost` alone was read by
+  nothing on the money path and debited $0. A bi-encoder rerank bills the tokens it
+  embedded. A vendor key pays as its row's owner on the ZAP wire as on HTTP.
+  `UsageEvent` carries `Class`, `Units`, `CostUSD` and `PaidBy` ("plan", "hanzo" for a free
+  model the platform absorbs, "" for the wallet) so the host writes a row for every call.

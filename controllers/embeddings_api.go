@@ -273,6 +273,12 @@ func (c *ApiController) Rerank() {
 	}
 
 	if authUser != nil {
+		// The query and every document were embedded, so the call is billed for
+		// their tokens (the embedder reports none here; a character estimate stands).
+		tokens := 0
+		for _, t := range texts {
+			tokens += len(t)/4 + 1
+		}
 		rec := &usageRecord{
 			Owner:        c.billingOrg(authUser),
 			Organization: authUser.Owner,
@@ -284,6 +290,8 @@ func (c *ApiController) Rerank() {
 			Status:       "success",
 			ClientIP:     c.Fiber().IP(),
 			RequestID:    uuid.NewString(),
+			PromptTokens: tokens,
+			TotalTokens:  tokens,
 		}
 		rec.bind(c.Context(), authUser)
 		recordUsage(rec)

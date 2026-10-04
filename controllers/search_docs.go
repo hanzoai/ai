@@ -204,17 +204,24 @@ func recordSearchUsage(auth *searchAuth, model, provider, status string, units i
 		costCents = 0 // Indexing is included (part of write operation cost)
 	}
 
+	// Per-unit operations bill their unit price exactly: the charge rides as the
+	// billed amount every reader of the money asks (usageCostNano).
+	billed := costCents * 10_000_000 // 1¢ = 1e7 nano
+	if status != "success" {
+		billed = 0
+	}
 	record := &usageRecord{
-		Owner:        auth.Owner,
-		User:         auth.UserID,
-		Organization: auth.Owner,
-		Model:        model,
-		Provider:     provider,
-		TotalTokens:  units,
-		Cost:         float64(costCents) / 100.0,
-		Currency:     "USD",
-		Status:       status,
-		ClientIP:     clientIP,
+		Owner:           auth.Owner,
+		User:            auth.UserID,
+		Organization:    auth.Owner,
+		Model:           model,
+		Provider:        provider,
+		TotalTokens:     units,
+		Cost:            float64(costCents) / 100.0,
+		Currency:        "USD",
+		Status:          status,
+		ClientIP:        clientIP,
+		BilledNanoExact: &billed,
 	}
 
 	recordUsage(record)

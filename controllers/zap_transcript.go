@@ -463,38 +463,21 @@ func find(who, tid string, now time.Time) (*session, uint32, string) {
 	return s, 0, ""
 }
 
-// TranscriptAdmitted answers whether a request continues a live transcript its
-// own credential opened: a push or a close on a session that is still live.
+// TranscriptModel is the model a push to or the close of a live transcript is
+// billed as — the one its open named — for the credential that opened it; false
+// for any other call, a session that is gone, or another principal's. It is the
+// one lookup both ceilings ask: the request-rate ceiling exempts what it answers
+// true for, and the plan gate asks it as the session the open was counted as.
 //
-// It exists for the host's request-rate ceiling. A live transcript is ONE
-// request, admitted at open — that is where the ceiling and the admission slot
-// are spent — and then a push every chunk_ms for as long as the speaker talks,
-// about four a second. Counted as requests, the pushes spend a minute's
-// allowance in fifteen seconds and the dictation dies mid-sentence. They are
-// bounded instead by the session itself: max_bytes a push, max_seconds of audio,
-// and the idle timeout. A push to an id this credential did not open, or one
-// that has gone, answers false and is counted like any other request.
+// A live transcript is ONE request, admitted at open — that is where the ceiling
+// and the admission slot are spent — and then a push every chunk_ms for as long
+// as the speaker talks, about four a second. Counted as requests, the pushes spend
+// a minute's allowance in fifteen seconds and the dictation dies mid-sentence.
+// They are bounded instead by the session itself: max_bytes a push, max_seconds
+// of audio, and the idle timeout.
 //
 // path is the router's path, method the request's, auth its Authorization
 // header — the same three the handler is given.
-func TranscriptAdmitted(method, path, auth string) bool {
-	tid, ok := continued(method, path)
-	if !ok || auth == "" {
-		return false
-	}
-	who, err := zapResolveUser(auth)
-	if err != nil {
-		return false
-	}
-	liveMu.Lock()
-	defer liveMu.Unlock()
-	s, _, _ := find(who, tid, time.Now())
-	return s != nil
-}
-
-// TranscriptModel is the model a push to or the close of a live transcript is
-// billed as — the one its open named — for the caller who opened it; false for any
-// other call, a session that is gone, or another principal's.
 func TranscriptModel(method, path, auth string) (string, bool) {
 	tid, ok := continued(method, path)
 	if !ok || auth == "" {

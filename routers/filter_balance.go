@@ -270,8 +270,8 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				Apps: controllers.Apps(c), Spend: controllers.ChatPath(path), Session: session,
 			})
 			if err != nil {
-				log.Warning("limits: unreadable, leaving the request to the wallet subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
-				break
+				log.Warning("limits: unreadable, refusing subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
+				return denied(c, object.UsageUnavailable(), subject, namespace, 0, path)
 			}
 			if hit != nil {
 				log.Info("limits: %s %s subject=%s namespace=%s actor=%s path=%s model=%s", hit.Code, hit.Name, subject, namespace, userKey, path, model)
@@ -282,16 +282,9 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				if hit.Code == object.CodeModelCap && hit.Fallback != "" {
 					to = hit.Fallback
 				}
-				if priced && !strings.EqualFold(to, model) && fallback(c, path, hit) {
-					if body, ok := controllers.WithModel(c.Body(), to); ok {
-						c.Fiber().Request().SetBody(body)
-						c.Fiber().Request().Header.Del("Content-Encoding")
-						c.SetHeader("X-Hanzo-Fallback", to)
-						c.SetHeader("X-Hanzo-Usage-Reason", hit.Code)
-						c.SetHeader("X-Hanzo-Usage", "limited")
-						model = to
-						continue
-					}
+				if priced && !strings.EqualFold(to, model) && fallback(c, path, hit.Code) && fallBack(c, to, hit.Code, namespace, hit.Upgrade) {
+					model = to
+					continue
 				}
 				return limitReached(c, hit, namespace)
 			}
@@ -337,17 +330,20 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		// Where the caller stands rides on the answer, admitted or refused, as
 		// X-RateLimit-*: a client shows what is left without asking twice.
 		//
-		// An error is allowed through, and WHO gets that benefit is the host's call:
-		// it holds the tenancy vocabulary, so it answers spent for a caller it cannot
-		// name and returns the error only for one it can. A priced route never
-		// reaches this branch, so nothing here can free a metered call.
+		// An allowance that cannot be read refuses: a gate that cannot decide does
+		// not admit (503, retryable). A priced route never reaches this branch.
 		//
 		// RETRIEVAL IS NOT A CALL THE ALLOWANCE COUNTS. An embedding or a rerank is
 		// what the platform runs many of to answer one question — a file's chunks, a
 		// search's documents — so counting each would spend a person's day on one
 		// upload. Only a call that asks a model to answer is counted.
 		if spent := object.Spent(); spent != nil && !retrieval(path) {
-			if out, err := spent(person(c), subject, namespace); err == nil {
+			out, err := spent(person(c), subject, namespace)
+			if err != nil {
+				log.Warning("allowance: unreadable, refusing subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
+				return denied(c, object.UsageUnavailable(), subject, namespace, 0, path)
+			}
+			{
 				standing(c, out)
 				if out.Spent {
 					log.Info("allowance: free calls spent subject=%s namespace=%s window=%s path=%s",
@@ -364,7 +360,40 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	if sufficient {
 		return c.Continue()
 	}
+	// A conversation the wallet cannot pay for goes on in limited mode, like one the
+	// plan cannot: the free model answers and says why. Asked again from the top, so
+	// the free model is held to the plan's windows and the free allowance.
+	if deny.Code == object.CodeInsufficientBalance && model != "" && !strings.EqualFold(model, controllers.FreeModel) &&
+		fallback(c, path, deny.Code) && fallBack(c, controllers.FreeModel, deny.Code, namespace, "") {
+		return BalanceGateFilter(c)
+	}
 	return denied(c, deny, subject, namespace, balance, path)
+}
+
+// fallBack hands a chat request to model to and says so on the response: the lane
+// that answers (X-Hanzo-Fallback), why (X-Hanzo-Usage-Reason, the refusal's own
+// code), that the caller is in limited mode, and the two ways out — the wallet's
+// top-up page and the plan that raises the limit (X-Hanzo-Topup-Url,
+// X-Hanzo-Upgrade-Url). The model that actually serves is named by the handler in
+// X-Hanzo-Served. It reports false when the body could not be rewritten.
+func fallBack(c *zip.Ctx, to, code, org, upgrade string) bool {
+	body, ok := controllers.WithModel(c.Body(), to)
+	if !ok {
+		return false
+	}
+	c.Fiber().Request().SetBody(body)
+	c.Fiber().Request().Header.Del("Content-Encoding")
+	pay := object.PayURL(c.Host(), org)
+	c.SetHeader("X-Hanzo-Fallback", to)
+	c.SetHeader("X-Hanzo-Usage-Reason", code)
+	c.SetHeader("X-Hanzo-Usage", "limited")
+	c.SetHeader("X-Hanzo-Topup-Url", pay)
+	if upgrade != "" {
+		c.SetHeader("X-Hanzo-Upgrade-Url", pay+"/cart?plan="+url.QueryEscape(upgrade))
+	} else {
+		c.SetHeader("X-Hanzo-Upgrade-Url", pay)
+	}
+	return true
 }
 
 // denied writes the gate's refusal. checkBalance decides WHICH: a known-insufficient
@@ -540,17 +569,18 @@ func modelName(id string) string {
 	return id
 }
 
-// fallback reports whether a refused request is answered by another model instead:
-// a conversation the plan can no longer pay for (the free model answers) or whose
-// model has used its share of the plan (its Hanzo fallback answers), from a
-// signed-in app or a client that sent X-Hanzo-Fallback: allow. An API key gets the refusal unless it asks — a
-// program is told, not silently answered by another model.
-func fallback(c *zip.Ctx, path string, hit *object.LimitHit) bool {
+// fallback reports whether a refused request is answered by another model instead.
+// It is the one rule for every refusal for want of payment — the plan's allowance
+// used, a paid plan required, a model past its share, an empty wallet — and it holds
+// for a conversation from a signed-in app or a client that sent X-Hanzo-Fallback:
+// allow. An API key gets the refusal unless it asks: a program is told, not silently
+// answered by another model.
+func fallback(c *zip.Ctx, path, code string) bool {
 	if !controllers.ChatPath(path) {
 		return false
 	}
-	switch hit.Code {
-	case object.CodePlanAllowance, object.CodePaidPlan, object.CodeModelCap:
+	switch code {
+	case object.CodePlanAllowance, object.CodePaidPlan, object.CodeModelCap, object.CodeInsufficientBalance:
 	default:
 		return false
 	}

@@ -17,7 +17,6 @@ package routers
 import (
 	stdcontext "context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"testing"
 
@@ -81,9 +80,6 @@ func TestTheDefaultIdTakesThePaidLadderOnlyWhenTheCallerFundsIt(t *testing.T) {
 		},
 		"no plan": func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 			return nil, nil, nil
-		},
-		"unreadable plan": func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-			return nil, nil, errors.New("store unreadable")
 		},
 	} {
 		object.SetLimits(limit)

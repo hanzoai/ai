@@ -207,3 +207,37 @@ func TestARefusalOffersCreditsToAPayerWhoHoldsThem(t *testing.T) {
 		t.Errorf("a payer with credits was asked to top up: %s", p.said())
 	}
 }
+
+// A conversation the WALLET cannot pay for goes on in limited mode exactly as one the
+// plan cannot: free plan, $0, a premium model in chat — the free model answers, the
+// reason is insufficient_balance, and the response names the ways out. A program that
+// did not ask still gets its 402.
+func TestAnEmptyWalletInChatFallsBackToTheFreeModel(t *testing.T) {
+	gateWith(t, 0)
+	freeModels(t, controllers.FreeModel)
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return nil, nil, nil // no plan: the wallet decides
+	})
+	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+		body([]byte(`{"model":"anthropic/claude-haiku-4.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
+	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != controllers.FreeModel ||
+		p.replied("X-Hanzo-Usage-Reason") != object.CodeInsufficientBalance || p.replied("X-Hanzo-Usage") != "limited" {
+		t.Fatalf("empty wallet in chat: %d fallback %q reason %q usage %q (%s)", p.status(),
+			p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.replied("X-Hanzo-Usage"), p.said())
+	}
+	if !strings.Contains(p.handed(), `"model":"`+controllers.FreeModel+`"`) {
+		t.Errorf("the handler was handed %s, want the free model", p.handed())
+	}
+	if p.replied("X-Hanzo-Topup-Url") == "" || p.replied("X-Hanzo-Upgrade-Url") == "" {
+		t.Errorf("topup %q upgrade %q, want both ways out named", p.replied("X-Hanzo-Topup-Url"), p.replied("X-Hanzo-Upgrade-Url"))
+	}
+
+	if p := chatWith("anthropic/claude-haiku-4.5", "/v1/chat/completions"); p.status() != http.StatusPaymentRequired ||
+		!strings.Contains(p.said(), object.CodeInsufficientBalance) {
+		t.Fatalf("a program that did not ask: %d, want its 402 insufficient_balance (%s)", p.status(), p.said())
+	}
+	if p := ask(http.MethodPost, "/v1/embeddings").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+		body([]byte(`{"model":"anthropic/claude-haiku-4.5","input":"hi"}`)).through(BalanceGateFilter); p.status() != http.StatusPaymentRequired {
+		t.Fatalf("a non-chat call: %d, want its 402 (%s)", p.status(), p.said())
+	}
+}

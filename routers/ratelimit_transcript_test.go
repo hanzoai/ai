@@ -32,7 +32,7 @@ import (
 )
 
 // sessions states which credential opened which transcript id, in the place the
-// filter asks: controllers.TranscriptAdmitted, whose ownership rules have their own
+// filter asks: controllers.TranscriptModel, whose ownership rules have their own
 // tests in controllers.
 func sessions(t *testing.T, opened map[string]string) {
 	t.Helper()

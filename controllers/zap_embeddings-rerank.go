@@ -211,8 +211,14 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 		out = append(out, entry)
 	}
 
-	// Meter once on the terminal path — the ONE usageRecord shape.
+	// Meter once on the terminal path — the ONE usageRecord shape. The query and
+	// every document were embedded, so their tokens are billed (estimated: the
+	// embedder reports none here).
 	if authUser != nil {
+		tokens := len(raw.Query)/4 + 1
+		for _, d := range docs {
+			tokens += len(d)/4 + 1
+		}
 		rec := &usageRecord{
 			Owner:        authUser.Owner,
 			Organization: authUser.Owner,
@@ -223,6 +229,8 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 			Premium:      isPremium,
 			Status:       "success",
 			RequestID:    uuid.NewString(),
+			PromptTokens: tokens,
+			TotalTokens:  tokens,
 		}
 		rec.bind(ctx, authUser)
 		// One goroutine for both, in this order. They share the record — recordUsage

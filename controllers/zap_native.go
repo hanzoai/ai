@@ -627,5 +627,12 @@ func zapResolveAuth(auth string, requestModel string) (*object.Provider, *iam.Us
 	if route := resolveModelRoute(requestModel); route != nil {
 		upstreamModel = route.upstreamModel
 	}
-	return provider, nil, upstreamModel, nil
+	// A provider key bills the org that owns its row, on this wire as on HTTP: every
+	// call that spends the shared upstream key bills someone (providerKeyBillingUser).
+	// A row with no owner is refused rather than served for free.
+	user, err := providerKeyBillingUser(provider)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return provider, user, upstreamModel, nil
 }

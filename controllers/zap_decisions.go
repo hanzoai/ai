@@ -130,17 +130,21 @@ func zapDecisionPrincipal(token, model, asked string) (*iam.User, string, bool, 
 		}
 		return user, account.LedgerOrg(effective, user.Owner, util.IsSuperAdmin(user)), premium, nil
 	}
-	provider, user, _, err := zapResolveAuth("Bearer "+token, model)
-	if err != nil {
-		return nil, "", false, err
-	}
-	if user == nil {
-		if user, err = providerKeyBillingUser(provider); err != nil {
+	// A vendor key pays as the org that owns its row, and its balance is asked here:
+	// it carries no request the router's gate saw.
+	if provider, err := object.GetProviderByProviderKey(token, "en"); err == nil && provider != nil {
+		user, err := providerKeyBillingUser(provider)
+		if err != nil {
 			return nil, "", false, err
 		}
 		if err := enforceBalanceGate(context.Background(), user, user.Owner, model); err != nil {
 			return nil, "", false, err
 		}
+		return user, user.Owner, premium, nil
+	}
+	_, user, _, err := zapResolveAuth("Bearer "+token, model)
+	if err != nil {
+		return nil, "", false, err
 	}
 	return user, user.Owner, premium, nil
 }

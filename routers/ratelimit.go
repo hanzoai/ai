@@ -110,7 +110,25 @@ func (rl *RateLimiter) Allow(apiKey string) bool {
 // admitted traffic, never by one caller's refusals.
 //
 // One request in Metrics, however many lanes it is counted on.
+//
+// On a host with shared counts (object.SetCounters) every lane is a bucket every
+// replica spends from, so a restart or a second replica hands nobody a fresh rate.
 func (rl *RateLimiter) Admit(lanes []address.Bucket) bool {
+	if _, take := object.Counts(); take != nil {
+		ok := true
+		for _, l := range lanes {
+			if !take(context.Background(), "rate:"+l.Key, rl.perMin(l.Key, l.Scale)) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			rl.totalAllowed.Add(1)
+		} else {
+			rl.totalDenied.Add(1)
+		}
+		return ok
+	}
 	ok := true
 	for _, l := range lanes {
 		entry := rl.getOrCreate(l.Key, l.Scale)
@@ -140,6 +158,9 @@ func one(key string) []address.Bucket { return []address.Bucket{{Key: key, Scale
 // named request would spend a second one from its own; Open asks the same question
 // and leaves the accounting to whichever lane ends up carrying the request.
 func (rl *RateLimiter) Open(apiKey string) bool {
+	if _, take := object.Counts(); take != nil {
+		return true // the shared bucket is spent at Admit; asking it would spend a token
+	}
 	rl.mu.RLock()
 	entry, ok := rl.keys[apiKey]
 	rl.mu.RUnlock()
@@ -157,9 +178,22 @@ func (rl *RateLimiter) Open(apiKey string) bool {
 func (rl *RateLimiter) RetryAfter(lanes []address.Bucket) int {
 	wait := 1
 	for _, l := range lanes {
+		if _, take := object.Counts(); take != nil {
+			wait = max(wait, int(math.Ceil(60/float64(rl.perMin(l.Key, l.Scale)))))
+			continue
+		}
 		wait = max(wait, rl.retryAfter(l.Key))
 	}
 	return wait
+}
+
+// perMin is a lane's rate: its tier's requests a minute times the lane's scale.
+func (rl *RateLimiter) perMin(key string, scale int) int {
+	n := tierLimits[rl.tierFunc(key)]
+	if n == 0 {
+		n = tierLimits[TierZenFree]
+	}
+	return n * max(scale, 1)
 }
 
 // retryAfter returns the number of seconds until the next token is available for
@@ -306,9 +340,12 @@ func tierRates() string {
 }
 
 // continues answers whether a request continues a session counted at its open
-// (controllers.TranscriptAdmitted), indirected so the filter's tests state the
-// sessions directly.
-var continues = controllers.TranscriptAdmitted
+// (controllers.TranscriptModel names one), indirected so the filter's tests state
+// the sessions directly.
+var continues = func(method, path, auth string) bool {
+	_, ok := controllers.TranscriptModel(method, path, auth)
+	return ok
+}
 
 // RateLimitFilter holds every /v1 request to a rate and a quota.
 //
@@ -337,7 +374,7 @@ func RateLimitFilter(c *zip.Ctx) error {
 	// counted once, at its open — a push every chunk_ms would spend the free rate's
 	// burst in three seconds and its 8h quota in a minute of speech. The session's
 	// own bounds hold it instead: max_bytes a push, max_seconds of audio, the idle
-	// timeout (controllers.TranscriptAdmitted).
+	// timeout (controllers.TranscriptModel).
 	if continues(c.Method(), path, c.Header("Authorization")) {
 		return c.Continue()
 	}
@@ -508,41 +545,26 @@ func extractAPIKey(c *zip.Ctx) string {
 
 // ── Tier resolution ─────────────────────────────────────────────────────────
 
-// DefaultTierFunc resolves a rate-limit key to a Tier using a three-level
-// lookup. The key is whatever limitSubject named the caller: an IAM org slug when a
-// billing subject resolved, a confirmed page key, or a digest of the address the
-// caller arrived from when neither. All of them flow through the same path:
+// DefaultTierFunc resolves a rate-limit key to a Tier. The key is whatever
+// limitSubject named the caller: an IAM org slug when a billing subject resolved, a
+// confirmed page key, or a digest of the address the caller arrived from when
+// neither. The tier is the caller's plan as commerce records it, and nothing else:
 //
-//  1. Static env-var overrides (RATE_LIMIT_TIERS) -- highest priority, for
-//     operator-managed mappings. Supports exact and prefix matching (works for
-//     both org slugs like "acme=zen-enterprise" and key prefixes like "sk-0d2eb").
-//  2. Commerce tier cache -- backed by async lookups to Commerce billing API
+//  1. Commerce tier cache -- backed by async lookups to Commerce billing API
 //     (GET /v1/billing/tier?user=<org>). On cache hit, the cached tier is
 //     returned immediately. On cache miss, TierZenFree is returned and a
 //     background goroutine populates the cache so the next request uses the
 //     correct tier.
-//  3. TierZenFree -- default when no override or cache entry exists.
+//  2. TierZenFree -- default when no cache entry exists.
+//
+// There is no operator override: a tier names a recorded subscription, so no
+// configuration can grant one.
 //
 // This function never blocks on network I/O. Commerce lookups happen
 // asynchronously; the worst case is that a new org's first few requests
 // are rate-limited at the free tier until the cache is populated.
 func DefaultTierFunc(key string) Tier {
-	// Level 1: static env-var overrides (highest priority).
-	tierMap := parseTierConfig()
-	if tierMap != nil {
-		// Exact match first.
-		if t, ok := tierMap[key]; ok {
-			return t
-		}
-		// Prefix match: "sk-0d2eb=zen-enterprise" matches "sk-0d2eb9cfafd0...".
-		for prefix, t := range tierMap {
-			if strings.HasPrefix(key, prefix) {
-				return t
-			}
-		}
-	}
-
-	// Level 2: Commerce-backed tier cache (keyed by org slug). Only an ACCOUNT has a
+	// Commerce-backed tier cache (keyed by org slug). Only an ACCOUNT has a
 	// plan, so only a key that could name one is asked about: the buckets
 	// limitSubject gives callers it cannot name carry a colon, which an org slug
 	// cannot, so a lookup for one is a question about nobody — and asking it once per
@@ -555,34 +577,9 @@ func DefaultTierFunc(key string) Tier {
 		tierCache.refreshAsync(key)
 	}
 
-	// Level 3: default.
 	return TierZenFree
 }
 
-// parseTierConfig reads RATE_LIMIT_TIERS from env (or the router app.conf).
-// Format: "prefix1=tier1,prefix2=tier2"
-// Accepts both canonical zen-* names and legacy names (mapped automatically).
-func parseTierConfig() map[string]Tier {
-	raw := strings.TrimSpace(conf.GetConfigString("RATE_LIMIT_TIERS"))
-	if raw == "" {
-		return nil
-	}
-
-	result := make(map[string]Tier)
-	for entry := range strings.SplitSeq(raw, ",") {
-		parts := strings.SplitN(strings.TrimSpace(entry), "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		rawTier := strings.TrimSpace(parts[1])
-
-		// Map legacy tier names to canonical zen-* names, then validate.
-		tier := mapPlanToTier(rawTier)
-		result[key] = tier
-	}
-	return result
-}
 
 // ── Commerce-backed tier cache ──────────────────────────────────────────────
 

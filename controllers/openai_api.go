@@ -33,6 +33,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/account"
+	"github.com/hanzoai/decimal"
 
 	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/conf"
@@ -1205,6 +1206,26 @@ func (r *usageRecord) shownID() string {
 	return r.RequestID
 }
 
+// paidBy names who pays for a recorded call when it is not the wallet: the plan
+// that covered it, or the platform for a free model it absorbs. "" is the wallet.
+func paidBy(record *usageRecord) string {
+	switch {
+	case record.plan != nil:
+		return object.PaysPlan
+	case usageFree(record):
+		return "hanzo"
+	}
+	return ""
+}
+
+// nanoUSD renders a nano-dollar cost as exact decimal USD, "" when unknown.
+func nanoUSD(nano *int64) string {
+	if nano == nil {
+		return ""
+	}
+	return decimal.New(*nano, 9).String()
+}
+
 // usageTimeout bounds one debit's hand-off to the ledger. The native recorder
 // answers once the debit is durably posted, which is milliseconds; a ledger that
 // has not answered in this long has failed, and the failure is logged with the
@@ -1338,6 +1359,10 @@ func recordUsage(record *usageRecord) error {
 			Cash:      record.cash,
 			RequestID: record.RequestID,
 			Ref:       record.ref,
+			Class:     ClassOf(record.Model),
+			Units:     int64(record.TotalTokens),
+			CostUSD:   nanoUSD(providerCostNano(record)),
+			PaidBy:    paidBy(record),
 		}); err != nil {
 			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
 			return err

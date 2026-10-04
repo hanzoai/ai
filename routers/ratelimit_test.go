@@ -212,11 +212,14 @@ func TestIsRateLimitExempt(t *testing.T) {
 	}
 }
 
-func TestDefaultTierFuncUnset(t *testing.T) {
-	// With no RATE_LIMIT_TIERS set, everything should be zen-free tier.
-	tier := DefaultTierFunc("sk-anything")
-	if tier != TierZenFree {
-		t.Errorf("expected TierZenFree, got %q", tier)
+// No configuration grants a tier: RATE_LIMIT_TIERS naming an org as enterprise
+// changes nothing, because a tier is a recorded subscription.
+func TestNoConfigurationGrantsATier(t *testing.T) {
+	t.Setenv("RATE_LIMIT_TIERS", "hanzo=zen-enterprise,sk-=zen-custom")
+	for _, key := range []string{"hanzo", "sk-anything", "admin"} {
+		if tier := DefaultTierFunc(key); tier != TierZenFree {
+			t.Errorf("%s: tier %q, want zen-free — configuration must not grant a tier", key, tier)
+		}
 	}
 }
 

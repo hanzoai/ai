@@ -273,13 +273,13 @@ func TestAnUnresolvedCredentialContinuesNothing(t *testing.T) {
 	t.Cleanup(func() { forget(id) })
 
 	for _, auth := range []string{"", "Bearer ", "Bearer not-a-token"} {
-		if TranscriptAdmitted(http.MethodPost, transcriptPath+"/"+id, auth) {
+		if admitted(http.MethodPost, transcriptPath+"/"+id, auth) {
 			t.Errorf("credential %q continued a session it never opened", auth)
 		}
 	}
 }
 
-// TestTheOpenersCredentialContinuesItsSession is TranscriptAdmitted end to end,
+// TestTheOpenersCredentialContinuesItsSession is TranscriptModel end to end,
 // through the same credential resolution the push handler runs: the opener's
 // signed token continues the session, a colleague's does not, and a stale one or
 // a read does not either.
@@ -294,19 +294,19 @@ func TestTheOpenersCredentialContinuesItsSession(t *testing.T) {
 	bob := authtest.Bearer(t, iam.User{Owner: "acme", Name: "bob"})
 	path := transcriptPath + "/" + id
 
-	if !TranscriptAdmitted(http.MethodPost, path, alice) {
+	if !admitted(http.MethodPost, path, alice) {
 		t.Fatal("the opener's push was not recognised as continuing its session")
 	}
-	if !TranscriptAdmitted(http.MethodDelete, path, alice) {
+	if !admitted(http.MethodDelete, path, alice) {
 		t.Fatal("the opener's close was not recognised as continuing its session")
 	}
-	if TranscriptAdmitted(http.MethodPost, path, bob) {
+	if admitted(http.MethodPost, path, bob) {
 		t.Fatal("SECURITY: a colleague's credential continued acme/alice's session")
 	}
-	if TranscriptAdmitted(http.MethodGet, path, alice) {
+	if admitted(http.MethodGet, path, alice) {
 		t.Fatal("a read continued a session")
 	}
-	if TranscriptAdmitted(http.MethodPost, transcriptPath, alice) {
+	if admitted(http.MethodPost, transcriptPath, alice) {
 		t.Fatal("an open was read as a continuation; it is the request a transcript is counted as")
 	}
 }
@@ -473,4 +473,10 @@ func TestAbandonedSessionsDoNotShutTheDoorForGood(t *testing.T) {
 		t.Fatalf("the ceiling is still full of sessions nobody is using: %v — the endpoint never admits again", refused)
 	}
 	release()
+}
+
+// admitted is whether TranscriptModel names the session a request continues.
+func admitted(method, path, auth string) bool {
+	_, ok := TranscriptModel(method, path, auth)
+	return ok
 }

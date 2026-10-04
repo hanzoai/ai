@@ -51,11 +51,8 @@ type UsageEvent struct {
 	// one subject; the plan's per-member limits count by this.
 	Actor string
 	// Plan says the caller's plan covered this call (LimitGrant): it debits no wallet,
-	// the plan having counted it when it was admitted.
-	//
-	// A free call carries nothing here either. Its unit was taken at admission
-	// (SpentFunc), before any model was reached, so the record of a call is money
-	// alone and no count can ride on it.
+	// the plan having counted it when it was admitted. It is still recorded: every
+	// served call is a row, free ones included (PaidBy).
 	Plan bool
 	// Cash says only the wallet's cash pays: the model's policy refuses granted
 	// credit (LimitGrant.Cash), so the host draws nothing from a grant for it.
@@ -75,6 +72,18 @@ type UsageEvent struct {
 	// answer was lost carries the same Ref and is charged once, while two debits —
 	// two records, a hedge's loser and its winner included — never share one.
 	Ref string
+	// Class is the model's class — premium, ours or free — as the usage policy
+	// reads it.
+	Class string
+	// Units is what the call consumed in its model's unit: tokens, in and out.
+	Units int64
+	// CostUSD is what the call cost us upstream, exact decimal USD; empty when the
+	// provider states no cost. A free call has a cost too, and it is ours.
+	CostUSD string
+	// PaidBy names who pays when it is not the wallet: "plan" (the caller's plan or
+	// a free cap covered it) or "hanzo" (a free model, absorbed by the platform).
+	// Empty: the wallet pays, and the ledger records which part of it did.
+	PaidBy string
 }
 
 // TierReaderFunc returns the subject's commerce subscription-plan NAME

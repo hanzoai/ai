@@ -184,13 +184,14 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 		}
 	}
 
-	// 5. Reader error: fails OPEN, and states no standing it does not have.
+	// 5. Reader error: fails CLOSED — a gate that cannot decide does not admit — and
+	// states no standing it does not have.
 	object.SetSpent(func(_ stdcontext.Context, _, _ string) (object.Standing, error) {
 		return object.Standing{Spent: true, Limit: 50}, errors.New("store unreachable")
 	})
-	if p := call(); p.status() != http.StatusOK || p.replied("X-RateLimit-Limit") != "" {
-		t.Errorf("an allowance read error: status %d, X-RateLimit-Limit %q — it must fail open and say nothing",
-			p.status(), p.replied("X-RateLimit-Limit"))
+	if p := call(); p.status() != http.StatusServiceUnavailable || p.replied("X-RateLimit-Limit") != "" || !strings.Contains(p.said(), object.CodeUsageUnavailable) {
+		t.Errorf("an allowance read error: status %d, X-RateLimit-Limit %q (%s) — it must refuse 503 usage_unavailable and say nothing else",
+			p.status(), p.replied("X-RateLimit-Limit"), p.said())
 	}
 }
 

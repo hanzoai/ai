@@ -61,6 +61,9 @@ const (
 	// read is never spent — but it is retryable and must NOT tell a funded caller to
 	// add credits. HTTP 503.
 	CodeBalanceUnavailable = "balance_unavailable"
+	// CodeUsageUnavailable: the usage limits or the free allowance could NOT be read.
+	// Denied — a gate that cannot decide does not admit — and retryable. HTTP 503.
+	CodeUsageUnavailable = "usage_unavailable"
 )
 
 // BillingNotice is the ONE description of a spend-gate denial: the caller-facing
@@ -100,6 +103,16 @@ func BalanceUnavailable() BillingNotice {
 	return BillingNotice{
 		Message: "Unable to verify your balance right now. Please retry in a moment.",
 		Code:    CodeBalanceUnavailable,
+		Status:  http.StatusServiceUnavailable,
+	}
+}
+
+// UsageUnavailable is the denial for usage limits or a free allowance that could NOT
+// be read: fail-closed, retryable, and no wallet link — paying is not the remedy.
+func UsageUnavailable() BillingNotice {
+	return BillingNotice{
+		Message: "Unable to read your usage limits right now. Please retry in a moment.",
+		Code:    CodeUsageUnavailable,
 		Status:  http.StatusServiceUnavailable,
 	}
 }

@@ -284,15 +284,19 @@ func TestACoveredRequestMeetsNoAllowanceAndNoWallet(t *testing.T) {
 	}
 }
 
-// A plan that cannot be read covers nothing, and the request goes on as a free one:
-// free AI keeps answering and nothing is held.
-func TestAnUnreadablePlanServesAsFree(t *testing.T) {
-	gateWith(t, 0)
+// A plan that cannot be read decides nothing, and a gate that cannot decide refuses:
+// 503 usage_unavailable, retryable, with no wallet link — on a free model and a priced
+// one alike, so an outage of the counts is never a way past them.
+func TestAnUnreadablePlanRefuses(t *testing.T) {
+	gateWith(t, 500)
 	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		return nil, nil, errors.New("store unreadable")
 	})
-	if p := chatWith("enso", "/v1/chat/completions"); p.status() == http.StatusServiceUnavailable || p.status() == http.StatusTooManyRequests {
-		t.Errorf("unreadable plan: %d, want the request served as free (%s)", p.status(), p.said())
+	for _, model := range []string{"enso", "gpt-4o"} {
+		p := chatWith(model, "/v1/chat/completions")
+		if p.status() != http.StatusServiceUnavailable || !strings.Contains(p.said(), object.CodeUsageUnavailable) {
+			t.Errorf("unreadable plan on %s: %d, want 503 usage_unavailable (%s)", model, p.status(), p.said())
+		}
 	}
 }
 
