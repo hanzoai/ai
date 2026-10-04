@@ -160,6 +160,10 @@ func TestPricingInfoPublishesWhatWasFound(t *testing.T) {
 	if pricingInfo(modelPrice{InputPerMillion: math.Inf(1)}, true) != nil {
 		t.Error("a rate that is not a number states no price")
 	}
+	router := pricingInfo(modelPrice{InputPerMillion: 6, OutputPerMillion: 24, Variable: true}, true)
+	if router == nil || !router.Variable || router.InputPerMillion != 6 || router.OutputPerMillion != 24 {
+		t.Errorf("a variable SKU must list its ceiling marked variable, got %+v", router)
+	}
 }
 
 // TestPricingKeysNameTheirUnit pins the wire keys. The standard keys are OpenRouter's,
@@ -256,15 +260,17 @@ func TestListedPriceIsBilledPrice(t *testing.T) {
 
 // A router OpenRouter prices at -1 routes each call to some SKU of its choosing. It is
 // premium and paid-floored, its hold reserves the dearest rate in the catalog, it lists
-// no per-token rate, and a call bills at the cost its answer states times the margin.
+// that ceiling marked variable, and a call bills at the cost its answer states times
+// the margin.
 func TestVariableRouterBillsStatedCost(t *testing.T) {
 	byID := withListing(t)
 	router, ok := byID["openrouter/auto"]
 	if !ok {
 		t.Fatal("openrouter/auto is not listed")
 	}
-	if !router.Premium || router.Pricing != nil {
-		t.Errorf("openrouter/auto lists premium=%v pricing=%+v, want premium and no rate", router.Premium, router.Pricing)
+	want := modelPricingInfo{Prompt: "0.000006", Completion: "0.000024", InputPerMillion: 6, OutputPerMillion: 24, Variable: true}
+	if !router.Premium || router.Pricing == nil || *router.Pricing != want {
+		t.Errorf("openrouter/auto lists premium=%v pricing=%+v, want premium and the ceiling %+v marked variable", router.Premium, router.Pricing, want)
 	}
 
 	zm, ok := familyLookup("openrouter/auto")

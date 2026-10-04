@@ -626,11 +626,13 @@ million input tokens — the same row in `model_pricing.go`,
 - **A listed price is the billed price**: `build` prices every row with
   `getModelPriceForOrgOK(id, "")`, the lookup billing charges from, so a bare id an
   OpenRouter alias serves lists the SKU's retail, not its config figure. No price
-  is listed where billing has none, nor for a variable SKU.
-- **OpenRouter's routers are variable** (priced `-1`, e.g. `openrouter/auto`):
-  premium, paid-floored, held at the catalog's dearest rate on each side, and billed
-  at the answer's `usage.cost` × margin (the ceiling when no cost is stated). A
-  catalog with nothing priced drops them.
+  is listed where billing has none.
+- **OpenRouter's routers are variable** (priced `-1`, e.g. `openrouter/auto`,
+  `typesafe/jev-router`): premium, paid-floored, held at the catalog's dearest rate
+  on each side, and billed at the answer's `usage.cost` × margin (the ceiling when no
+  cost is stated). `/v1/models` lists that ceiling with `"variable": true` in the
+  pricing block: the most a token bills, never unpriced or $0. A catalog with
+  nothing priced drops them.
 - **`canonical_slug` identifies; `id` routes**: `owned_by/id` (`hanzo/kai`), the id
   when already qualified, absent for an unbranded passthrough and when another
   route owns that spelling. A published slug is refused (400), never taken by a

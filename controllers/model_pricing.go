@@ -74,22 +74,27 @@ func (p modelPrice) costOutputPerMillion() float64 { return p.CostOutPerMillion 
 // price table here and hanzoai/pricing keep. No per-million figure sits under a
 // bare `input`/`output`: Vercel-style catalogs use those keys per token, so a
 // reader would price the model a million times over.
+//
+// Variable marks a router billed at what serves each call: the rates are then the
+// most a token can bill, the ceiling its hold reserves, and a call bills its
+// serving model's price at our margin, never more than these.
 type modelPricingInfo struct {
 	Prompt           string  `json:"prompt"`             // USD per input token, decimal string
 	Completion       string  `json:"completion"`         // USD per output token, decimal string
 	InputPerMillion  float64 `json:"input_per_million"`  // USD per 1M input tokens
 	OutputPerMillion float64 `json:"output_per_million"` // USD per 1M output tokens
+	Variable         bool    `json:"variable,omitempty"` // the rates are a ceiling; each call bills what served it
 }
 
 // pricingInfo projects an internal modelPrice into the public pricing block, or
 // returns nil (→ dropped by omitempty) when nobody stated a price. ok is the whole
 // question: it reports that a real per-model entry was FOUND, and a found price of
 // zero is a price — the one a caller most needs to see, since it says the route is
-// free. Only a model no source names has its pricing block dropped, and so does one
-// with no per-token rate to state: a variable SKU, which bills what served each call,
-// and a rate that is not a number (a YAML `.inf`).
+// free. A variable SKU lists the ceiling its hold reserves, marked variable, so a
+// billed model never reads as unpriced. Only a model no source names has its pricing
+// block dropped, and so does a rate that is not a number (a YAML `.inf`).
 func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
-	if !ok || p.Variable || !finite(p.InputPerMillion) || !finite(p.OutputPerMillion) {
+	if !ok || !finite(p.InputPerMillion) || !finite(p.OutputPerMillion) {
 		return nil
 	}
 	return &modelPricingInfo{
@@ -97,6 +102,7 @@ func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
 		Completion:       perToken(p.OutputPerMillion),
 		InputPerMillion:  p.InputPerMillion,
 		OutputPerMillion: p.OutputPerMillion,
+		Variable:         p.Variable,
 	}
 }
 
