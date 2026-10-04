@@ -31,7 +31,7 @@ func TestEveryZapWriteSaysWhoseRowItIs(t *testing.T) {
 	// check the row names the caller, or derive the scope from the principal.
 	says := regexp.MustCompile(`theirOrg\(|themselves\(|zapReachable\(|storeFor\(|` +
 		`zapKSFVScopedOwner\(|SuperAdmin\(|zapWrite\(|zapIsCurrentUser\(|` +
-		`zapMemoryIdentity\(|zapRPSOrg\(|user\.Owner|user\.Name|sa\.Owner`)
+		`zapMemoryIdentity\(|zapRPSRequireOrgAdmin\(|user\.Owner|user\.Name|sa\.Owner`)
 	writes := regexp.MustCompile(`object\.(Add|Update|Delete)\w+\(`)
 
 	// Handlers that store a row and answer for it another way. Each is here

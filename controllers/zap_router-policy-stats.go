@@ -49,6 +49,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
 	"github.com/luxfi/zap"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -98,14 +99,60 @@ func init() {
 
 // ── Shared seams (identity + response envelope parity) ───────────────────
 
-// zapRPSOrg mirrors GetOrg for the ZAP path: the org is the verified principal's
-// Owner, never a client field. No verified principal → the IAM_ORG default (as
-// GetOrg does when there is no principal).
-func zapRPSOrg(user *iam.User) string {
-	if user != nil && user.Owner != "" {
-		return user.Owner
+// zapRPSScope resolves the org a router-config request acts in and whether the
+// caller administers it — the org GetOrg gives the HTTP surface, so the policy an
+// admin edits is the policy the router reads for that org's traffic.
+//
+// The org is the X-Org-Id the request carries when it names the caller's own org,
+// an org the caller's SIGNED `orgs` claim admits (account.EffectiveOrg), or any
+// org for a SuperAdmin; with none it is the caller's own org, and with no verified
+// principal the IAM_ORG default. Administering it is the row's admin flag in the
+// caller's own org, the claim's owner or admin role in a member org, and always
+// for a SuperAdmin. An org the claim does not admit is refused with
+// account.ErrOrgForbidden — never answered with another org's settings.
+func zapRPSScope(ctx context.Context, auth string) (user *iam.User, org string, admin bool, err error) {
+	user = zapPrincipal(auth)
+	if user == nil || user.Owner == "" {
+		return user, conf.GetConfigString("IAM_ORG"), util.IsAdmin(user), nil
 	}
-	return conf.GetConfigString("IAM_ORG")
+	requested := gatewayHeader(ctx, "X-Org-Id")
+	switch {
+	case requested == "" || requested == user.Owner:
+		return user, user.Owner, util.IsAdmin(user), nil
+	case util.IsSuperAdmin(user):
+		return user, requested, true, nil
+	}
+	var orgs []account.OrgRef
+	if token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer ")); isJwtToken(token) {
+		if claims, perr := object.ParseAndValidateJWT(token); perr == nil {
+			orgs = claims.Orgs
+		}
+	}
+	if org, err = account.EffectiveOrg(user.Owner, orgs, requested); err != nil {
+		return user, "", false, err
+	}
+	for _, o := range orgs {
+		if o.Org == org {
+			admin = o.Role == "owner" || o.Role == "admin"
+		}
+	}
+	return user, org, admin, nil
+}
+
+// zapRPSRequireOrgAdmin is zapRPSScope for a handler that changes or discloses an
+// org's router settings: a selection the claim refuses answers 403, and so does a
+// caller who does not administer the org (preview mode passes, as zapRequireAdmin).
+func zapRPSRequireOrgAdmin(ctx context.Context, auth string) (*iam.User, string, *zap.Message) {
+	user, org, admin, err := zapRPSScope(ctx, auth)
+	if err != nil {
+		msg, _ := zapError(http.StatusForbidden, "auth:this organization is not available to this principal")
+		return nil, "", msg
+	}
+	if !admin && !conf.IsPreviewMode() {
+		msg, _ := zapError(http.StatusForbidden, "auth:this operation requires admin privilege")
+		return nil, "", msg
+	}
+	return user, org, nil
 }
 
 // zapRPSRequireSuperAdmin mirrors ApiController.RequireSuperAdmin: no principal →
@@ -141,24 +188,23 @@ func zapRPSRouterAdminAuthorized(auth string) (*iam.User, *zap.Message) {
 
 // ── router policy ────────────────────────────────────────────────────────
 
-func zapGetRouterPolicyHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user, deny := zapRequireAdmin(auth)
+func zapGetRouterPolicyHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	_, org, deny := zapRPSRequireOrgAdmin(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
-	policy, err := resolvedRouterPolicy(zapRPSOrg(user))
+	policy, err := resolvedRouterPolicy(org)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
 	return zapOk(policy)
 }
 
-func zapUpdateRouterPolicyHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRequireAdmin(auth)
+func zapUpdateRouterPolicyHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	_, org, deny := zapRPSRequireOrgAdmin(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
-	org := zapRPSOrg(user)
 	if org == "" {
 		return zapError(http.StatusOK, "auth:Please sign in first")
 	}
@@ -323,8 +369,11 @@ func zapPublishRouterArtifactMetaHandler(_ context.Context, auth string, body []
 
 // ── routing defaults ─────────────────────────────────────────────────────
 
-func zapGetRoutingDefaultsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	org := zapRPSOrg(zapPrincipal(auth))
+func zapGetRoutingDefaultsHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	_, org, _, err := zapRPSScope(ctx, auth)
+	if err != nil {
+		return zapError(http.StatusForbidden, "auth:this organization is not available to this principal")
+	}
 
 	autoActive := false
 	if cfg := GetModelConfig(); cfg != nil {
@@ -435,23 +484,21 @@ func zapGetTrafficGlobeHandler(_ context.Context, _ string, body []byte) (*zap.M
 
 // ── training contribution opt-in ─────────────────────────────────────────
 
-func zapGetTrainingContributionHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user, deny := zapRequireAdmin(auth)
+func zapGetTrainingContributionHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	_, org, deny := zapRPSRequireOrgAdmin(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
-	org := zapRPSOrg(user)
 	return zapOk(trainingContributionBody{
 		Enabled: object.GetCachedOrgTrainingContribution(org) == object.TrainingContributionEnabled,
 	})
 }
 
-func zapUpdateTrainingContributionHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRequireAdmin(auth)
+func zapUpdateTrainingContributionHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	_, org, deny := zapRPSRequireOrgAdmin(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
-	org := zapRPSOrg(user)
 	if org == "" {
 		return zapError(http.StatusOK, "auth:Please sign in first")
 	}

@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -50,8 +51,12 @@ func (c *ApiController) RouterConfigBridge() {
 	// fall back to — replaying an unclaimed path through the router would dispatch
 	// straight back here, forever. The registry is the only answer available at this
 	// seam, which is exactly what the !handled arm below reports.
+	// The org the request selects travels on the context exactly as the gateway
+	// transport carries it, so a handler scopes this request to the org the HTTP
+	// surface would (zapRPSScope), not to the credential's home org.
+	headers, _ := json.Marshal(map[string]string{"X-Org-Id": c.Header("X-Org-Id")})
 	msg, handled, err := dispatchGateway(
-		c.Context(),
+		context.WithValue(c.Context(), gatewayHeaders{}, headers),
 		nil,
 		c.Method(),
 		path,
