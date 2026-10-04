@@ -66,17 +66,21 @@ const (
 )
 
 // decisionContent is Content on the decision wire: a string, an object or an
-// array, kept as written. It and the three types like it below marshal as
+// array, kept as written. It and the two types like it below marshal as
 // json.RawMessage does — they are that type under a name that states its schema.
 type decisionContent json.RawMessage
 
-// Schema is Content as JSON Schema states it.
+// Schema is Content as a generated client can hold it: any JSON, with the three
+// forms the wire takes said in the description.
+//
+// It was an anyOf of string, object and array, and every generator turned that
+// into a wrapper type of its own, deduplicated under whichever field it met first
+// (AiDecisionSidesFalse). Python's wrapper refused a plain string for state and
+// instructions under typed construction, and read a legend's strings back as
+// wrapper instances; a plain dict handed to one became null. An open schema is the
+// one every generator types as its own "any", so a string is a string everywhere.
 func (decisionContent) Schema() map[string]any {
-	return map[string]any{"anyOf": []any{
-		map[string]any{"type": "string"},
-		map[string]any{"type": "object"},
-		map[string]any{"type": "array"},
-	}}
+	return map[string]any{"description": "A string, an object or an array, kept as written."}
 }
 
 func (c decisionContent) MarshalJSON() ([]byte, error) { return json.RawMessage(c).MarshalJSON() }
@@ -84,22 +88,20 @@ func (c *decisionContent) UnmarshalJSON(b []byte) error {
 	return (*json.RawMessage)(c).UnmarshalJSON(b)
 }
 
-// decisionOption is what a choice says about one label: Content, or null for a
-// label that speaks for itself.
-type decisionOption json.RawMessage
+// decisionLabels are a choice's labels: each mapped to what it means, or a list
+// of labels that need no description. The decision service takes both.
+type decisionLabels json.RawMessage
 
-// Schema is Content or null.
-func (decisionOption) Schema() map[string]any {
-	return map[string]any{"anyOf": []any{
-		map[string]any{"type": "string"},
-		map[string]any{"type": "object"},
-		map[string]any{"type": "array"},
-		map[string]any{"type": "null"},
-	}}
+// Schema is either form, open for the reason decisionContent's is. Declared as a
+// map alone, a list of labels was not a choice any client could send: Python's
+// question union parsed it as a map and failed on the first .items().
+func (decisionLabels) Schema() map[string]any {
+	return map[string]any{"description": "At least two labels: an object mapping each label to what it means " +
+		"(a string, an object, an array, or null), or an array of labels that need no description."}
 }
 
-func (c decisionOption) MarshalJSON() ([]byte, error)  { return json.RawMessage(c).MarshalJSON() }
-func (c *decisionOption) UnmarshalJSON(b []byte) error { return (*json.RawMessage)(c).UnmarshalJSON(b) }
+func (c decisionLabels) MarshalJSON() ([]byte, error)  { return json.RawMessage(c).MarshalJSON() }
+func (c *decisionLabels) UnmarshalJSON(b []byte) error { return (*json.RawMessage)(c).UnmarshalJSON(b) }
 
 // decisionsRequest is the body POST /v1/decisions reads. The handler reads the
 // model, names the handle, and forwards the rest verbatim; this is the shape it
@@ -150,9 +152,9 @@ type decisionSides struct {
 // decisionsChoice picks one label. The labels are bounded by the request's token
 // budget, not by a count.
 type decisionsChoice struct {
-	Type         string                    `json:"type" validate:"required" enum:"choice"`
-	Instructions decisionContent           `json:"instructions,omitempty"`
-	Criteria     map[string]decisionOption `json:"criteria" validate:"required,min=2"`
+	Type         string          `json:"type" validate:"required" enum:"choice"`
+	Instructions decisionContent `json:"instructions,omitempty"`
+	Criteria     decisionLabels  `json:"criteria" validate:"required"`
 }
 
 // decisionsScore picks a level; level i scores i.

@@ -122,8 +122,30 @@ func TestTheDecisionPathIsPublished(t *testing.T) {
 			t.Errorf("decisions request has no %s", f)
 		}
 	}
-	if _, ok := prop("ai.DecisionsNoul", "instructions")["anyOf"]; !ok || slices.Contains(required("ai.DecisionsNoul"), "instructions") {
-		t.Errorf("instructions is not optional Content: %v", prop("ai.DecisionsNoul", "instructions"))
+	// A value the wire takes in more than one form is an OPEN schema that says the
+	// forms in its description. An anyOf there made every generator wrap it in a
+	// type of its own: Python's wrapper refused a plain string state and read a
+	// legend's strings back as wrappers.
+	open := func(where string, s map[string]any) {
+		for _, k := range []string{"anyOf", "oneOf", "type", "$ref"} {
+			if _, ok := s[k]; ok {
+				t.Errorf("%s = %v, want an open schema", where, s)
+				return
+			}
+		}
+		if d, _ := s["description"].(string); d == "" {
+			t.Errorf("%s does not say the forms it takes", where)
+		}
+	}
+	open("state", prop("ai.DecisionsRequest", "state"))
+	open("noul instructions", prop("ai.DecisionsNoul", "instructions"))
+	open("choice instructions", prop("ai.DecisionsChoice", "instructions"))
+	open("choice criteria", prop("ai.DecisionsChoice", "criteria"))
+	open("noul side", prop("ai.DecisionSides", "true"))
+	open("score level", prop("ai.DecisionsScore", "criteria")["items"].(map[string]any))
+	open("legend entry", prop("ai.DecisionsAnswer", "legend")["additionalProperties"].(map[string]any))
+	if slices.Contains(required("ai.DecisionsNoul"), "instructions") {
+		t.Errorf("noul instructions are required, want optional")
 	}
 	if e := prop("ai.DecisionsChoice", "type")["enum"]; !slices.Equal(e.([]any), []any{"choice"}) {
 		t.Errorf("choice type enum = %v", e)
@@ -133,7 +155,6 @@ func TestTheDecisionPathIsPublished(t *testing.T) {
 		schema, key string
 		min, max    any
 	}{
-		{"ai.DecisionsChoice", "minProperties", 2, nil},
 		{"ai.DecisionsScore", "minItems", 1, nil},
 	}
 	for _, b := range bounds {
