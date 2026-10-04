@@ -31,6 +31,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/hanzoai/ai/internal/authtest"
+	iam "github.com/hanzoai/ai/internal/iam"
 )
 
 // ── the meter ───────────────────────────────────────────────────────────────
@@ -273,6 +276,38 @@ func TestAnUnresolvedCredentialContinuesNothing(t *testing.T) {
 		if TranscriptAdmitted(http.MethodPost, transcriptPath+"/"+id, auth) {
 			t.Errorf("credential %q continued a session it never opened", auth)
 		}
+	}
+}
+
+// TestTheOpenersCredentialContinuesItsSession is TranscriptAdmitted end to end,
+// through the same credential resolution the push handler runs: the opener's
+// signed token continues the session, a colleague's does not, and a stale one or
+// a read does not either.
+func TestTheOpenersCredentialContinuesItsSession(t *testing.T) {
+	id := "ats_" + here + "_signed"
+	liveMu.Lock()
+	live[id] = &session{org: "acme", user: "acme/alice", touched: time.Now(), release: func() {}}
+	liveMu.Unlock()
+	t.Cleanup(func() { forget(id) })
+
+	alice := authtest.Bearer(t, iam.User{Owner: "acme", Name: "alice"})
+	bob := authtest.Bearer(t, iam.User{Owner: "acme", Name: "bob"})
+	path := transcriptPath + "/" + id
+
+	if !TranscriptAdmitted(http.MethodPost, path, alice) {
+		t.Fatal("the opener's push was not recognised as continuing its session")
+	}
+	if !TranscriptAdmitted(http.MethodDelete, path, alice) {
+		t.Fatal("the opener's close was not recognised as continuing its session")
+	}
+	if TranscriptAdmitted(http.MethodPost, path, bob) {
+		t.Fatal("SECURITY: a colleague's credential continued acme/alice's session")
+	}
+	if TranscriptAdmitted(http.MethodGet, path, alice) {
+		t.Fatal("a read continued a session")
+	}
+	if TranscriptAdmitted(http.MethodPost, transcriptPath, alice) {
+		t.Fatal("an open was read as a continuation; it is the request a transcript is counted as")
 	}
 }
 

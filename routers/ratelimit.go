@@ -305,6 +305,11 @@ func tierRates() string {
 	return strings.Join(rates, ", ")
 }
 
+// continues answers whether a request continues a session counted at its open
+// (controllers.TranscriptAdmitted), indirected so the filter's tests state the
+// sessions directly.
+var continues = controllers.TranscriptAdmitted
+
 // RateLimitFilter holds every /v1 request to a rate and a quota.
 //
 // EVERY request, because the ceilings are asked about the CALLER rather than about
@@ -325,6 +330,15 @@ func RateLimitFilter(c *zip.Ctx) error {
 	// Only rate-limit API routes. Folded: the router matches case-blind, so a
 	// lowercase-literal test reads /V1/ as "not an API route".
 	if !strings.HasPrefix(strings.ToLower(path), "/v1/") {
+		return c.Continue()
+	}
+
+	// A push or close on a live transcript the caller's own credential opened was
+	// counted once, at its open — a push every chunk_ms would spend the free rate's
+	// burst in three seconds and its 8h quota in a minute of speech. The session's
+	// own bounds hold it instead: max_bytes a push, max_seconds of audio, the idle
+	// timeout (controllers.TranscriptAdmitted).
+	if continues(c.Method(), path, c.Header("Authorization")) {
 		return c.Continue()
 	}
 
