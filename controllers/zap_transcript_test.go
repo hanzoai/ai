@@ -25,8 +25,10 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -142,32 +144,36 @@ func TestSessionIsPinnedToOnePod(t *testing.T) {
 
 // ── who may push into a session ─────────────────────────────────────────────
 
-// TestASessionBelongsToTheOrgThatOpenedIt. A transcript id is a bearer of
-// nothing. Without the org check a guessed id would let one tenant push audio
-// into another's meter and read the transcript coming back — the id is in a URL,
-// which is the least protected place a secret can live.
+// TestASessionBelongsToThePrincipalThatOpenedIt. A transcript id is a bearer of
+// nothing. Without the check a guessed id would let one tenant push audio into
+// another's meter and read the transcript coming back — the id is in a URL,
+// which is the least protected place a secret can live — and one member of an
+// org read a colleague's dictation.
 //
 // The refusal is deliberately the SAME answer a missing session gets: whether an
-// id exists is not a fact another tenant is entitled to.
-func TestASessionBelongsToTheOrgThatOpenedIt(t *testing.T) {
+// id exists is not a fact another principal is entitled to.
+func TestASessionBelongsToThePrincipalThatOpenedIt(t *testing.T) {
 	id := "ats_" + here + "_owned"
 	liveMu.Lock()
-	live[id] = &session{org: "acme", touched: time.Now(), release: func() {}}
+	live[id] = &session{org: "acme", user: "acme/alice", touched: time.Now(), release: func() {}}
 	liveMu.Unlock()
 	t.Cleanup(func() { forget(id) })
 
-	mine, refusal := holderFor("acme", id)
-	if refusal != "" {
-		t.Fatalf("the owning org was refused its own session: %s", refusal)
+	if mine, code, why := findNow("acme/alice", id); mine == nil {
+		t.Fatalf("the principal that opened the session was refused it: %d %s", code, why)
 	}
-	if mine == nil {
-		t.Fatal("the owning org got no session")
+	var refusal string
+	for _, who := range []string{"acme/bob", "other/alice"} {
+		theirs, code, why := findNow(who, id)
+		if theirs != nil {
+			t.Fatalf("SECURITY: %s reached a session acme/alice opened", who)
+		}
+		if code != 404 {
+			t.Errorf("%s was refused with %d, want 404 — the status says the id is real", who, code)
+		}
+		refusal = why
 	}
-	theirs, refusal := holderFor("other", id)
-	if theirs != nil {
-		t.Fatal("SECURITY: another tenant reached a session it did not open")
-	}
-	absent, missing := holderFor("acme", "ats_"+here+"_never-existed")
+	absent, _, missing := findNow("acme/alice", "ats_"+here+"_never-existed")
 	if absent != nil {
 		t.Fatal("a session that was never opened was resolved")
 	}
@@ -187,36 +193,124 @@ func TestASessionBelongsToTheOrgThatOpenedIt(t *testing.T) {
 // sends whoever is holding it to look for an expiry bug. Every id names the
 // process that minted it, so the wrong instance can say which kind of miss it is.
 func TestAnIdFromAnotherInstanceSaysSo(t *testing.T) {
-	_, refusal := holderFor("acme", "ats_deadbeef_from-another-replica")
-	if !strings.Contains(refusal, "another instance") {
-		t.Fatalf("an id minted elsewhere answers %q — indistinguishable from an expired session", refusal)
+	_, code, refusal := findNow("acme/alice", "ats_deadbeef_from-another-replica")
+	if code != 409 || !strings.Contains(refusal, "another instance") {
+		t.Fatalf("an id minted elsewhere answers %d %q — indistinguishable from an expired session", code, refusal)
 	}
 	if here == "deadbeef" {
 		t.Skip("this process happens to be deadbeef; the case cannot be modelled")
 	}
 	// And an id that is simply unknown, in OUR namespace, is a plain miss.
-	if _, refusal := holderFor("acme", "ats_"+here+"_unknown"); strings.Contains(refusal, "another instance") {
+	if _, _, refusal := findNow("acme/alice", "ats_"+here+"_unknown"); strings.Contains(refusal, "another instance") {
 		t.Fatalf("an unknown id from this instance answers %q — the two misses are not distinguished", refusal)
 	}
 }
 
-// holderFor resolves a session for an org, returning the refusal text when it is
-// refused. It is holder()'s decision without holder()'s credential parsing, which
-// is a different subsystem's property and has its own tests.
-func holderFor(owner, tid string) (*session, string) {
+// TestAnIdleSessionIsGoneOnPush. speech collects a window untouched for
+// transcriptIdle, so a record here older than that names nothing — and with no
+// open in between to sweep it, a push would be forwarded to a window that is not
+// there and the slot held by a speaker who left. The idle bound holds on a push
+// as it does on an open.
+func TestAnIdleSessionIsGoneOnPush(t *testing.T) {
+	id := "ats_" + here + "_idle"
+	returned := 0
+	liveMu.Lock()
+	live[id] = &session{
+		org: "acme", user: "acme/alice",
+		touched: time.Now().Add(-2 * transcriptIdle),
+		release: func() { returned++ },
+	}
+	liveMu.Unlock()
+
+	if s, code, _ := findNow("acme/alice", id); s != nil || code != 404 {
+		t.Fatalf("a session idle for %v was resolved (code %d) — it outlives the window it names", 2*transcriptIdle, code)
+	}
+	liveMu.Lock()
+	_, still := live[id]
+	liveMu.Unlock()
+	if still || returned != 1 {
+		t.Fatalf("the idle session is still recorded (%v) or its slot came back %d times, want once", still, returned)
+	}
+}
+
+// TestOnlyAPushOrACloseContinuesATranscript is the shape of the request the
+// host's rate ceiling exempts. The open is the one request a transcript is
+// counted as, so it is never a continuation — and neither is the batch endpoint
+// whose name it is a prefix of, nor a read.
+func TestOnlyAPushOrACloseContinuesATranscript(t *testing.T) {
+	for _, tc := range []struct {
+		method, path, tid string
+		ok                bool
+	}{
+		{http.MethodPost, "/v1/audio/transcript/ats_x", "ats_x", true},
+		{http.MethodDelete, "/v1/audio/transcript/ats_x", "ats_x", true},
+		{http.MethodPost, "/v1/audio/transcript/ats_x/", "ats_x", true},
+		{http.MethodPost, "/v1/audio/transcript", "", false},
+		{http.MethodPost, "/v1/audio/transcript/", "", false},
+		{http.MethodGet, "/v1/audio/transcript/ats_x", "", false},
+		{http.MethodPost, "/v1/audio/transcriptions", "", false},
+		{http.MethodPost, "/v1/audio/transcriptions/ats_x", "", false},
+		{http.MethodPost, "/v1/chat/completions", "", false},
+	} {
+		tid, ok := continued(tc.method, tc.path)
+		if ok != tc.ok || (ok && tid != tc.tid) {
+			t.Errorf("continued(%s %s) = %q, %v; want %q, %v", tc.method, tc.path, tid, ok, tc.tid, tc.ok)
+		}
+	}
+}
+
+// TestAnUnresolvedCredentialContinuesNothing. The exemption is earned by the
+// credential that opened the session; a request whose credential does not
+// resolve is counted like any other, live session or not.
+func TestAnUnresolvedCredentialContinuesNothing(t *testing.T) {
+	id := "ats_" + here + "_live"
+	liveMu.Lock()
+	live[id] = &session{org: "acme", user: "acme/alice", touched: time.Now(), release: func() {}}
+	liveMu.Unlock()
+	t.Cleanup(func() { forget(id) })
+
+	for _, auth := range []string{"", "Bearer ", "Bearer not-a-token"} {
+		if TranscriptAdmitted(http.MethodPost, transcriptPath+"/"+id, auth) {
+			t.Errorf("credential %q continued a session it never opened", auth)
+		}
+	}
+}
+
+// TestAFullWindowIsRefusedBeforeTheWire. max_seconds is the window's own bound,
+// and with the host's request ceiling standing down for a session's pushes it is
+// one of the three that hold them. A push into a full window is refused here,
+// without forwarding audio to a pod that would refuse it too; the control is
+// that a window with room left is forwarded.
+func TestAFullWindowIsRefusedBeforeTheWire(t *testing.T) {
+	var hits atomic.Int32
+	pod := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"","pending":"","seconds":0}`))
+	}))
+	t.Cleanup(pod.Close)
+
+	full := &session{org: "acme", user: "acme/alice", at: pod.URL, upstream: "u1", limit: 600, metered: 600}
+	msg, err := pushTo(context.Background(), full, "ats_"+here+"_full", make([]byte, 8192))
+	if code, _ := cloudStatus(t, msg, err); code != 409 {
+		t.Fatalf("a push into a full window answered %d, want 409", code)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("a push into a full window reached the pod %d times — the bound is only speech's", n)
+	}
+
+	room := &session{org: "acme", user: "acme/alice", at: pod.URL, upstream: "u2", limit: 600, metered: 12}
+	msg, err = pushTo(context.Background(), room, "ats_"+here+"_room", make([]byte, 8192))
+	if code, _ := cloudStatus(t, msg, err); code != 200 || hits.Load() != 1 {
+		t.Fatalf("a window with room answered %d after %d forwards, want 200 after 1", code, hits.Load())
+	}
+}
+
+// findNow is find under the lock it requires, at the present moment.
+func findNow(who, tid string) (*session, uint32, string) {
 	liveMu.Lock()
 	defer liveMu.Unlock()
-	s, ok := live[tid]
-	if !ok {
-		if parts := strings.SplitN(tid, "_", 3); len(parts) == 3 && parts[0] == "ats" && parts[1] != here {
-			return nil, "this transcript was opened by another instance; open a new one"
-		}
-		return nil, "no transcript " + tid
-	}
-	if s.org != owner {
-		return nil, "no transcript " + tid
-	}
-	return s, ""
+	return find(who, tid, time.Now())
 }
 
 // ── capacity ────────────────────────────────────────────────────────────────

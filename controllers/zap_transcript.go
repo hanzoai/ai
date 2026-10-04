@@ -99,7 +99,11 @@ type session struct {
 	at       string // the speech pod that holds the window
 	upstream string // the id THAT pod knows the session by
 	metered  float64
-	touched  time.Time
+	// limit is the audio the window accepts, in seconds — the max_seconds speech
+	// answered at open. A push into a full window is refused here, before it
+	// crosses the wire to a pod that would refuse it too.
+	limit   float64
+	touched time.Time
 	// release returns the admission slot this session holds. A live transcript is
 	// CONTINUOUS load — one open session keeps a decode worker busy for as long as
 	// the meeting lasts — so the slot is taken for the session, not for a push. A
@@ -241,6 +245,7 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 	}
 	at, _ := out["at"].(string)
 	at = pinned(at, base)
+	limit, _ := out["max_seconds"].(float64)
 
 	id := "ats_" + here + "_" + uuid.NewString()
 	isPremium := false
@@ -252,7 +257,7 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 		org: authUser.Owner, user: authUser.Owner + "/" + authUser.Name,
 		model: req.Model, premium: isPremium, provider: provider.Name,
 		payer: authUser.Payer(authUser.Owner),
-		at:    at, upstream: upstream, touched: time.Now(), release: release,
+		at:    at, upstream: upstream, limit: limit, touched: time.Now(), release: release,
 	}
 	liveMu.Unlock()
 
@@ -304,6 +309,19 @@ func transcriptPush(ctx context.Context, auth string, tid string, pcm []byte) (*
 	s, msg := holder(auth, tid)
 	if msg != nil {
 		return msg, nil
+	}
+	return pushTo(ctx, s, tid, pcm)
+}
+
+// pushTo forwards a chunk into a session the caller holds. A window already at
+// its max_seconds is refused here, before the audio crosses the wire to a pod
+// that would refuse it too.
+func pushTo(ctx context.Context, s *session, tid string, pcm []byte) (*zap.Message, error) {
+	liveMu.Lock()
+	full := s.limit > 0 && s.metered >= s.limit
+	liveMu.Unlock()
+	if full {
+		return object.BuildCloudResponse(409, nil, fmt.Sprintf("transcript is at its %gs limit; close it", s.limit))
 	}
 	start := time.Now().UTC()
 	status, answer, err := transcriptCall(ctx, http.MethodPost, s.at+"/audio/transcript/"+s.upstream, nil, pcm, "application/octet-stream")
@@ -392,37 +410,92 @@ func meterTranscript(ctx context.Context, s *session, tid string, answer []byte,
 
 // holder resolves the session a call names, and refuses in a way that says which
 // kind of miss it was.
-//
-// The ORG is checked, not merely the id: an id is a bearer of nothing, and a
-// session belongs to the tenant that opened it. Without this a guessed id would
-// let one tenant push audio into another's meter — and read their transcript.
 func holder(auth string, tid string) (*session, *zap.Message) {
-	user, err := zapResolveUser(auth)
+	who, err := zapResolveUser(auth)
 	if err != nil {
 		msg, _ := object.BuildCloudResponse(401, nil, err.Error())
 		return nil, msg
 	}
-	owner := orgOf(user)
-
 	liveMu.Lock()
 	defer liveMu.Unlock()
-	s, ok := live[tid]
-	if !ok {
-		if parts := strings.SplitN(tid, "_", 3); len(parts) == 3 && parts[0] == "ats" && parts[1] != here {
-			msg, _ := object.BuildCloudResponse(409, nil, "this transcript was opened by another instance; open a new one")
-			return nil, msg
-		}
-		msg, _ := object.BuildCloudResponse(404, nil, "no transcript "+tid)
-		return nil, msg
-	}
-	if s.org != owner {
-		// Deliberately the same answer a missing session gets: whether an id
-		// exists is not a fact another tenant is entitled to.
-		msg, _ := object.BuildCloudResponse(404, nil, "no transcript "+tid)
+	s, code, why := find(who, tid, time.Now())
+	if s == nil {
+		msg, _ := object.BuildCloudResponse(code, nil, why)
 		return nil, msg
 	}
 	s.touched = time.Now()
 	return s, nil
+}
+
+// find is the session tid names, if it is live and `who` opened it, else the
+// status and sentence that refuse it. `who` is the "owner/name" a credential
+// resolves to. The caller holds liveMu.
+//
+// The PRINCIPAL is checked, not merely the org: an id is a bearer of nothing, and
+// a session belongs to the identity that opened it. Without this a guessed id
+// would let one tenant push audio into another's meter and read their
+// transcript, and one member read a colleague's dictation.
+//
+// It sweeps first, so a session idle past transcriptIdle is gone on a push as it
+// is on an open — the window speech collected at that age is not one a record
+// here may still forward to.
+func find(who, tid string, now time.Time) (*session, uint32, string) {
+	sweepTranscripts(now)
+	s, ok := live[tid]
+	if !ok {
+		if parts := strings.SplitN(tid, "_", 3); len(parts) == 3 && parts[0] == "ats" && parts[1] != here {
+			return nil, 409, "this transcript was opened by another instance; open a new one"
+		}
+		return nil, 404, "no transcript " + tid
+	}
+	if s.user != who {
+		// Deliberately the same answer a missing session gets: whether an id
+		// exists is not a fact another principal is entitled to.
+		return nil, 404, "no transcript " + tid
+	}
+	return s, 0, ""
+}
+
+// TranscriptAdmitted answers whether a request continues a live transcript its
+// own credential opened: a push or a close on a session that is still live.
+//
+// It exists for the host's request-rate ceiling. A live transcript is ONE
+// request, admitted at open — that is where the ceiling and the admission slot
+// are spent — and then a push every chunk_ms for as long as the speaker talks,
+// about four a second. Counted as requests, the pushes spend a minute's
+// allowance in fifteen seconds and the dictation dies mid-sentence. They are
+// bounded instead by the session itself: max_bytes a push, max_seconds of audio,
+// and the idle timeout. A push to an id this credential did not open, or one
+// that has gone, answers false and is counted like any other request.
+//
+// path is the router's path, method the request's, auth its Authorization
+// header — the same three the handler is given.
+func TranscriptAdmitted(method, path, auth string) bool {
+	tid, ok := continued(method, path)
+	if !ok || auth == "" {
+		return false
+	}
+	who, err := zapResolveUser(auth)
+	if err != nil {
+		return false
+	}
+	liveMu.Lock()
+	defer liveMu.Unlock()
+	s, _, _ := find(who, tid, time.Now())
+	return s != nil
+}
+
+// continued is the session id a push or a close names, and false for any other
+// call — the open included, which is the one request a transcript is counted as.
+func continued(method, path string) (string, bool) {
+	if !prefixMatch(transcriptPath, path) {
+		return "", false
+	}
+	if !strings.EqualFold(method, http.MethodPost) && !strings.EqualFold(method, http.MethodDelete) {
+		return "", false
+	}
+	tid := strings.Trim(strings.TrimPrefix(path, transcriptPath), "/")
+	return tid, tid != ""
 }
 
 func forget(tid string) {
@@ -435,8 +508,9 @@ func forget(tid string) {
 }
 
 // sweepTranscripts drops records for sessions speech has already collected. It
-// runs from open, for the reason speech sweeps there too: there is then no clock
-// to run and no task to supervise.
+// runs from open and from every call that names a session (find), for the reason
+// speech sweeps on use too: there is then no clock to run and no task to
+// supervise.
 //
 // The caller holds liveMu. Admitting decides on this map and then writes it, so
 // one lock spans both — taken again in here it would deadlock, and left out
