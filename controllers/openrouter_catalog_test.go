@@ -27,6 +27,13 @@ const orBody = `{"data":[
 // snapshot afterwards, so these tests never touch the live OpenRouter service.
 func withOpenRouter(t *testing.T, body string) *int32 {
 	t.Helper()
+	return withFamily(t, openrouterFam, body)
+}
+
+// withFamily points f at a stub catalog serving body for one test and restores its
+// snapshot afterwards. It returns how many times the catalog was fetched.
+func withFamily(t *testing.T, f *modelFamily, body string) *int32 {
+	t.Helper()
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -38,20 +45,20 @@ func withOpenRouter(t *testing.T, body string) *int32 {
 		fmt.Fprint(w, body)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv(openrouterFam.urlKey, srv.URL)
+	t.Setenv(f.urlKey, srv.URL)
 
-	savedByID, savedIDs := openrouterFam.byID, openrouterFam.ids
-	savedLoaded, savedAt := openrouterFam.loaded, openrouterFam.fetchedAt
+	savedByID, savedIDs := f.byID, f.ids
+	savedLoaded, savedAt := f.loaded, f.fetchedAt
 	t.Cleanup(func() {
-		openrouterFam.mu.Lock()
-		defer openrouterFam.mu.Unlock()
-		openrouterFam.byID, openrouterFam.ids = savedByID, savedIDs
-		openrouterFam.loaded, openrouterFam.fetchedAt = savedLoaded, savedAt
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.byID, f.ids = savedByID, savedIDs
+		f.loaded, f.fetchedAt = savedLoaded, savedAt
 	})
-	openrouterFam.mu.Lock()
-	openrouterFam.byID, openrouterFam.ids = nil, nil
-	openrouterFam.loaded, openrouterFam.fetchedAt = false, time.Time{}
-	openrouterFam.mu.Unlock()
+	f.mu.Lock()
+	f.byID, f.ids = nil, nil
+	f.loaded, f.fetchedAt = false, time.Time{}
+	f.mu.Unlock()
 	return &hits
 }
 

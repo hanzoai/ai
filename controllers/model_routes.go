@@ -49,6 +49,7 @@ type modelRoute struct {
 	tools         bool                 // Supports function/tool calling — set only from a live probe
 	outputs       []string             // Kinds of answer the model produces (e.g. "decision"); nil = not advertised
 	created       int64                // When the model was released (Unix seconds); 0 = not recorded
+	description   string               // One plain sentence on what the model is, for a route of our own; "" = none stated
 }
 
 // releasedOr is the route's release time, or now when nothing records one.
@@ -118,8 +119,8 @@ var modelRoutes = map[string]modelRoute{
 	//
 	// zen-scribe is Parakeet, which hears 25 European languages and hands any
 	// other to Whisper inside the speech service, so one id covers every language.
-	"zen-voice-mini": {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo", outputs: []string{"audio"}},
-	"zen-scribe":     {providerName: "speech", upstreamModel: "parakeet", ownedBy: "hanzo", outputs: []string{"transcript"}},
+	"zen-voice-mini": {providerName: "speech", upstreamModel: "kokoro", ownedBy: "hanzo", outputs: []string{"audio"}, description: "Hanzo's text-to-speech voice, served at /v1/audio/speech."},
+	"zen-scribe":     {providerName: "speech", upstreamModel: "parakeet", ownedBy: "hanzo", outputs: []string{"transcript"}, description: "Hanzo's speech-to-text model, which writes down what is said in any language, served at /v1/audio/transcriptions."},
 
 	// The upstream ids and the retired zen-scribe-mini stay CALLABLE and leave the
 	// listing, the same shape every other upstream-named route here takes. A rename
@@ -170,7 +171,7 @@ var modelRoutes = map[string]modelRoute{
 	// typed questions, not a chat turn, and `outputs` says so to every catalog.
 	// Released: kai when api.hanzo.ai first served it (cloud f80ce7a0a, ai v1.833.242),
 	// the Jev ids when OpenRouter listed them (its `created`).
-	"kai":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}, created: 1790550362},
+	"kai":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}, created: 1790550362, description: "Hanzo's decision model, which answers typed questions at /v1/decisions rather than a chat turn."},
 	"typesafe/jev-1.13":    {providerName: object.KaiName, upstreamModel: "typesafe/jev-1.13", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true, created: 1789689684},
 	"~typesafe/jev-latest": {providerName: object.KaiName, upstreamModel: "~typesafe/jev-latest", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true, created: 1789689685},
 }
@@ -357,15 +358,21 @@ type modelInfo struct {
 	Premium bool   `json:"premium"`
 
 	// Additive enrichment (omitempty — present only when ai has the datum).
-	CanonicalSlug   string            `json:"canonical_slug,omitempty"`    // the id qualified by its maker, OpenRouter's field and form ("hanzo/kai", "anthropic/claude-sonnet-4"); see canonicalSlug
-	Provider        string            `json:"provider,omitempty"`          // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
-	ContextWindow   int               `json:"context_window,omitempty"`    // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
-	MaxOutputTokens int               `json:"max_output_tokens,omitempty"` // max completion tokens (upstream catalog); lets clients cap output honestly
-	Outputs         []string          `json:"outputs,omitempty"`           // kinds of answer the model produces ("text", "audio", "image"); absent ⇒ not advertised. A caller choosing a model for a chat turn needs it: the free lineup carries music models and a classifier beside the chat models, and a price alone cannot tell them apart
-	SupportsVision  bool              `json:"supports_vision,omitempty"`   // model accepts image input (verified via a live probe); absent ⇒ not advertised, never a fabricated yes
-	SupportsTools   bool              `json:"supports_tools,omitempty"`    // model supports function/tool calling (verified via a live probe)
-	Pricing         *modelPricingInfo `json:"pricing,omitempty"`           // per-token and per-1M USD, each key naming its unit; only when ai holds real pricing
-	Access          *modelAccessInfo  `json:"access,omitempty"`            // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
+	CanonicalSlug     string            `json:"canonical_slug,omitempty"`     // the id qualified by its maker, OpenRouter's field and form ("hanzo/kai", "anthropic/claude-sonnet-4"); see canonicalSlug
+	Class             string            `json:"class,omitempty"`              // premium | ours | free: ClassOf, the class the usage policy is asked about; every listed row carries it
+	Family            string            `json:"family,omitempty"`             // the Hanzo family the model belongs to (enso, zen, kai, jev, zoo); absent for a third-party model. See lineage
+	Name              string            `json:"name,omitempty"`               // display name where the source states one (OpenRouter's, without its "<Vendor>: " lead — owned_by carries the vendor)
+	Description       string            `json:"description,omitempty"`        // what the source says the model is: OpenRouter's description, the family's, or one sentence on a route of our own
+	Provider          string            `json:"provider,omitempty"`           // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
+	ContextWindow     int               `json:"context_window,omitempty"`     // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
+	MaxOutputTokens   int               `json:"max_output_tokens,omitempty"`  // max completion tokens (upstream catalog); lets clients cap output honestly
+	Inputs            []string          `json:"inputs,omitempty"`             // kinds of input the model takes, in OpenRouter's words ("text", "image", "audio", "file", "video"); absent ⇒ not advertised
+	Outputs           []string          `json:"outputs,omitempty"`            // kinds of answer the model produces ("text", "audio", "image", "embeddings", "rerank"); absent ⇒ not advertised. A caller choosing a model for a chat turn needs it: the free lineup carries music models and a classifier beside the chat models, and a price alone cannot tell them apart
+	SupportsVision    bool              `json:"supports_vision,omitempty"`    // model accepts image input, as its family or a live probe states; absent ⇒ not advertised, never a fabricated yes
+	SupportsTools     bool              `json:"supports_tools,omitempty"`     // model supports function/tool calling, as its catalog or a live probe states
+	SupportsReasoning bool              `json:"supports_reasoning,omitempty"` // model takes a reasoning request, as its catalog states
+	Pricing           *modelPricingInfo `json:"pricing,omitempty"`            // per-token and per-1M USD, each key naming its unit; only when ai holds real pricing
+	Access            *modelAccessInfo  `json:"access,omitempty"`             // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
 }
 
 // publicProvider returns the provider name to surface in /v1/models, or "" to
@@ -533,6 +540,16 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 		}
 	}
 	slugs.Store(&published)
+
+	// Class and family resolve each row's route, and resolving an id no config row
+	// names asks listedSlug, which builds the catalogue when no slugs are stored. So
+	// they come after the store above: before it, the first build on a replica would
+	// wait on its own lock.
+	for i := range models {
+		m := &models[i]
+		m.Class = ClassOf(m.ID)
+		m.Family = lineage(m.ID, m.OwnedBy)
+	}
 	return models
 }
 
@@ -559,8 +576,9 @@ func routes(id string) bool {
 }
 
 // listedSlug reports that model is a published canonical slug, which names a listed
-// row without being its id. The first call on a replica builds the catalogue; nothing
-// on the build path resolves a route, so it cannot come back here holding the lock.
+// row without being its id. The first call on a replica builds the catalogue; the
+// build resolves routes only after it has stored the slugs, so it cannot come back
+// here holding the lock.
 func listedSlug(model string) bool {
 	m := slugs.Load()
 	if m == nil {
@@ -620,6 +638,7 @@ func staticModels() []modelInfo {
 			SupportsVision:  route.vision,
 			SupportsTools:   route.tools,
 			Outputs:         route.outputs,
+			Description:     route.description,
 		})
 	}
 

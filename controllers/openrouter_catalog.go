@@ -137,6 +137,9 @@ func openrouterMargin() decimal.Decimal {
 // into decimal so the conversion to $/MTok stays exact and never passes through float.
 type openrouterWireModel struct {
 	ID string `json:"id"`
+	// Name is OpenRouter's display name, "<Vendor>: <model>".
+	Name        string `json:"name"`
+	Description string `json:"description"`
 	// Created is when OpenRouter listed the model (Unix seconds): the release time the
 	// catalog knows, which /v1/models reports as `created`.
 	Created       int64 `json:"created"`
@@ -149,6 +152,32 @@ type openrouterWireModel struct {
 		InputModalities  []string `json:"input_modalities"`
 		OutputModalities []string `json:"output_modalities"`
 	} `json:"architecture"`
+	// SupportedParameters are the request fields the SKU honours ("tools",
+	// "reasoning", …): what it can be asked to do.
+	SupportedParameters []string `json:"supported_parameters"`
+}
+
+// title is the display name without its vendor lead: "Anthropic: Claude Sonnet 4" is
+// "Claude Sonnet 4", since owned_by already names the vendor. A name with no lead is
+// kept whole.
+func (w openrouterWireModel) title() string {
+	name := strings.TrimSpace(w.Name)
+	if _, rest, ok := strings.Cut(name, ": "); ok && strings.TrimSpace(rest) != "" {
+		return strings.TrimSpace(rest)
+	}
+	return name
+}
+
+// takes reports whether the SKU honours any of the named request parameters.
+func (w openrouterWireModel) takes(params ...string) bool {
+	for _, p := range w.SupportedParameters {
+		for _, want := range params {
+			if strings.EqualFold(strings.TrimSpace(p), want) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // vision reports whether the SKU accepts image input, read from the modalities
@@ -181,16 +210,21 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 		Out:    costOut.Mul(margin),
 	}
 	m := zenModel{
-		ID:      w.ID,
-		Created: w.Created,
-		OwnedBy: openrouterOwner(w.ID),
-		MaxCtx:  w.ContextLength,
-		Vision:  w.vision(),
-		Outputs: w.Architecture.OutputModalities,
-		Base:    retail,
-		Tiers:   []zenTier{retail},
-		CostIn:  costIn,
-		CostOut: costOut,
+		ID:          w.ID,
+		Created:     w.Created,
+		OwnedBy:     openrouterOwner(w.ID),
+		Name:        w.title(),
+		Description: strings.TrimSpace(w.Description),
+		MaxCtx:      w.ContextLength,
+		Vision:      w.vision(),
+		Tools:       w.takes("tools"),
+		Reasoning:   w.takes("reasoning", "include_reasoning"),
+		Inputs:      w.Architecture.InputModalities,
+		Outputs:     w.Architecture.OutputModalities,
+		Base:        retail,
+		Tiers:       []zenTier{retail},
+		CostIn:      costIn,
+		CostOut:     costOut,
 	}
 	if !w.free() {
 		m.MinTier = "paid"    // subscription floor: not reachable by free/trial

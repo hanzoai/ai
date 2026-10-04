@@ -126,6 +126,29 @@ func FamilyOf(model string) string {
 	return ""
 }
 
+// lineage is the `family` /v1/models names for a listed model: the Hanzo family it
+// belongs to, or "" for a third-party model. FamilyOf names Enso's and Zen's SKUs, and
+// is what the usage policy is asked about; three more families are listed beside them:
+// kai, the decision service's route Hanzo owns; jev, TypeSafe's Jev ids; and zoo,
+// whatever Zoo owns.
+func lineage(id, owner string) string {
+	if f := FamilyOf(id); f != "" {
+		return f
+	}
+	m := strings.ToLower(strings.TrimSpace(id))
+	switch {
+	case strings.HasPrefix(strings.TrimPrefix(m, "~"), "typesafe/jev-"):
+		return "jev"
+	case strings.EqualFold(owner, "zoo"), strings.EqualFold(owner, "zooai"):
+		return "zoo"
+	case strings.EqualFold(owner, "hanzo"):
+		if r := resolveModelRoute(m); r != nil && r.providerName == object.KaiName && strings.EqualFold(r.ownedBy, "hanzo") {
+			return "kai"
+		}
+	}
+	return ""
+}
+
 // planMark is what one covered request has done with its paid upstream. A family
 // committed its answer to a request that may buy a paid rung (tried), which can cost
 // at most bound, nano-dollars; owed is what the request is charged when that answer's

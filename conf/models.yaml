@@ -324,11 +324,13 @@ models:
     upstream: parakeet
     owned_by: hanzo
     outputs: [transcript]
+    description: Hanzo's speech-to-text model, which writes down what is said in any language, served at /v1/audio/transcriptions.
   zen-voice-mini:
     provider: speech
     upstream: kokoro
     owned_by: hanzo
     outputs: [audio]
+    description: Hanzo's text-to-speech voice, served at /v1/audio/speech.
 
   # The upstream ids and the retired zen-scribe-mini stay CALLABLE and leave the
   # listing, so a caller already sending one keeps working while the catalog
@@ -378,6 +380,7 @@ models:
     outputs: [decision]
     pricing: {input: 0.021, output: 0.00}
     released: 2026-09-27T23:06:02Z
+    description: Hanzo's decision model, which answers typed questions at /v1/decisions rather than a chat turn.
   typesafe/jev-1.13:
     provider: kai
     upstream: typesafe/jev-1.13

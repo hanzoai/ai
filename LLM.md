@@ -637,6 +637,14 @@ million input tokens — the same row in `model_pricing.go`,
   family prefix (`zenlm/zen5` starts with `zen`) and billed at a default. Every
   entry path bills and gates on the raw id, so routing a slug needs
   canonicalizing at the entry first.
+- **A UI reads a model's kind from `/v1/models`, never from its id**: every row
+  carries `class` (`ClassOf`, the policy's own answer) and, for Hanzo's, `family`
+  (`lineage`: enso/zen from `FamilyOf`, kai, jev, zoo). OpenRouter rows add `name`
+  (vendor lead cut), `description`, `inputs`, `supports_tools`/`supports_reasoning`
+  (from `supported_parameters`); family rows add `outputs` from their `mode` and
+  `supports_vision`; our own routes state a `description` in models.yaml. Class and
+  family resolve routes, so `build` stamps them after it stores the slugs —
+  before, the first build waits on its own lock (`TestFirstBuildDoesNotWaitOnItself`).
 - **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is
   Kai with no route of its own: priced and filed as `kai`, sent to the
   service as asked (the service checks it names the weights it serves). Any other

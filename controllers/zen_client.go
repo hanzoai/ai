@@ -592,11 +592,22 @@ type zenModel struct {
 	// catalog records it; 0 = not recorded, and the listing's own time is used.
 	Created int64
 	OwnedBy string
-	MaxCtx  int
-	Vision  bool
+	// Name and Description are what the family's catalog calls the SKU and says it
+	// is; empty where it says nothing.
+	Name        string
+	Description string
+	MaxCtx      int
+	Vision      bool
+	// Tools and Reasoning are whether the SKU takes tool calls and a reasoning
+	// request, as the family's catalog states; false where it states nothing.
+	Tools     bool
+	Reasoning bool
+	// Inputs are the kinds of input this SKU takes, as the family advertises them
+	// ("text", "image", "audio", "file", "video"). Empty reads as unknown.
+	Inputs []string
 	// Outputs are the kinds of answer this SKU produces, as the family advertises
-	// them ("text", "audio", "image"). Empty when the family advertises none, which
-	// reads as unknown and never as text.
+	// them ("text", "audio", "image", "embeddings", "rerank"). Empty when the family
+	// advertises none, which reads as unknown and never as text.
 	Outputs []string
 	Access  string // "" = generally available; "waitlist" = access-gated (limited preview) — ai enforces the grant
 	MinTier string // "" | "free" | "trial" | "paid" — min subscription tier the family advertises for this SKU; ai enforces it (Seams A/B). "" ⇒ free (all tiers). Orthogonal to Access.
@@ -748,6 +759,8 @@ func (m zenModel) price() (modelPrice, bool) {
 type zenWireModel struct {
 	ID            string `json:"id"`
 	OwnedBy       string `json:"owned_by"`
+	Description   string `json:"description"`
+	Mode          string `json:"mode"`     // the kind of SKU: chat | embedding | rerank | image | audio | video
 	Access        string `json:"access"`   // "" | "waitlist" — access gating advertised by the family
 	MinTier       string `json:"min_tier"` // "" | "free" | "trial" | "paid" — min subscription tier advertised for this SKU (Seams A/B)
 	Funding       string `json:"funding"`  // "prepaid" = every path this SKU can take spends a real-cash balance
@@ -771,7 +784,9 @@ type zenWireModel struct {
 
 func (w zenWireModel) model() zenModel {
 	zm := zenModel{
-		ID: w.ID, OwnedBy: w.OwnedBy, MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision, Access: w.Access, MinTier: w.MinTier, Funding: w.Funding, Plan: w.Plan,
+		ID: w.ID, OwnedBy: w.OwnedBy, Description: strings.TrimSpace(w.Description), MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision,
+		Outputs: modeOutputs[strings.ToLower(strings.TrimSpace(w.Mode))],
+		Access:  w.Access, MinTier: w.MinTier, Funding: w.Funding, Plan: w.Plan,
 		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output, CacheRead: w.Pricing.CacheRead},
 	}
 	for _, t := range w.PricingTiers {
@@ -781,6 +796,18 @@ func (w zenWireModel) model() zenModel {
 		zm.Tiers = []zenTier{zm.Base}
 	}
 	return zm
+}
+
+// modeOutputs is what a family SKU of each mode answers with, in OpenRouter's words:
+// a chat SKU writes text, an embedding SKU returns embeddings, and so on. A mode not
+// named here, or none, states no outputs.
+var modeOutputs = map[string][]string{
+	"chat":      {"text"},
+	"embedding": {"embeddings"},
+	"rerank":    {"rerank"},
+	"image":     {"image"},
+	"audio":     {"audio"},
+	"video":     {"video"},
 }
 
 // decodeCatalog translates a family's raw /v1/models body into discovered SKUs using
@@ -1026,10 +1053,11 @@ func (f *modelFamily) serves(model string) bool {
 	if f.frontDoor(model) {
 		return len(freeRoutes()) > 0
 	}
-	if !f.enabled() {
+	// fresh resolves the family's address once and answers "" when it has none, which
+	// is exactly !enabled(): one admin-row read where asking both made two.
+	if f.fresh() == "" {
 		return false
 	}
-	f.fresh()
 	if _, ok := f.lookup(model); ok {
 		return true
 	}
@@ -1140,7 +1168,9 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			// for is not. A free route reported as premium reads to a client as a
 			// SKU their plan cannot afford, which is the opposite of true.
 			ID: z.ID, Object: "model", Created: z.releasedOr(now), OwnedBy: owner, Premium: z.priced(),
-			ContextWindow: window, Outputs: z.Outputs,
+			Name: z.Name, Description: z.Description, ContextWindow: window,
+			Inputs: z.Inputs, Outputs: z.Outputs,
+			SupportsVision: z.Vision, SupportsTools: z.Tools, SupportsReasoning: z.Reasoning,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
 		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.

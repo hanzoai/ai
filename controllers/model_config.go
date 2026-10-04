@@ -166,6 +166,9 @@ type ModelDef struct {
 	// `created`. Absent ⇒ the listing's own time, as for every model whose release
 	// nothing here records.
 	Released string `yaml:"released,omitempty"`
+	// Description is one plain sentence on what the model is, surfaced in /v1/models
+	// as `description`, for a model of our own. Absent ⇒ none stated.
+	Description string `yaml:"description,omitempty"`
 }
 
 // ── Singleton ───────────────────────────────────────────────────────────
@@ -290,6 +293,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 				vision:        def.Vision,
 				tools:         def.Tools,
 				outputs:       def.Outputs,
+				description:   def.Description,
 			}
 			for _, fb := range def.Fallbacks {
 				r.fallbacks = append(r.fallbacks, modelRouteFallback{
@@ -617,6 +621,7 @@ func (mc *ModelConfig) ListModels() []modelInfo {
 			SupportsVision:  route.vision,
 			SupportsTools:   route.tools,
 			Outputs:         route.outputs,
+			Description:     route.description,
 		})
 	}
 
