@@ -254,7 +254,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// A policy that cannot be read decides nothing: the wallet and the free allowance
 	// below gate the request exactly as they would with no plans at all.
 	if limits := object.Limits(); limits != nil && model != "" && controllers.Entitled(path) {
-		for try := 0; try < 2; try++ {
+		for try := 0; try < 3; try++ {
 			priced := !costsNothing(model, namespace)
 			grant, hit, err := limits(c.Context(), object.LimitAsk{
 				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
@@ -267,14 +267,21 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			}
 			if hit != nil {
 				log.Info("limits: %s %s subject=%s namespace=%s actor=%s path=%s model=%s", hit.Code, hit.Name, subject, namespace, userKey, path, model)
-				if priced && try == 0 && fallback(c, path, hit) {
-					if body, ok := controllers.WithModel(c.Body(), controllers.FreeModel); ok {
+				// A capped model hands the conversation to its Hanzo fallback; a plan
+				// that cannot pay at all hands it to the free model. Each hand-off is
+				// asked again, so the model that answers is still the policy's to admit.
+				to := controllers.FreeModel
+				if hit.Code == object.CodeModelCap && hit.Fallback != "" {
+					to = hit.Fallback
+				}
+				if priced && !strings.EqualFold(to, model) && fallback(c, path, hit) {
+					if body, ok := controllers.WithModel(c.Body(), to); ok {
 						c.Fiber().Request().SetBody(body)
 						c.Fiber().Request().Header.Del("Content-Encoding")
-						c.SetHeader("X-Hanzo-Fallback", controllers.FreeModel)
+						c.SetHeader("X-Hanzo-Fallback", to)
 						c.SetHeader("X-Hanzo-Usage-Reason", hit.Code)
 						c.SetHeader("X-Hanzo-Usage", "limited")
-						model = controllers.FreeModel
+						model = to
 						continue
 					}
 				}
@@ -392,14 +399,16 @@ func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey, model strin
 // 429 usage_cap_exceeded when a window of the plan is spent, 429 free_plan_cap when a
 // free plan's daily cap on the model is used, 402 plan_allowance_used when the plan's
 // included usage of the class is used and nothing else may pay, 402
-// paid_plan_required when the model needs a paid plan or prepaid balance. It names
+// paid_plan_required when the model needs a paid plan or prepaid balance, 402
+// model_cap when the model has used its share of the plan's allowance. It names
 // when it lifts (Retry-After where it lifts by itself) and what lifts it sooner.
 func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	type action struct {
 		Kind  string `json:"kind"`
 		Label string `json:"label"`
-		URL   string `json:"url"`
+		URL   string `json:"url,omitempty"`
 		Plan  string `json:"plan,omitempty"`
+		Model string `json:"model,omitempty"`
 	}
 	body := struct {
 		Error struct {
@@ -407,6 +416,8 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 			Type       string   `json:"type"`
 			Code       string   `json:"code"`
 			Class      string   `json:"class,omitempty"`
+			Model      string   `json:"model,omitempty"`
+			Fallback   string   `json:"fallback,omitempty"`
 			Limit      string   `json:"limit,omitempty"`
 			ResetsAt   string   `json:"resets_at,omitempty"`
 			UpgradeURL string   `json:"upgrade_url,omitempty"`
@@ -446,7 +457,16 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 		body.Error.UpgradeURL = pay + "/cart?plan=" + url.QueryEscape(hit.Upgrade)
 		body.Error.Actions = append(body.Error.Actions, action{Kind: "upgrade", Label: "Upgrade your plan", URL: body.Error.UpgradeURL, Plan: hit.Upgrade})
 	}
-	if code != object.CodeUsageCap {
+	if code == object.CodeModelCap && hit.Fallback != "" {
+		body.Error.Actions = append(body.Error.Actions, action{Kind: "switch", Label: "Try " + modelName(hit.Fallback), Model: hit.Fallback})
+	}
+	switch {
+	case code == object.CodeUsageCap:
+	case hit.Credits:
+		// The payer holds what could pay and has not chosen to: the action turns
+		// the choice on (PUT /v1/ai/limits), it moves no money.
+		body.Error.Actions = append(body.Error.Actions, action{Kind: "credits", Label: "Continue with credits", URL: "/v1/ai/limits"})
+	default:
 		body.Error.Actions = append(body.Error.Actions, action{Kind: "topup", Label: "Add prepaid credit", URL: pay})
 	}
 	switch {
@@ -458,6 +478,8 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	body.Error.Message = msg
 	body.Error.Code = code
 	body.Error.Class = hit.Class
+	body.Error.Model = hit.Model
+	body.Error.Fallback = hit.Fallback
 	raw, _ := json.Marshal(body)
 	c.SetHeader("X-Hanzo-Usage", "limited")
 	if hit.Class != "" {
@@ -476,19 +498,38 @@ func usage(c *zip.Ctx, g *object.LimitGrant) {
 		c.SetHeader("X-Hanzo-Usage-Class", g.Class)
 	}
 	if g.Pays != "" {
-		c.SetHeader("X-Hanzo-Paid-By", g.Pays)
+		pays := g.Pays
+		if pays == object.PaysPrepaid {
+			pays = object.PaysCredits // to a customer, prepaid and granted are both credits
+		}
+		c.SetHeader("X-Hanzo-Paid-By", pays)
 	}
 }
 
-// fallback reports whether a refused request is answered by the free model instead:
-// a conversation the plan can no longer pay for, from a signed-in app or a client
-// that sent X-Hanzo-Fallback: allow. An API key gets the refusal unless it asks — a
+// modelName is how a fallback model is named in an action label.
+func modelName(id string) string {
+	m := strings.ToLower(strings.TrimSpace(id))
+	switch {
+	case strings.HasPrefix(m, "enso") || strings.HasPrefix(m, "hanzo/enso"):
+		return "Enso"
+	case strings.HasPrefix(m, "zen"):
+		return "Zen"
+	}
+	return id
+}
+
+// fallback reports whether a refused request is answered by another model instead:
+// a conversation the plan can no longer pay for (the free model answers) or whose
+// model has used its share of the plan (its Hanzo fallback answers), from a
+// signed-in app or a client that sent X-Hanzo-Fallback: allow. An API key gets the refusal unless it asks — a
 // program is told, not silently answered by another model.
 func fallback(c *zip.Ctx, path string, hit *object.LimitHit) bool {
 	if !controllers.ChatPath(path) {
 		return false
 	}
-	if hit.Code != object.CodePlanAllowance && hit.Code != object.CodePaidPlan {
+	switch hit.Code {
+	case object.CodePlanAllowance, object.CodePaidPlan, object.CodeModelCap:
+	default:
 		return false
 	}
 	return len(controllers.Apps(c)) > 0 || strings.EqualFold(strings.TrimSpace(c.Header("X-Hanzo-Fallback")), "allow")

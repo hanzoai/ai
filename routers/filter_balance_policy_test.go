@@ -58,7 +58,8 @@ func TestPrepaidPaysPastTheAllowanceThroughTheWallet(t *testing.T) {
 	gateWith(t, 500)
 	policy(t, g, nil)
 	p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
-	if p.status() != http.StatusOK || p.replied("X-Hanzo-Paid-By") != object.PaysPrepaid {
+	// To a customer prepaid and granted are both credits.
+	if p.status() != http.StatusOK || p.replied("X-Hanzo-Paid-By") != object.PaysCredits {
 		t.Fatalf("prepaid past the allowance: %d paid-by %q (%s)", p.status(), p.replied("X-Hanzo-Paid-By"), p.said())
 	}
 
@@ -137,5 +138,72 @@ func TestACoveredDecisionReachesItsHandlerAtAnEmptyWallet(t *testing.T) {
 	}
 	if len(*asked) != 1 || (*asked)[0].Model != "kai" || (*asked)[0].Spend {
 		t.Fatalf("asked %+v", *asked)
+	}
+}
+
+// A model that has used its share of the plan hands a conversation to its Hanzo
+// fallback, which the policy is asked about in turn; other premium models are
+// untouched. A program that did not ask for fallback gets 402 model_cap, naming the
+// model and the fallback, offering the switch, and no figure.
+func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
+	gateWith(t, 0)
+	freeModels(t, "enso", controllers.FreeModel)
+	var asked []object.LimitAsk
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		asked = append(asked, q)
+		switch {
+		case strings.HasPrefix(q.Model, "anthropic/claude-opus"):
+			return nil, &object.LimitHit{Code: object.CodeModelCap, Class: object.ClassPremium, Model: "anthropic/claude-opus*", Fallback: "enso",
+				Upgrade: "max-20x", Message: "Claude Opus has used its share of your plan for now. Try Enso, continue with credits, or upgrade:"}, nil
+		case q.Model == "enso":
+			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "ok", Settle: func(int64) {}}, nil, nil
+		default:
+			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Settle: func(int64) {}}, nil, nil
+		}
+	})
+
+	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+		body([]byte(`{"model":"anthropic/claude-opus-4.7","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
+	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != "enso" || p.replied("X-Hanzo-Usage-Reason") != object.CodeModelCap {
+		t.Fatalf("opus past its cap: %d fallback %q reason %q (%s)", p.status(), p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.said())
+	}
+	if !strings.Contains(p.handed(), `"model":"enso"`) {
+		t.Errorf("the handler was handed %s, want enso", p.handed())
+	}
+	if len(asked) != 2 || asked[1].Model != "enso" {
+		t.Errorf("enso was not asked of the policy: %+v", asked)
+	}
+
+	// Another premium model still runs on the plan.
+	if p := chatWith("openai/gpt-5.5", "/v1/chat/completions"); p.status() != http.StatusOK || p.replied("X-Hanzo-Paid-By") != object.PaysPlan {
+		t.Fatalf("another premium model: %d paid-by %q (%s)", p.status(), p.replied("X-Hanzo-Paid-By"), p.said())
+	}
+
+	p = chatWith("anthropic/claude-opus-4.7", "/v1/chat/completions")
+	if p.status() != http.StatusPaymentRequired {
+		t.Fatalf("opus past its cap, no fallback asked: %d (%s)", p.status(), p.said())
+	}
+	r := refusalOf(t, p.said())
+	if r.Error.Code != object.CodeModelCap || !strings.Contains(p.said(), `"fallback":"enso"`) ||
+		!strings.Contains(p.said(), `"kind":"switch"`) || !strings.Contains(p.said(), `"label":"Try Enso"`) || !strings.Contains(p.said(), `"kind":"topup"`) {
+		t.Errorf("refusal %s", p.said())
+	}
+	if regexp.MustCompile(`\$\d|\d+ ?(cents|requests)|\d+\.\d\d`).MatchString(r.Error.Message) {
+		t.Errorf("the refusal names a figure: %q", r.Error.Message)
+	}
+}
+
+// A payer who holds credit and has not chosen to spend it past the plan is offered
+// that choice instead of a top-up.
+func TestARefusalOffersCreditsToAPayerWhoHoldsThem(t *testing.T) {
+	gateWith(t, 0)
+	policy(t, nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassPremium, Credits: true,
+		Message: "Your plan's included usage of premium models is used for now. Continue with credits or upgrade:"})
+	p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
+	if p.status() != http.StatusPaymentRequired || !strings.Contains(p.said(), `"kind":"credits"`) || !strings.Contains(p.said(), `"label":"Continue with credits"`) {
+		t.Fatalf("credits action: %d %s", p.status(), p.said())
+	}
+	if strings.Contains(p.said(), `"kind":"topup"`) {
+		t.Errorf("a payer with credits was asked to top up: %s", p.said())
 	}
 }

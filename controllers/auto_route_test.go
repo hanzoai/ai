@@ -31,10 +31,11 @@ import (
 // routerTestConfig builds a ModelConfig with auto-routing enabled and a small
 // prefer table whose ids are all present as routes (so the servability predicate
 // resolveModelRouteForOrg admits them). The router is heuristic-only (no engine
-// endpoint), so classification is deterministic.
+// endpoint), so classification is deterministic. The models are Hanzo's (owned by
+// hanzo): with no allowlist, `auto` picks only Hanzo classes (routable).
 func routerTestConfig(enabled bool) *ModelConfig {
 	route := func(name string) modelRoute {
-		return modelRoute{providerName: "do-ai", upstreamModel: name}
+		return modelRoute{providerName: "do-ai", upstreamModel: name, ownedBy: "hanzo"}
 	}
 	return &ModelConfig{
 		routes: map[string]modelRoute{
@@ -64,12 +65,12 @@ func chatReq(model, userText string) *openai.ChatCompletionRequest {
 }
 
 func TestIsAutoModel(t *testing.T) {
-	for _, m := range []string{"auto", "AUTO", "zen-router", " auto "} {
+	for _, m := range []string{"auto", "AUTO", "zen-router", " auto ", ""} {
 		if !isAutoModel(m) {
 			t.Errorf("isAutoModel(%q) = false, want true", m)
 		}
 	}
-	for _, m := range []string{"gpt-4o", "gpt-4o", "router:general", ""} {
+	for _, m := range []string{"gpt-4o", "gpt-4o", "router:general"} {
 		if isAutoModel(m) {
 			t.Errorf("isAutoModel(%q) = true, want false", m)
 		}
@@ -189,7 +190,7 @@ func TestResolveAutoModelGatedServabilityGate(t *testing.T) {
 	globalModelConfig = &ModelConfig{
 		routes: map[string]modelRoute{
 			"enso-flash": {providerName: "enso", upstreamModel: "enso-flash"},
-			"glm-5.2":    {providerName: "do-ai", upstreamModel: "glm-5.2"},
+			"glm-5.2":    {providerName: "do-ai", upstreamModel: "glm-5.2", ownedBy: "hanzo"},
 		},
 		pricing: map[string]modelPrice{},
 		router: RouterConfigDef{

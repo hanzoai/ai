@@ -117,8 +117,8 @@ func TestResolveAutoModelFreeTierFlashCap(t *testing.T) {
 
 	globalModelConfig = &ModelConfig{
 		routes: map[string]modelRoute{
-			"glm-5.2":     {providerName: "do-ai", upstreamModel: "glm-5.2"},
-			"gpt-4o-mini": {providerName: "do-ai", upstreamModel: "gpt-4o-mini"},
+			"glm-5.2":     {providerName: "do-ai", upstreamModel: "glm-5.2", ownedBy: "hanzo"},
+			"gpt-4o-mini": {providerName: "do-ai", upstreamModel: "gpt-4o-mini", ownedBy: "hanzo"},
 		},
 		pricing: map[string]modelPrice{
 			"glm-5.2":     {InputPerMillion: 3.00, OutputPerMillion: 9.60}, // blended 6.30 (premium)

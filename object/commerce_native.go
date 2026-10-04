@@ -164,9 +164,13 @@ func (g *LimitGrant) Covered() bool {
 // spent (Name says which), "plan_allowance_used" when the plan's included usage of
 // the class is used and nothing else may pay, "paid_plan_required" when the model
 // needs a paid plan or prepaid balance, "free_plan_cap" when a free plan's daily cap
-// on the model is used. Message is the caller-facing sentence, which names no
-// figure; ResetsAt is when the refusal lifts, zero when only money lifts it; Upgrade
-// is the plan that raises it.
+// on the model is used, "model_cap" when the model has used its share of the plan's
+// class allowance and nothing else may pay. Message is the caller-facing sentence,
+// which names no figure; ResetsAt is when the refusal lifts, zero when only money
+// lifts it; Upgrade is the plan that raises it. Model is the capped model or the
+// pattern its share is kept under; Fallback is the Hanzo model that answers a chat
+// in its place. Credits says the payer holds a balance that could pay and has not
+// chosen to continue with credits, so the refusal offers that rather than a top-up.
 type LimitHit struct {
 	Code     string
 	Name     string
@@ -174,6 +178,9 @@ type LimitHit struct {
 	Message  string
 	ResetsAt time.Time
 	Upgrade  string
+	Model    string
+	Fallback string
+	Credits  bool
 }
 
 // The codes a LimitHit refuses with. Clients switch on these, never on the message.
@@ -182,6 +189,7 @@ const (
 	CodePlanAllowance = "plan_allowance_used"
 	CodePaidPlan      = "paid_plan_required"
 	CodeFreePlanCap   = "free_plan_cap"
+	CodeModelCap      = "model_cap"
 )
 
 // LimitFunc decides who pays for one request before it is served. The host

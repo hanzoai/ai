@@ -116,13 +116,27 @@ func asyncRecordRoutingEvent(e object.RoutingEvent) {
 // id in its `model` field).
 const RoutedModelHeader = "X-Routed-Model"
 
-// isAutoModel reports whether the requested model is the virtual routing alias.
+// isAutoModel reports whether the requested model is the virtual routing alias:
+// `auto`, `zen-router`, or no model at all — a caller who names none asks the router
+// to choose, among Hanzo's own models unless the org allows more (routable).
 func isAutoModel(model string) bool {
 	switch strings.ToLower(strings.TrimSpace(model)) {
-	case "auto", "zen-router":
+	case "", "auto", "zen-router":
 		return true
 	}
 	return false
+}
+
+// routable is the ONE rule for what `auto` may pick for an org, before servability:
+// with an enabled-models allowlist, exactly the models it names; without one, only
+// Hanzo's own classes (ours and free). A premium model answers `auto` only when the
+// org put it on its allowlist; a caller who wants one names it. So routing never
+// spends a plan's premium allowance on its own initiative.
+func routable(id string, allow map[string]bool) bool {
+	if len(allow) > 0 {
+		return allow[strings.ToLower(strings.TrimSpace(id))]
+	}
+	return ClassOf(id) != object.ClassPremium
 }
 
 // resolveAutoModel maps the virtual `auto`/`zen-router` model to a concrete,
@@ -171,16 +185,14 @@ func resolveAutoModel(requested, orgId, userId, requestId string, authUser *iam.
 		if resolveModelRouteForOrg(id, orgId) == nil || !modelServable(id, orgId, authUser) {
 			return false
 		}
-		return len(allow) == 0 || allow[strings.ToLower(strings.TrimSpace(id))]
+		return routable(id, allow)
 	})
-	// The HARD allowlist floor: the heuristic's last-resort fallback relaxes servability
-	// but must NEVER relax this, so a DISABLED model is never routed to even when no
-	// servable preferred model remains. Left nil when the org set no allowlist (the
-	// last resort then relaxes to all, unchanged). Set BEFORE the dial narrows Known, so
-	// it is the pure allowlist — the soft cost budget is relaxable, the allowlist is not.
-	if len(allow) > 0 {
-		client.Allow = func(id string) bool { return allow[strings.ToLower(strings.TrimSpace(id))] }
-	}
+	// The HARD floor: the heuristic's last-resort fallback relaxes servability but must
+	// NEVER relax routable, so a disabled model — or, with no allowlist, a premium one —
+	// is never routed to even when no servable preferred model remains. Set BEFORE the
+	// dial narrows Known, so it is the pure rule — the soft cost budget is relaxable,
+	// routable is not.
+	client.Allow = func(id string) bool { return routable(id, allow) }
 	// Fold the per-org router policy (org > "*" > conf) into this decision: the
 	// org's own Prefer table wins per task key, and its cost ceiling fills the
 	// SLO when the caller didn't send X-Max-Cost (an explicit header wins).

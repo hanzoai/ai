@@ -1012,13 +1012,25 @@ answer is a `LimitGrant` with `Pays`:
 
 A `LimitHit` refuses by `Code` with no figure: 429 `usage_cap_exceeded` (a plan
 window, the free lane included — limited mode cannot be farmed), 429
-`free_plan_cap`, 402 `plan_allowance_used`, 402 `paid_plan_required`. A
-conversation from a signed-in app (token `aud`) or a client sending
-`X-Hanzo-Fallback: allow` is answered by `FreeModel` instead of
-`plan_allowance_used`/`paid_plan_required`, marked `X-Hanzo-Fallback`. Served
-calls carry `X-Hanzo-Usage`, `X-Hanzo-Usage-Class`, `X-Hanzo-Paid-By`. An
-unreadable policy decides nothing (the wallet gates). ZAP twins have no gate
-verdict, so they stay wallet-only.
+`free_plan_cap`, 402 `plan_allowance_used`, 402 `paid_plan_required`, 402
+`model_cap` (the model used its share of the plan; `Model` names it or its
+pattern, `Fallback` the Hanzo model that answers instead). A conversation from a
+signed-in app (token `aud`) or a client sending `X-Hanzo-Fallback: allow` is handed
+on instead — `model_cap` to `Fallback`, the other two to `FreeModel` — marked
+`X-Hanzo-Fallback` and `X-Hanzo-Usage-Reason`, and the model it lands on is asked of
+the policy again (up to three asks). Refusal actions: `upgrade`, `switch` (to the
+fallback), and `credits` ("Continue with credits", which turns on the org's
+`PUT /v1/ai/limits` opt-in) when `Credits` says the payer holds what could pay,
+else `topup`. Served calls carry `X-Hanzo-Usage`, `X-Hanzo-Usage-Class`,
+`X-Hanzo-Paid-By` (plan|credits|free — prepaid reads `credits`). An unreadable
+policy decides nothing (the wallet gates). ZAP twins have no gate verdict, so they
+stay wallet-only.
+
+`auto`, `zen-router` and a request naming no model are the router's to resolve
+(`isAutoModel`), and `routable` is the one eligibility rule it folds into `Known`
+and the last-resort `Allow` floor: with an org enabled-models allowlist, exactly
+what it names; without one, only Hanzo classes (ours + free). A premium model
+answers `auto` only when the org allowlisted it; otherwise a caller names it.
 
 ## The paid lane has ONE switch — the zen catalog's `paid` line
 

@@ -52,11 +52,15 @@ func modelOf(t *testing.T, body []byte) string {
 // handler keeps. A caller who does not authenticate is not routed.
 func TestAutoIsResolvedToItsSKUBeforeTheGate(t *testing.T) {
 	token, events := routedWorld(t)
-	for _, id := range []string{"auto", "zen-router"} {
+	for _, id := range []string{"auto", "zen-router", ""} {
 		*events = nil
 		c := visit(http.MethodPost, "/v1/chat/completions")
 		c.Fiber().Request().Header.Set("Authorization", "Bearer "+token)
-		c.Fiber().Request().SetBody([]byte(`{"model":"` + id + `","stream":true,"messages":[{"role":"user","content":"hello there"}]}`))
+		body := `{"model":"` + id + `","stream":true,"messages":[{"role":"user","content":"hello there"}]}`
+		if id == "" {
+			body = `{"stream":true,"messages":[{"role":"user","content":"hello there"}]}` // no model: the router chooses
+		}
+		c.Fiber().Request().SetBody([]byte(body))
 		c.RouteAuto()
 		got := modelOf(t, c.Body())
 		if got == "" || IsAutoModel(got) || resolveModelRoute(got) == nil {
