@@ -228,6 +228,14 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 	model := requestedModel(c)
+	// A push to or the close of a live transcript names no model: it is billed as the
+	// model its open named, for the caller who opened it, and was counted there.
+	session := false
+	if model == "" {
+		if m, ok := sessionModel(c.Method(), path, c.Header("Authorization")); ok {
+			model, session = m, true
+		}
+	}
 	if sku, ok := depthRoute(model, c.Body()); ok && balanceGate.funds(c, subject, namespace, userKey, sku) {
 		// The default free id, asked by a caller whose plan or bought credit pays for
 		// the priced SKU router.depth names at this depth: the request is served, gated
@@ -259,7 +267,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			grant, hit, err := limits(c.Context(), object.LimitAsk{
 				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
 				Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: priced,
-				Apps: controllers.Apps(c), Spend: controllers.ChatPath(path),
+				Apps: controllers.Apps(c), Spend: controllers.ChatPath(path), Session: session,
 			})
 			if err != nil {
 				log.Warning("limits: unreadable, leaving the request to the wallet subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
@@ -292,6 +300,8 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			}
 			usage(c, grant)
 			controllers.Cover(c, grant)
+			// A request that was not served keeps nothing it was counted against.
+			defer release(c, grant)
 			if !grant.Covered() {
 				break // the wallet pays: on to it, carrying what may pay
 			}
@@ -489,6 +499,22 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	return c.Bytes(status, raw)
 }
 
+// sessionModel is controllers.TranscriptModel, indirected so the gate's tests state
+// a live session directly.
+var sessionModel = controllers.TranscriptModel
+
+// release hands back what a request was counted against when it was not served:
+// any answer of 400 or above, the gate's own refusals below included. A stream is
+// served from its first byte, and stands.
+func release(c *zip.Ctx, g *object.LimitGrant) {
+	if g == nil || g.Release == nil {
+		return
+	}
+	if code := c.Fiber().Response().StatusCode(); code >= http.StatusBadRequest {
+		g.Release()
+	}
+}
+
 // usage says on the response who paid and where the class stands, never a figure.
 func usage(c *zip.Ctx, g *object.LimitGrant) {
 	if g.State != "" {
@@ -602,6 +628,10 @@ func requestedModel(c *zip.Ctx) string {
 	body := c.Body()
 	if len(body) == 0 {
 		return ""
+	}
+	// A transcription is a form: its model is a field of it.
+	if strings.HasPrefix(strings.ToLower(c.Header("Content-Type")), "multipart/form-data") {
+		return strings.TrimSpace(c.Fiber().FormValue("model"))
 	}
 	var req struct {
 		Model string `json:"model"`

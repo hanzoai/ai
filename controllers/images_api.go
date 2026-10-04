@@ -140,7 +140,7 @@ func (c *ApiController) ImagesGenerations() {
 		ledger := c.billingOrg(authUser)
 		subject := authUser.PayerSubject(ledger)
 		var ok bool
-		if hold, ok = reserveBudget(subject, imageCostCents(req.Model, n)); !ok {
+		if hold, ok = reserveFor(c.Context(), subject, imageCostCents(req.Model, n)); !ok {
 			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "image cost").Message))
 			return
 		}

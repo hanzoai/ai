@@ -1026,6 +1026,17 @@ else `topup`. Served calls carry `X-Hanzo-Usage`, `X-Hanzo-Usage-Class`,
 policy decides nothing (the wallet gates). ZAP twins have no gate verdict, so they
 stay wallet-only.
 
+Every priced endpoint asks the host, not only chat (`controllers.Entitled`):
+chat, `/v1/decisions`, embeddings, rerank, speech, transcriptions (the model is a
+form field), the live transcript's open, voice/music/foley, images and videos. A
+push to or the close of a live transcript names no model; it is asked as the model
+its open named (`controllers.TranscriptModel`) with `Session` set, and counts
+nothing. The media and retrieval controllers hold through `reserveFor`, so a covered
+call reserves no wallet, and the transcript's per-push metering settles against the
+push's grant. A request the host counted carries `Release`; the gate calls it when
+the answer is 400 or above (a failure or a refusal), so an unserved call keeps no
+window, cap or share. A stream is served from its first byte.
+
 `auto`, `zen-router` and a request naming no model are the router's to resolve
 (`isAutoModel`), and `routable` is the one eligibility rule it folds into `Known`
 and the last-resort `Allow` floor: with an org enabled-models allowlist, exactly

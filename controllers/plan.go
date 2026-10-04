@@ -98,7 +98,27 @@ const FreeModel = freeID
 
 // Entitled reports whether path is one whose requests the usage policy decides: a
 // conversation, or a decision.
-func Entitled(path string) bool { return ChatPath(path) || DecisionPath(path) }
+func Entitled(path string) bool {
+	p := strings.ToLower(strings.TrimRight(path, "/"))
+	return ChatPath(p) || DecisionPath(p) || meteredPaths[p] || strings.HasPrefix(p, transcriptPath+"/")
+}
+
+// meteredPaths are the priced endpoints besides chat and decisions, each asked of
+// the host's policy by the model its request names: retrieval, speech, the live
+// transcript's open (its pushes and close are asked as Session), and media.
+var meteredPaths = map[string]bool{
+	"/v1/embeddings":           true,
+	"/v1/rerank":               true,
+	"/v1/audio/speech":         true,
+	"/v1/audio/transcriptions": true,
+	"/v1/audio/translations":   true,
+	transcriptPath:             true,
+	"/v1/audio/voice":          true,
+	"/v1/audio/music":          true,
+	"/v1/audio/foley":          true,
+	"/v1/images/generations":   true,
+	"/v1/videos/generations":   true,
+}
 
 // FamilyOf names the Hanzo family that serves model — "enso" or "zen" — or "" for a
 // model that is not a Hanzo SKU. The platform's own name for the free pool is Enso's

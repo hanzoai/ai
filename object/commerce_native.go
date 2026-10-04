@@ -112,6 +112,10 @@ type LimitAsk struct {
 	// Spend says the request may reach its family's paid upstream within the plan's
 	// budget (a chat request); without it the family answers from free models only.
 	Spend bool
+	// Session says the request continues one already counted — a push to or the
+	// close of a live transcript whose open was asked — so the host decides who pays
+	// and counts nothing.
+	Session bool
 }
 
 // The classes a model is sold in. A plan includes usage of the first two, measured
@@ -150,6 +154,10 @@ type LimitGrant struct {
 	Cash   bool
 	Spend  int64
 	Settle func(nanos int64)
+	// Release says the request was not served — it failed or was refused after
+	// admission — so nothing it was counted against keeps it: no request window, no
+	// daily cap, no share. Nil when the host counted nothing.
+	Release func()
 }
 
 // Covered reports whether the wallet is left out of the request: the plan or a free

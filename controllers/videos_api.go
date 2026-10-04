@@ -216,7 +216,7 @@ func (c *ApiController) VideosGenerations() {
 	// debit hasn't applied yet). Settled with the ACTUAL cost when the job
 	// completes; released (settle 0) on any early error below or by the reaper if
 	// the job is abandoned.
-	hold, okReserve := reserveBudget(subject, videoCostCents(req.Model, 1))
+	hold, okReserve := reserveFor(c.Context(), subject, videoCostCents(req.Model, 1))
 	if !okReserve {
 		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "video cost").Message))
 		return

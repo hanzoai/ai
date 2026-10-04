@@ -391,6 +391,13 @@ func meterTranscript(ctx context.Context, s *session, tid string, answer []byte,
 			RequestID:    uuid.NewString(),
 			Payer:        s.payer,
 		}
+		// The push's own answer from the host: the plan pays for what was heard, or
+		// the wallet does, with whether only cash may.
+		if g := grantFrom(ctx); g.Covered() {
+			rec.plan = g
+		} else if g != nil {
+			rec.cash = g.Cash
+		}
 		recordUsage(rec)
 		recordTrace(ctx, rec, start)
 	}
@@ -483,6 +490,27 @@ func TranscriptAdmitted(method, path, auth string) bool {
 	defer liveMu.Unlock()
 	s, _, _ := find(who, tid, time.Now())
 	return s != nil
+}
+
+// TranscriptModel is the model a push to or the close of a live transcript is
+// billed as — the one its open named — for the caller who opened it; false for any
+// other call, a session that is gone, or another principal's.
+func TranscriptModel(method, path, auth string) (string, bool) {
+	tid, ok := continued(method, path)
+	if !ok || auth == "" {
+		return "", false
+	}
+	who, err := zapResolveUser(auth)
+	if err != nil {
+		return "", false
+	}
+	liveMu.Lock()
+	defer liveMu.Unlock()
+	s, _, _ := find(who, tid, time.Now())
+	if s == nil {
+		return "", false
+	}
+	return s.model, true
 }
 
 // continued is the session id a push or a close names, and false for any other

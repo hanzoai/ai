@@ -107,22 +107,89 @@ func TestASpentWindowRefusesTheFreeLaneToo(t *testing.T) {
 	}
 }
 
-// Off a chat endpoint the plan is never asked: plans count chat requests only.
-func TestThePlanCountsChatRequestsOnly(t *testing.T) {
-	gateWith(t, 100000)
-	asked := 0
-	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-		asked++
-		return nil, nil, nil
+// Every priced endpoint asks the plan, not only chat: retrieval, speech and media
+// are each decided by the model they name, so a plan with an empty wallet serves
+// them. A path that prices nothing is never asked.
+func TestEveryPricedEndpointAsksThePlan(t *testing.T) {
+	gateWith(t, 0)
+	var asked []string
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		asked = append(asked, q.Model)
+		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassOurs, State: "ok", Settle: func(int64) {}}, nil, nil
 	})
-	chatWith("zen-embedding", "/v1/embeddings")
-	chatWith("enso", "/v1/images/generations")
-	if asked != 0 {
-		t.Fatalf("the plan was asked %d time(s) off a chat endpoint", asked)
+	for _, c := range []struct{ model, path string }{
+		{"zen-embedding", "/v1/embeddings"},
+		{"zen-rerank", "/v1/rerank"},
+		{"zen-voice-mini", "/v1/audio/speech"},
+		{"zen-voice-mini", "/v1/audio/voice"},
+		{"zen3-image", "/v1/images/generations"},
+	} {
+		p := chatWith(c.model, c.path)
+		if p.status() != http.StatusOK || p.replied("X-Hanzo-Paid-By") != object.PaysPlan {
+			t.Errorf("%s on %s with an empty wallet: %d paid-by %q (%s)", c.model, c.path, p.status(), p.replied("X-Hanzo-Paid-By"), p.said())
+		}
 	}
-	chatWith("enso", "/V1/Chat/Completions/")
-	if asked != 1 {
-		t.Fatalf("a chat endpoint spelled another way was not asked (%d)", asked)
+	// A transcription is a form, and its model is a field of it.
+	form := "--b\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nzen-scribe\r\n--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFF\r\n--b--\r\n"
+	p := ask(http.MethodPost, "/v1/audio/transcriptions").with("Authorization", "Bearer tok").
+		with("Content-Type", "multipart/form-data; boundary=b").body([]byte(form)).through(BalanceGateFilter)
+	if p.status() != http.StatusOK || p.replied("X-Hanzo-Paid-By") != object.PaysPlan {
+		t.Errorf("a transcription form with an empty wallet: %d (%s)", p.status(), p.said())
+	}
+	want := []string{"zen-embedding", "zen-rerank", "zen-voice-mini", "zen-voice-mini", "zen3-image", "zen-scribe"}
+	if strings.Join(asked, ",") != strings.Join(want, ",") {
+		t.Fatalf("asked %v, want %v", asked, want)
+	}
+	asked = nil
+	ask(http.MethodPost, "/v1/ai/chats").with("Authorization", "Bearer tok").body([]byte(`{"model":"zen5"}`)).through(BalanceGateFilter)
+	if len(asked) != 0 {
+		t.Fatalf("a path that prices nothing asked the plan: %v", asked)
+	}
+}
+
+// A push to a live transcript is billed as the model its open named, counted at the
+// open: the plan is asked as a Session, which counts nothing.
+func TestATranscriptPushIsAskedAsItsSession(t *testing.T) {
+	gateWith(t, 0)
+	prev := sessionModel
+	sessionModel = func(method, path, auth string) (string, bool) {
+		return "zen-scribe", path == pushPath && auth == "Bearer tok"
+	}
+	t.Cleanup(func() { sessionModel = prev })
+	var asked []object.LimitAsk
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		asked = append(asked, q)
+		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassOurs, State: "ok", Settle: func(int64) {}}, nil, nil
+	})
+	p := ask(http.MethodPost, pushPath).with("Authorization", "Bearer tok").body([]byte("pcm16-bytes")).through(BalanceGateFilter)
+	if p.status() != http.StatusOK || len(asked) != 1 || asked[0].Model != "zen-scribe" || !asked[0].Session {
+		t.Fatalf("a push at an empty wallet: %d asked %+v (%s)", p.status(), asked, p.said())
+	}
+}
+
+// A call that was not served keeps nothing it was counted against: an answer of 400
+// or above releases the grant, a served one does not.
+func TestAFailedCallIsReleased(t *testing.T) {
+	gateWith(t, 0)
+	freeModels(t, "enso")
+	released := 0
+	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "ok",
+			Settle: func(int64) {}, Release: func() { released++ }}, nil, nil
+	})
+	answer := func(code int) zip.Handler {
+		return func(c *zip.Ctx) error { c.Fiber().Status(code); return nil }
+	}
+	body := []byte(`{"model":"enso","messages":[{"role":"user","content":"hi"}]}`)
+	for i := 0; i < 10; i++ {
+		ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").body(body).through(BalanceGateFilter, answer(http.StatusServiceUnavailable))
+	}
+	if released != 10 {
+		t.Fatalf("ten 503s released %d", released)
+	}
+	ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").body(body).through(BalanceGateFilter, answer(http.StatusOK))
+	if released != 10 {
+		t.Fatalf("a served call was released (%d)", released)
 	}
 }
 

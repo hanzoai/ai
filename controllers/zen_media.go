@@ -60,7 +60,7 @@ func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, uni
 			ledger := c.billingOrg(authUser)
 			subject := authUser.PayerSubject(ledger)
 			var ok2 bool
-			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
+			if hold, ok2 = reserveFor(c.Context(), subject, zm.unitCostCents(units)); !ok2 {
 				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "cost").Message))
 				return
 			}

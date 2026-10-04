@@ -112,7 +112,7 @@ func (c *ApiController) Embeddings() {
 				est = zm.costCents(coarseTokenEstimate(c.Body()), 0, 0)
 			}
 			var ok2 bool
-			if hold, ok2 = reserveBudget(subject, est); !ok2 {
+			if hold, ok2 = reserveFor(c.Context(), subject, est); !ok2 {
 				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "cost").Message))
 				return
 			}
