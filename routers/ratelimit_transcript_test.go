@@ -111,3 +111,23 @@ func TestATranscriptsOpenIsCounted(t *testing.T) {
 		t.Fatalf("the open met the rate %d time(s) and the quota %d time(s), want 1 and 1", rate, quota)
 	}
 }
+
+// TestATranscriptsPushesAreDecidedAtItsOpen. A push names no model, so the wallet
+// gate cannot price it; its session was admitted at open, where the model is named.
+// A caller holding nothing is not refused the session they opened, and a push to a
+// session another credential opened still meets the wallet like any request.
+func TestATranscriptsPushesAreDecidedAtItsOpen(t *testing.T) {
+	gateWith(t, 0)
+	sessions(t, map[string]string{pushPath: "Bearer tok"})
+
+	for i := range 50 {
+		p := ask(http.MethodPost, pushPath).with("Authorization", "Bearer tok").body(make([]byte, 8192)).through(BalanceGateFilter)
+		if p.status() != http.StatusOK {
+			t.Fatalf("push %d to the caller's own session answered %d %s — the open admitted it", i+1, p.status(), p.wrote)
+		}
+	}
+	sessions(t, map[string]string{pushPath: "Bearer someone-else"})
+	if p := ask(http.MethodPost, pushPath).with("Authorization", "Bearer tok").body(make([]byte, 8192)).through(BalanceGateFilter); p.status() != http.StatusPaymentRequired {
+		t.Fatalf("a push to a session the caller did not open answered %d, want the wallet's 402", p.status())
+	}
+}

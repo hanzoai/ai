@@ -178,6 +178,15 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		return c.Continue()
 	}
 
+	// A transcript is admitted at its open, where its model is named and this gate
+	// and the handler's own balance gate decide it. A push carries raw audio and no
+	// model, so asked here it was refused on the wallet alone — every push of an
+	// unpriced model 402'd for a caller who holds nothing, a session its open had
+	// admitted. Its audio is still billed per second as it arrives.
+	if continues(c.Method(), path, c.Header("Authorization")) {
+		return c.Continue()
+	}
+
 	subject, namespace, userKey := resolveBillingKey(c)
 	if subject == "" {
 		// Cannot identify the billing subject — let downstream auth filters handle rejection.
