@@ -73,7 +73,10 @@ func voiceSetting(key, fallback string) string {
 	return fallback
 }
 
-func voiceModel() string { return voiceSetting("VOICE_MODEL", "zen-omni") }
+// voiceModel is what talk mode thinks with: zen, the family's own name, which the
+// zen catalog keeps pointed at a model it serves. It named zen-omni, an id the
+// catalog no longer carries, and every turn answered "chat 404" with no sound.
+func voiceModel() string { return voiceSetting("VOICE_MODEL", "zen") }
 
 // VoiceHandler serves /v1/voice, or nil when there is no IAM to check a bearer
 // against.

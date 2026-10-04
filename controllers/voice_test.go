@@ -115,3 +115,13 @@ func TestVoiceSessionAcceptsABearerFromTheBrandIssuer(t *testing.T) {
 		t.Fatal("a bearer from an untrusted issuer was handed a ticket")
 	}
 }
+
+// TestTalkModeThinksWithAModelTheCatalogServes. The default is the family's own
+// name, which the zen catalog aliases to a model it serves; a retired id answers
+// every turn with "chat 404" and no audio.
+func TestTalkModeThinksWithAModelTheCatalogServes(t *testing.T) {
+	t.Setenv("VOICE_MODEL", "")
+	if got := voiceModel(); got != "zen" {
+		t.Fatalf("talk mode thinks with %q, want zen", got)
+	}
+}
