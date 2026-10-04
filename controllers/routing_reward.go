@@ -47,8 +47,8 @@ var (
 // ever accepted or stored. `/v1/ai/feedback` is the ONE reward endpoint (the old
 // `/v1/add-routing-reward` alias was dropped) — one endpoint, one server-owned reward mapping.
 type routingRewardRequest struct {
-	RequestId string   `json:"request_id"`
-	Signal    string   `json:"signal,omitempty"`
+	RequestId string   `json:"request_id" validate:"required"`
+	Signal    string   `json:"signal,omitempty" enum:"up,accept,regenerate,down,switch,abandon,revert,rating,dismiss"`
 	Rating    *float64 `json:"rating,omitempty"`
 	Reward    *float64 `json:"reward,omitempty"` // explicit 0..1 override (internal)
 }

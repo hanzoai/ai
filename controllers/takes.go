@@ -38,6 +38,8 @@ var takes = map[string]any{
 	// Forwarded to the decision service with its handles named by the paying org;
 	// this is the Decisions request.
 	"Decisions": decisionsRequest{},
+	// The reward for a routed answer: its request id and the caller's signal.
+	"AddRoutingReward": routingRewardRequest{},
 	// The routing catalog editor (routing.go).
 	"RouterCatalogApply":    routingEdit{},
 	"RouterCatalogPropose":  routingEdit{},

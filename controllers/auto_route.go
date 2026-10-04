@@ -116,6 +116,27 @@ func asyncRecordRoutingEvent(e object.RoutingEvent) {
 // id in its `model` field).
 const RoutedModelHeader = "X-Routed-Model"
 
+// MaxCostHeader and MaxLatencyHeader bound a routed request without touching its
+// body: the most the caller will pay, in USD per 1,000 tokens, and the slowest
+// model it will accept, in milliseconds. sloFromHeaders reads both.
+const (
+	MaxCostHeader    = "X-Max-Cost"
+	MaxLatencyHeader = "X-Max-Latency-Ms"
+)
+
+// Routed names the handlers a routed request reaches. Each reads MaxCostHeader and
+// MaxLatencyHeader, and a request it routed answers the model that served it in
+// RoutedModelHeader. routers/openapi.go publishes all three on each one's
+// operation, so a generated client takes the bounds as parameters of the call.
+func Routed() map[string]bool { return routed }
+
+var routed = map[string]bool{
+	// resolveAutoModel runs in the handler, on every address it is routed at.
+	"ChatCompletions": true,
+	// AutoRouteFilter resolves /v1/responses before the handler reads it.
+	"Responses": true,
+}
+
 // isAutoModel reports whether the requested model is the virtual routing alias:
 // `auto`, `zen-router`, or no model at all — a caller who names none asks the router
 // to choose, among Hanzo's own models unless the org allows more (routable).
@@ -497,15 +518,15 @@ func messageText(m openai.ChatCompletionMessage) string {
 
 // sloFromHeaders reads the optional per-request SLO from headers, so callers can
 // express a cost/latency budget for `auto` without changing the OpenAI request
-// body: `X-Max-Cost` (USD per 1k tokens / per-1k, float) and `X-Max-Latency-Ms` (int).
+// body: MaxCostHeader (USD per 1k tokens, float) and MaxLatencyHeader (int).
 func (c *ApiController) sloFromHeaders() router.Slo {
 	var slo router.Slo
-	if v := c.Header("X-Max-Cost"); v != "" {
+	if v := c.Header(MaxCostHeader); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			slo.MaxCost = f
 		}
 	}
-	if v := c.Header("X-Max-Latency-Ms"); v != "" {
+	if v := c.Header(MaxLatencyHeader); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			slo.MaxLatencyMs = n
 		}

@@ -19,6 +19,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -96,6 +98,29 @@ func TestResolveReward(t *testing.T) {
 				t.Errorf("resolveReward = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// The signals the document publishes for /v1/ai/feedback are the ones signalReward
+// maps, read off the same struct tag the document is built from. A signal added to
+// the mapping and not the tag is one no generated client can send; one in the tag
+// and not the mapping is a value every client offers and the server refuses.
+func TestTheFeedbackSignalsArePublishedAsMapped(t *testing.T) {
+	f, ok := reflect.TypeFor[routingRewardRequest]().FieldByName("Signal")
+	if !ok {
+		t.Fatal("routingRewardRequest has no Signal field")
+	}
+	published := strings.Split(f.Tag.Get("enum"), ",")
+	rating := float64(2)
+	for _, s := range published {
+		if _, _, err := signalReward(s, &rating); err != nil {
+			t.Errorf("signal %q is published and refused: %v", s, err)
+		}
+	}
+	for _, s := range []string{"up", "accept", "regenerate", "down", "switch", "abandon", "revert", "rating", "dismiss"} {
+		if !slices.Contains(published, s) {
+			t.Errorf("signal %q is mapped and not published", s)
+		}
 	}
 }
 

@@ -57,6 +57,7 @@ func Document(app *zip.App) map[string]any {
 	named := map[string]reflect.Type{}
 	answered := map[string]map[string]any{}
 	taken := map[string]map[string]any{}
+	routes := map[string]bool{}
 	for _, w := range wired {
 		path := openAPIPath(w.Path)
 		said[w.Method+" "+path] = Doc{Summary: w.Summary, Description: w.Description}
@@ -65,6 +66,9 @@ func Document(app *zip.App) map[string]any {
 		}
 		if b, ok := controllers.Takes()[w.Handler]; ok {
 			taken[w.Method+" "+path] = take(b, named)
+		}
+		if controllers.Routed()[w.Handler] {
+			routes[w.Method+" "+path] = true
 		}
 	}
 
@@ -120,6 +124,11 @@ func Document(app *zip.App) map[string]any {
 					if b != nil {
 						o["requestBody"] = b
 					}
+				}
+				// A routed call's bounds and the model that served it, on the
+				// operations whose handler reads and writes them.
+				if routes[verb+" "+path] || routes["* "+path] {
+					budget(o)
 				}
 				// Named HERE because this is the one place that knows both the verb
 				// and the address. items() builds operations before it knows which
@@ -204,6 +213,42 @@ func expand(registered string) []string {
 		return []string{registered}
 	}
 	return nil
+}
+
+// budget publishes what a routed call reads and answers beside its body: the two
+// bounds as optional header parameters, and the model that served as a header of
+// its success. A client generated from the document then takes the bounds as
+// arguments of the call rather than as headers a caller has to know to set.
+func budget(o map[string]any) {
+	params, _ := o["parameters"].([]any)
+	o["parameters"] = append(params,
+		map[string]any{
+			"name": controllers.MaxCostHeader, "in": "header", "required": false,
+			"description": "The most this request may cost, in USD per 1,000 tokens. Routing picks only " +
+				"models under it; an org's own ceiling fills it when it is absent, and the lower of the two holds.",
+			"schema": map[string]any{"type": "number", "minimum": 0},
+		},
+		map[string]any{
+			"name": controllers.MaxLatencyHeader, "in": "header", "required": false,
+			"description": "The slowest model this request accepts, in milliseconds.",
+			"schema":      map[string]any{"type": "integer", "minimum": 0},
+		},
+	)
+	responses, _ := o["responses"].(map[string]any)
+	ok, _ := responses["200"].(map[string]any)
+	if ok == nil {
+		return
+	}
+	headers, _ := ok["headers"].(map[string]any)
+	if headers == nil {
+		headers = map[string]any{}
+		ok["headers"] = headers
+	}
+	headers[controllers.RoutedModelHeader] = map[string]any{
+		"description": "The model that served a routed request, one that named auto or an id the router " +
+			"resolves. The body's model field names the same id.",
+		"schema": map[string]any{"type": "string"},
+	}
 }
 
 // envelope is the one body this service returns from its resource surface.
