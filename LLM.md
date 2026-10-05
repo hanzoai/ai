@@ -1007,7 +1007,7 @@ quiet honestly. It now has a cost to compare against, or a flag saying there is 
 ## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
 
 **A call names the API key it arrived on.** The identity boundary in front of this
-module writes `X-Key-Id` (the key's id in its org; stripped on ingress, written only
+module writes `X-Key-Id` (`<org>/<id>`: the org the key is filed in and its id there; stripped on ingress, written only
 from a resolved key); `TenantContextFilter` threads it as `GenAIAttribution.Key`,
 `usageRecord.bind` copies it, and the native debit carries it as `UsageEvent.Key`.
 The host keeps each key's own spend by it, which is what a per-key budget is held to.
