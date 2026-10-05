@@ -55,9 +55,9 @@ type GenAIAttribution struct {
 	// let anyone move their spend onto a colleague.
 	User string
 	// Key is the API key the call arrived on, as the identity boundary in front of
-	// this module named it (X-Key-Id): the key's id within its org. Empty for a
-	// session or any credential that is not a key. A host keeps each key's own
-	// spend by it.
+	// this module named it (X-Key-Id): "<org>/<id>", the org the key is filed in
+	// and its id there. Empty for a session or any credential that is not a key.
+	// A host keeps each key's own spend by it.
 	Key string
 }
 

@@ -84,8 +84,9 @@ type UsageEvent struct {
 	// a free cap covered it) or "hanzo" (a free model, absorbed by the platform).
 	// Empty: the wallet pays, and the ledger records which part of it did.
 	PaidBy string
-	// Key is the API key the call arrived on (GenAIAttribution.Key), its id within
-	// Namespace; empty for a call that did not arrive on a key. A host keeps a key's
+	// Key is the API key the call arrived on (GenAIAttribution.Key), "<org>/<id>":
+	// the org the key is filed in, which can differ from Namespace, and its id
+	// there. Empty for a call that did not arrive on a key. A host keeps a key's
 	// own spend by it, which is how a key holds a budget of its own.
 	Key string
 }
