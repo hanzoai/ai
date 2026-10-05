@@ -27,9 +27,10 @@ import (
 // strings. A form a type cannot carry is a form the document does not describe.
 func TestEveryDecisionFormRoundTrips(t *testing.T) {
 	variant := map[string]func() any{
-		"choice": func() any { return &decisionsChoice{} },
-		"score":  func() any { return &decisionsScore{} },
-		"noul":   func() any { return &decisionsNoul{} },
+		"choice":  func() any { return &decisionsChoice{} },
+		"score":   func() any { return &decisionsScore{} },
+		"noul":    func() any { return &decisionsNoul{} },
+		"boolean": func() any { return &decisionsBoolean{} },
 	}
 	same := func(t *testing.T, into any, wire string) {
 		t.Helper()
@@ -52,6 +53,7 @@ func TestEveryDecisionFormRoundTrips(t *testing.T) {
 		`{"type":"choice","criteria":["account","payments","shipping"]}`,
 		`{"type":"score","instructions":"How urgent is it?","criteria":["later","this week","today","now"]}`,
 		`{"type":"noul","instructions":{"q":"Does this read a key?"},"criteria":{"true":"it reads a key","false":"it does not"},"labels":{"true":"yes","false":"no"}}`,
+		`{"type":"boolean","instructions":"Is it urgent?","criteria":{"true":"today"}}`,
 	} {
 		var kind struct{ Type string }
 		_ = json.Unmarshal([]byte(q), &kind)
@@ -62,7 +64,8 @@ func TestEveryDecisionFormRoundTrips(t *testing.T) {
 		same(t, &c, state)
 	}
 	same(t, &decisionsResponse{}, `{"id":"dec_1","model":"kai","provider":"hanzo",
-		"answers":{"urgency":{"type":"score","score":1.95,"confidence":0.4667,
+		"answers":{"hot":{"type":"boolean","probability":0.91},"bug":{"type":"noul","noul":0.2},
+		"urgency":{"type":"score","score":1.95,"confidence":0.4667,
 		"legend":{"0":"later","1":"this week","2":"today","3":"now"},
 		"probabilities":{"0":0.05,"1":0.2,"2":0.5,"3":0.25}}},
 		"usage":{"input_tokens":41,"output_tokens":0},"routing":{"backend":"kai","checkpoint":"a7","reason":"asked"},

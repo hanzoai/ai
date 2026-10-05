@@ -125,16 +125,27 @@ type decisionsRequest struct {
 	Trace     json.RawMessage `json:"trace,omitempty"`
 }
 
-// decisionsQuestion is one typed question: a noul, a choice or a score, named by
-// its type.
+// decisionsQuestion is one typed question: a boolean (or noul, Jev's spelling of
+// it), a choice or a score, named by its type.
 type decisionsQuestion struct{}
 
-// Variants are the three kinds of question.
+// Variants are the kinds of question.
 func (decisionsQuestion) Variants() (string, []any) {
-	return "type", []any{decisionsNoul{}, decisionsChoice{}, decisionsScore{}}
+	return "type", []any{decisionsBoolean{}, decisionsNoul{}, decisionsChoice{}, decisionsScore{}}
 }
 
-// decisionsNoul asks whether a statement holds.
+// decisionsBoolean asks whether a statement holds; its answer is
+// {"type": "boolean", "probability": P(true)}.
+type decisionsBoolean struct {
+	Type         string          `json:"type" validate:"required" enum:"boolean"`
+	Instructions decisionContent `json:"instructions,omitempty"`
+	Criteria     *decisionSides  `json:"criteria,omitempty"`
+	// Labels rename the sides: {"false": "...", "true": "..."}.
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// decisionsNoul is a boolean in Jev's spelling; its answer is
+// {"type": "noul", "noul": P(true)}.
 type decisionsNoul struct {
 	Type         string          `json:"type" validate:"required" enum:"noul"`
 	Instructions decisionContent `json:"instructions,omitempty"`
@@ -178,25 +189,29 @@ type decisionsResponse struct {
 	LatencyMs float64                    `json:"latency_ms" validate:"required"`
 }
 
-// decisionsAnswer is one question's answer. Type names which of noul, choice or
-// score is set.
+// decisionsAnswer is one question's answer, in the spelling it was asked in. Type
+// names which of probability (boolean), noul, choice or score is set.
 type decisionsAnswer struct {
-	Type string `json:"type" validate:"required" enum:"noul,choice,score"`
-	// Noul is P(true).
+	Type string `json:"type" validate:"required" enum:"boolean,noul,choice,score"`
+	// Probability is P(true), a boolean's.
+	Probability *float64 `json:"probability,omitempty"`
+	// Noul is P(true), a noul's.
 	Noul *float64 `json:"noul,omitempty"`
 	// Choice is the chosen label.
 	Choice string `json:"choice,omitempty"`
 	// Score is the expected level, Σ i·p_i.
 	Score *float64 `json:"score,omitempty"`
-	// Confidence is |2p − 1| for a noul, (n·p_max − 1)/(n − 1) otherwise: 0 when
-	// every option is equally likely.
+	// Confidence is (n·p_max − 1)/(n − 1), a choice's or a score's: 0 when every
+	// option is equally likely. A boolean or a noul carries none: how certain it is
+	// is its distance from 0.5.
 	Confidence *float64 `json:"confidence,omitempty"`
 	// Probabilities are keyed by label (choice) or by level index "0", "1", …
 	// (score).
 	Probabilities map[string]float64 `json:"probabilities,omitempty"`
 	// Legend is a score's level descriptions, keyed "0", "1", ….
 	Legend map[string]decisionContent `json:"legend,omitempty"`
-	// AnswerConfidence is the calibrated probability of the reported answer.
+	// AnswerConfidence is the calibrated probability of the reported answer, a
+	// choice's or a score's.
 	AnswerConfidence *float64         `json:"answer_confidence,omitempty"`
 	Action           *decisionsAction `json:"action,omitempty"`
 }
@@ -975,8 +990,9 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		return refused(d.rid, decline(http.StatusServiceUnavailable, "the organization's capabilities could not be read; retry"))
 	}
 	kai := object.KaiProvider()
+	// Kai captures its states; Jev, reached through the same service, has none.
 	asked := ctx
-	if object.Capturing(ctx, d.ledger) {
+	if !jevNamed(d.model) && object.Capturing(ctx, d.ledger) {
 		asked = context.WithValue(ctx, captureKey{}, true)
 	}
 	got := consult(asked, kai, d.model, d.version, d.ledger, set, d.rid, body)
