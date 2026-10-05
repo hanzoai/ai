@@ -138,14 +138,17 @@ func TestTheDecisionPathIsPublished(t *testing.T) {
 		}
 	}
 	open("state", prop("ai.DecisionsRequest", "state"))
+	open("boolean instructions", prop("ai.DecisionsBoolean", "instructions"))
 	open("noul instructions", prop("ai.DecisionsNoul", "instructions"))
 	open("choice instructions", prop("ai.DecisionsChoice", "instructions"))
 	open("choice criteria", prop("ai.DecisionsChoice", "criteria"))
 	open("noul side", prop("ai.DecisionSides", "true"))
 	open("score level", prop("ai.DecisionsScore", "criteria")["items"].(map[string]any))
 	open("legend entry", prop("ai.DecisionsAnswer", "legend")["additionalProperties"].(map[string]any))
-	if slices.Contains(required("ai.DecisionsNoul"), "instructions") {
-		t.Errorf("noul instructions are required, want optional")
+	for _, yes := range []string{"ai.DecisionsBoolean", "ai.DecisionsNoul"} {
+		if slices.Contains(required(yes), "instructions") {
+			t.Errorf("%s instructions are required, want optional", yes)
+		}
 	}
 	if e := prop("ai.DecisionsChoice", "type")["enum"]; !slices.Equal(e.([]any), []any{"choice"}) {
 		t.Errorf("choice type enum = %v", e)
@@ -171,8 +174,15 @@ func TestTheDecisionPathIsPublished(t *testing.T) {
 	q := schema("ai.DecisionsQuestion")
 	d, _ := q["discriminator"].(map[string]any)
 	m, _ := d["mapping"].(map[string]any)
-	if len(q["oneOf"].([]any)) != 3 || d["propertyName"] != "type" || m["score"] != "#/components/schemas/ai.DecisionsScore" {
-		t.Errorf("a question is not one of three kinds by type: %v", q)
+	if len(q["oneOf"].([]any)) != 4 || d["propertyName"] != "type" || m["score"] != "#/components/schemas/ai.DecisionsScore" ||
+		m["boolean"] != "#/components/schemas/ai.DecisionsBoolean" || m["noul"] != "#/components/schemas/ai.DecisionsNoul" {
+		t.Errorf("a question is not a boolean (or noul, its other spelling), a choice or a score by type: %v", q)
+	}
+	if e := prop("ai.DecisionsAnswer", "type")["enum"]; !slices.Equal(e.([]any), []any{"boolean", "noul", "choice", "score"}) {
+		t.Errorf("answer type enum = %v", e)
+	}
+	if p := prop("ai.DecisionsAnswer", "probability"); p["type"] != "number" {
+		t.Errorf("a boolean answer's probability = %v", p)
 	}
 	if r := required("ai.DecisionsUsage"); !slices.Equal(r, []any{"input_tokens", "output_tokens"}) {
 		t.Errorf("usage requires %v", r)

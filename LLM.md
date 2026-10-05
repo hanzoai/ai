@@ -662,9 +662,18 @@ million input tokens — the same row in `model_pricing.go`,
 - **Nothing named Jev reaches Kai**: a route or a models.yaml `alias_of` that would
   send a Jev-named id to a Kai upstream is refused where it resolves (`Canonical`,
   `decisionModel`).
+- **A yes/no question is `boolean`; `noul` is Jev's spelling of it.** One kind, two
+  spellings, and the answer mirrors the one asked: `{"type":"boolean","probability":p}`
+  or `{"type":"noul","noul":p}`; a boolean carries no `confidence`/`answer_confidence`
+  (choice and score keep theirs), and Kai v0.3.x still adds both to a noul and
+  refuses `boolean` (422) until v0.4.0 serves. Kai models get the body as written.
+  Jev knows only `noul`: for a Jev model `consult` respells each `boolean` question
+  `noul` (`spell`) and puts its answer back as exactly `{"type":"boolean","probability":p}`
+  (`unspell`), in place over `members`, every other byte kept. A Jev model holds no
+  state (the service refuses observe/handle for it), so no handle crosses this.
 - **The spec is derived.** `routers/shape.go` reads `validate:"required,min=,max="`
   and `enum:"..."` tags, a type's `Schema()` (Content kinds) and `Variants()`
-  (a question is one of three, by `type`); `controllers.Answer.Refusals` states
+  (a question is a boolean, a noul, a choice or a score, by `type`); `controllers.Answer.Refusals` states
   each refusal and its headers.
 
 ## AI Login Manager — universal metering + connected accounts + 1% BYO fee

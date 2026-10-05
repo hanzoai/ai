@@ -70,4 +70,12 @@ func TestEveryDecisionFormRoundTrips(t *testing.T) {
 		"probabilities":{"0":0.05,"1":0.2,"2":0.5,"3":0.25}}},
 		"usage":{"input_tokens":41,"output_tokens":0},"routing":{"backend":"kai","checkpoint":"a7","reason":"asked"},
 		"state_hash":"h","latency_ms":12}`)
+	// A yes/no answer in either spelling, and a noul as Kai v0.3 answers it.
+	for _, a := range []string{
+		`{"type":"boolean","probability":0.25}`,
+		`{"type":"noul","noul":0.25}`,
+		`{"type":"noul","noul":0.25,"confidence":0.5,"answer_confidence":0.75}`,
+	} {
+		same(t, &decisionsAnswer{}, a)
+	}
 }

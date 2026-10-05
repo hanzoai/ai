@@ -206,6 +206,104 @@ func TestDecisionsServeJevByItsVendorIds(t *testing.T) {
 	}
 }
 
+// A yes/no question is a boolean, and Jev spells it noul. A boolean asked of Jev
+// reaches it as a noul, every other byte of the request as written, and its answer
+// comes back as exactly {"type":"boolean","probability":p}, p as Jev wrote it; a
+// noul and a choice beside it go both ways untouched. Kai reads both spellings, so
+// it is sent the body as written and its answer comes back as written.
+func TestJevIsAskedABooleanAsANoul(t *testing.T) {
+	fake, events := setupDecisions(t)
+	const questions = `{"is_bug": {"type": "boolean", "instructions": "Is this a product defect?",
+		"criteria": {"true": "a defect", "false": "working as intended"}},
+	"urgent": {"type": "noul", "instructions": "Page on-call?"},
+	"team": {"type": "choice", "criteria": ["payments", "account"]}}`
+	ask := func(model string) string {
+		return `{"model":"` + model + `","state":"I was charged twice.","questions":` + questions + `}`
+	}
+	choice := `"team":{"type":"choice","choice":"payments","confidence":0.2,"probabilities":{"payments":0.6,"account":0.4},"answer_confidence":0.6}`
+	answer := func(model, isBug string) string {
+		return `{"id":"dec_2","model":"` + model + `","provider":"OpenRouter","answers":{"is_bug":` + isBug +
+			`,"urgent":{"type":"noul","noul":0.75},` + choice + `},"usage":{"input_tokens":42,"output_tokens":0}}`
+	}
+	fake.serve = func(_ string, body []byte) (int, string) {
+		var b struct{ Model string }
+		_ = json.Unmarshal(body, &b)
+		if b.Model == "kai" {
+			return http.StatusOK, answer("kai", `{"type":"boolean","probability":0.25}`)
+		}
+		return http.StatusOK, answer(b.Model, `{"type":"noul","noul":0.2500,"confidence":0.5,"answer_confidence":0.75}`)
+	}
+
+	for _, model := range []string{"typesafe/jev-1.13", "~typesafe/jev-latest"} {
+		status, body := driveDecisions(t, "Bearer "+decisionsKey, ask(model))
+		if want := answer(model, `{"type":"boolean","probability":0.2500}`); status != http.StatusOK || body != want {
+			t.Fatalf("%s answered %d\n got %s\nwant %s", model, status, body, want)
+		}
+		_, _, sent := fake.seen()
+		if want := strings.Replace(ask(model), `"is_bug": {"type": "boolean"`, `"is_bug": {"type": "noul"`, 1); string(sent) != want {
+			t.Fatalf("%s was sent\n%s\nwant\n%s", model, sent, want)
+		}
+	}
+
+	status, body := driveDecisions(t, "Bearer "+decisionsKey, ask("kai"))
+	if want := answer("kai", `{"type":"boolean","probability":0.25}`); status != http.StatusOK || body != want {
+		t.Fatalf("kai answered %d\n got %s\nwant %s", status, body, want)
+	}
+	if _, _, sent := fake.seen(); string(sent) != ask("kai") {
+		t.Fatalf("kai was sent\n%s\nwant the body as written", sent)
+	}
+	if len(*events) != 3 {
+		t.Fatalf("debits = %d, want one per answered call", len(*events))
+	}
+}
+
+// spell and unspell read the wire as the service does: an escaped type is the type,
+// of a key written twice the last counts, an answer that is not a noul's
+// probability is left as it came, and every byte they do not respell is kept.
+func TestSpellReadsAsTheServiceReads(t *testing.T) {
+	for _, c := range []struct {
+		body, sent string
+		asked      []string
+	}{
+		{`{"questions": {"q": {"type": "boolean", "instructions": "x"}}}`, `{"questions": {"q": {"type": "noul", "instructions": "x"}}}`, []string{"q"}},
+		{`{"questions":{"q":{"type":"\u0062oolean"}}}`, `{"questions":{"q":{"type":"noul"}}}`, []string{"q"}},
+		{`{"questions":{"q":{"type":"noul"},"q":{"type":"boolean"}}}`, `{"questions":{"q":{"type":"noul"},"q":{"type":"noul"}}}`, []string{"q"}},
+		{`{"questions":{"q":{"type":"boolean"},"q":{"type":"score","criteria":["a"]}}}`, "", nil},
+		{`{"questions":{"q":{"type":"noul"},"r":{"type":"Boolean"}}}`, "", nil},
+		{`{"questions":[{"type":"boolean"}]}`, "", nil},
+		{`{"questions":{"q":{"type":"boolean"}}} {}`, "", nil},
+	} {
+		sent, asked := spell([]byte(c.body))
+		want := c.sent
+		if want == "" {
+			want = c.body
+		}
+		var names []string
+		for n := range asked {
+			names = append(names, n)
+		}
+		if string(sent) != want || fmt.Sprint(names) != fmt.Sprint(c.asked) {
+			t.Errorf("spell(%s) = %s %v, want %s %v", c.body, sent, names, want, c.asked)
+		}
+	}
+
+	asked := map[string]bool{"q": true}
+	for in, want := range map[string]string{
+		`{"answers": {"q": {"type": "noul", "noul": 1e-3}, "r": {"type": "noul", "noul": 0.5}}}`: `{"answers": {"q": {"type":"boolean","probability":1e-3}, "r": {"type": "noul", "noul": 0.5}}}`,
+		`{"answers":{"q":{"type":"noul","noul":null}}}`:                                          "",
+		`{"answers":{"q":{"type":"choice","choice":"a"}}}`:                                       "",
+		`{"answers":{"q":{"type":"boolean","probability":0.5}}}`:                                 "",
+		`{"error":{"code":422,"message":"no"}}`:                                                  "",
+	} {
+		if want == "" {
+			want = in
+		}
+		if got := unspell([]byte(in), asked); string(got) != want {
+			t.Errorf("unspell(%s) = %s, want %s", in, got, want)
+		}
+	}
+}
+
 // Nothing named Jev is ever answered by Kai: a route that would send a Jev id to
 // Kai is an unknown model.
 func TestJevIsNeverKai(t *testing.T) {

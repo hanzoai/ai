@@ -195,15 +195,16 @@ type decisionsAnswer struct {
 	Type string `json:"type" validate:"required" enum:"boolean,noul,choice,score"`
 	// Probability is P(true), a boolean's.
 	Probability *float64 `json:"probability,omitempty"`
-	// Noul is P(true), a noul's.
+	// Noul is P(true), a noul's. An older Kai (v0.3) answers a noul with confidence
+	// and answer_confidence beside it.
 	Noul *float64 `json:"noul,omitempty"`
 	// Choice is the chosen label.
 	Choice string `json:"choice,omitempty"`
 	// Score is the expected level, Σ i·p_i.
 	Score *float64 `json:"score,omitempty"`
 	// Confidence is (n·p_max − 1)/(n − 1), a choice's or a score's: 0 when every
-	// option is equally likely. A boolean or a noul carries none: how certain it is
-	// is its distance from 0.5.
+	// option is equally likely. A boolean carries none: how certain it is is its
+	// distance from 0.5. A noul may carry one, |2p − 1|, where an older Kai answered.
 	Confidence *float64 `json:"confidence,omitempty"`
 	// Probabilities are keyed by label (choice) or by level index "0", "1", …
 	// (score).
@@ -211,7 +212,7 @@ type decisionsAnswer struct {
 	// Legend is a score's level descriptions, keyed "0", "1", ….
 	Legend map[string]decisionContent `json:"legend,omitempty"`
 	// AnswerConfidence is the calibrated probability of the reported answer, a
-	// choice's or a score's.
+	// choice's or a score's, and max(p, 1 − p) on a noul an older Kai answered.
 	AnswerConfidence *float64         `json:"answer_confidence,omitempty"`
 	Action           *decisionsAction `json:"action,omitempty"`
 }
@@ -818,13 +819,123 @@ func consult(ctx context.Context, kai *object.Provider, model, version, org, set
 		}
 		body = b
 	}
+	var asked map[string]bool
+	if jevNamed(model) {
+		body, asked = spell(body)
+	}
 	d := recall(ctx, kai, up, org, set, rid, body)
 	if d.status == http.StatusOK && up != model {
 		if named, ok := WithModel(d.body, model); ok {
 			d.body = named
 		}
 	}
+	if d.status == http.StatusOK && asked != nil {
+		d.body = unspell(d.body, asked)
+	}
 	return d
+}
+
+// A yes/no question is a boolean, and Jev spells it noul. Kai reads both spellings
+// and answers each in its own, so a Kai model is sent the body as written. Jev knows
+// only noul: spell sends each boolean question to it as a noul, and unspell puts
+// that question's answer, {"type":"noul","noul":p}, back as exactly
+// {"type":"boolean","probability":p}. Either model answers a request in the
+// spelling it asked in. A Jev model holds no state, so no handle crosses this.
+
+// spell is body with each boolean question typed noul, and the names of the
+// questions it asks as booleans; a body with none goes out byte for byte, with no
+// names. Every byte but those types is kept. Of a key written twice, the last is
+// the one the service reads, and so the one that counts here.
+func spell(body []byte) ([]byte, map[string]bool) {
+	asked := map[string]bool{}
+	out, changed := rewrite(body, func(key string, questions json.RawMessage) (json.RawMessage, bool) {
+		if key != "questions" {
+			return nil, false
+		}
+		return rewrite(questions, func(name string, q json.RawMessage) (json.RawMessage, bool) {
+			var kind string
+			q, respelled := rewrite(q, func(key string, t json.RawMessage) (json.RawMessage, bool) {
+				if key != "type" {
+					return nil, false
+				}
+				kind = ""
+				_ = json.Unmarshal(t, &kind)
+				return json.RawMessage(`"noul"`), kind == "boolean"
+			})
+			asked[name] = kind == "boolean"
+			return q, respelled
+		})
+	})
+	for name, b := range asked {
+		if !b {
+			delete(asked, name)
+		}
+	}
+	if !changed || len(asked) == 0 {
+		return body, nil
+	}
+	return out, asked
+}
+
+// unspell is an answer with the answer to each question asked names put back as a
+// boolean: {"type":"noul","noul":p} becomes {"type":"boolean","probability":p}, p as
+// written. Every other byte is kept.
+func unspell(body []byte, asked map[string]bool) []byte {
+	out, _ := rewrite(body, func(key string, answers json.RawMessage) (json.RawMessage, bool) {
+		if key != "answers" {
+			return nil, false
+		}
+		return rewrite(answers, func(name string, a json.RawMessage) (json.RawMessage, bool) {
+			if !asked[name] {
+				return nil, false
+			}
+			var kind string
+			var p json.RawMessage
+			var n any
+			if members(a, func(key string, v json.RawMessage, _ int) error {
+				switch key {
+				case "type":
+					kind = ""
+					_ = json.Unmarshal(v, &kind)
+				case "noul":
+					p = v
+				}
+				return nil
+			}) != nil || kind != "noul" || json.Unmarshal(p, &n) != nil {
+				return nil, false
+			}
+			if _, number := n.(float64); !number {
+				return nil, false
+			}
+			return json.RawMessage(`{"type":"boolean","probability":` + string(p) + `}`), true
+		})
+	})
+	return out
+}
+
+// rewrite is obj with the value of each member fn replaces put in its place, every
+// other byte as written, and whether fn replaced any. fn sees each member in order,
+// duplicates included. obj that is not one JSON object comes back as it is.
+func rewrite(obj []byte, fn func(key string, value json.RawMessage) (json.RawMessage, bool)) ([]byte, bool) {
+	out := make([]byte, 0, len(obj))
+	at := 0
+	err := members(obj, func(key string, value json.RawMessage, end int) error {
+		v, ok := fn(key, value)
+		if !ok {
+			return nil
+		}
+		start := end - len(value)
+		if start < at || !bytes.Equal(obj[start:end], value) {
+			return errors.New("a member is not where it was read")
+		}
+		out = append(append(out, obj[at:start]...), v...)
+		at = end
+		return nil
+	})
+	if err != nil || at == 0 {
+		return obj, false
+	}
+	return append(out, obj[at:]...), true
 }
 
 // send posts body to the decision service's /v1/decisions, for org with its
@@ -1327,7 +1438,7 @@ func remint(body []byte) []byte {
 // Decisions implements POST /v1/decisions (the Decisions API).
 //
 // Body: {"model": "kai", "state": "..."|{...}|[...], "questions": {"<name>":
-// {"type": "choice"|"noul"|"score", "instructions": ..., "criteria": ...}}}.
+// {"type": "boolean"|"choice"|"score", "instructions": ..., "criteria": ...}}}.
 // model is kai, Kai's versioned id kai-<12 hex of the weights' sha256> — priced as
 // kai and sent as asked — or Jev by OpenRouter's vendor ids, typesafe/jev-1.13 and
 // ~typesafe/jev-latest, which reach Jev itself and bill at Jev's list price. No Jev
@@ -1336,6 +1447,12 @@ func remint(body []byte) []byte {
 // handle, which carries neither. instructions is optional and any JSON. A choice
 // names at least 2 labels and a score at least 1 level, bounded by the token
 // budget rather than a count; questions holds 1 to 100.
+//
+// A boolean is a yes/no probability, answered {"type": "boolean", "probability":
+// p}. noul is accepted as Jev's spelling of it and answered in Jev's shape,
+// {"type": "noul", "noul": p}; an older Kai adds confidence and answer_confidence to
+// a noul's. A boolean carries no confidence. Jev is asked a boolean as a noul, and
+// its answer comes back as exactly the boolean.
 //
 // observe holds the state under an id, and a later request naming that id as its
 // handle decides over it again. An id is 1 to 128 characters of A-Z, a-z, 0-9, '.',
