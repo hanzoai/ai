@@ -135,6 +135,19 @@ func TestARoutedCallSaysItsBoundsAndTheModelThatServed(t *testing.T) {
 		if _, has := said[controllers.RoutedModelHeader]; !has {
 			t.Errorf("POST %s: 200 headers = %v, want %s", path, said, controllers.RoutedModelHeader)
 		}
+		content, _ := ok["content"].(map[string]any)
+		for media, v := range content {
+			schema, _ := v.(map[string]any)["schema"].(map[string]any)
+			all, _ := schema["allOf"].([]any)
+			if len(all) != 2 {
+				t.Errorf("POST %s %s: 200 body does not publish routing: %v", path, media, schema)
+				continue
+			}
+			props, _ := all[1].(map[string]any)["properties"].(map[string]any)
+			if _, has := props["routing"]; !has {
+				t.Errorf("POST %s %s: 200 body has no routing", path, media)
+			}
+		}
 	}
 	for _, path := range []string{"/v1/embeddings", "/v1/messages", "/v1/decisions"} {
 		if h := headers(op(path)); h[controllers.MaxCostHeader] != "" {

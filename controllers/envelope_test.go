@@ -1172,3 +1172,41 @@ func TestStampLeavesWhatIsNotOursAlone(t *testing.T) {
 		t.Errorf("error = %s, want the message kept and the restated HTTP status dropped", env["error"])
 	}
 }
+
+// TestTheRouterSaysWhyOnTheFirstEnvelope: a routed request's answer carries the
+// router's decision as `routing` — on the buffered body, and on the first chunk of a
+// stream only — and an upstream's own `routing` never passes.
+func TestTheRouterSaysWhyOnTheFirstEnvelope(t *testing.T) {
+	why := json.RawMessage(`{"router":"enso","chosen":"enso-pro","candidates":[{"model":"enso-pro","depths":["high"]}],"inputs":{"depth":"high","key":"high","policy":"funded"},"reason":"high reasoning names enso-pro, and your plan or credit pays for it."}`)
+
+	mk := ourMark()
+	mk.routing = why
+	body := mk.stamp([]byte(`{"id":"gen-1","model":"x","routing":{"forged":true},"choices":[{"index":0,"message":{"role":"assistant","content":"hi"}}]}`))
+	var whole map[string]json.RawMessage
+	if err := json.Unmarshal(body, &whole); err != nil {
+		t.Fatal(err)
+	}
+	if string(whole["routing"]) != string(why) {
+		t.Fatalf("buffered routing = %s, want %s", whole["routing"], why)
+	}
+
+	mk = ourMark()
+	mk.routing = why
+	to := toStream()
+	relayZenStream(to.w, strings.NewReader(upstreamStream), mk, nil)
+	for i, env := range chunks(t, to.String()) {
+		_, has := env["routing"]
+		if i == 0 && (!has || string(env["routing"]) != string(why)) {
+			t.Fatalf("first chunk routing = %s, want %s", env["routing"], why)
+		}
+		if i > 0 && has {
+			t.Fatalf("chunk %d carries routing again", i)
+		}
+	}
+
+	// No router decided: no routing, and an upstream's is dropped.
+	plain := ourMark().stamp([]byte(`{"id":"gen-1","routing":{"forged":true},"choices":[]}`))
+	if strings.Contains(string(plain), "routing") {
+		t.Fatalf("unrouted answer carries routing: %s", plain)
+	}
+}

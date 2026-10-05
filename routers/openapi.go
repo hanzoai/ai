@@ -249,6 +249,54 @@ func budget(o map[string]any) {
 			"resolves. The body's model field names the same id.",
 		"schema": map[string]any{"type": "string"},
 	}
+	// The body says why: a routed answer carries the router's decision beside it, on
+	// the whole body or the first chunk of a stream.
+	content, _ := ok["content"].(map[string]any)
+	for _, media := range content {
+		m, _ := media.(map[string]any)
+		if m == nil || m["schema"] == nil {
+			continue
+		}
+		m["schema"] = map[string]any{"allOf": []any{m["schema"], map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"routing": routingSchema},
+		}}}
+	}
+}
+
+// routingSchema is controllers.Routing: what a router decided for one request, and why.
+var routingSchema = map[string]any{
+	"type": "object",
+	"description": "What the router decided for this request and why, present when one routed it (a model " +
+		"Enso routes by reasoning depth). Every field is one the router read or wrote; it reports no score, " +
+		"expected cost or latency because it weighs none.",
+	"required": []any{"router", "chosen", "candidates", "inputs", "reason"},
+	"properties": map[string]any{
+		"router": map[string]any{"type": "string", "description": "The router that decided: enso."},
+		"chosen": map[string]any{"type": "string", "description": "The model the request is served at."},
+		"candidates": map[string]any{
+			"type":        "array",
+			"description": "Each model the router's table names, with the reasoning depths that read it, shallow to deep.",
+			"items": map[string]any{
+				"type":     "object",
+				"required": []any{"model", "depths"},
+				"properties": map[string]any{
+					"model":  map[string]any{"type": "string"},
+					"depths": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+			},
+		},
+		"inputs": map[string]any{
+			"type":     "object",
+			"required": []any{"depth", "key", "policy"},
+			"properties": map[string]any{
+				"depth":  map[string]any{"type": "string", "description": "The reasoning depth the request states; default when it states none."},
+				"key":    map[string]any{"type": "string", "description": "The table row that depth was read at."},
+				"policy": map[string]any{"type": "string", "enum": []any{"funded", "unfunded", "n/a"}, "description": "Whether the caller's plan or credit pays for the paid model at that depth."},
+			},
+		},
+		"reason": map[string]any{"type": "string", "description": "How the inputs led to chosen, in a sentence."},
+	},
 }
 
 // envelope is the one body this service returns from its resource surface.

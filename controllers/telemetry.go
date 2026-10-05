@@ -77,6 +77,7 @@ const (
 	attrServedBy       = "gen_ai.hanzo.served_by"
 	attrClusterID      = "gen_ai.hanzo.cluster_id"
 	attrRoutePolicy    = "gen_ai.hanzo.route_policy"
+	attrRouting        = "gen_ai.hanzo.routing"
 	// attrFallback is emitted ONLY when the caller did not get the route they
 	// named, and it says WHY. Present ⇒ this generation is a downgrade; absent ⇒
 	// it is not, which is what makes it a filter and not a thing to interpret.
@@ -274,6 +275,9 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 	}
 	if record.RoutePolicy != "" {
 		attrs = append(attrs, attribute.String(attrRoutePolicy, record.RoutePolicy))
+	}
+	if record.Routing != "" {
+		attrs = append(attrs, attribute.String(attrRouting, record.Routing))
 	}
 	// Unpriced call: billed at the conservative default because the model has no
 	// configured price. Emit priced=false so o11y flags it; omit otherwise.

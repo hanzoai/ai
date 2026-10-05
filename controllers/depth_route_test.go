@@ -175,3 +175,77 @@ func TestWithModelChangesOnlyTheModel(t *testing.T) {
 		}
 	}
 }
+
+func TestDepthRoutingSaysWhatEnsoReadAndWhy(t *testing.T) {
+	depthConfig(t)
+	seedEnso(t)
+	high := []byte(`{"model":"enso","reasoning_effort":"high"}`)
+
+	r := DepthRouting("enso", high, true)
+	if r == nil {
+		t.Fatal("enso is depth-routed: want a routing")
+	}
+	if r.Router != "enso" || r.Chosen != "enso-pro" {
+		t.Fatalf("router %q chose %q, want enso chose enso-pro", r.Router, r.Chosen)
+	}
+	if r.Inputs != (RoutingInputs{Depth: "high", Key: "high", Policy: "funded"}) {
+		t.Fatalf("inputs = %+v", r.Inputs)
+	}
+	want := []Candidate{
+		{Model: "enso-flash", Depths: []string{"off", "none", "minimal", "low", "medium", "default"}},
+		{Model: "enso-pro", Depths: []string{"high"}},
+		{Model: "enso-ultra", Depths: []string{"xhigh", "max"}},
+	}
+	got, _ := json.Marshal(r.Candidates)
+	exp, _ := json.Marshal(want)
+	if string(got) != string(exp) {
+		t.Fatalf("candidates = %s, want %s", got, exp)
+	}
+	if r.Reason != "high reasoning names enso-pro, and your plan or credit pays for it." {
+		t.Fatalf("reason = %q", r.Reason)
+	}
+
+	// The same request from a caller nothing pays for keeps the free id, and says so.
+	r = DepthRouting("enso", high, false)
+	if r.Chosen != "enso" || r.Inputs.Policy != "unfunded" {
+		t.Fatalf("unfunded: chose %q policy %q", r.Chosen, r.Inputs.Policy)
+	}
+	if r.Reason != "high reasoning names enso-pro, which your plan and credit do not pay for, so enso serves." {
+		t.Fatalf("unfunded reason = %q", r.Reason)
+	}
+
+	// A request stating no depth is read at the default row.
+	r = DepthRouting("enso", []byte(`{"model":"enso"}`), true)
+	if r.Inputs.Depth != "default" || r.Inputs.Key != "default" || r.Chosen != "enso-flash" {
+		t.Fatalf("default: %+v chose %q", r.Inputs, r.Chosen)
+	}
+
+	// An unknown depth is read at the default row, and the reason says where it was read.
+	r = DepthRouting("enso", []byte(`{"model":"enso","reasoning_effort":"deep"}`), true)
+	if r.Inputs.Key != "default" || r.Reason != "deep reasoning (read at default) names enso-flash, and your plan or credit pays for it." {
+		t.Fatalf("unknown depth: %+v %q", r.Inputs, r.Reason)
+	}
+
+	// A model with no row is not routed by Enso.
+	for _, model := range []string{"enso-pro", "zen5"} {
+		if DepthRouting(model, high, true) != nil {
+			t.Fatalf("%s has no depth row: want no routing", model)
+		}
+	}
+}
+
+func TestDepthRoutingNeverLiftsAPricedId(t *testing.T) {
+	depthConfig(t)
+	seedEnso(t)
+	priced := ensoFam.byID["enso-auto"]
+	priced.Base = zenTier{MaxCtx: 1_000_000, In: ensoFam.byID["enso-pro"].Base.In, Out: ensoFam.byID["enso-pro"].Base.Out}
+	priced.Tiers = []zenTier{priced.Base}
+	ensoFam.byID["enso-auto"] = priced
+	r := DepthRouting("enso-auto", []byte(`{"reasoning_effort":"max"}`), true)
+	if r.Chosen != "enso-auto" || r.Inputs.Policy != "n/a" {
+		t.Fatalf("priced id: chose %q policy %q", r.Chosen, r.Inputs.Policy)
+	}
+	if r.Reason != "max reasoning names enso-ultra, but enso-auto is not a free id the table lifts, so enso-auto serves as asked." {
+		t.Fatalf("reason = %q", r.Reason)
+	}
+}

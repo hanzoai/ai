@@ -236,7 +236,13 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			model, session = m, true
 		}
 	}
-	if sku, ok := depthRoute(model, c.Body()); ok && balanceGate.funds(c, subject, namespace, userKey, sku) {
+	sku, lift := depthRoute(model, c.Body())
+	funded := lift && balanceGate.funds(c, subject, namespace, userKey, sku)
+	// What Enso decided and why, for the answer and its trace to say.
+	if r := controllers.DepthRouting(model, c.Body(), funded); r != nil {
+		controllers.SetRouting(c, r)
+	}
+	if funded {
 		// The default free id, asked by a caller whose plan or bought credit pays for
 		// the priced SKU router.depth names at this depth: the request is served, gated
 		// and billed as that SKU. A caller it does not fund keeps the free id.

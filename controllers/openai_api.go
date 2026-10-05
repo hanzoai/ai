@@ -939,6 +939,9 @@ type usageRecord struct {
 	ClusterID string `json:"clusterId,omitempty"`
 	// RoutePolicy is the enso route-policy decision that selected the model.
 	RoutePolicy string `json:"routePolicy,omitempty"`
+	// Routing is the router's whole decision (`Routing`, encoded) when one routed this
+	// request; emitted on the span as gen_ai.hanzo.routing. Never persisted.
+	Routing string `json:"-"`
 	// Served is the arm that generated the answer when a family names one
 	// (X-Hanzo-Served) — the model behind an adaptive SKU. Emitted as
 	// gen_ai.response.model; empty leaves response.model the SKU.

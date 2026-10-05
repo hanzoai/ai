@@ -41,7 +41,8 @@ import (
 
 // What our chat schema publishes: the fields go-openai's ChatCompletionResponse and
 // ChatCompletionStreamResponse serialise, the fields of their choices, and of a
-// choice's message or delta — plus `provider`, which is ours. `error` is published
+// choice's message or delta — plus `provider`, which is ours. `routing` is ours too,
+// and is set by the mark (stampChat), never relayed. `error` is published
 // too; a refusal is an answer. A name absent from these sets does not go out.
 var (
 	chatFields = fields("id", "object", "created", "model", "provider", "choices",
@@ -114,6 +115,11 @@ type mark struct {
 	// account — knows its price as precisely as any other, and 0-as-unset would
 	// send the ledger back to inventing one for a call that had a real one.
 	cost *int64
+	// routing is what the router decided for this request (`Routing`, encoded), put on
+	// the first chat envelope that leaves: the whole buffered body, or the first chunk
+	// of a stream. nil when no router decided.
+	routing json.RawMessage
+	routed  bool
 	// speaks is the envelope shape this relay carries. Every relayed dialect has
 	// one; a dialect with no mark is a dialect with no envelope, which is how the
 	// Anthropic path and the embeddings path went on publishing `provider`,
@@ -313,6 +319,11 @@ func (m *mark) stampChat(env map[string]json.RawMessage) []byte {
 	env["provider"] = text(m.seller)
 	if choices, ok := env["choices"]; ok {
 		env["choices"] = stampChoices(choices)
+	}
+	// Ours, set after the allowlist so an upstream's own `routing` never passes.
+	if m.routing != nil && !m.routed {
+		env["routing"] = m.routing
+		m.routed = true
 	}
 	// Read before pruning, exactly as the upstream name is: this is the last place
 	// the price we paid exists, and after this line it is out of the answer.

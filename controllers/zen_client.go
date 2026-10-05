@@ -1478,7 +1478,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// and a finish reason we do not define, long after the chat path stopped. The
 	// id shape differs because the dialects do: a message is msg_, a completion is
 	// chatcmpl-, and an embeddings list has no id at all.
-	mk := &mark{model: model, seller: seller(prov, authUser)}
+	mk := &mark{model: model, seller: seller(prov, authUser), routing: routingOf(c.Ctx)}
 	switch {
 	case dialect == "anthropic":
 		mk.speaks, mk.id = messageShape, "msg_"+reqID
@@ -2595,7 +2595,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
 		Cost: float64(cents) / 100.0, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
-		ClientIP: w.ip, RequestID: reqID, Account: "hanzo",
+		ClientIP: w.ip, RequestID: reqID, Account: "hanzo", Routing: string(mk.routing),
 		// What the call cost us to buy, when the answer stated it, beside what we
 		// charged for it. usageMargin reads this as the COGS, so the margin on a
 		// relayed call stops being a guess.
