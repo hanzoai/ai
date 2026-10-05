@@ -52,16 +52,18 @@ var decisionsSeq atomic.Int64
 // fakeDecisions is the decision service: it records what reached it and answers
 // with status, body and header — or, when answer is set, with what it says.
 type fakeDecisions struct {
-	mu     sync.Mutex
-	calls  int
-	path   string
-	body   []byte
-	rid    string
-	org    string // X-Org-Id
-	status int
-	answer string
-	header map[string]string
-	serve  func(path string, body []byte) (int, string)
+	mu    sync.Mutex
+	calls int
+	path  string
+	body  []byte
+	rid   string
+	org   string // X-Org-Id
+	// capture is the X-Capture header the last call carried.
+	capture string
+	status  int
+	answer  string
+	header  map[string]string
+	serve   func(path string, body []byte) (int, string)
 }
 
 func (f *fakeDecisions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +71,7 @@ func (f *fakeDecisions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.calls++
 	f.path, f.body, f.rid, f.org = r.URL.Path, b, r.Header.Get("X-Request-Id"), r.Header.Get("X-Org-Id")
+	f.capture = r.Header.Get("X-Capture")
 	status, answer, serve := f.status, f.answer, f.serve
 	for k, v := range f.header {
 		w.Header().Set(k, v)

@@ -829,6 +829,11 @@ func send(ctx context.Context, kai *object.Provider, org, rid string, body []byt
 	// credential and every handle is named by (scope). The request is built here, so
 	// no header the caller sent reaches the service.
 	req.Header.Set("X-Org-Id", org)
+	// An org that teaches Kai from its mistakes asks for each question's state
+	// (decide); nobody else's request carries the header.
+	if capturing(ctx) {
+		req.Header.Set("X-Capture", "1")
+	}
 	upstream.Authorize(req, kai)
 	// Where the service lives is ours to know: a failure to reach it is logged with
 	// its address and answered without one.
@@ -968,11 +973,18 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	defer hold.settle(0)
 
 	kai := object.KaiProvider()
-	got := consult(ctx, kai, d.model, d.version, d.ledger, d.rid, body)
+	asked := ctx
+	if object.Capturing(ctx, d.ledger) {
+		asked = context.WithValue(ctx, captureKey{}, true)
+	}
+	got := consult(asked, kai, d.model, d.version, d.ledger, d.rid, body)
 	if got.fault != nil {
 		return refused(d.rid, got.fault)
 	}
-	out := unscope(got.status, got.body, d.ledger, h)
+	// The states are the org's to train on, never the caller's to read: they leave
+	// every answer, and are filed only for an org that asked for them.
+	answered, states := uncapture(got.body)
+	out := unscope(got.status, answered, d.ledger, h)
 	header := make(map[string]string, len(got.header))
 	for k, v := range got.header {
 		header[k] = v
@@ -992,8 +1004,75 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		// answer it is for are found by one id; the row's own id stays ours.
 		rec.ClientRequestID = header["X-Request-Id"]
 		settleAfter(d.ctx, rec, d.start)
+		if states != nil && capturing(asked) {
+			var a struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(out, &a) == nil && a.ID != "" {
+				object.FileCapture(d.ctx, object.Capture{Org: d.ledger, Decision: a.ID,
+					Request: header["X-Request-Id"], Model: d.model, States: states})
+			}
+		}
 	}
 	return decisionReply{status: got.status, body: out, header: header}
+}
+
+// captureKey marks a request whose org captures its decisions' states.
+type captureKey struct{}
+
+// capturing reports whether ctx is a request whose org captures.
+func capturing(ctx context.Context) bool {
+	on, _ := ctx.Value(captureKey{}).(bool)
+	return on
+}
+
+// uncapture is body without its top-level `capture` object, and that object; body
+// as it is, and nil, when it holds none. Every other member keeps its bytes and
+// its place.
+func uncapture(body []byte) ([]byte, json.RawMessage) {
+	if !bytes.Contains(body, []byte(`"capture"`)) {
+		return body, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return body, nil
+	}
+	var out bytes.Buffer
+	var states json.RawMessage
+	out.WriteByte('{')
+	first := true
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return body, nil
+		}
+		key, ok := t.(string)
+		if !ok {
+			return body, nil
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return body, nil
+		}
+		if key == "capture" {
+			states = v
+			continue
+		}
+		if !first {
+			out.WriteByte(',')
+		}
+		first = false
+		k, _ := json.Marshal(key)
+		out.Write(k)
+		out.WriteByte(':')
+		out.Write(v)
+	}
+	if states == nil {
+		return body, nil
+	}
+	out.WriteByte('}')
+	return out.Bytes(), states
 }
 
 // A debit filed after its reply is handed to a fixed set of settlers through a
