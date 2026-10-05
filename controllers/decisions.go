@@ -771,18 +771,15 @@ type decided struct {
 	header map[string]string
 	usage  decisionsUsage
 	sha256 string // routing.sha256 of an answer Kai gave in process
-	// capability is the routing.capability that answered, name NUL sha256; "" when
-	// the base answered alone.
-	capability string
-	fault      *decisionRefusal
-	exp        time.Time
+	fault  *decisionRefusal
+	exp    time.Time
 }
 
-// consult sends body to the decision service, naming model by the id its route
-// names upstream, and returns what the service said: a 200 names the model asked
-// for, with the usage that answer reports. A refusal is ai's own: the service is
-// not configured, or could not be reached.
-func consult(ctx context.Context, kai *object.Provider, model, version, org, rid string, body []byte) decided {
+// consult sends body to the decision service for org with its capabilities set,
+// naming model by the id its route names upstream, and returns what the service
+// said: a 200 names the model asked for, with the usage that answer reports. A
+// refusal is ai's own: the service is not configured, or could not be reached.
+func consult(ctx context.Context, kai *object.Provider, model, version, org, set, rid string, body []byte) decided {
 	if kai == nil {
 		return decided{fault: decline(http.StatusServiceUnavailable, "the decision service is not configured")}
 	}
@@ -806,7 +803,7 @@ func consult(ctx context.Context, kai *object.Provider, model, version, org, rid
 		}
 		body = b
 	}
-	d := recall(ctx, kai, up, org, rid, body)
+	d := recall(ctx, kai, up, org, set, rid, body)
 	if d.status == http.StatusOK && up != model {
 		if named, ok := WithModel(d.body, model); ok {
 			d.body = named
@@ -815,9 +812,10 @@ func consult(ctx context.Context, kai *object.Provider, model, version, org, rid
 	return d
 }
 
-// send posts body to the decision service's /v1/decisions, for org under the
-// caller's request id, and reads its reply.
-func send(ctx context.Context, kai *object.Provider, org, rid string, body []byte) decided {
+// send posts body to the decision service's /v1/decisions, for org with its
+// published capabilities attached, under the caller's request id, and reads its
+// reply.
+func send(ctx context.Context, kai *object.Provider, org, set, rid string, body []byte) decided {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(kai.ProviderUrl, "/")+decisionsPath, bytes.NewReader(body))
 	if err != nil {
 		log.Error("decisions: build request to the decision service request_id=%s: %v", rid, err)
@@ -833,6 +831,11 @@ func send(ctx context.Context, kai *object.Provider, org, rid string, body []byt
 	// (decide); nobody else's request carries the header.
 	if capturing(ctx) {
 		req.Header.Set("X-Capture", "1")
+	}
+	// The org's published capabilities answer its own questions first; the service
+	// fetches each by its sha256 and holds it.
+	if set != "" && set != "[]" {
+		req.Header.Set("X-Org-Capabilities", set)
 	}
 	upstream.Authorize(req, kai)
 	// Where the service lives is ours to know: a failure to reach it is logged with
@@ -856,22 +859,13 @@ func send(ctx context.Context, kai *object.Provider, org, rid string, body []byt
 	}
 	if resp.StatusCode == http.StatusOK {
 		var answer struct {
-			Usage   decisionsUsage `json:"usage"`
-			Routing *struct {
-				decisionsRouting
-				Capability *struct {
-					Name   string `json:"name"`
-					Sha256 string `json:"sha256"`
-				} `json:"capability"`
-			} `json:"routing"`
+			Usage   decisionsUsage    `json:"usage"`
+			Routing *decisionsRouting `json:"routing"`
 		}
 		_ = json.Unmarshal(b, &answer)
 		d.usage = answer.Usage
 		if r := answer.Routing; r != nil && r.Backend == "kai" {
 			d.sha256 = r.Sha256
-			if c := r.Capability; c != nil {
-				d.capability = c.Name + "\x00" + c.Sha256
-			}
 		}
 	}
 	return d
@@ -972,12 +966,20 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	}
 	defer hold.settle(0)
 
+	// The paying org's published capabilities ride every decision it asks. A read
+	// that fails refuses the call rather than answer the org by the base, which
+	// would say something other than what it published.
+	set, err := object.OrgCapabilities(ctx, d.ledger)
+	if err != nil {
+		log.Error("decisions: the org's capabilities could not be read request_id=%s: %v", d.rid, err)
+		return refused(d.rid, decline(http.StatusServiceUnavailable, "the organization's capabilities could not be read; retry"))
+	}
 	kai := object.KaiProvider()
 	asked := ctx
 	if object.Capturing(ctx, d.ledger) {
 		asked = context.WithValue(ctx, captureKey{}, true)
 	}
-	got := consult(asked, kai, d.model, d.version, d.ledger, d.rid, body)
+	got := consult(asked, kai, d.model, d.version, d.ledger, set, d.rid, body)
 	if got.fault != nil {
 		return refused(d.rid, got.fault)
 	}

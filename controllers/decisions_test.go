@@ -58,6 +58,7 @@ type fakeDecisions struct {
 	body  []byte
 	rid   string
 	org   string // X-Org-Id
+	set   string // X-Org-Capabilities
 	// capture is the X-Capture header the last call carried.
 	capture string
 	status  int
@@ -72,6 +73,7 @@ func (f *fakeDecisions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls++
 	f.path, f.body, f.rid, f.org = r.URL.Path, b, r.Header.Get("X-Request-Id"), r.Header.Get("X-Org-Id")
 	f.capture = r.Header.Get("X-Capture")
+	f.set = r.Header.Get("X-Org-Capabilities")
 	status, answer, serve := f.status, f.answer, f.serve
 	for k, v := range f.header {
 		w.Header().Set(k, v)

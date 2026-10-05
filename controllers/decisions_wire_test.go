@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -422,69 +423,67 @@ func capabilityAnswer(sha string) string {
 	return strings.Replace(heldAnswer, `"sha256":"abc",`, `"sha256":"abc","capability":{"name":"triage","sha256":"`+sha+`"},`, 1)
 }
 
-// An answer is held under the weights and the capability that gave it. Once an
-// org's capability answers, the base answers it held are not given again, nor the
-// answers of a capability since republished; another org's are untouched. An
-// answer no capability gave is held under the weights alone, the key it always had.
-func TestHeldAnswersFollowTheCapability(t *testing.T) {
+// The org's published capabilities ride every decision it asks, and an answer is
+// held under the weights and the set the request carried: once the org publishes,
+// replaces or withdraws a capability, only answers held under the set it now has
+// are given again. A set that cannot be read refuses the call.
+func TestHeldAnswersFollowTheAttachedCapabilities(t *testing.T) {
 	fake, _ := setupDecisions(t)
-	kai := object.KaiProvider()
-	ctx := context.Background()
-	ask := func(n int) []byte {
-		return []byte(strings.Replace(decisionBody, "twice", fmt.Sprintf("twice %d", n), 1))
-	}
-	sent := func(org string, body []byte, want bool, answer string) {
+	sets := map[string]string{}
+	var broken bool
+	object.SetCapabilities(func(_ context.Context, org string) (string, error) {
+		if broken {
+			return "", errors.New("train unavailable")
+		}
+		return sets[org], nil
+	})
+	t.Cleanup(func() { object.SetCapabilities(nil) })
+	sent := func(n int, want bool, answer string) {
 		t.Helper()
+		body := strings.Replace(decisionBody, "twice", fmt.Sprintf("twice %d", n), 1)
 		before, _, _ := fake.seen()
-		d := recall(ctx, kai, "kai", org, "r", body)
+		status, got, _ := drive(t, "Bearer "+decisionsKey, body, nil)
 		after, _, _ := fake.seen()
-		if (after > before) != want {
-			t.Fatalf("%s asked %s: reached the service %v, want %v", org, body, after > before, want)
+		if status != http.StatusOK || (after > before) != want {
+			t.Fatalf("asked %d: %d, reached the service %v, want %v", n, status, after > before, want)
 		}
-		if top(t, string(d.body), "routing") != top(t, answer, "routing") {
-			t.Fatalf("%s was answered by %s, want %s", org, top(t, string(d.body), "routing"), top(t, answer, "routing"))
+		if top(t, got, "routing") != top(t, answer, "routing") {
+			t.Fatalf("answered by %s, want %s", top(t, got, "routing"), top(t, answer, "routing"))
 		}
-	}
-	holds := func(org string, body []byte, rev string) {
-		t.Helper()
-		norm, _ := holdable(body)
-		decisionCache.mu.Lock()
-		defer decisionCache.mu.Unlock()
-		if _, ok := decisionCache.m[decisionKey(org, "kai", rev, norm)]; !ok {
-			t.Fatalf("%s's answer to %s is not held under revision %q", org, body, rev)
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		if want && fake.set != sets[decisionsOrg] && !(fake.set == "" && sets[decisionsOrg] == "[]") {
+			t.Fatalf("the service was sent capabilities %q, want %q", fake.set, sets[decisionsOrg])
 		}
 	}
 
 	base, c1, c2 := heldAnswer, capabilityAnswer("c1"), capabilityAnswer("c2")
 	fake.answer = base
-	sent("acme", ask(1), true, base)
-	sent("globex", ask(1), true, base)
-	holds("acme", ask(1), "abc")
-	sent("acme", ask(1), false, base)
+	sets[decisionsOrg] = "[]"
+	sent(1, true, base)
+	sent(1, false, base)
 
-	// acme's capability is installed and answers.
+	// It publishes a capability, which answers.
+	sets[decisionsOrg] = `[{"name":"triage","sha256":"c1"}]`
 	fake.answer = c1
-	sent("acme", ask(2), true, c1)
-	holds("acme", ask(2), "abc\x00triage\x00c1")
-	sent("acme", ask(1), true, c1)
-	sent("acme", ask(1), false, c1)
-	sent("globex", ask(1), false, base)
+	sent(1, true, c1)
+	sent(1, false, c1)
 
 	// It is republished.
+	sets[decisionsOrg] = `[{"name":"triage","sha256":"c2"}]`
 	fake.answer = c2
-	sent("acme", ask(3), true, c2)
-	sent("acme", ask(1), true, c2)
-	sent("acme", ask(1), false, c2)
+	sent(1, true, c2)
+	sent(1, false, c2)
 
-	// The base answers acme alone again: held, and asked for, under the weights alone.
+	// It is withdrawn: the base's answer, held under the set it was given for.
+	sets[decisionsOrg] = "[]"
 	fake.answer = base
-	sent("acme", ask(4), true, base)
-	holds("acme", ask(4), "abc")
-	sent("acme", ask(4), false, base)
-	decisionCache.mu.Lock()
-	defer decisionCache.mu.Unlock()
-	if c := decisionCache.orgs["acme"].capability["kai"]; c != "" {
-		t.Fatalf("acme is still answered by capability %q", c)
+	sent(1, false, base)
+
+	broken = true
+	status, body, _ := drive(t, "Bearer "+decisionsKey, decisionBody, nil)
+	if status != http.StatusServiceUnavailable || !strings.Contains(body, "capabilities") {
+		t.Fatalf("a set that cannot be read: %d %s", status, body)
 	}
 }
 

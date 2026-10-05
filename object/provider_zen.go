@@ -15,10 +15,12 @@
 package object
 
 import (
+	"context"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/hanzoai/ai/conf"
 )
@@ -197,3 +199,29 @@ const KaiName = "kai"
 // discovers a catalog from it or pipes a chat turn to it. In-cluster it takes no
 // credential, so KAI_API_KEY is unset and no Authorization header is sent.
 func KaiProvider() *Provider { return familyProvider(KaiName, "Kai", "KAI_URL", "KAI_API_KEY") }
+
+// Capabilities reads an org's published capabilities as the decision service
+// reads them on each of the org's decisions (X-Org-Capabilities): a JSON array,
+// "[]" or "" for none.
+type Capabilities func(ctx context.Context, org string) (string, error)
+
+var capabilities atomic.Pointer[Capabilities]
+
+// SetCapabilities binds the read the host holds: the org's published capabilities
+// live in the host's train store, so ai asks whoever mounted it. nil unbinds it.
+func SetCapabilities(f Capabilities) {
+	if f == nil {
+		capabilities.Store(nil)
+		return
+	}
+	capabilities.Store(&f)
+}
+
+// OrgCapabilities is org's published capabilities, "" when the host bound no read.
+func OrgCapabilities(ctx context.Context, org string) (string, error) {
+	f := capabilities.Load()
+	if f == nil {
+		return "", nil
+	}
+	return (*f)(ctx, org)
+}

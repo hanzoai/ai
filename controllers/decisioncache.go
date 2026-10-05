@@ -43,13 +43,11 @@ import (
 // leaves under an id of its own. A request naming a handle is never held: the
 // state behind it is the service's to keep.
 //
-// An answer is held under what gave it: the weights (routing.sha256) and, when one
-// answered, the org's capability (routing.capability). A request is looked up under
-// the weights the service last answered with and the capability that last answered
-// its org, so once an org's capability has answered, the base answers the org held
-// before it are not given again. An answer no capability gave is held under the
-// weights alone. Which capability answered an org is kept with the org's share and
-// goes with it: an org that holds nothing has nothing to give stale.
+// An answer is held under what gave it: the weights (routing.sha256) and the org's
+// published capabilities the request carried (X-Org-Capabilities). A request is
+// looked up under the weights the service last answered with and the capabilities
+// it carries, so once an org publishes, replaces or withdraws a capability, the
+// answers it held before are not given again.
 
 // decisionTTL is how long an answer is given again for an identical request.
 var decisionTTL = time.Minute
@@ -83,49 +81,23 @@ type decisionCacheT struct {
 
 var decisionCache decisionCacheT
 
-// share is what one org holds: answers and bytes, and, by upstream model, the
-// capability that last answered it.
+// share is what one org holds: answers and bytes.
 type share struct {
-	n, size    int
-	capability map[string]string
+	n, size int
 }
 
-// answered notes that capability answered the org from up; "" that none did.
-func (s *share) answered(up, capability string) {
-	if capability == "" {
-		delete(s.capability, up)
-		return
-	}
-	if s.capability == nil {
-		s.capability = make(map[string]string)
-	}
-	s.capability[up] = capability
-}
-
-// revision is what an answer is held under: the weights that gave it and the
-// capability that answered, when one did.
-func revision(sha256, capability string) string {
-	if capability == "" {
-		return sha256
-	}
-	return sha256 + "\x00" + capability
-}
-
-// recall answers body, sent as up for org, from a live held answer, else asks the
-// service once for every identical body in flight. An answer that was not produced
-// by this caller's own call leaves under a fresh id.
-func recall(ctx context.Context, kai *object.Provider, up, org, rid string, body []byte) decided {
+// recall answers body, sent as up for org with its capabilities set, from a live
+// held answer, else asks the service once for every identical body in flight. An
+// answer that was not produced by this caller's own call leaves under a fresh id.
+func recall(ctx context.Context, kai *object.Provider, up, org, set, rid string, body []byte) decided {
 	norm, ok := holdable(body)
 	if !ok {
-		return send(ctx, kai, org, rid, body)
+		return send(ctx, kai, org, set, rid, body)
 	}
 	c := &decisionCache
 	c.mu.Lock()
 	rev := c.rev[up]
-	if s := c.orgs[org]; s != nil && rev != "" {
-		rev = revision(rev, s.capability[up])
-	}
-	id := decisionKey(org, up, rev, norm)
+	id := decisionKey(org, up, rev, set, norm)
 	d, hit := c.lookup(id)
 	c.mu.Unlock()
 	if hit {
@@ -133,12 +105,12 @@ func recall(ctx context.Context, kai *object.Provider, up, org, rid string, body
 		return d
 	}
 	if rev == "" {
-		return learn(up, org, norm, send(ctx, kai, org, rid, body))
+		return learn(up, org, set, norm, send(ctx, kai, org, set, rid, body))
 	}
 	mine := false
 	v, _, _ := c.flight.Do(string(id[:]), func() (any, error) {
 		mine = true
-		return learn(up, org, norm, send(context.WithoutCancel(ctx), kai, org, rid, body)), nil
+		return learn(up, org, set, norm, send(context.WithoutCancel(ctx), kai, org, set, rid, body)), nil
 	})
 	d = v.(decided)
 	if !mine {
@@ -157,10 +129,9 @@ func recall(ctx context.Context, kai *object.Provider, up, org, rid string, body
 	return d
 }
 
-// learn takes the weights a 200 answer names as up's revision and the capability
-// it names as the one answering org, and holds the answer for org when Kai gave it
-// in process.
-func learn(up, org string, norm []byte, d decided) decided {
+// learn takes the weights a 200 answer names as up's revision, and holds the answer
+// for org under its capabilities set when Kai gave it in process.
+func learn(up, org, set string, norm []byte, d decided) decided {
 	if d.fault != nil || d.status != http.StatusOK {
 		return d
 	}
@@ -172,10 +143,7 @@ func learn(up, org string, norm []byte, d decided) decided {
 	}
 	c.rev[up] = d.sha256
 	if d.sha256 != "" && len(d.body) <= decisionBytes {
-		c.hold(decisionKey(org, up, revision(d.sha256, d.capability), norm), org, d)
-	}
-	if s := c.orgs[org]; s != nil {
-		s.answered(up, d.capability)
+		c.hold(decisionKey(org, up, d.sha256, set, norm), org, d)
 	}
 	return d
 }
@@ -269,11 +237,11 @@ func holdable(body []byte) ([]byte, bool) {
 	return norm.Bytes(), true
 }
 
-// decisionKey is SHA-256 of the org, the upstream model, its revision and the body,
-// NUL between them.
-func decisionKey(org, up, rev string, norm []byte) [32]byte {
+// decisionKey is SHA-256 of the org, the upstream model, its revision, the org's
+// capabilities set and the body, NUL between them.
+func decisionKey(org, up, rev, set string, norm []byte) [32]byte {
 	h := sha256.New()
-	h.Write([]byte(org + "\x00" + up + "\x00" + rev + "\x00"))
+	h.Write([]byte(org + "\x00" + up + "\x00" + rev + "\x00" + set + "\x00"))
 	h.Write(norm)
 	var id [32]byte
 	h.Sum(id[:0])
