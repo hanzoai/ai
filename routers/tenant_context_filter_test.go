@@ -23,10 +23,14 @@ func TestTenantContextFilter_ThreadsAttribution(t *testing.T) {
 	p = p.with("X-Session-Id", "conv-42")
 	p = p.with("X-Environment", "staging")
 	p = p.with("Authorization", "Bearer sk-secret-key")
+	p = p.with("X-Key-Id", "alice-secret-1a2b3c4d")
 
 	p = p.through(TenantContextFilter)
 
 	attr := object.GenAIAttributionFromContext(p.left())
+	if attr.Key != "alice-secret-1a2b3c4d" {
+		t.Fatalf("the key the boundary named was not threaded: %q", attr.Key)
+	}
 	if attr.Project != "research" {
 		t.Fatalf("project not threaded onto request context: %q", attr.Project)
 	}

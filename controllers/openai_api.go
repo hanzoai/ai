@@ -802,6 +802,8 @@ type usageRecord struct {
 	// cash says the host's grant lets only the wallet's cash pay for this call: the
 	// model's policy refuses granted credit (object.UsageEvent.Cash).
 	cash bool
+	// key is the API key the call arrived on (object.UsageEvent.Key), set by bind.
+	key string
 
 	// Requested is the model the caller ASKED for, set only when a different route
 	// answered — today, when a vendor's account was spent and it served the request
@@ -1090,6 +1092,9 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 		return
 	}
 	r.Payer = u.Payer(r.Owner)
+	// The API key the call arrived on, as the boundary named it: what the host
+	// counts the key's own spend against.
+	r.key = object.GenAIAttributionFromContext(ctx).Key
 	// The public lane's visitor, read from the request the lane alone writes it on.
 	r.Visitor = visitorOf(ctx)
 	// Who the host said pays: a covered call settles against its grant and debits no
@@ -1363,6 +1368,7 @@ func recordUsage(record *usageRecord) error {
 			Units:     int64(record.TotalTokens),
 			CostUSD:   nanoUSD(providerCostNano(record)),
 			PaidBy:    paidBy(record),
+			Key:       record.key,
 		}); err != nil {
 			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
 			return err

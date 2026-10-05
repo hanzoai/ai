@@ -94,6 +94,10 @@ func TenantContextFilter(c *zip.Ctx) error {
 		// the only credential on the call is an application's. Trusted only for a
 		// machine credential — usageRecord.bind is where that rule lives.
 		User: userID,
+		// The key the boundary in front of this module resolved the credential to.
+		// It is an identity header, stripped on ingress and written only from a
+		// resolved key, so it is never a value the caller chose.
+		Key: strings.TrimSpace(getTenantHeader(c, "X-Key-Id")),
 	}
 	// Onto the request's own context, which is what the handler reads: zip.SetContext
 	// replaces it, so every emit site downstream sees the attribution without

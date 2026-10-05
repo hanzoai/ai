@@ -1006,6 +1006,12 @@ quiet honestly. It now has a cost to compare against, or a flag saying there is 
 
 ## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
 
+**A call names the API key it arrived on.** The identity boundary in front of this
+module writes `X-Key-Id` (the key's id in its org; stripped on ingress, written only
+from a resolved key); `TenantContextFilter` threads it as `GenAIAttribution.Key`,
+`usageRecord.bind` copies it, and the native debit carries it as `UsageEvent.Key`.
+The host keeps each key's own spend by it, which is what a per-key budget is held to.
+
 On every chat path and `/v1/decisions` the gate asks the host's usage policy
 (`object.LimitFunc`, cloud `apps/ai/limits`) with the model's `Class`
 (`controllers.ClassOf`: free when it costs nothing, ours for Enso/Zen and any route

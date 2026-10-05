@@ -336,3 +336,32 @@ func TestCloudAgentKeyIsAMachine(t *testing.T) {
 		})
 	}
 }
+
+// TestTheDebitNamesTheKeyItArrivedOn: a call that arrived on an API key carries that
+// key, as the boundary named it, onto its usage event, so the host can hold the key
+// to a budget of its own. A call that arrived on anything else names no key.
+func TestTheDebitNamesTheKeyItArrivedOn(t *testing.T) {
+	var got []string
+	prev := object.UsageRecorder()
+	object.SetUsageRecorder(func(_ context.Context, u object.UsageEvent) error {
+		got = append(got, u.Key)
+		return nil
+	})
+	t.Cleanup(func() { object.SetUsageRecorder(prev) })
+
+	user := &iam.User{Owner: "acme", Name: "alice"}
+	for _, ctx := range []context.Context{
+		object.WithGenAIAttribution(context.Background(), object.GenAIAttribution{Key: "alice-secret-1a2b3c4d"}),
+		context.Background(),
+	} {
+		rec := &usageRecord{Owner: "acme", Organization: "acme", Model: "gpt-4", Provider: "openai",
+			PromptTokens: 10, CompletionTokens: 10, TotalTokens: 20, Currency: "USD", Status: "success", RequestID: "r"}
+		rec.bind(ctx, user)
+		if err := recordUsage(rec); err != nil {
+			t.Fatalf("recordUsage: %v", err)
+		}
+	}
+	if len(got) != 2 || got[0] != "alice-secret-1a2b3c4d" || got[1] != "" {
+		t.Fatalf("usage events named keys %q, want the key and then none", got)
+	}
+}

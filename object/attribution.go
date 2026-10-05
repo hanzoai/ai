@@ -54,12 +54,17 @@ type GenAIAttribution struct {
 	// credential already names a person, and letting it name a different one would
 	// let anyone move their spend onto a colleague.
 	User string
+	// Key is the API key the call arrived on, as the identity boundary in front of
+	// this module named it (X-Key-Id): the key's id within its org. Empty for a
+	// session or any credential that is not a key. A host keeps each key's own
+	// spend by it.
+	Key string
 }
 
 // empty reports whether a carries nothing worth threading.
 func (a GenAIAttribution) empty() bool {
 	return a.Org == "" && a.Project == "" && a.Session == "" && a.Environment == "" &&
-		a.APIKeyHash == "" && a.User == ""
+		a.APIKeyHash == "" && a.User == "" && a.Key == ""
 }
 
 // WithGenAIAttribution returns ctx carrying a. When a is empty it returns ctx
