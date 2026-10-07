@@ -383,6 +383,9 @@ func RateLimitFilter(c *zip.Ctx) error {
 	limitKey := lanes[0].Key
 
 	if rateLimiterInstance.Admit(lanes) {
+		if catalogRead(c.Method(), path) {
+			return c.Continue()
+		}
 		// Two ceilings, asked in the order a caller meets them. If the quota refuses,
 		// it has already answered and this must not answer over the top of it.
 		if proceed, err := charge(c, limitKey, path); !proceed {
@@ -499,6 +502,19 @@ func limitSubject(c *zip.Ctx) []address.Bucket {
 }
 
 // isRateLimitExempt returns true for paths that should bypass rate limiting.
+// catalogRead reports whether a request reads the model catalog. The rate holds it
+// like any request, so it cannot be used to flood the API; the quota does not count
+// it, because the quota is how much a caller may USE and listing what can be used is
+// not using it. A client that lists the models before each call would otherwise spend
+// its quota twice as fast as it called them.
+func catalogRead(method, path string) bool {
+	if method != http.MethodGet && method != http.MethodHead {
+		return false
+	}
+	p := strings.ToLower(strings.TrimRight(path, "/"))
+	return p == "/v1/models" || strings.HasPrefix(p, "/v1/models/")
+}
+
 func isRateLimitExempt(path string) bool {
 	switch {
 	case path == "/v1/health" || path == "/health":
@@ -548,38 +564,76 @@ func extractAPIKey(c *zip.Ctx) string {
 // DefaultTierFunc resolves a rate-limit key to a Tier. The key is whatever
 // limitSubject named the caller: an IAM org slug when a billing subject resolved, a
 // confirmed page key, or a digest of the address the caller arrived from when
-// neither. The tier is the caller's plan as commerce records it, and nothing else:
+// neither. The tier is the caller's plan as commerce records it, and nothing else.
 //
-//  1. Commerce tier cache -- backed by async lookups to Commerce billing API
-//     (GET /v1/billing/tier?user=<org>). On cache hit, the cached tier is
-//     returned immediately. On cache miss, TierZenFree is returned and a
-//     background goroutine populates the cache so the next request uses the
-//     correct tier.
-//  2. TierZenFree -- default when no cache entry exists.
+// Only an ACCOUNT has a plan, so only a key that could name one is asked about: the
+// buckets limitSubject gives callers it cannot name carry a colon, which an org slug
+// cannot, so a lookup for one is a question about nobody — and asking it once per
+// address seen would make a flood at this API a flood at commerce.
+//
+// A co-resident host's reader (object.TierReader) is asked on every call. It answers
+// from its own cache and refreshes in the background (cloud tier_peer.go), so the
+// read costs a map lookup; only a payer it has never seen costs one plane round trip.
+// A second cache in front of it would expire on its own clock and answer Free for
+// the call that found it empty, holding a paying caller to Free's quota once per
+// expiry.
+//
+// A standalone ai has the HTTP route instead, behind the TierCache: an expired entry
+// is served while it is read again, so it never blocks on the network once a key has
+// been read. A key never read is held to Free until its first answer lands.
+//
+// An unread tier is not Free. Whichever transport fails, the last tier read for the
+// key stands, so a commerce blip never moves a paying caller down.
 //
 // There is no operator override: a tier names a recorded subscription, so no
 // configuration can grant one.
-//
-// This function never blocks on network I/O. Commerce lookups happen
-// asynchronously; the worst case is that a new org's first few requests
-// are rate-limited at the free tier until the cache is populated.
 func DefaultTierFunc(key string) Tier {
-	// Commerce-backed tier cache (keyed by org slug). Only an ACCOUNT has a
-	// plan, so only a key that could name one is asked about: the buckets
-	// limitSubject gives callers it cannot name carry a colon, which an org slug
-	// cannot, so a lookup for one is a question about nobody — and asking it once per
-	// address seen would make a flood at this API a flood at commerce.
-	if tierCache != nil && !strings.Contains(key, ":") {
-		if tier, ok := tierCache.get(key); ok {
-			return tier
-		}
-		// Cache miss: return TierZenFree now, populate cache asynchronously.
+	if strings.Contains(key, ":") {
+		return TierZenFree
+	}
+	if r := object.TierReader(); r != nil {
+		return readTier(r, key)
+	}
+	if tierCache == nil {
+		return TierZenFree
+	}
+	tier, fresh, known := tierCache.read(key)
+	if !fresh {
 		tierCache.refreshAsync(key)
 	}
-
-	return TierZenFree
+	if !known {
+		return TierZenFree
+	}
+	return tier
 }
 
+// tierReadTimeout bounds one read through the host's reader: a payer it has never
+// seen is one plane round trip, and a request does not wait on more than that.
+const tierReadTimeout = 2 * time.Second
+
+// readTier is the host reader's answer for key, or the last tier read for it when
+// the reader cannot say. A blank name is the reader saying it does not know.
+func readTier(r object.TierReaderFunc, key string) Tier {
+	ctx, cancel := context.WithTimeout(context.Background(), tierReadTimeout)
+	defer cancel()
+	name, err := r(ctx, key, key)
+	if err != nil || strings.TrimSpace(name) == "" {
+		if err != nil {
+			log.Warning("tier: reading key=%s failed: %v (keeping the last tier read)", maskKey(key), err)
+		}
+		if tierCache != nil {
+			if tier, _, known := tierCache.read(key); known {
+				return tier
+			}
+		}
+		return TierZenFree
+	}
+	tier := mapPlanToTier(name)
+	if tierCache != nil {
+		tierCache.set(key, tier)
+	}
+	return tier
+}
 
 // ── Commerce-backed tier cache ──────────────────────────────────────────────
 
@@ -587,8 +641,13 @@ const (
 	// tierCacheTTL is how long a Commerce tier lookup remains valid.
 	tierCacheTTL = 5 * time.Minute
 
-	// tierCacheCleanupInterval is how often stale cache entries are evicted.
+	// tierCacheCleanupInterval is how often entries nobody asked about are dropped.
 	tierCacheCleanupInterval = 10 * time.Minute
+
+	// tierCacheKeep is how long an entry stays readable after it was fetched. Past its
+	// TTL it is served while it is read again; past this it is dropped, so a key that
+	// stopped calling stops costing memory.
+	tierCacheKeep = 24 * time.Hour
 
 	// commerceHTTPTimeout is the per-request timeout for Commerce tier lookups.
 	commerceHTTPTimeout = 5 * time.Second
@@ -653,20 +712,18 @@ func InitTierCache() {
 	log.Info("tier_cache: initialized (endpoint=%s, ttl=%v)", endpoint, tierCacheTTL)
 }
 
-// get returns a cached tier for the given key, or ("", false) on cache miss
-// or stale entry.
-func (tc *TierCache) get(apiKey string) (Tier, bool) {
+// read returns the tier held for key, whether it is still fresh, and whether any
+// tier is held at all. A stale tier is still an answer: it is what this process last
+// read, and it stands until a new read replaces it.
+func (tc *TierCache) read(apiKey string) (tier Tier, fresh, known bool) {
 	tc.mu.RLock()
 	entry, ok := tc.entries[apiKey]
 	tc.mu.RUnlock()
 
 	if !ok {
-		return "", false
+		return "", false, false
 	}
-	if time.Since(entry.fetchedAt) > tierTTL(entry.tier) {
-		return "", false
-	}
-	return entry.tier, true
+	return entry.tier, time.Since(entry.fetchedAt) <= tierTTL(entry.tier), true
 }
 
 // freeTierTTL is how long a FREE answer is trusted. Free is the one answer a
@@ -713,7 +770,14 @@ func (tc *TierCache) refreshAsync(apiKey string) {
 
 		tier, err := tc.commerceTierLookup(apiKey)
 		if err != nil {
-			log.Warning("tier_cache: Commerce lookup failed for key=%s: %v (defaulting to zen-free)", maskKey(apiKey), err)
+			// A failed read replaces nothing: the tier last read stands. A key never
+			// read is held to Free, briefly, so a failing commerce is not asked again
+			// on every request.
+			if _, _, known := tc.read(apiKey); known {
+				log.Warning("tier_cache: Commerce lookup failed for key=%s: %v (keeping the last tier read)", maskKey(apiKey), err)
+				return
+			}
+			log.Warning("tier_cache: Commerce lookup failed for key=%s: %v (zen-free until a read succeeds)", maskKey(apiKey), err)
 			tier = TierZenFree
 		}
 		tc.set(apiKey, tier)
@@ -729,7 +793,7 @@ func (tc *TierCache) cleanupLoop() {
 		now := time.Now()
 		tc.mu.Lock()
 		for key, entry := range tc.entries {
-			if now.Sub(entry.fetchedAt) > tierCacheTTL {
+			if now.Sub(entry.fetchedAt) > tierCacheKeep {
 				delete(tc.entries, key)
 			}
 		}

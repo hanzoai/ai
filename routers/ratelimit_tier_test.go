@@ -237,14 +237,14 @@ func TestAPaymentMovesTheRateOfAnOrgThatKeepsSending(t *testing.T) {
 	}
 	tc.refreshAsync("acme")
 	wait()
-	got, held := tc.get("acme")
-	if !held || got != TierZenFree {
-		t.Fatalf("free = %q (held %v), want zen-free held briefly", got, held)
+	got, fresh, held := tc.read("acme")
+	if !held || !fresh || got != TierZenFree {
+		t.Fatalf("free = %q (fresh %v, held %v), want zen-free held briefly", got, fresh, held)
 	}
 	tc.mu.Lock()
 	tc.entries["acme"].fetchedAt = time.Now().Add(-freeTierTTL - time.Second)
 	tc.mu.Unlock()
-	if _, held := tc.get("acme"); held {
+	if _, fresh, _ := tc.read("acme"); fresh {
 		t.Fatal("a free answer outlived freeTierTTL — a payment would wait out the paid TTL")
 	}
 
