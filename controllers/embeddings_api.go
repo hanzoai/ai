@@ -89,7 +89,7 @@ func (c *ApiController) Embeddings() {
 		c.ResponseAuthError(err)
 		return
 	}
-	if paying(provider) {
+	if paying(c.Context(), provider) {
 		c.ResponseAuthError(paidLaneOff(head.Model))
 		return
 	}
@@ -213,7 +213,7 @@ func (c *ApiController) Rerank() {
 		c.ResponseAuthError(err)
 		return
 	}
-	if paying(provider) {
+	if paying(c.Context(), provider) {
 		c.ResponseAuthError(paidLaneOff(raw.Model))
 		return
 	}

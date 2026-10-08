@@ -413,9 +413,10 @@ func standIn(fam *modelFamily, sku string) []spare {
 	return freeRoutes()
 }
 
-// FreeOnly reports whether the paid lane is off. The host sets it to the loaded zen
-// catalog's (zen Zen.Free): off only where the catalog says `paid`. Spending is an
-// opt-in, so unset it is on.
+// FreeOnly reports whether the paid lane is off for everyone. The host sets it to the
+// loaded zen catalog's (zen Zen.Free): off only where the catalog says `paid`. Spending
+// is an opt-in, so unset it is on. A request asks FreeOnlyFor, which also asks whether
+// its caller was put on the paid lane (lane.go).
 var FreeOnly = func() bool { return true }
 
 // unserved reports that a vendor could not serve a request at all: its account is
@@ -1793,12 +1794,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 				msg: fmt.Sprintf("model %q: no free route answered", model)})
 		}
 		sku, requested, resp, by = alt.id, model, r, alt.fam
-	} else if !lane && FreeOnly() && FamilyOf(sku) == "" {
+	} else if !lane && FreeOnlyFor(ctx) && FamilyOf(sku) == "" {
 		// The paid lane is off and the model named is a third-party one: it is not
 		// sent, and nothing answers in its place.
 		c.zenError(dialect, paidLaneOff(model).Error(), http.StatusServiceUnavailable)
 		return done()
-	} else if !lane && FreeOnly() {
+	} else if !lane && FreeOnlyFor(ctx) {
 		// The paid lane is off: a priced Hanzo SKU is never sent to its paid route, and
 		// the Hanzo routes that stand in for it answer in its place.
 		r, alt := pool(standIn(fam, sku), sku, true)

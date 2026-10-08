@@ -1040,9 +1040,10 @@ A `LimitHit` refuses by `Code` with no figure: 429 `usage_cap_exceeded` (a plan
 window, the free lane included — limited mode cannot be farmed), 429
 `free_plan_cap`, 402 `plan_allowance_used`, 402 `paid_plan_required`, 402
 `model_cap` (the model used its share of the plan; `Model` names it or its
-pattern, `Fallback` the Hanzo model that answers instead). A conversation from a
-signed-in app (token `aud`) or a client sending `X-Hanzo-Fallback: allow` is handed
-on instead — `model_cap` to `Fallback`, the other two to `FreeModel` — marked
+pattern, `Fallback` the Hanzo model that answers instead). A chat past a paid plan's
+included usage (`plan_allowance_used`, `model_cap`) from any client, and any other such
+conversation from a signed-in app (token `aud`) or a client sending
+`X-Hanzo-Fallback: allow`, is handed on instead — `model_cap` to `Fallback`, the other two to `FreeModel` — marked
 `X-Hanzo-Fallback` and `X-Hanzo-Usage-Reason`, and the model it lands on is asked of
 the policy again (up to three asks). Refusal actions: `upgrade`, `switch` (to the
 fallback), and `credits` ("Continue with credits", which turns on the org's
@@ -1069,18 +1070,37 @@ and the last-resort `Allow` floor: with an org enabled-models allowlist, exactly
 what it names; without one, only Hanzo classes (ours + free). A premium model
 answers `auto` only when the org allowlisted it; otherwise a caller names it.
 
-## The paid lane has ONE switch — the zen catalog's `paid` line
+## The paid lane: ONE switch, then the plan that pays
 
-`controllers.FreeOnly` is the only switch, and ai does not own it: the host sets it
-to the loaded zen catalog's (cloud: `aicontrollers.FreeOnly = z.Free`), which is free
+`controllers.FreeOnly` is the platform's switch, and ai does not own it: the host sets
+it to the loaded zen catalog's (cloud: `aicontrollers.FreeOnly = z.Free`), which is free
 unless the catalog, universe `charts/app/files/zen/catalog.yaml`, says `paid: true`.
 Spending is an opt-in: unset by a host, the paid lane is off. GitOps is the source of
 truth; there is no settings row, no `FREE_ONLY` env and no second line (the enso service
-reads the same line through `ZEN_SWITCH`). While it is off, no chat request reaches a
-priced route, and the routes that stand in for it answer, named as what they are; a
-tool or media request for one, and every embeddings, rerank, image, audio and video call
-to a provider that is not a family's own service (`paying`), is refused, and so is a
-decision that names Jev. Only zen and enso, whose catalogs decide for themselves, serve.
+reads the same line through `ZEN_SWITCH`).
+
+With the switch on, each request is on one lane (`controllers/lane.go`), decided once
+by `routers.LaneFilter` (after `BalanceGateFilter`) from the host's grant on it:
+**paid** when the grant names a paid plan (`LimitGrant.Plan` — cloud `apps/ai/limits`
+`planOf`: an active subscription whose period was paid by card or recorded
+externally, with figures from `apps/flags` `PlanSeeds`, per seat for team rungs) and
+the plan's included usage, or the payer's prepaid/granted credit past it, pays for a
+priced call; **free** otherwise (no plan, a free model, a model's free daily cap, a
+policy that said nothing, a request that never passed the filter — ZAP twins and plane
+completions). Every read on the request path is `FreeOnlyFor(ctx)`; `candidates`,
+`openrouterTail` and `paying` take the request's answer. `PAID_LANE_DAILY` (USD,
+default $10, 0 closes) bounds what all paid-lane calls together spend in a UTC day,
+counted in process from each record's `laneSpend` (single replica); past it payers are
+on the free lane with `X-Hanzo-Lane-Reason: paid_lane_ceiling`, and a chat for a
+third-party model is handed to the free model in limited mode. Responses carry
+`X-Hanzo-Lane: paid|free`. A paid plan's chat past its included usage
+(`plan_allowance_used`, `model_cap`) is answered in limited mode on any client.
+
+On the free lane no chat request reaches a priced route, and the routes that stand in
+for it answer, named as what they are; a tool or media request for one, and every
+embeddings, rerank, image, audio and video call to a provider that is not a family's own
+service (`paying`), is refused, and so is a decision that names Jev. Only zen and enso,
+whose catalogs decide for themselves, serve.
 
 ## The free pool — every OpenRouter account, spent as one
 

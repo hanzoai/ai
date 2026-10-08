@@ -237,7 +237,7 @@ func TestOneTenantsEmptyAccountIsNotAnothersOutage(t *testing.T) {
 	// Tenant A's own connected openai account is empty.
 	cooled.demote(credential{"org-a", "openai"}, coolBroke)
 
-	got := names(candidates("org-b", r, nil))
+	got := names(candidates("org-b", r, nil, false))
 	want := []string{"openai", "anthropic", "fireworks"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("tenant B's queue = %v, want %v — A's empty BYO account is a fact about "+
@@ -250,7 +250,7 @@ func TestOneTenantsEmptyAccountIsNotAnothersOutage(t *testing.T) {
 
 	// The penalty is real for the tenant that earned it — otherwise this test
 	// would also pass against a cooldown that simply stopped working.
-	if a := names(candidates("org-a", r, nil)); len(a) == 0 || a[0] == "openai" {
+	if a := names(candidates("org-a", r, nil, false)); len(a) == 0 || a[0] == "openai" {
 		t.Errorf("tenant A's queue = %v, want openai sorted back — A's own key IS empty", a)
 	}
 }
@@ -301,7 +301,7 @@ func TestCandidatesOrder(t *testing.T) {
 
 	t.Run("declared order is preserved when everyone is healthy", func(t *testing.T) {
 		cooled.forget()
-		got := names(candidates("", route("do-ai", "anthropic", "fireworks"), nil))
+		got := names(candidates("", route("do-ai", "anthropic", "fireworks"), nil, false))
 		want := []string{"do-ai", "anthropic", "fireworks"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("order = %v, want %v — an operator's intent must survive", got, want)
@@ -311,7 +311,7 @@ func TestCandidatesOrder(t *testing.T) {
 	t.Run("a cooling provider sorts to the back, it is not removed", func(t *testing.T) {
 		cooled.forget()
 		cooled.demote(credential{"", "do-ai"}, time.Minute)
-		got := names(candidates("", route("do-ai", "anthropic", "fireworks"), nil))
+		got := names(candidates("", route("do-ai", "anthropic", "fireworks"), nil, false))
 		want := []string{"anthropic", "fireworks", "do-ai"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("order = %v, want %v", got, want)
@@ -323,7 +323,7 @@ func TestCandidatesOrder(t *testing.T) {
 		for _, p := range []string{"do-ai", "anthropic"} {
 			cooled.demote(credential{"", p}, time.Minute)
 		}
-		got := names(candidates("", route("do-ai", "anthropic"), nil))
+		got := names(candidates("", route("do-ai", "anthropic"), nil, false))
 		if len(got) != 2 {
 			t.Fatalf("got %v — a model whose every vendor is resting must still be attempted; "+
 				"demotion is a latency preference, never an authorization", got)
@@ -336,7 +336,7 @@ func TestCandidatesOrder(t *testing.T) {
 	t.Run("a provider that already refused this request is dropped", func(t *testing.T) {
 		cooled.forget()
 		prior := []attempt{{provider: "enso", err: errors.New("402")}}
-		got := names(candidates("", route("enso", "do-ai"), prior))
+		got := names(candidates("", route("enso", "do-ai"), prior, false))
 		if strings.Join(got, ",") != "do-ai" {
 			t.Errorf("got %v, want [do-ai] — asking a vendor twice in one request is waste", got)
 		}
@@ -347,7 +347,7 @@ func TestCandidatesOrder(t *testing.T) {
 	// changed to any value and the bound stops being pinned at all.
 	t.Run("a route longer than the cap is cut to three", func(t *testing.T) {
 		cooled.forget()
-		got := names(candidates("", route("p1", "p2", "p3", "p4", "p5"), nil))
+		got := names(candidates("", route("p1", "p2", "p3", "p4", "p5"), nil, false))
 		want := []string{"p1", "p2", "p3"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("offered %v, want %v — three is the width of a declared route, and an "+
@@ -362,7 +362,7 @@ func TestCandidatesOrder(t *testing.T) {
 	t.Run("a refusal from outside the route does not spend a place in it", func(t *testing.T) {
 		cooled.forget()
 		prior := []attempt{{provider: "enso", err: errors.New("402")}}
-		got := names(candidates("", route("p1", "p2", "p3"), prior))
+		got := names(candidates("", route("p1", "p2", "p3"), prior, false))
 		want := []string{"p1", "p2", "p3"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("offered %v after the family refused, want %v — a declared route is exactly "+
@@ -373,14 +373,14 @@ func TestCandidatesOrder(t *testing.T) {
 	t.Run("the cap still holds when something refused outside the route", func(t *testing.T) {
 		cooled.forget()
 		prior := []attempt{{provider: "enso", err: errors.New("402")}}
-		got := names(candidates("", route("p1", "p2", "p3", "p4", "p5"), prior))
+		got := names(candidates("", route("p1", "p2", "p3", "p4", "p5"), prior, false))
 		if len(got) != 3 {
 			t.Errorf("offered %v, want 3 — the route walk stays bounded whatever happened before it", got)
 		}
 	})
 
 	t.Run("no route means no candidates", func(t *testing.T) {
-		if got := candidates("", nil, nil); got != nil {
+		if got := candidates("", nil, nil, false); got != nil {
 			t.Errorf("candidates(nil) = %v, want nil", got)
 		}
 	})
@@ -697,7 +697,7 @@ func TestOpenRouterTailIsDerived(t *testing.T) {
 		catalogOf(t, "openai/gpt-4o")
 		r := route("do-ai")
 		r.upstreamModel = "openai-gpt-4o"
-		got := names(candidates("", r, nil))
+		got := names(candidates("", r, nil, false))
 		if len(got) < 2 || got[1] != "openrouter" {
 			t.Fatalf("got %v — do-ai must fall over to openrouter", got)
 		}
@@ -707,7 +707,7 @@ func TestOpenRouterTailIsDerived(t *testing.T) {
 		catalogOf(t, "anthropic/claude-3.5-sonnet") // NOT what do-ai spells
 		r := route("do-ai")
 		r.upstreamModel = "anthropic-claude-4.5-sonnet"
-		for _, c := range candidates("", r, nil) {
+		for _, c := range candidates("", r, nil, false) {
 			if c.provider == "openrouter" && c.upstream == "anthropic/claude-4.5-sonnet" {
 				t.Fatal("a derived id must be confirmed by the catalog, never guessed onto the wire")
 			}
@@ -718,7 +718,7 @@ func TestOpenRouterTailIsDerived(t *testing.T) {
 		catalogOf(t, "openai/gpt-4o")
 		r := route("openrouter")
 		r.upstreamModel = "openai/gpt-4o"
-		if got := names(candidates("", r, nil)); len(got) != 1 {
+		if got := names(candidates("", r, nil, false)); len(got) != 1 {
 			t.Fatalf("got %v — the family's own spared already offers the pool", got)
 		}
 	})
@@ -726,7 +726,7 @@ func TestOpenRouterTailIsDerived(t *testing.T) {
 	t.Run("an unconfigured OpenRouter adds nothing", func(t *testing.T) {
 		r := route("do-ai")
 		r.upstreamModel = "openai-gpt-4o"
-		if got := names(candidates("", r, nil)); len(got) != 1 {
+		if got := names(candidates("", r, nil, false)); len(got) != 1 {
 			t.Fatalf("got %v — a deployment without OpenRouter must route exactly as before", got)
 		}
 	})

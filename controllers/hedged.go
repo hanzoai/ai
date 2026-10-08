@@ -97,7 +97,7 @@ type shot struct {
 // not knowable yet anyway. One ledger path each: refusals through the caller,
 // raced losers through bill.
 func (a ask) race() (*model.ModelResult, served, []attempt, error) {
-	queue := candidates(a.org, a.route, a.prior)
+	queue := candidates(a.org, a.route, a.prior, FreeOnlyFor(a.context()))
 	if len(queue) > a.fan.n {
 		queue = queue[:a.fan.n]
 	}

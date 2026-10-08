@@ -1523,7 +1523,7 @@ func (c *ApiController) decision() {
 		return
 	}
 	// Jev is bought per call; Kai is ours. With the paid lane off, Jev is not asked.
-	if FreeOnly() && jevNamed(model) {
+	if FreeOnlyFor(c.Context()) && jevNamed(model) {
 		err := paidLaneOff(model)
 		c.decisionReply(refused(rid, decline(statusOf(err), err.Error())))
 		return

@@ -410,7 +410,7 @@ func (c *ApiController) forward(p pass) bool {
 	snap := c.takeSnapshot(p.user)
 	ctx := c.Context()
 
-	queue := candidates(snap.org, p.route, p.prior)
+	queue := candidates(snap.org, p.route, p.prior, FreeOnlyFor(ctx))
 	if p.route == nil {
 		queue = []candidate{{p.primary.Name, p.primary.SubType}}
 	}
@@ -424,7 +424,7 @@ func (c *ApiController) forward(p pass) bool {
 		// Every row the relay serves sells its answers, so with the paid lane off a
 		// strict request is refused exactly as candidates() leaves any other with
 		// nobody to ask. Taking the first row directly must not step around the lane.
-		if FreeOnly() {
+		if FreeOnlyFor(ctx) {
 			c.ResponseFailure(paidLaneOff(sku))
 			return false
 		}
@@ -437,7 +437,7 @@ func (c *ApiController) forward(p pass) bool {
 	// With the paid lane off a third-party route is offered nobody — its own vendors
 	// sell their answers and nothing stands in for the model named — so it is
 	// refused, plainly, rather than answered by something else.
-	if len(queue) == 0 && FreeOnly() && len(p.prior) == 0 {
+	if len(queue) == 0 && FreeOnlyFor(ctx) && len(p.prior) == 0 {
 		c.ResponseFailure(paidLaneOff(sku))
 		return false
 	}

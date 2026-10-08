@@ -161,7 +161,7 @@ func (c *ApiController) AudioSpeech() {
 		c.ResponseAuthError(err)
 		return
 	}
-	if paying(provider) {
+	if paying(c.Context(), provider) {
 		c.ResponseAuthError(paidLaneOff(req.Model))
 		return
 	}
@@ -346,7 +346,7 @@ func (c *ApiController) AudioTranscriptions() {
 		c.ResponseAuthError(err)
 		return
 	}
-	if paying(provider) {
+	if paying(c.Context(), provider) {
 		c.ResponseAuthError(paidLaneOff(model))
 		return
 	}

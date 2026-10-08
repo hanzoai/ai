@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -608,8 +609,9 @@ type attempt struct {
 //
 // org is whose queue this is. It selects which account's recent experience the
 // resting rule reads, so a customer's own empty account never reorders anybody
-// else's request.
-func candidates(org string, route *modelRoute, prior []attempt) []candidate {
+// else's request. free is whether the paid lane is closed to the request
+// (FreeOnlyFor).
+func candidates(org string, route *modelRoute, prior []attempt, free bool) []candidate {
 	if route == nil {
 		return nil
 	}
@@ -632,13 +634,13 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 	}
 	// With the paid lane off, a route's own vendors — each sells its answers — are
 	// not asked; the free floor below is.
-	if !FreeOnly() {
+	if !free {
 		add(route.providerName, route.upstreamModel)
 		for _, fb := range route.fallbacks {
 			add(fb.providerName, fb.upstreamModel)
 		}
 	}
-	for _, c := range openrouterTail(route) {
+	for _, c := range openrouterTail(route, free) {
 		add(c.provider, c.upstream)
 	}
 
@@ -678,8 +680,8 @@ func candidates(org string, route *modelRoute, prior []attempt) []candidate {
 // Enso SKU or our own compute standing in for it.
 //
 // It is skipped for a route already served BY openrouter.
-func openrouterTail(route *modelRoute) []candidate {
-	if route == nil || route.providerName == freeFamily().name || !freeFamily().enabled() || FreeOnly() {
+func openrouterTail(route *modelRoute, free bool) []candidate {
+	if route == nil || route.providerName == freeFamily().name || !freeFamily().enabled() || free {
 		return nil
 	}
 	if id, ok := openrouterEquivalent(route.upstreamModel); ok {
@@ -749,13 +751,12 @@ func parseProblem(err error) string {
 	return msg
 }
 
-// paidLaneOff is the refusal for a model only its own vendor serves while the paid
-// lane is off: nothing free stands in for it on this path.
 // paying reports whether a call to provider spends Hanzo's money while the paid lane
-// is off: every provider but a family's own service (zen, enso), whose catalog
-// decides for itself what it spends, and a service we operate (operated).
-func paying(p *object.Provider) bool {
-	return FreeOnly() && p != nil && p.Type != "Zen" && p.Type != "Enso" &&
+// is closed to the request on ctx: every provider but a family's own service (zen,
+// enso), whose catalog decides for itself what it spends, and a service we operate
+// (operated).
+func paying(ctx context.Context, p *object.Provider) bool {
+	return FreeOnlyFor(ctx) && p != nil && p.Type != "Zen" && p.Type != "Enso" &&
 		!(p.Owner == "admin" && operated[p.Name])
 }
 
@@ -765,6 +766,8 @@ func paying(p *object.Provider) bool {
 // same name is that org's key, not ours, so only the admin-owned row counts.
 var operated = map[string]bool{"speech": true}
 
+// paidLaneOff is the refusal for a model only its own vendor serves while the paid
+// lane is closed: nothing free stands in for it on this path.
 func paidLaneOff(model string) error {
 	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
 		msg: fmt.Sprintf("model %q is unavailable right now: third-party models are not being served. Choose an Enso or Zen model.", model)}

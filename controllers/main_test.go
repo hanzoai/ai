@@ -3,38 +3,42 @@
 package controllers
 
 import (
+	"context"
 	"os"
 	"testing"
 
 	"github.com/hanzoai/ai/object"
 )
 
-// The paid lane is on for this package's tests, which exercise it; a test of the
-// free lane turns it off itself and back on when it ends.
+// The paid lane is on for this package's tests, which exercise it, and every request
+// in them is on it; a test of the free lane closes it itself and opens it again when
+// it ends, and a test of the lanes themselves (lane_test.go) seats each caller.
 func TestMain(m *testing.M) {
 	FreeOnly = func() bool { return false }
+	onPaidLane = func(context.Context) bool { return true }
 	os.Exit(m.Run())
 }
 
 // With the paid lane off, a call to any provider but a family's own service is one
 // that spends, and is refused; with it on, none is.
 func TestPayingIsEveryProviderButAFamilys(t *testing.T) {
+	ctx := context.Background()
 	FreeOnly = func() bool { return true }
 	t.Cleanup(func() { FreeOnly = func() bool { return false } })
 	for typ, want := range map[string]bool{"Zen": false, "Enso": false, "OpenAI": true, "OpenRouter": true, "": true} {
-		if got := paying(&object.Provider{Type: typ}); got != want {
+		if got := paying(ctx, &object.Provider{Type: typ}); got != want {
 			t.Fatalf("paying(%q) = %v, want %v", typ, got, want)
 		}
 	}
 	// Our own speech service pays no vendor; an org's row that borrows its name does.
-	if paying(&object.Provider{Owner: "admin", Name: "speech", Type: "OpenAI"}) {
+	if paying(ctx, &object.Provider{Owner: "admin", Name: "speech", Type: "OpenAI"}) {
 		t.Fatal("the paid lane being off refused our own speech service")
 	}
-	if !paying(&object.Provider{Owner: "acme", Name: "speech", Type: "OpenAI"}) {
+	if !paying(ctx, &object.Provider{Owner: "acme", Name: "speech", Type: "OpenAI"}) {
 		t.Fatal("an org's provider named speech was taken for ours")
 	}
 	FreeOnly = func() bool { return false }
-	if paying(&object.Provider{Type: "OpenAI"}) {
+	if paying(ctx, &object.Provider{Type: "OpenAI"}) {
 		t.Fatal("a paid lane that is on refused a priced provider")
 	}
 }

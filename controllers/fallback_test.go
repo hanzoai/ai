@@ -157,17 +157,18 @@ func ids(routes []spare) []string {
 	return out
 }
 
-// With the paid lane off, a third-party model's own vendors and its priced OpenRouter
-// copy are never offered, and nothing stands in for them: nothing is offered.
+// With the paid lane closed to a request, a third-party model's own vendors and its
+// priced OpenRouter copy are never offered, and nothing stands in for them: nothing is
+// offered. Open, its own vendors are.
 func TestWithThePaidLaneOffAThirdPartyRouteIsOfferedNothing(t *testing.T) {
 	cooled.forget()
-	FreeOnly = func() bool { return true }
-	t.Cleanup(func() { FreeOnly = func() bool { return false } })
-	fam := spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "openai/gpt-4o")
-	_ = fam
+	spareFamily(t, "http://vendor.invalid", "v/borrowed:free", "openai/gpt-4o")
 	route := &modelRoute{providerName: "do-ai", upstreamModel: "openai-gpt-4o", premium: false,
 		fallbacks: []modelRouteFallback{{providerName: "anthropic", upstreamModel: "claude"}}}
-	if got := candidates("acme", route, nil); len(got) != 0 {
+	if got := candidates("acme", route, nil, true); len(got) != 0 {
 		t.Fatalf("candidates = %+v, want none", got)
+	}
+	if got := candidates("acme", route, nil, false); len(got) < 2 || got[0].provider != "do-ai" || got[1].provider != "anthropic" {
+		t.Fatalf("candidates = %+v, want the route's own vendors first", got)
 	}
 }

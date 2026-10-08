@@ -121,7 +121,7 @@ func (a ask) serve() (*model.ModelResult, served, []attempt, error) {
 // cascade is the failover loop itself: one provider at a time, in order.
 func (a ask) cascade() (*model.ModelResult, served, []attempt, error) {
 	tried := a.prior
-	for _, c := range candidates(a.org, a.route, a.prior) {
+	for _, c := range candidates(a.org, a.route, a.prior, FreeOnlyFor(a.context())) {
 		// The caller hung up. Offering the request to another vendor would spend
 		// money answering an empty room, and would file a healthy vendor's name
 		// against the client's disconnect.

@@ -80,6 +80,8 @@ func InstallFilters(app *zip.App) {
 	// prices the request, so the gate prices that SKU.
 	app.Use(zip.H(AutoRouteFilter))
 	app.Use(zip.H(BalanceGateFilter))
+	// The lane is read from the grant the gate leaves on the request, so it follows it.
+	app.Use(zip.H(LaneFilter))
 	app.Use(zip.H(TenantContextFilter))
 	app.Use(zip.H(AuthzFilter))
 	app.Use(zip.H(PrometheusFilter))

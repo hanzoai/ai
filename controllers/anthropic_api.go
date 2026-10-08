@@ -723,7 +723,7 @@ func (c *ApiController) AnthropicMessages() {
 			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
 			return
 		}
-		if FreeOnly() {
+		if FreeOnlyFor(c.Context()) {
 			err := paidLaneOff(request.Model)
 			c.respondAnthropicError("api_error", err.Error(), statusOf(err))
 			return

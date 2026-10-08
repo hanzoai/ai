@@ -163,7 +163,7 @@ func (c *ApiController) VideosGenerations() {
 		c.ResponseAuthError(err)
 		return
 	}
-	if paying(provider) {
+	if paying(c.Context(), provider) {
 		c.ResponseAuthError(paidLaneOff(req.Model))
 		return
 	}

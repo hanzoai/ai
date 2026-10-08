@@ -260,10 +260,11 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// — the plan or a free cap pays — meets no wallet below; one the wallet pays goes on
 	// to it carrying what may pay; a refused one is answered here.
 	//
-	// LIMITED MODE KEEPS A CONVERSATION GOING. A chat request from a signed-in app
-	// (or a client that asks for it) the plan can no longer pay for is answered by the
-	// free model instead, saying so in X-Hanzo-Fallback; the free model is still held
-	// to the plan's request windows, so the free lane is not a way around them.
+	// LIMITED MODE KEEPS A CONVERSATION GOING. A chat request whose plan has used what
+	// it includes — from any client — or that nothing pays for from a signed-in app (or
+	// a client that asks for it) is answered by the free model instead, saying so in
+	// X-Hanzo-Fallback (fallback); the free model is still held to the plan's request
+	// windows, so the free lane is not a way around them.
 	//
 	// A policy that cannot be read decides nothing: the wallet and the free allowance
 	// below gate the request exactly as they would with no plans at all.
@@ -296,6 +297,22 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			}
 			if grant == nil {
 				break
+			}
+			// The platform's paid-lane day is spent (controllers.Ceiling): a chat request
+			// for a model only the paid lane serves is answered by the free model, as one
+			// its plan cannot pay for is. What admitting it took is given back first.
+			if priced && controllers.Ceiling(grant) && controllers.FamilyOf(model) == "" &&
+				!strings.EqualFold(model, controllers.FreeModel) && controllers.ChatPath(path) &&
+				fallBack(c, controllers.FreeModel, controllers.ReasonCeiling, namespace, "") {
+				if grant.Release != nil {
+					grant.Release()
+				}
+				if grant.Settle != nil {
+					grant.Settle(0)
+				}
+				c.SetHeader(controllers.LaneReasonHeader, controllers.ReasonCeiling)
+				model = controllers.FreeModel
+				continue
 			}
 			usage(c, grant)
 			controllers.Cover(c, grant)
@@ -576,17 +593,24 @@ func modelName(id string) string {
 }
 
 // fallback reports whether a refused request is answered by another model instead.
-// It is the one rule for every refusal for want of payment — the plan's allowance
-// used, a paid plan required, a model past its share, an empty wallet — and it holds
-// for a conversation from a signed-in app or a client that sent X-Hanzo-Fallback:
-// allow. An API key gets the refusal unless it asks: a program is told, not silently
-// answered by another model.
+// It is the one rule for every refusal for want of payment in chat.
+//
+// A refusal that says a paid plan has used what it includes — the plan's allowance
+// (plan_allowance_used) or a model's share of it (model_cap) — is always answered:
+// limited free usage past the included usage is part of every paid plan, so its payer
+// is answered in limited mode on any client, marked by X-Hanzo-Fallback and
+// X-Hanzo-Usage: limited. Any other — a paid plan required, an empty wallet — is
+// answered for a conversation from a signed-in app or a client that sent
+// X-Hanzo-Fallback: allow; an API key without a plan that did not ask gets the
+// refusal.
 func fallback(c *zip.Ctx, path, code string) bool {
 	if !controllers.ChatPath(path) {
 		return false
 	}
 	switch code {
-	case object.CodePlanAllowance, object.CodePaidPlan, object.CodeModelCap, object.CodeInsufficientBalance:
+	case object.CodePlanAllowance, object.CodeModelCap:
+		return true
+	case object.CodePaidPlan, object.CodeInsufficientBalance:
 	default:
 		return false
 	}

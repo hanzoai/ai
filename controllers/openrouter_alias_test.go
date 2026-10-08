@@ -236,7 +236,7 @@ func TestTheOpenRouterTailSendsTheVendorsID(t *testing.T) {
 
 	r := route("do-ai")
 	r.upstreamModel = "claude-sonnet-4-5" // an alias here, never an id OpenRouter lists
-	for _, c := range candidates("", r, nil) {
+	for _, c := range candidates("", r, nil, false) {
 		if c.provider == "openrouter" {
 			if c.upstream != "anthropic/claude-sonnet-4.5" {
 				t.Errorf("the tail sends %q, want anthropic/claude-sonnet-4.5", c.upstream)
