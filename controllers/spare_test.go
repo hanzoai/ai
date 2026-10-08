@@ -244,7 +244,7 @@ func restore(t *testing.T, fam *modelFamily) {
 	urlKey, keyKey, freeName := fam.urlKey, fam.keyKey, fam.freeName
 	providerFn, decode, spare, terms := fam.providerFn, fam.decode, fam.spare, fam.terms
 	windows, byID, ids, spares := fam.windows, fam.byID, fam.ids, fam.spares
-	fetchedAt, loaded := fam.fetchedAt, fam.loaded
+	fetchedAt, loaded, named, paid := fam.fetchedAt, fam.loaded, fam.named, fam.paid
 	fam.mu.RUnlock()
 
 	t.Cleanup(func() {
@@ -254,7 +254,7 @@ func restore(t *testing.T, fam *modelFamily) {
 		fam.urlKey, fam.keyKey, fam.freeName = urlKey, keyKey, freeName
 		fam.providerFn, fam.decode, fam.spare, fam.terms = providerFn, decode, spare, terms
 		fam.windows, fam.byID, fam.ids, fam.spares = windows, byID, ids, spares
-		fam.fetchedAt, fam.loaded = fetchedAt, loaded
+		fam.fetchedAt, fam.loaded, fam.named, fam.paid = fetchedAt, loaded, named, paid
 	})
 }
 
@@ -560,8 +560,8 @@ func TestASpareRouteIsBilledAtNothing(t *testing.T) {
 	c := visit(http.MethodPost, "/v1/x")
 	w := whence{ledger: c.billingOrg(nil), ip: c.Fiber().IP(), ctx: c.Context()}
 
-	if cents := recordFamilyUsage(w, fam, "vendor/big:free", "vendor/paid-a", nil, &mark{}, nil, false, false, "r1", tokens{fresh: 1000, completion: 1000}, serving{}, time.Now(), nil, "success", ""); cents != 0 {
-		t.Errorf("a spare route billed %d cents", cents)
+	if nano := recordFamilyUsage(w, fam, "vendor/big:free", "vendor/paid-a", nil, &mark{}, nil, false, false, "r1", tokens{fresh: 1000, completion: 1000}, serving{}, time.Now(), nil, "success", ""); nano != 0 {
+		t.Errorf("a spare route billed %d nano", nano)
 	}
 
 	// And the zero has to hold at every reader of the money, not only in the hold.
@@ -598,11 +598,11 @@ func TestAFamilySKUServedByTheFreeLaneIsBilledAtNothing(t *testing.T) {
 	w := whence{ledger: c.billingOrg(nil), ip: c.Fiber().IP(), ctx: c.Context()}
 	use := tokens{fresh: 1_000_000, completion: 1_000_000}
 
-	if cents := recordFamilyUsage(w, enso, "enso-flash", "", nil, &mark{}, nil, true, false, "r1", use, servingOf(http.Header{servedHeader: {"vendor/big:free"}, freeHeader: {"true"}}), time.Now(), nil, "success", ""); cents != 0 {
-		t.Errorf("an answer the free lane wrote billed %d cents", cents)
+	if nano := recordFamilyUsage(w, enso, "enso-flash", "", nil, &mark{}, nil, true, false, "r1", use, servingOf(http.Header{servedHeader: {"vendor/big:free"}, freeHeader: {"true"}}), time.Now(), nil, "success", ""); nano != 0 {
+		t.Errorf("an answer the free lane wrote billed %d nano", nano)
 	}
-	if cents := recordFamilyUsage(w, enso, "enso-flash", "", nil, &mark{}, nil, true, false, "r2", use, serving{arm: "vendor/flash"}, time.Now(), nil, "success", ""); cents != 300 {
-		t.Errorf("an answer the SKU's own arm wrote billed %d cents, want 300", cents)
+	if nano := recordFamilyUsage(w, enso, "enso-flash", "", nil, &mark{}, nil, true, false, "r2", use, serving{arm: "vendor/flash"}, time.Now(), nil, "success", ""); nano != 3_000_000_000 {
+		t.Errorf("an answer the SKU's own arm wrote billed %d nano, want 3000000000 ($3)", nano)
 	}
 }
 
@@ -1372,17 +1372,17 @@ func TestAStandInCostsNoMoreThanTheModelNamed(t *testing.T) {
 	w := whence{ledger: c.billingOrg(nil), ip: c.Fiber().IP(), ctx: c.Context(), asked: resale}
 	use := tokens{fresh: 1_000_000, completion: 1_000_000}
 
-	if cents := recordFamilyUsage(w, enso, "enso-pro", "vendor/cheap", nil, &mark{}, nil, true, false, "r1", use, serving{}, time.Now(), nil, "success", ""); cents != 200 {
-		t.Errorf("enso-pro standing in for a $1/$1 model billed %d cents, want 200 — the named model's price", cents)
+	if nano := recordFamilyUsage(w, enso, "enso-pro", "vendor/cheap", nil, &mark{}, nil, true, false, "r1", use, serving{}, time.Now(), nil, "success", ""); nano != 2_000_000_000 {
+		t.Errorf("enso-pro standing in for a $1/$1 model billed %d nano, want $2 — the named model's price", nano)
 	}
-	if cents := recordFamilyUsage(w, enso, "enso-pro", "vendor/dear", nil, &mark{}, nil, true, false, "r2", use, serving{}, time.Now(), nil, "success", ""); cents != 1700 {
-		t.Errorf("enso-pro standing in for a $15/$75 model billed %d cents, want 1700 — its own price", cents)
+	if nano := recordFamilyUsage(w, enso, "enso-pro", "vendor/dear", nil, &mark{}, nil, true, false, "r2", use, serving{}, time.Now(), nil, "success", ""); nano != 17_000_000_000 {
+		t.Errorf("enso-pro standing in for a $15/$75 model billed %d nano, want $17 — its own price", nano)
 	}
 	// An answer that cost more than its hold was estimated at is billed in full:
 	// the hold is an estimate, never a price.
 	hold := &budgetHold{est: 6}
-	if cents := recordFamilyUsage(w, resale, "vendor/dear", "", nil, &mark{}, nil, true, false, "r3", use, serving{}, time.Now(), hold, "success", ""); cents != 9000 {
-		t.Errorf("billed %d cents for a $15/$75 answer held at 6 cents, want 9000", cents)
+	if nano := recordFamilyUsage(w, resale, "vendor/dear", "", nil, &mark{}, nil, true, false, "r3", use, serving{}, time.Now(), hold, "success", ""); nano != 90_000_000_000 {
+		t.Errorf("billed %d nano for a $15/$75 answer held at 6 cents, want $90", nano)
 	}
 }
 

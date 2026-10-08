@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -26,134 +27,159 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/upstream"
-	"github.com/hanzoai/decimal"
-	"github.com/hanzoai/money"
+	"github.com/luxfi/zap"
 )
 
-// The zen media plane on ai's side: forward an image/audio/rerank request to the
-// zen service and bill it per unit at the discovered retail price. It mirrors the
-// chat pipeToZen discipline (reserve → forward → settle from discovery) but meters
+// The zen media plane on ai's side: forward an image/audio/video/rerank request to
+// the zen service and bill it per unit at the discovered retail price. It mirrors the
+// chat pipeToFamily discipline (reserve → forward → settle from discovery) but meters
 // per unit — images, calls — not per token. zen owns the SKU→upstream mapping,
 // identity, and serving; ai authenticates, meters, and forwards.
 
-// unitCostCents is the exact retail cost of `units` of a media SKU (images, calls)
-// at the discovered headline per-unit price, in ai's cent ledger unit. Media prices
-// are per unit, not per MTok — the same money/decimal path as costCents without the
-// ÷1e6. A one-cent floor keeps a served call from ever billing zero.
-func (m zenModel) unitCostCents(units int) int64 {
-	usd := m.Base.In.Mul(decimal.New(int64(units), 0))
-	cents := money.New(usd, money.USD).Minor().Int64()
-	if cents <= 0 && units > 0 {
-		cents = 1
-	}
-	return cents
+// media is what one media call relayed to zen answered: the status and the bytes to
+// write, or the reason it could not be served. short is a wallet that could not cover
+// the call's price, which the caller words in its own transport.
+type media struct {
+	status int
+	ct     string
+	body   []byte
+	msg    string
+	short  bool
 }
 
-// serveZenMedia reserves the per-unit cost, forwards the request to zen, and
-// settles at the discovered price. It is the one Zen branch each media handler
-// calls: apiPath is zen's endpoint ("images/generations", "audio/voice",
-// "rerank"); units is the billable quantity (image count, else one call).
-func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, units int, orgId string, authUser *iam.User, isPremium bool, start time.Time) {
+// zenMedia relays one buffered media call to the zen family and bills it at the
+// discovered per-unit price: reserve the price, forward, settle exactly what was
+// served. It is the ONE media relay — the HTTP handlers (serveZenMedia) and their ZAP
+// twins answer with what it returns. apiPath is zen's endpoint ("images/generations",
+// "audio/voice", "rerank", …); units the billable quantity (image count, else one
+// call); org the tenant zen is told (X-Org-Id); ctx bounds the upstream call and w
+// is the request's record.
+func zenMedia(ctx context.Context, w whence, apiPath, model string, raw []byte, units int, org, accept string, u *iam.User, premium bool, start time.Time) media {
 	var hold *budgetHold
-	if authUser != nil {
+	if u != nil {
 		if zm, ok := zenFam.lookup(model); ok {
-			ledger := c.billingOrg(authUser)
-			subject := authUser.PayerSubject(ledger)
 			var ok2 bool
-			if hold, ok2 = reserveFor(c.Context(), subject, zm.unitCostCents(units)); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "cost").Message))
-				return
+			if hold, ok2 = reserveFor(w.ctx, u.PayerSubject(w.ledger), centsUp(zm.unitNano(units))); !ok2 {
+				return media{status: http.StatusPaymentRequired, short: true}
 			}
 		}
 	}
 	defer hold.settle(0)
-	c.pipeZenMedia(apiPath, model, rawBody, units, orgId, authUser, isPremium, hold, start)
-}
 
-// pipeZenMedia forwards rawBody to zen and relays the upstream bytes verbatim
-// (image JSON, audio bytes) with the upstream content type, then settles the hold
-// at the discovered per-unit price. Non-streaming — media is one buffered response.
-func (c *ApiController) pipeZenMedia(apiPath, model string, rawBody []byte, units int, orgId string, authUser *iam.User, isPremium bool, hold *budgetHold, start time.Time) {
 	prov := object.ZenProvider()
 	if prov == nil {
-		c.zenError("openai", "zen service is not configured", http.StatusServiceUnavailable)
-		return
+		return media{status: http.StatusServiceUnavailable, msg: "zen service is not configured"}
 	}
 	reqID := uuid.NewString()
-	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, prov.ProviderUrl+"/v1/"+apiPath, bytes.NewReader(rawBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, prov.ProviderUrl+"/v1/"+apiPath, bytes.NewReader(raw))
 	if err != nil {
-		c.zenError("openai", "build zen request: "+err.Error(), http.StatusInternalServerError)
-		return
+		return media{status: http.StatusInternalServerError, msg: "build zen request: " + err.Error()}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a := c.Header("Accept"); a != "" {
-		req.Header.Set("Accept", a)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
 	}
 	upstream.Authorize(req, prov)
 	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
 	// ledger — tells zen it fronts this call so zen meters without double-charging.
-	if orgId != "" {
-		req.Header.Set("X-Org-Id", orgId)
-	} else if authUser != nil {
-		req.Header.Set("X-Org-Id", authUser.Owner)
+	if org != "" {
+		req.Header.Set("X-Org-Id", org)
 	}
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 
 	resp, err := zenPipeClient.Do(req)
 	if err != nil {
-		c.recordZenMediaUsage(model, authUser, isPremium, reqID, units, start, hold, "error", err.Error())
-		c.zenError("openai", "zen request failed: "+err.Error(), http.StatusBadGateway)
-		return
+		recordMedia(w, model, u, premium, reqID, units, serving{}, start, hold, "error", err.Error())
+		return media{status: http.StatusBadGateway, msg: "zen request failed: " + err.Error()}
 	}
 	defer resp.Body.Close()
 	b, rErr := io.ReadAll(resp.Body)
 	if rErr != nil {
-		c.zenError("openai", "read zen response: "+rErr.Error(), http.StatusBadGateway)
-		return
+		return media{status: http.StatusBadGateway, msg: "read zen response: " + rErr.Error()}
 	}
+	sv := servingOf(resp.Header)
 	if resp.StatusCode != http.StatusOK {
 		// A failed call is never charged: the deferred settle(0) releases the hold.
-		c.zenError("openai", upstreamErrorMessage(b), resp.StatusCode)
-		return
+		// The arms zen asked before it gave up are on the books all the same.
+		failed(w, zenFam, model, sv.failover, u, premium, false, reqID, start)
+		return media{status: resp.StatusCode, msg: upstreamErrorMessage(b)}
 	}
 	ct := resp.Header.Get("Content-Type")
 	if ct == "" {
 		ct = "application/json"
 	}
-	c.SetHeader("Content-Type", ct)
-	c.Bytes(http.StatusOK, b)
-	c.recordZenMediaUsage(model, authUser, isPremium, reqID, units, start, hold, "success", "")
+	recordMedia(w, model, u, premium, reqID, units, sv, start, hold, "success", "")
+	return media{status: http.StatusOK, ct: ct, body: b}
 }
 
-// recordZenMediaUsage settles the budget hold at the discovered per-unit price and
-// records the served (or failed) call for attribution. The discovered price is the
-// billing source of truth; a model absent from the cache settles to zero (released).
-func (c *ApiController) recordZenMediaUsage(model string, authUser *iam.User, isPremium bool, reqID string, units int, start time.Time, hold *budgetHold, status, errMsg string) {
-	var cents int64
-	if status == "success" {
+// recordMedia settles the hold at the discovered per-unit price, exactly — a rerank
+// call worth a tenth of a cent bills a tenth of a cent — and records the served (or
+// failed) call. A rung zen says bills nothing (X-Hanzo-Free) bills nothing; a model
+// absent from the catalog settles to zero (released). The unit price is the charge,
+// carried as the exact billed amount every reader of the money asks (usageCostNano);
+// what the call cost upstream is zen's own statement (cogsHeader).
+func recordMedia(w whence, model string, u *iam.User, premium bool, reqID string, units int, sv serving, start time.Time, hold *budgetHold, status, errMsg string) {
+	var nano int64
+	if status == "success" && !sv.free {
 		if zm, ok := zenFam.lookup(model); ok {
-			cents = zm.unitCostCents(units)
+			nano = zm.unitNano(units)
 		}
 	}
-	hold.settle(cents)
-	if authUser == nil {
+	hold.settleNano(nano)
+	if u == nil {
 		return
 	}
-	// The unit price is the charge: carried as the exact billed amount, which is what
-	// every reader of the money asks (usageCostNano), so the debit is what the hold
-	// settled at rather than a token count this call does not have.
-	billed := cents * 10_000_000 // 1¢ = 1e7 nano
 	rec := &usageRecord{
-		Owner: c.billingOrg(authUser), Organization: authUser.Owner,
-		Model: model, Provider: "zen",
-		Cost: float64(cents) / 100.0, Currency: "USD",
-		Premium: isPremium, Status: status, ErrorMsg: errMsg,
-		ClientIP: c.Fiber().IP(), RequestID: reqID, Account: "hanzo",
-		TotalTokens: units, BilledNanoExact: &billed,
+		Owner: w.ledger, Organization: u.Owner,
+		Model: model, Provider: "zen", Free: sv.free,
+		Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover,
+		Cost: float64(nano) / 1e9, Currency: "USD",
+		Premium: premium, Status: status, ErrorMsg: errMsg,
+		ClientIP: w.ip, RequestID: reqID, Account: "hanzo",
+		TotalTokens: units, BilledNanoExact: &nano, CostNanoExact: sv.cogs,
 	}
-	rec.bind(c.Context(), authUser)
+	rec.bind(w.ctx, u)
 	recordUsage(rec)
-	recordTrace(c.Context(), rec, start)
+	recordTrace(w.ctx, rec, start)
+	if status == "success" {
+		failed(w, zenFam, model, sv.failover, u, premium, false, reqID, start)
+	}
+}
+
+// serveZenMedia is the one Zen branch each media handler calls: zenMedia for this
+// request, written back as the HTTP answer.
+func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, units int, orgId string, authUser *iam.User, isPremium bool, start time.Time) {
+	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context()}
+	m := zenMedia(c.Context(), w, apiPath, model, rawBody, units, tenant(c.Context(), orgId, authUser), c.Header("Accept"), authUser, isPremium, start)
+	switch {
+	case m.short:
+		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), w.ledger, "cost").Message))
+	case m.status != http.StatusOK:
+		c.zenError("openai", m.msg, m.status)
+	default:
+		c.SetHeader("Content-Type", m.ct)
+		_ = c.Bytes(http.StatusOK, m.body)
+	}
+}
+
+// zapServeZenMedia is serveZenMedia over ZAP: no writer to hold, the answer is one
+// cloud response.
+func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *iam.User, isPremium bool, start time.Time) (*zap.Message, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
+	defer cancel()
+	w := whence{ctx: context.Background()}
+	org := ""
+	if authUser != nil {
+		w.ledger, org = authUser.Owner, authUser.Owner
+	}
+	m := zenMedia(ctx, w, apiPath, mdl, rawBody, units, org, "", authUser, isPremium, start)
+	switch {
+	case m.short:
+		return object.BuildCloudResponse(402, nil, object.InsufficientBalance(zapBrandHost, w.ledger, "cost").Message)
+	case m.status != http.StatusOK:
+		return object.BuildCloudResponse(uint32(m.status), nil, m.msg)
+	}
+	return object.BuildCloudResponse(200, m.body, "")
 }
 
 // AudioMedia serves the generative audio verbs — /v1/audio/voice (TTS), /music,

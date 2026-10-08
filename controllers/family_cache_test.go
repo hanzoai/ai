@@ -51,10 +51,10 @@ func TestCachedFamilyTokensBillAtTheCacheRate(t *testing.T) {
 		t.Fatalf("anthropic usage read as %+v", ant)
 	}
 
-	// 200k fresh at 0.42 + 800k cached at 0.09 = $0.084 + $0.072 = $0.156 → 16¢.
-	// Without the cache term the same answer billed $0.42 → 42¢.
-	if got := zm.costCents(oai.fresh, oai.cached, oai.completion); got != 16 {
-		t.Errorf("costCents = %d¢, want 16¢", got)
+	// 200k fresh at 0.42 + 800k cached at 0.09 = $0.084 + $0.072 = $0.156, exactly.
+	// Without the cache term the same answer billed $0.42.
+	if got := zm.retailNano(oai.fresh, oai.cached, oai.completion); got != 156_000_000 {
+		t.Errorf("retailNano = %d, want 156000000 ($0.156)", got)
 	}
 	p, _ := zm.price()
 	if p.CacheReadPerMillion != 0.09 {
@@ -68,8 +68,8 @@ func TestCachedFamilyTokensBillAtTheCacheRate(t *testing.T) {
 	// No stated cache price: cached tokens bill at the input rate.
 	nocache := zenModel{Base: zenTier{MaxCtx: 1000000, In: decimal.MustParse("0.42"), Out: decimal.MustParse("1.5")}}
 	nocache.Tiers = []zenTier{nocache.Base}
-	if got := nocache.costCents(200000, 800000, 0); got != 42 {
-		t.Errorf("unpriced cache billed %d¢, want 42¢ at the input rate", got)
+	if got := nocache.retailNano(200000, 800000, 0); got != 420_000_000 {
+		t.Errorf("unpriced cache billed %d nano, want 420000000 ($0.42) at the input rate", got)
 	}
 	if p, _ := nocache.price(); p.CacheReadPerMillion != 0.42 {
 		t.Errorf("unpriced cache reads %v, want the input rate 0.42", p.CacheReadPerMillion)

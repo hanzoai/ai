@@ -31,8 +31,8 @@
 //   POST /v1/audio/music                          -> audio.music             (Zen)
 //   POST /v1/audio/foley                          -> audio.foley             (Zen)
 //
-// The Zen media forward reuses the SHARED zapServeZenMedia/zapRecordZenMediaUsage
-// (zap_images-generation.go) so there is ONE zen-media meter, not a fork.
+// The Zen media forward is the ONE media relay, zenMedia (zen_media.go), through
+// zapServeZenMedia, so there is one zen-media meter, not a fork.
 
 package controllers
 
@@ -43,7 +43,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"strings"
 	"time"
 
@@ -54,7 +53,6 @@ import (
 
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/stt"
-	"github.com/hanzoai/ai/upstream"
 )
 
 // The canonical ZAP dispatch registry (registerCloud / registerGatewayPath /
@@ -385,94 +383,6 @@ func zapAudioVerbHandler(verb string) zapHandler {
 		}
 		return zapServeZenMedia("audio/"+verb, req.Model, body, 1, authUser, isPremium, time.Now().UTC())
 	}
-}
-
-// ── Shared Zen media forward (buffered, no http.ResponseWriter) ─────────────
-//
-// The pure-ZAP mirror of serveZenMedia/pipeZenMedia (zen_media.go): reserve the
-// per-unit cost, forward to zen, relay the upstream bytes, settle at the
-// discovered price. Media is one buffered response — no writer to hold. This is
-// the ONE zen-media meter every media group (audio, images, …) reuses; the image
-// group's near-identical copy (zapVideoServeZen) is still to be folded in.
-
-func zapServeZenMedia(apiPath, mdl string, rawBody []byte, units int, authUser *iam.User, isPremium bool, start time.Time) (*zap.Message, error) {
-	var hold *budgetHold
-	if authUser != nil {
-		if zm, ok := zenFam.lookup(mdl); ok {
-			subject := authUser.PayerSubject("")
-			var ok2 bool
-			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(zapBrandHost, authUser.Owner, "cost").Message)
-			}
-		}
-	}
-	defer hold.settle(0)
-
-	prov := object.ZenProvider()
-	if prov == nil {
-		return object.BuildCloudResponse(503, nil, "zen service is not configured")
-	}
-	reqID := uuid.NewString()
-
-	hctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
-	defer cancel()
-
-	hreq, err := http.NewRequestWithContext(hctx, http.MethodPost, prov.ProviderUrl+"/v1/"+apiPath, bytes.NewReader(rawBody))
-	if err != nil {
-		return object.BuildCloudResponse(500, nil, "build zen request: "+err.Error())
-	}
-	hreq.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(hreq, prov)
-	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
-	// ledger — tells zen it fronts this call so zen meters without double-charging.
-	if authUser != nil {
-		hreq.Header.Set("X-Org-Id", authUser.Owner)
-	}
-	hreq.Header.Set("X-Hanzo-Fronted-By", "ai")
-
-	resp, err := zenPipeClient.Do(hreq)
-	if err != nil {
-		zapRecordZenMediaUsage(mdl, authUser, isPremium, reqID, units, start, hold, "error", err.Error())
-		return object.BuildCloudResponse(502, nil, "zen request failed: "+err.Error())
-	}
-	defer resp.Body.Close()
-
-	b, rErr := io.ReadAll(resp.Body)
-	if rErr != nil {
-		return object.BuildCloudResponse(502, nil, "read zen response: "+rErr.Error())
-	}
-	if resp.StatusCode != http.StatusOK {
-		// A failed call is never charged: the deferred settle(0) releases the hold.
-		return object.BuildCloudResponse(uint32(resp.StatusCode), nil, upstreamErrorMessage(b))
-	}
-
-	zapRecordZenMediaUsage(mdl, authUser, isPremium, reqID, units, start, hold, "success", "")
-	return object.BuildCloudResponse(200, b, "")
-}
-
-// zapRecordZenMediaUsage settles the hold at the discovered per-unit price and
-// records the served (or failed) call, mirroring recordZenMediaUsage (STEP 6).
-func zapRecordZenMediaUsage(mdl string, authUser *iam.User, isPremium bool, reqID string, units int, start time.Time, hold *budgetHold, status, errMsg string) {
-	var cents int64
-	if status == "success" {
-		if zm, ok := zenFam.lookup(mdl); ok {
-			cents = zm.unitCostCents(units)
-		}
-	}
-	hold.settle(cents)
-	if authUser == nil {
-		return
-	}
-	rec := &usageRecord{
-		Owner: authUser.Owner, Organization: authUser.Owner,
-		Model: mdl, Provider: "zen",
-		Cost: float64(cents) / 100.0, Currency: "USD",
-		Premium: isPremium, Status: status, ErrorMsg: errMsg,
-		RequestID: reqID, Account: "hanzo",
-	}
-	rec.bind(context.Background(), authUser)
-	recordUsage(rec)
-	recordTrace(context.Background(), rec, start)
 }
 
 // multipartBoundary reads the boundary token off the first line of a multipart

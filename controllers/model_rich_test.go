@@ -289,27 +289,27 @@ func TestVariableRouterBillsStatedCost(t *testing.T) {
 		t.Errorf("the hold for a 100k-token call reserves %d cents, under the ceiling's 60 for input alone", got)
 	}
 
-	// The hold settles in cents and the ledger takes the exact dollars, and both are the
-	// stated cost times the margin: never the ceiling's rate for tokens a cheaper SKU
-	// served, and never below what the call cost us.
+	// The hold and the ledger settle the same exact dollars, and both are the stated
+	// cost times the margin: never the ceiling's rate for tokens a cheaper SKU served,
+	// and never below what the call cost us.
 	debits := captureDebits(t)
 	c := visit(http.MethodPost, "/v1/x")
 	w := whence{ledger: "acme", ip: c.Fiber().IP(), ctx: c.Context()}
 	alice := &iam.User{Owner: "acme", Name: "alice"}
 	use := tokens{fresh: 1000, completion: 1000}
 	for _, tc := range []struct {
-		name  string
-		cost  *int64 // nano-USD the answer says the call cost us
-		cents int64
-		usd   string
+		name string
+		cost *int64 // nano-USD the answer says the call cost us
+		nano int64
+		usd  string
 	}{
-		{"a $0.50 call", new(int64(500_000_000)), 60, "0.6"},
-		{"a $0.001 call", new(int64(1_000_000)), 1, "0.0012"},
-		{"a call that states no cost", nil, zm.costCents(1000, 0, 1000), "0.03"},
+		{"a $0.50 call", new(int64(500_000_000)), 600_000_000, "0.6"},
+		{"a $0.001 call", new(int64(1_000_000)), 1_200_000, "0.0012"},
+		{"a call that states no cost", nil, zm.retailNano(1000, 0, 1000), "0.03"},
 	} {
 		*debits = (*debits)[:0]
-		if cents := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{cost: tc.cost}, alice, true, false, "r", use, serving{}, time.Now(), nil, "success", ""); cents != tc.cents {
-			t.Errorf("%s settled its hold at %d cents, want %d", tc.name, cents, tc.cents)
+		if nano := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{cost: tc.cost}, alice, true, false, "r", use, serving{}, time.Now(), nil, "success", ""); nano != tc.nano {
+			t.Errorf("%s settled its hold at %d nano, want %d", tc.name, nano, tc.nano)
 		}
 		if len(*debits) != 1 || (*debits)[0].usd != tc.usd {
 			t.Errorf("%s debited %+v, want one debit of $%s", tc.name, *debits, tc.usd)

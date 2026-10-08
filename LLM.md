@@ -442,9 +442,10 @@ Request flow for a completion:
    A models.yaml entry with `alias_of: <id>` is an alias: not a route, not
    listed. `AliasFilter` rewrites a POST body naming it to name `<id>` ahead of
    every other reader, so it is routed, gated and billed as `<id>`. An alias of a
-   zen SKU belongs in the zen catalog instead: cloud's in-process zen claims
-   the request before this chain runs. `/v1/decisions` sends the service the
-   route's `upstream` and answers naming the id asked for.
+   zen or enso SKU belongs in that family's catalog instead: its `/v1/models`
+   states it (`aliases`) and the family route resolves it, after this chain, so a
+   row here for the same id wins. `/v1/decisions` sends the service the route's
+   `upstream` and answers naming the id asked for.
 4. **Provider records** live in the DB (`object/init.go` `initLLMProviders`),
    keyed by name: `do-ai` (DigitalOcean GenAI, the primary — backs OpenAI/
    Anthropic/Llama/DeepSeek/Qwen/GLM/Kimi via `inference.do-ai.run`),
@@ -537,6 +538,52 @@ Anthropic-type rows and endpoint-less rows keep the older paths
 (`proxyToolRequestAnthropic`, the QueryText cascade). An Anthropic-type FALLBACK on
 a relayed route is passed over, not converted.
 
+
+## A family service: what ai reads from it (`controllers/zen_client.go`, `zen_media.go`)
+
+Zen and Enso are served OUTSIDE ai, by a family service at `ZEN_URL` / `ENSO_URL`
+(the Go zen binary today; the Rust one next). ai authenticates, gates, meters and
+forwards; the service owns which upstream answers. The contract, one address each:
+
+- `GET /v1/models`: `{"object":"list","paid":<bool>,"aliases":{"<id>":"<sku>"},
+  "data":[...]}`. `paid` is the catalog's line, the platform's paid switch (zen's
+  only). `aliases` are the other ids the family answers to (`claude-zen` → `zen6`,
+  `hanzoai/zen` → `hanzo/zen`): routed, priced and gated as their SKU, sent upstream
+  as the SKU, answered wearing the alias, never listed; one that spells a listed SKU
+  is that SKU. Each `data` row: `id`, `owned_by`, `mode` (chat | embedding | rerank
+  | image | audio | video), `context_window`, `pricing` {input, output, cache_read}
+  as decimal strings (per 1M tokens; per unit for media), `pricing_tiers`,
+  `access` (`waitlist`), `min_tier`, `funding` (`prepaid` where any path spends a
+  prepaid balance), `plan`, `capabilities.vision`.
+- `POST /v1/chat/completions`, `/v1/messages`, `/v1/embeddings`: the body ai sends
+  (`familyBody`), `X-Org-Id` the org the call is for (a machine credential acting for
+  a person: that person's org, `tenant`), `X-Hanzo-Fronted-By: ai` (ai bills; the
+  family meters nothing), `X-Hanzo-Spend` + `TE: trailers` for a plan's paid rungs.
+- `POST /v1/rerank`, `/v1/images/generations`, `/v1/audio/{voice,music,foley}`,
+  `/v1/videos/generations`: buffered, billed per unit (`zenMedia`, the one media relay
+  for HTTP and ZAP).
+- Back, on a fronted call: `X-Hanzo-Served` (the Hanzo SKU), `X-Hanzo-Arm` (the
+  upstream), `X-Hanzo-Provider`, `X-Hanzo-Free: true` when the rung bills nothing (the
+  call then bills nothing), `X-Hanzo-Failover` (each arm that failed, `<upstream>
+  (<provider>): <reason>`, one field an arm or joined by `"; "`), and `X-Hanzo-Cogs`:
+  what the request cost Hanzo upstream in USD, every arm it ran included — a header on
+  a whole answer, a trailer (declared in `Trailer:`) on a stream. A committed plan
+  answer adds `X-Hanzo-Cost-Bound` and the `X-Hanzo-Cost` trailer (plan.go).
+- `GET /v1/admin/zen/catalog`, `PUT` the same, `GET /v1/admin/zen/keys`, `GET
+  /v1/admin/zen/free`, under `Authorization: Bearer <ZEN_ADMIN_TOKEN>`: the catalog a
+  SuperAdmin edits at `/v1/ai/router/catalog` (routing.go), for zen whenever no zen is
+  linked into the process.
+
+What ai does with it: every priced answer settles EXACTLY, in nano-dollars
+(`retailNano`, `unitNano`, rounded up, never floored to a cent): the hold
+(`settleNano`), the debit (`BilledNanoExact`) and the row read one number, so an
+embedding at $0.01/MTok bills $0.00001 a thousand tokens and a $0.001 rerank bills
+$0.001. A hold still reserves whole cents (`centsUp`). `X-Hanzo-Cogs` is the row's
+and the debit's COGS (`CostNanoExact`; `UsageEvent.CostUSD` reads `usageMargin`, the
+same number), and each failed arm is a `"failover"` row beside the answer under the
+same request id, billed nothing (`failoverRows`), as the in-process zen filed them.
+A test that drives this whole contract stands up `zenService` in
+`family_service_test.go`.
 
 ## Strict mode — served unchanged or refused (`controllers/strict.go`)
 
@@ -1073,12 +1120,20 @@ answers `auto` only when the org allowlisted it; otherwise a caller names it.
 
 ## The paid lane: ONE switch, then the plan that pays
 
-`controllers.FreeOnly` is the platform's switch, and ai does not own it: the host sets
-it to the loaded zen catalog's (cloud: `aicontrollers.FreeOnly = z.Free`), which is free
-unless the catalog, universe `charts/app/files/zen/catalog.yaml`, says `paid: true`.
-Spending is an opt-in: unset by a host, the paid lane is off. GitOps is the source of
-truth; there is no settings row, no `FREE_ONLY` env and no second line (the enso service
-reads the same line through `ZEN_SWITCH`).
+`controllers.FreeOnly` is the platform's switch, and ai does not own it: it is the zen
+catalog's `paid` line as the zen service's own discovery states it (`GET
+ZEN_URL/v1/models`, top-level `"paid": true`; `zenFam.open`), free unless the catalog,
+universe `charts/app/files/zen/catalog.yaml`, says `paid: true`. Spending is an opt-in:
+a catalog not yet read, or silent on it, keeps the paid lane off, and a failed refresh
+keeps the last catalog's line. GitOps is the source of truth; there is no settings row,
+no `FREE_ONLY` env and no second line (the enso service reads the same line through
+`ZEN_SWITCH`). A cloud that still links zen in process assigns it from that zen
+(`aicontrollers.FreeOnly = z.Free`) until its zen moves out; nothing else sets it.
+
+A closed lane bounds the platform's cash, so it reaches a priced Hanzo SKU only where
+one could be spent: an embedding no stand-in answers is sent to its family when the
+catalog funds it from grants and our own compute on every path (`spends`: its listing
+says no `"funding": "prepaid"`), and refused when it does not.
 
 With the switch on, each request is on one lane (`controllers/lane.go`), decided once
 by `controllers.Seat` inside `routers.BalanceGateFilter` from the host's grant:

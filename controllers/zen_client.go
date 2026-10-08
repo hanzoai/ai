@@ -47,7 +47,6 @@ import (
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/decimal"
-	"github.com/hanzoai/money"
 )
 
 // ── the families (values, not places) ────────────────────────────────────────
@@ -129,10 +128,11 @@ type modelFamily struct {
 	terms func(body []byte, free bool) []byte
 
 	// aliases maps an id a caller may send onto the discovered SKU that serves it,
-	// lowercase on both sides. lookup reads through it, so everything that asks the
-	// family about a model — whether it serves it, its price, its floors, its terms
-	// — answers for the alias exactly as for the SKU, and sku is what goes upstream.
-	// nil for a family whose callers name its SKUs directly.
+	// lowercase on both sides, for a vendor whose catalog names none (OpenRouter's,
+	// openrouter_alias.go). A Hanzo family's catalog states its own (named). lookup
+	// reads through both, so everything that asks the family about a model — whether
+	// it serves it, its price, its floors, its terms — answers for the alias exactly
+	// as for the SKU, and sku is what goes upstream.
 	aliases map[string]string
 
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
@@ -143,6 +143,10 @@ type modelFamily struct {
 	spares    []string
 	fetchedAt time.Time
 	loaded    bool
+	// named is the aliases the family's own catalog states (catalogHead), lowercase.
+	named map[string]string
+	// paid is the catalog's `paid` line: whether it opens the paid lane (open).
+	paid bool
 
 	// loading serializes the first discovery (warm), and tried is when it last ran
 	// without loading, so a family that cannot be reached is asked again after
@@ -413,11 +417,13 @@ func standIn(fam *modelFamily, sku string) []spare {
 	return freeRoutes()
 }
 
-// FreeOnly reports whether the paid lane is off for everyone. The host sets it to the
-// loaded zen catalog's (zen Zen.Free): off only where the catalog says `paid`. Spending
-// is an opt-in, so unset it is on. A request asks FreeOnlyFor, which also asks whether
-// its caller was put on the paid lane (lane.go).
-var FreeOnly = func() bool { return true }
+// FreeOnly reports whether the paid lane is off for everyone: it is on only where the
+// zen catalog says `paid`, as zen's own discovery states it (GET ZEN_URL/v1/models,
+// zenFam.open). One line decides for ai's routes and for the family's alike. Spending
+// is an opt-in, so a catalog that is unread, unreachable from the start, or silent on
+// it keeps the lane off. A request asks FreeOnlyFor, which also asks whether its
+// caller was put on the paid lane (lane.go).
+var FreeOnly = func() bool { return !zenFam.open() }
 
 // unserved reports that a vendor could not serve a request at all: its account is
 // spent, it answered with its own failure, it was never reached, or it answered
@@ -640,24 +646,37 @@ type zenModel struct {
 // variable reports that this SKU bills each call at the cost its answer states.
 func (m zenModel) variable() bool { return m.Margin.Sign() > 0 }
 
-// resale is what a variable SKU's call bills: the cost its answer stated times the
-// SKU's margin, or its tokens at the ceiling the hold reserved when the answer stated
-// no cost — the router could have served it from any SKU up to that, and billing below
-// what a call cost is the one error resale cannot absorb. nano is the exact charge the
-// ledger, the usage row and the span read; cents settles the hold, rounded the way
-// costCents rounds and floored at one cent for a call that was served.
-func (m zenModel) resale(cost *int64, promptTokens, cachedTokens, completionTokens int) (nano, cents int64) {
-	usd := m.retailUSD(promptTokens, cachedTokens, completionTokens)
+// resale is what a variable SKU's call bills, in nano-dollars: the cost its answer
+// stated times the SKU's margin, or its tokens at the ceiling the hold reserved when
+// the answer stated no cost — the router could have served it from any SKU up to
+// that, and billing below what a call cost is the one error resale cannot absorb.
+func (m zenModel) resale(cost *int64, promptTokens, cachedTokens, completionTokens int) int64 {
 	// A stated cost of zero or less is no statement: it bills at the ceiling, never a
 	// credit to the caller.
 	if cost != nil && *cost > 0 {
-		usd = decimal.New(*cost, 9).Mul(m.Margin)
+		return nanoUp(decimal.New(*cost, 9).Mul(m.Margin))
 	}
-	cents = money.New(usd, money.USD).Minor().Int64()
-	if cents <= 0 {
-		cents = 1
-	}
-	return usd.Rescale(9).Coef().Int64(), cents
+	return m.retailNano(promptTokens, cachedTokens, completionTokens)
+}
+
+// retailNano is retailUSD in nano-dollars: the exact charge the hold settles, the
+// ledger debits and the usage row and its span read. Rounded up, so a priced answer
+// never bills nothing; never floored to a cent, so a call worth a thousandth of one
+// bills a thousandth of one.
+func (m zenModel) retailNano(promptTokens, cachedTokens, completionTokens int) int64 {
+	return nanoUp(m.retailUSD(promptTokens, cachedTokens, completionTokens))
+}
+
+// unitNano is what units of a media SKU (images, calls) bill at its per-unit price,
+// in nano-dollars, rounded up.
+func (m zenModel) unitNano(units int) int64 {
+	return nanoUp(m.Base.In.Mul(decimal.New(int64(units), 0)))
+}
+
+// nanoUp is usd in nano-dollars, rounded up; nothing for a negative amount.
+func nanoUp(usd decimal.Decimal) int64 {
+	n, _ := usdNanos(usd.String())
+	return n
 }
 
 // releasedOr is the model's release time, or now when the catalog records none.
@@ -716,26 +735,18 @@ func (m zenModel) retailUSD(promptTokens, cachedTokens, completionTokens int) de
 	return in.Add(cached).Add(out).Quo(zenMillion, 18)
 }
 
-// costCents computes exact retail cost for token counts at the served tier and returns
-// it in ai's cent-granular ledger unit. The dollar value is derived the same way the
-// family derives it — money/decimal, no float, no cents flooring mid-way; only the
-// final debit rounds to the cent, with a one-cent floor for any non-zero usage so a
-// served call is never billed zero.
-//
-// promptTokens are the ones read fresh and cachedTokens the ones served from the
-// upstream's cache, which bill at the tier's cache rate; the tier is chosen by the
-// whole prompt.
-func (m zenModel) costCents(promptTokens, cachedTokens, completionTokens int) int64 {
-	cents := money.New(m.retailUSD(promptTokens, cachedTokens, completionTokens), money.USD).Minor().Int64()
-	if cents <= 0 && (promptTokens > 0 || cachedTokens > 0 || completionTokens > 0) {
-		cents = 1
+// centsUp is nano-dollars as the whole cents a hold reserves (the ledger reserves in
+// cents): rounded up, so the hold covers what settles.
+func centsUp(nano int64) int64 {
+	if nano <= 0 {
+		return 0
 	}
-	return cents
+	return (nano + 10_000_000 - 1) / 10_000_000
 }
 
 // price projects the headline tier into ai's legacy per-model price struct (float,
 // used only for the balance-reservation estimate and the /v1/models display). The
-// exact debit path uses costCents, never this projection.
+// exact debit path uses retailNano, never this projection.
 //
 // A discovered SKU always HAS a price, and zero is one of them. "No price" is a
 // different fact — nobody stated one — and only a model discovery never saw can be
@@ -830,6 +841,33 @@ func (f *modelFamily) decodeCatalog(body []byte) ([]zenModel, error) {
 	return models, nil
 }
 
+// catalogHead is what a Hanzo family's /v1/models states beside its SKUs: the other
+// ids it answers to, each naming a SKU it lists ({"claude-zen": "zen6"}), and its
+// catalog's `paid` line. A vendor dialect (decode) states neither.
+type catalogHead struct {
+	Aliases map[string]string `json:"aliases"`
+	Paid    bool              `json:"paid"`
+}
+
+// head reads the catalog-level fields of a family's /v1/models body: its aliases,
+// lowercase, less any that spells a SKU it lists (the SKU answers for itself), and
+// its paid line. Nothing for a vendor dialect.
+func (f *modelFamily) head(body []byte, byID map[string]zenModel) (map[string]string, bool) {
+	var h catalogHead
+	if f.decode != nil || json.Unmarshal(body, &h) != nil {
+		return nil, false
+	}
+	named := make(map[string]string, len(h.Aliases))
+	for alias, sku := range h.Aliases {
+		alias, sku = strings.ToLower(strings.TrimSpace(alias)), strings.ToLower(strings.TrimSpace(sku))
+		if _, listed := byID[alias]; alias == "" || sku == "" || listed {
+			continue
+		}
+		named[alias] = sku
+	}
+	return named, h.Paid
+}
+
 const zenCatalogTTL = 5 * time.Minute
 
 // engineModel is the id the engine answers to for whatever it currently has loaded.
@@ -889,14 +927,36 @@ func (f *modelFamily) refresh() error {
 	if f.spare != nil {
 		spares = f.spare(body)
 	}
+	named, paid := f.head(body, byID)
 	f.mu.Lock()
 	f.byID = byID
 	f.ids = ids
 	f.spares = spares
+	f.named = named
+	f.paid = paid
 	f.fetchedAt = time.Now()
 	f.loaded = true
 	f.mu.Unlock()
 	return nil
+}
+
+// open reports whether the family's catalog, as last discovered, opens the paid lane.
+// It reads the snapshot and never waits on the family: discovery keeps it, loaded at
+// start (WarmFamilies) and again on the TTL wherever the family is read, and a failed
+// refresh keeps the last catalog's line. A catalog never read keeps the lane closed.
+func (f *modelFamily) open() bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.paid
+}
+
+// spends reports whether serving sku can spend the platform's own cash: the family's
+// catalog funds some path of it from a prepaid balance (zenModel.Funding), or does not
+// describe it at all. A SKU the catalog funds from grants and our own compute on every
+// path spends none, whatever it is priced at to the caller.
+func (f *modelFamily) spends(sku string) bool {
+	m, ok := f.lookup(sku)
+	return !ok || strings.EqualFold(strings.TrimSpace(m.Funding), "prepaid")
 }
 
 // spareRoutes are the routes this family serves once its account is spent, best
@@ -1008,14 +1068,26 @@ func (f *modelFamily) fresh() string {
 func (f *modelFamily) lookup(model string) (zenModel, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	m, ok := f.byID[strings.ToLower(strings.TrimSpace(f.sku(model)))]
+	m, ok := f.byID[strings.ToLower(strings.TrimSpace(f.alias(model)))]
 	return m, ok
 }
 
 // sku is the id the family's vendor serves a model under: the SKU an alias names,
 // and the id itself for anything else.
 func (f *modelFamily) sku(model string) string {
-	if id, ok := f.aliases[strings.ToLower(strings.TrimSpace(model))]; ok {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.alias(model)
+}
+
+// alias is sku with the snapshot's lock held: the catalog's own aliases, then the
+// vendor table ai keeps for a catalog that names none.
+func (f *modelFamily) alias(model string) string {
+	key := strings.ToLower(strings.TrimSpace(model))
+	if id, ok := f.named[key]; ok {
+		return id
+	}
+	if id, ok := f.aliases[key]; ok {
 		return id
 	}
 	return model
@@ -1506,10 +1578,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// Tenant attribution: the family needs a billable tenant, and ai — which settles
 	// the ledger — tells the family it fronts this call so it meters without
 	// double-charging.
-	if orgId != "" {
-		req.Header.Set("X-Org-Id", orgId)
-	} else if authUser != nil {
-		req.Header.Set("X-Org-Id", authUser.Owner)
+	if org := tenant(ctx, orgId, authUser); org != "" {
+		req.Header.Set("X-Org-Id", org)
 	}
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
@@ -1797,9 +1867,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		err := laneOff(ctx, model)
 		c.zenError(dialect, err.Error(), statusOf(err))
 		return done()
-	} else if !lane && FreeOnlyFor(ctx) {
+	} else if !lane && FreeOnlyFor(ctx) && (apiPath != "embeddings" || fam.spends(sku)) {
 		// The paid lane is off: a priced Hanzo SKU is never sent to its paid route, and
-		// the Hanzo routes that stand in for it answer in its place.
+		// the Hanzo routes that stand in for it answer in its place. An embedding has no
+		// stand-in, and one the family funds from grants and our own compute on every
+		// path (spends) costs the platform no cash, which is all a closed lane bounds:
+		// it is sent as asked.
 		r, alt := pool(standIn(fam, sku), sku, true)
 		if r == nil {
 			if c.Context().Err() != nil {
@@ -1838,6 +1911,21 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 	}()
 
+	// READ THE REQUEST WHILE IT IS STILL OURS. A streamed answer settles from
+	// inside fasthttp's writer, which runs after this handler returned; fiber has
+	// recycled the request by then, so reaching through `c` there is a
+	// use-after-free — and it does not fail the one request, it SIGSEGVs the whole
+	// plugin process, so every other call in flight dies with it. Measured in
+	// production: `DefaultCtx.App()` nil-dereferenced under
+	// recordFamilyUsage -> billingOrg -> Ctx.Header, twelve times an hour, each one
+	// answering `mount /v1: http: read response: EOF` to whoever was mid-answer.
+	//
+	// So the three request-derived facts a usage row needs are read HERE, on the
+	// request's own goroutine, and travel by value. recordFamilyUsage takes no
+	// receiver for the same reason: with no `c` in scope it cannot reach a request
+	// at all, which is a compile-time property rather than a rule to remember.
+	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam, plan: grantOf(c.Ctx)}
+
 	// ONE status decision, ahead of the split, because the answer to "can this
 	// request still be moved" is the same for both shapes. The status arrives
 	// BEFORE any byte of a stream is written — the WriteHeader below is still
@@ -1848,6 +1936,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		err := &apiError{status: resp.StatusCode, msg: upstreamErrorMessage(b)}
+		// Each arm the family asked before it gave up is on the books beside
+		// whatever answers next, as it would be beside an answer.
+		failed(w, by, sku, servingOf(resp.Header).failover, authUser, isPremium, stream, reqID, start)
 		r, alt, tried := spared(err, b)
 		if r == nil {
 			if tried && lane && c.Context().Err() == nil {
@@ -1924,21 +2015,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	//
 	// The learning ledger records this served family call (source="family") and, when
 	// the engine endpoint is configured, the shadow A/B pick — off the hot path, no
-	// prompt text ever stored (the ledger holds none).
-	// READ THE REQUEST WHILE IT IS STILL OURS. A streamed answer settles from
-	// inside fasthttp's writer, which runs after this handler returned; fiber has
-	// recycled the request by then, so reaching through `c` there is a
-	// use-after-free — and it does not fail the one request, it SIGSEGVs the whole
-	// plugin process, so every other call in flight dies with it. Measured in
-	// production: `DefaultCtx.App()` nil-dereferenced under
-	// recordFamilyUsage -> billingOrg -> Ctx.Header, twelve times an hour, each one
-	// answering `mount /v1: http: read response: EOF` to whoever was mid-answer.
-	//
-	// So the three request-derived facts a usage row needs are read HERE, on the
-	// request's own goroutine, and travel by value. recordFamilyUsage takes no
-	// receiver for the same reason: with no `c` in scope it cannot reach a request
-	// at all, which is a compile-time property rather than a rule to remember.
-	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam, plan: grantOf(c.Ctx)}
+	// prompt text ever stored (the ledger holds none). The usage row reads only w,
+	// taken above while the request was ours.
 
 	// bill is the hold the answer settles: this request's, until a stream carries
 	// it into the writer (carry) so done's settle(0) cannot take it first.
@@ -1968,8 +2046,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if sv.cost != nil && !pm.settled.CompareAndSwap(false, true) {
 			sv.cost = nil
 		}
-		cents := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, bill, "success", "")
-		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, cents, start)
+		nano := recordFamilyUsage(w, by, sku, requested, prov, mk, authUser, isPremium, stream, reqID, t, sv, start, bill, "success", "")
+		c.recordFamilyRouting(model, served, respID, reqID, rawBody, orgId, authUser, t.prompt(), t.completion, nanoToCents(nano), start)
 	}
 
 	if stream {
@@ -2049,11 +2127,20 @@ const servedHeader = "X-Hanzo-Served"
 
 // The vendor that ran the arm and the arms that failed before it, set by a family
 // for the gateway fronting it. Read into the usage record, never relayed.
+//
+// A failed arm is `<upstream> (<provider>): <reason>`, one per header field or
+// several joined by "; " in one; each becomes a "failover" row beside the answer
+// (failed).
 const (
 	providerHeader = "X-Hanzo-Provider"
 	failoverHeader = "X-Hanzo-Failover"
 	// freeHeader is set when the rung that answered bills nothing.
 	freeHeader = "X-Hanzo-Free"
+	// cogsHeader is what the request cost Hanzo upstream, in USD: every arm the
+	// family ran for it, the one that answered and each that failed. A header on a
+	// whole answer, a trailer on a stream (its cost is known at its end). It is the
+	// usage row's COGS; the family's answer body never carries ours.
+	cogsHeader = "X-Hanzo-Cogs"
 )
 
 // serving is what a family said about an answer beyond its body: the arm that
@@ -2066,6 +2153,9 @@ type serving struct {
 	// cost is what a committed answer's paid upstream cost, nano-dollars, as its
 	// family stated it at the end (costHeader); nil when none was stated.
 	cost *int64
+	// cogs is what the request cost upstream, nano-dollars (cogsHeader); nil when
+	// the family stated none.
+	cogs *int64
 }
 
 // merge reads what a family stated in its trailer, at an answer's end, over what its
@@ -2074,10 +2164,13 @@ func (sv *serving) merge(tr http.Header) {
 	if len(tr) == 0 {
 		return
 	}
-	for dst, k := range map[*string]string{&sv.arm: armHeader, &sv.vendor: providerHeader, &sv.failover: failoverHeader} {
+	for dst, k := range map[*string]string{&sv.arm: armHeader, &sv.vendor: providerHeader} {
 		if v := tr.Get(k); v != "" {
 			*dst = v
 		}
+	}
+	if v := strings.Join(tr.Values(failoverHeader), "; "); v != "" {
+		sv.failover = v
 	}
 	if sv.arm == "" {
 		sv.arm = tr.Get(servedHeader)
@@ -2088,6 +2181,9 @@ func (sv *serving) merge(tr http.Header) {
 	if n, ok := usdNanos(tr.Get(costHeader)); ok {
 		sv.cost = &n
 	}
+	if n, ok := usdNanos(tr.Get(cogsHeader)); ok {
+		sv.cogs = &n
+	}
 }
 
 // servingOf reads a family response's headers into a serving.
@@ -2096,7 +2192,71 @@ func servingOf(h http.Header) serving {
 	if arm == "" {
 		arm = h.Get(servedHeader)
 	}
-	return serving{arm: arm, vendor: h.Get(providerHeader), failover: h.Get(failoverHeader), free: h.Get(freeHeader) == "true"}
+	sv := serving{arm: arm, vendor: h.Get(providerHeader), failover: strings.Join(h.Values(failoverHeader), "; "), free: h.Get(freeHeader) == "true"}
+	if n, ok := usdNanos(h.Get(cogsHeader)); ok {
+		sv.cogs = &n
+	}
+	return sv
+}
+
+// miss is one arm a family asked and could not use: the upstream model, the vendor
+// that ran it, and why.
+type miss struct{ upstream, provider, reason string }
+
+// arms reads a failover chain (failoverHeader) into its arms. An entry opens with
+// `<upstream> (<provider>): `; text that does not is the previous entry's reason
+// carrying a "; " of its own.
+func arms(chain string) []miss {
+	var out []miss
+	for _, part := range strings.Split(chain, "; ") {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		head, reason, ok := strings.Cut(part, "): ")
+		upstream, provider, paren := strings.Cut(head, " (")
+		switch {
+		case ok && paren && upstream != "" && !strings.Contains(upstream, " ") && !strings.Contains(provider, " "):
+			out = append(out, miss{upstream: upstream, provider: provider, reason: reason})
+		case len(out) > 0:
+			out[len(out)-1].reason += "; " + part
+		default:
+			out = append(out, miss{reason: part})
+		}
+	}
+	return out
+}
+
+// failed files each arm in chain as a "failover" row beside the request reqID: the
+// SKU asked of fam, the arm and its vendor, and why, billed nothing. What the arm cost
+// upstream is in the request's COGS (cogsHeader), on the row of whatever answered.
+func failed(w whence, fam *modelFamily, sku, chain string, u *iam.User, premium, stream bool, reqID string, start time.Time) {
+	for _, rec := range failoverRows(w, fam, sku, chain, u, premium, stream, reqID) {
+		recordTrace(w.ctx, rec, start)
+	}
+}
+
+// failoverRows are the rows failed files, one an arm, each bound to its caller.
+// Nothing for a call with no caller to file under.
+func failoverRows(w whence, fam *modelFamily, sku, chain string, u *iam.User, premium, stream bool, reqID string) []*usageRecord {
+	if u == nil {
+		return nil
+	}
+	var out []*usageRecord
+	for _, a := range arms(chain) {
+		msg := a.reason
+		if a.upstream != "" {
+			msg = a.upstream + ": " + a.reason
+		}
+		rec := &usageRecord{
+			Owner: w.ledger, Organization: u.Owner,
+			Model: sku, Provider: fam.name, Served: a.upstream, Vendor: a.provider,
+			Premium: premium, Stream: stream, Status: "failover", ErrorMsg: msg,
+			ClientIP: w.ip, RequestID: reqID, Account: "hanzo",
+		}
+		rec.bind(w.ctx, u)
+		out = append(out, rec)
+	}
+	return out
 }
 
 // armHeader is the upstream model a family says answered, for our records only.
@@ -2549,6 +2709,10 @@ type whence struct {
 // stream writer that outlives the request, so a `c` in scope here is a request
 // this function must not touch — and the way to keep a rule like that is to leave
 // nothing to touch.
+//
+// It returns the charge in nano-dollars: exact, never floored to a cent, so an
+// embedding worth a thousandth of a cent bills a thousandth of a cent at the hold,
+// the debit, the row and the span alike.
 func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov *object.Provider, mk *mark, authUser *iam.User, isPremium, stream bool, reqID string, t tokens, sv serving, start time.Time, hold *budgetHold, status, errMsg string) int64 {
 	// The vendor charges nothing for a spare route — that is the whole reason it can
 	// answer while the account is empty — so it is billed at nothing. Charging
@@ -2557,48 +2721,48 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	// row and the span all read the same zero (see usageCostNano). A priced SKU the
 	// family says it answered from a free rung costs the caller what that rung costs.
 	free := fam.isSpare(model) || inPool(model) || sv.free
-	var cents int64
-	var exact *int64 // a variable SKU's charge, the one the ledger, row and span read
+	var nano int64
+	var exact *int64 // the charge the ledger, row and span read
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
-			cents = zm.costCents(t.fresh, t.cached, t.completion)
+			nano = zm.retailNano(t.fresh, t.cached, t.completion)
 			if zm.variable() {
-				var nano int64
-				nano, cents = zm.resale(mk.cogs(), t.fresh, t.cached, t.completion)
-				exact = &nano
+				nano = zm.resale(mk.cogs(), t.fresh, t.cached, t.completion)
 			}
 		} else {
-			cents = calculateCostCentsWithCache(model, t.fresh, t.completion, t.cached, 0)
+			nano = tokenCostNano(model, t.fresh, t.completion, t.cached, 0)
 		}
 		// A model that stood in for the one named costs no more than the named one
 		// would have for the same tokens: the caller pays for an answer, never for
 		// our outage.
 		if requested != "" && w.asked != nil {
 			if zm, ok := w.asked.lookup(requested); ok && zm.priced() {
-				cents = min(cents, zm.costCents(t.fresh, t.cached, t.completion))
-				if exact != nil {
-					n := min(*exact, zm.retailUSD(t.fresh, t.cached, t.completion).Rescale(9).Coef().Int64())
-					exact = &n
-				}
+				nano = min(nano, zm.retailNano(t.fresh, t.cached, t.completion))
 			}
 		}
+		exact = &nano
 	}
-	hold.settle(cents)
+	hold.settleNano(nano)
 	if authUser == nil {
-		return cents
+		return nano
+	}
+	// What the call cost us to buy, beside what we charged for it: the family's own
+	// statement (cogsHeader) where it made one, else the cost the answer's usage
+	// stated (a resale vendor's). usageMargin reads it as the COGS, so the margin on
+	// a relayed call is a fact rather than a guess.
+	cogs := sv.cogs
+	if cogs == nil {
+		cogs = mk.cogs()
 	}
 	rec := &usageRecord{
 		Owner: w.ledger, Organization: authUser.Owner,
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: originOf(prov, mk),
 		PromptTokens: t.fresh, CacheReadTokens: t.cached, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
-		Cost: float64(cents) / 100.0, Currency: "USD",
+		Cost: float64(nano) / 1e9, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: w.ip, RequestID: reqID, Account: "hanzo", Routing: string(mk.routing),
-		// What the call cost us to buy, when the answer stated it, beside what we
-		// charged for it. usageMargin reads this as the COGS, so the margin on a
-		// relayed call stops being a guess.
-		CostNanoExact:   mk.cogs(),
+		CostNanoExact:   cogs,
 		BilledNanoExact: exact,
 		plan:            w.plan,
 		planNanos:       planCost(w.plan, sv.cost),
@@ -2606,7 +2770,8 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	rec.bind(w.ctx, authUser)
 	recordUsage(rec)
 	recordTrace(w.ctx, rec, start)
-	return cents
+	failed(w, fam, model, sv.failover, authUser, isPremium, stream, reqID, start)
+	return nano
 }
 
 // recordFamilyRouting writes the privacy-preserving learning ledger row for a served

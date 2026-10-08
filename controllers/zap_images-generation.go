@@ -186,5 +186,5 @@ func zapRecordImageUsage(ctx context.Context, authUser *iam.User, provider *obje
 	recordTrace(ctx, rec, startTime)
 }
 
-// The Zen media forward (zapServeZenMedia / zapRecordZenMediaUsage) is the ONE
-// shared zen-media meter defined in zap_audio.go; the images group reuses it.
+// The Zen media forward (zapServeZenMedia) is the ONE zen-media relay and meter,
+// zenMedia in zen_media.go; the images group reuses it.

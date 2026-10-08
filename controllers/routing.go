@@ -21,8 +21,9 @@ package controllers
 // in what order, on which key pool, and whether the paid lane is open. Two
 // families are edited here:
 //
-//	zen   served in this process by the zen the host links in; RoutingHost is its
-//	      catalog, set by the host at mount.
+//	zen   served by the zen service at ZEN_URL, through the same admin routes as
+//	      enso; or, where a host links zen into this process, by that zen (Zen),
+//	      with each edit passed on to the service at ZEN_URL.
 //	enso  served by the enso service at ENSO_URL, whose admin routes take the
 //	      ZEN_ADMIN_TOKEN key.
 //
@@ -49,7 +50,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/luxfi/zap"
@@ -65,22 +65,28 @@ type RoutingHost struct {
 	Stats func(ctx context.Context) ([]byte, error)
 }
 
-// Zen is the zen catalog of this process; nil until the host mounts zen.
+// Zen is the zen catalog served in this process, nil where no host links zen in:
+// the zen service at ZEN_URL is then the catalog, edited over its admin routes as
+// enso's is.
 var Zen *RoutingHost
 
 // routingFamilies are the families this surface edits.
 var routingFamilies = []string{"zen", "enso"}
 
-// routingHost resolves a family to its catalog: zen in process, enso over HTTP.
+// routingHost resolves a family to its catalog: zen in process where a host mounted
+// it, else each family over HTTP at its service.
 func routingHost(family string) (*RoutingHost, error) {
 	switch family {
 	case "zen":
+		base := strings.TrimRight(zenFam.baseURL(), "/")
 		if Zen == nil {
-			return nil, fmt.Errorf("zen is not mounted in this process")
+			if base == "" {
+				return nil, fmt.Errorf("zen is not configured")
+			}
+			return remoteRouting(base), nil
 		}
 		// The zen service at ZEN_URL serves the same family outside this process
 		// and takes every edit after this one.
-		base := strings.TrimRight(conf.GetConfigString("ZEN_URL"), "/")
 		if base == "" {
 			return Zen, nil
 		}
@@ -505,7 +511,7 @@ func routingTest(ctx context.Context, family, model string) (*routingProbe, erro
 	case "enso":
 		base = strings.TrimRight(ensoFam.baseURL(), "/")
 	case "zen":
-		base = strings.TrimRight(conf.GetConfigString("ZEN_URL"), "/")
+		base = strings.TrimRight(zenFam.baseURL(), "/")
 	}
 	if base == "" || strings.TrimSpace(model) == "" {
 		return nil, fmt.Errorf("family %q or model %q cannot be tested here", family, model)

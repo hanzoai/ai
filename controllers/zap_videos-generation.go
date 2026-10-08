@@ -44,12 +44,9 @@
 package controllers
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -60,7 +57,6 @@ import (
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/upstream"
 )
 
 // ── Group self-registration ───────────────────────────────────────────────
@@ -155,7 +151,7 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 	// Zen family: forward to the zen service, billed per clip at the discovered
 	// price. This bypasses ai's own async job store — zen owns the upstream job.
 	if provider.Type == "Zen" {
-		return zapVideoServeZen(req.Model, body, authUser, isPremium, startTime)
+		return zapServeZenMedia("videos/generations", req.Model, body, 1, authUser, isPremium, startTime)
 	}
 
 	// KMS secrets (env-first) so a kms:// ClientSecret is usable upstream.
@@ -420,69 +416,4 @@ func zapRecordVideoUsage(ctx context.Context, authUser *iam.User, provider *obje
 	rec.bind(ctx, authUser)
 	recordUsage(rec)
 	recordTrace(ctx, rec, startTime)
-}
-
-// ── Zen video forwarding (buffered, no http.ResponseWriter) ────────────────
-//
-// The pure-ZAP mirror of serveZenMedia/pipeZenMedia (zen_media.go) for the video
-// verb: reserve the per-clip cost, forward to zen, relay the upstream bytes,
-// settle at the discovered price. One buffered response — no writer to hold. A
-// uniquely-named helper (not the shared zapServeZenMedia) so this group's file is
-// self-contained; consolidating the per-verb Zen forwards into one shared helper
-// is still open.
-func zapVideoServeZen(mdl string, rawBody []byte, authUser *iam.User, isPremium bool, start time.Time) (*zap.Message, error) {
-	const units = 1 // the async /videos API is one-video-per-job
-
-	var hold *budgetHold
-	if authUser != nil {
-		if zm, ok := zenFam.lookup(mdl); ok {
-			subject := authUser.PayerSubject("")
-			var ok2 bool
-			if hold, ok2 = reserveBudget(subject, zm.unitCostCents(units)); !ok2 {
-				return object.BuildCloudResponse(402, nil, object.InsufficientBalance(zapBrandHost, authUser.Owner, "cost").Message)
-			}
-		}
-	}
-	defer hold.settle(0)
-
-	prov := object.ZenProvider()
-	if prov == nil {
-		return object.BuildCloudResponse(503, nil, "zen service is not configured")
-	}
-	reqID := uuid.NewString()
-
-	hctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
-	defer cancel()
-
-	hreq, err := http.NewRequestWithContext(hctx, http.MethodPost, prov.ProviderUrl+"/v1/videos/generations", bytes.NewReader(rawBody))
-	if err != nil {
-		return object.BuildCloudResponse(500, nil, "build zen request: "+err.Error())
-	}
-	hreq.Header.Set("Content-Type", "application/json")
-	upstream.Authorize(hreq, prov)
-	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
-	// ledger — tells zen it fronts this call so zen meters without double-charging.
-	if authUser != nil {
-		hreq.Header.Set("X-Org-Id", authUser.Owner)
-	}
-	hreq.Header.Set("X-Hanzo-Fronted-By", "ai")
-
-	resp, err := zenPipeClient.Do(hreq)
-	if err != nil {
-		zapRecordZenMediaUsage(mdl, authUser, isPremium, reqID, units, start, hold, "error", err.Error())
-		return object.BuildCloudResponse(502, nil, "zen request failed: "+err.Error())
-	}
-	defer resp.Body.Close()
-
-	b, rErr := io.ReadAll(resp.Body)
-	if rErr != nil {
-		return object.BuildCloudResponse(502, nil, "read zen response: "+rErr.Error())
-	}
-	if resp.StatusCode != http.StatusOK {
-		// A failed call is never charged: the deferred settle(0) releases the hold.
-		return object.BuildCloudResponse(uint32(resp.StatusCode), nil, upstreamErrorMessage(b))
-	}
-
-	zapRecordZenMediaUsage(mdl, authUser, isPremium, reqID, units, start, hold, "success", "")
-	return object.BuildCloudResponse(200, b, "")
 }

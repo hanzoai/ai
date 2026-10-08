@@ -1123,24 +1123,55 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 	}
 
 	r.Agent = self
-	if named := strings.TrimSpace(object.GenAIAttributionFromContext(ctx).User); strings.Contains(named, "/") {
-		// …and the name must be SOMEONE ELSE. A caller reaching us through the
-		// identity boundary never chooses this header: the boundary deletes what
-		// arrived and rewrites it from the presenting credential's own claims, so a
-		// machine that came that way is handed ITS OWN subject. Copying that into
-		// the person column puts the application back where this whole rule exists
-		// to keep it out of, one hop later and harder to see.
-		//
-		// The two spellings differ in the org half — a token's `sub` is qualified by
-		// the registration's owner and the `owner` claim by the org it serves — so
-		// the NAME is what identifies the principal across them.
-		if _, name, _ := strings.Cut(named, "/"); !strings.EqualFold(name, u.Name) {
-			r.User = named
-			return
-		}
+	if p := person(ctx, u); p != "" {
+		r.User = p
+		return
 	}
 	r.User = ""
 	warnUnownedOnce(self)
+}
+
+// person is the person a machine credential's call is for: whoever the identity
+// boundary authenticated before the machine placed it (X-User-Id, "<org>/<name>").
+// "" for a person's own credential, which names itself, and for a machine that names
+// nobody else.
+func person(ctx context.Context, u *iam.User) string {
+	if u == nil || !account.IsMachine(u.Type) {
+		return ""
+	}
+	named := strings.TrimSpace(object.GenAIAttributionFromContext(ctx).User)
+	// …and the name must be SOMEONE ELSE. A caller reaching us through the identity
+	// boundary never chooses this header: the boundary deletes what arrived and
+	// rewrites it from the presenting credential's own claims, so a machine that
+	// came that way is handed ITS OWN subject. Copying that into the person column
+	// puts the application back where this whole rule exists to keep it out of, one
+	// hop later and harder to see.
+	//
+	// The two spellings differ in the org half — a token's `sub` is qualified by the
+	// registration's owner and the `owner` claim by the org it serves — so the NAME
+	// is what identifies the principal across them.
+	if _, name, ok := strings.Cut(named, "/"); ok && !strings.EqualFold(name, u.Name) {
+		return named
+	}
+	return ""
+}
+
+// tenant is the org a model family is told a call is for (X-Org-Id): the org of the
+// person a machine credential acts for (person), else the org the request bills, else
+// the caller's own. A sibling's call over the plane is the platform working for that
+// person's org, and the family keeps its per-org share by it. Money is not moved by
+// it: ai settles the call, and the family is told so (X-Hanzo-Fronted-By).
+func tenant(ctx context.Context, org string, u *iam.User) string {
+	if o, _, _ := strings.Cut(person(ctx, u), "/"); o != "" {
+		return o
+	}
+	if org != "" {
+		return org
+	}
+	if u != nil {
+		return u.Owner
+	}
+	return ""
 }
 
 // unownedWarned dedupes the unowned-spend report to once per agent, so a busy
@@ -1378,9 +1409,11 @@ func recordUsage(record *usageRecord) error {
 			Ref:       record.ref,
 			Class:     ClassOf(record.Model),
 			Units:     int64(record.TotalTokens),
-			CostUSD:   nanoUSD(providerCostNano(record)),
-			PaidBy:    paidBy(record),
-			Key:       record.key,
+			// The COGS the row and the span read (usageMargin): a family's or a
+			// vendor's own statement where one was made, else the rate table's.
+			CostUSD: nanoUSD(usageMargin(record).CostNano),
+			PaidBy:  paidBy(record),
+			Key:     record.key,
 		}); err != nil {
 			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
 			return err
