@@ -17,6 +17,8 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"math"
 	"net"
 
 	"github.com/zap-proto/zip"
@@ -47,7 +49,16 @@ func visit(method, target string) *ApiController {
 		Ctx: zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10}).TestCtx(method, target),
 	}
 	c.Fiber().Request().SetRequestURI(target)
+	c.SetContext(paidSeat(c.Context()))
 	return c
+}
+
+// paidSeat puts ctx on the paid lane, as every request in this package's tests is:
+// they exercise what the paid lane serves. Its seat holds without bound on a book of
+// its own, so nothing a test spends reaches the platform's day. A test of the lanes
+// seats its request itself (Seat), which gives this seat back first.
+func paidSeat(ctx context.Context) context.Context {
+	return context.WithValue(ctx, laneKey{}, &laneState{seat: &seat{book: &laneBook{}, held: math.MaxInt64}})
 }
 
 // from sets the socket peer, the one address on a request nobody but the network

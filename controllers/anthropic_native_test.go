@@ -533,10 +533,11 @@ func TestOwnAccountSendsEverythingAsWritten(t *testing.T) {
 }
 
 // The ZAP surface sends the same bytes: only the model changes, and stream is off
-// because one frame carries one answer.
+// because one frame carries one answer. A ZAP request is on the free lane, so the
+// payer's own key is what it reaches.
 func TestZapNativeUpstreamReceivesTheCallersBytes(t *testing.T) {
 	url, got := nativeUpstream(t, "application/json", nativeReply)
-	p := nativePayer(t, globalProviderOwner, url)
+	p := nativePayer(t, "acme", url)
 
 	req := strings.Replace(maximal, `"stream": false`, `"stream": true`, 1)
 	status, body, _ := zapAnthropicMessages(context.Background(), p.credential, []byte(req))

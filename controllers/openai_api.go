@@ -804,9 +804,9 @@ type usageRecord struct {
 	cash bool
 	// key is the API key the call arrived on (object.UsageEvent.Key), set by bind.
 	key string
-	// lane says the call was served on the paid lane (lane.go), set by bind: what it
-	// spent counts against the platform's paid-lane day.
-	lane bool
+	// seat is the call's seat on the paid lane (lane.go), set by bind: what it spent
+	// settles it, against the platform's paid-lane day and its org's share.
+	seat *seat
 
 	// Requested is the model the caller ASKED for, set only when a different route
 	// answered — today, when a vendor's account was spent and it served the request
@@ -1101,7 +1101,7 @@ func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
 	// The API key the call arrived on, as the boundary named it: what the host
 	// counts the key's own spend against.
 	r.key = object.GenAIAttributionFromContext(ctx).Key
-	r.lane = paidLane(ctx)
+	r.seat = seatOf(ctx)
 	// The public lane's visitor, read from the request the lane alone writes it on.
 	r.Visitor = visitorOf(ctx)
 	// Who the host said pays: a covered call settles against its grant and debits no
@@ -1335,11 +1335,11 @@ func recordUsage(record *usageRecord) error {
 	if record.plan != nil {
 		record.plan.Settle(planUse(record))
 	}
-	// A call on the paid lane counts what it spent against the platform's paid-lane
-	// day, whoever paid for it.
-	if record.lane {
-		paidDay.add(utcDay(time.Now()), laneSpend(record))
-	}
+	// A call on the paid lane settles its seat at what it spent, whoever paid: the
+	// hold taken at admission is given back and the spend counted against the
+	// platform's day and its org's share. After the plan's settle, so the payer's next
+	// call reads the host's figure with this one in it before this hold is gone.
+	record.seat.settle(laneSpend(record))
 	// The public lane keeps its own count in this process, by the visitor's address
 	// and the site it shares, so its ceiling holds while the host is unreachable. It
 	// rises on an answer; the host's count was taken when the lane admitted the call.
@@ -2070,8 +2070,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			c.ResponseFailure(exhausted(request.Model, familyRefused))
 			return
 		}
-		if FreeOnlyFor(c.Context()) {
-			c.ResponseFailure(paidLaneOff(request.Model))
+		if shut(c.Context(), provider) {
+			c.ResponseFailure(laneOff(c.Context(), request.Model))
 			return
 		}
 	}

@@ -424,8 +424,8 @@ func (c *ApiController) forward(p pass) bool {
 		// Every row the relay serves sells its answers, so with the paid lane off a
 		// strict request is refused exactly as candidates() leaves any other with
 		// nobody to ask. Taking the first row directly must not step around the lane.
-		if FreeOnlyFor(ctx) {
-			c.ResponseFailure(paidLaneOff(sku))
+		if shut(ctx, p.primary) {
+			c.ResponseFailure(laneOff(ctx, sku))
 			return false
 		}
 		var ok bool
@@ -438,7 +438,7 @@ func (c *ApiController) forward(p pass) bool {
 	// sell their answers and nothing stands in for the model named — so it is
 	// refused, plainly, rather than answered by something else.
 	if len(queue) == 0 && FreeOnlyFor(ctx) && len(p.prior) == 0 {
-		c.ResponseFailure(paidLaneOff(sku))
+		c.ResponseFailure(laneOff(ctx, sku))
 		return false
 	}
 	tried := p.prior

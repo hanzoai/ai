@@ -121,6 +121,9 @@ func zapAudioSpeechHandler(ctx context.Context, auth string, body []byte) (*zap.
 	if gateErr := enforceBalanceGate(ctx, authUser, "", req.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
+	if err := zapLane(ctx, provider, req.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+	}
 	isPremium := false
 	if route := resolveModelRoute(req.Model); route != nil {
 		isPremium = route.premium
@@ -243,6 +246,9 @@ func zapAudioTranscribeHandler(ctx context.Context, auth string, body []byte) (*
 	// Prepaid-balance gate — the ONE shared gate (STEP 4).
 	if gateErr := enforceBalanceGate(ctx, authUser, "", form.model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
+	}
+	if err := zapLane(ctx, provider, form.model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
 	}
 	isPremium := false
 	if route := resolveModelRoute(form.model); route != nil {

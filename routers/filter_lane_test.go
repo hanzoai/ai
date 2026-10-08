@@ -15,13 +15,20 @@
 package routers
 
 import (
+	"bytes"
 	stdcontext "context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
+	fiber "github.com/zap-proto/fiber/v3"
+	"github.com/zap-proto/zip"
 )
 
 // paidSwitch turns the platform's paid lane on for one test.
@@ -50,7 +57,7 @@ func TestTheLaneFollowsTheGatesGrant(t *testing.T) {
 		grant *object.LimitGrant
 		lane  string
 	}{
-		{"a subscriber whose plan pays", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Settle: func(int64) {}}, "paid"},
+		{"a subscriber whose plan pays", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 5_000_000_000, Settle: func(int64) {}}, "paid"},
 		{"a subscriber whose prepaid pays past the plan", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "near"}, "paid"},
 		{"a wallet with no plan", &object.LimitGrant{Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "ok"}, "free"},
 		{"a caller the policy said nothing about", nil, "free"},
@@ -78,6 +85,49 @@ func TestTheLaneFollowsTheGatesGrant(t *testing.T) {
 	}
 }
 
+// WITH THE SWITCH OFF NOTHING CHANGES. No lane is named on any answer, and a program
+// whose plan's included usage is used still gets its 402 unless it asked for fallback.
+func TestWithTheSwitchOffTheGateIsAsBefore(t *testing.T) {
+	gateWith(t, 500)
+	policy(t, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 5_000_000_000, Settle: func(int64) {}}, nil)
+	p := chatThrough("anthropic/claude-opus-5.5")
+	if p.status() != http.StatusOK || p.replied(controllers.LaneHeader) != "" || p.replied(controllers.LaneReasonHeader) != "" {
+		t.Fatalf("status %d lane %q reason %q: want the answer with no lane named", p.status(), p.replied(controllers.LaneHeader), p.replied(controllers.LaneReasonHeader))
+	}
+	for _, code := range []string{object.CodePlanAllowance, object.CodeModelCap} {
+		gateWith(t, 0)
+		freeModels(t, controllers.FreeModel, "enso")
+		policy(t, nil, &object.LimitHit{Code: code, Class: object.ClassPremium, Fallback: "enso"})
+		if p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions"); p.status() != http.StatusPaymentRequired {
+			t.Fatalf("%s for a program, switch off: %d (%s), want 402", code, p.status(), p.said())
+		}
+	}
+}
+
+// WITH THE SWITCH ON, A PAID PLAN PAST ITS INCLUDED USAGE IS ANSWERED ON ANY CLIENT.
+// Limited free usage past the included usage is part of every paid plan, so a program
+// is answered by the free model, or a capped model's fallback, saying so.
+func TestWithTheSwitchOnAPaidPlanPastItsUsageIsAnsweredOnAnyClient(t *testing.T) {
+	paidSwitch(t)
+	gateWith(t, 0)
+	freeModels(t, controllers.FreeModel, "enso")
+	for code, to := range map[string]string{object.CodePlanAllowance: controllers.FreeModel, object.CodeModelCap: "enso"} {
+		object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+			if q.Model == to {
+				return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
+			}
+			return nil, &object.LimitHit{Code: code, Class: object.ClassPremium, Fallback: "enso"}, nil
+		})
+		p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
+		if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != to || !strings.Contains(p.handed(), `"model":"`+to+`"`) {
+			t.Fatalf("%s for a program, switch on: %d fallback %q (%s), want %s", code, p.status(), p.replied("X-Hanzo-Fallback"), p.said(), to)
+		}
+		if p := chatWith("anthropic/claude-opus-5.5", "/v1/embeddings"); p.status() != http.StatusPaymentRequired {
+			t.Fatalf("%s outside chat: %d (%s), want 402", code, p.status(), p.said())
+		}
+	}
+}
+
 // PAST THE PLATFORM'S DAY A SUBSCRIBER IS ANSWERED, NOT REFUSED. A chat for a model
 // only the paid lane serves is handed to the free model in limited mode, saying why,
 // and what admitting the first model took is given back; a Hanzo SKU keeps its model
@@ -92,7 +142,7 @@ func TestPastThePlatformsDayASubscriberIsAnsweredInLimitedMode(t *testing.T) {
 		if q.Model == controllers.FreeModel {
 			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
 		}
-		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok",
+		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 5_000_000_000,
 			Settle: func(n int64) {
 				if n == 0 {
 					ended++
@@ -126,6 +176,77 @@ func TestPastThePlatformsDayASubscriberIsAnsweredInLimitedMode(t *testing.T) {
 	}
 	if p.replied(controllers.LaneHeader) != "free" || p.replied(controllers.LaneReasonHeader) != controllers.ReasonCeiling {
 		t.Errorf("lane %q reason %q, want free and %s", p.replied(controllers.LaneHeader), p.replied(controllers.LaneReasonHeader), controllers.ReasonCeiling)
+	}
+}
+
+// held runs p through the gate and the lane filter to a handler that answers with a
+// stream, so what the request holds on the paid lane stays held, as a stream's does
+// until its writer settles it. It reports the model the handler was handed and
+// whether the request was on the paid lane.
+func held(p probe) (model string, paid bool) {
+	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
+	app.Use(zip.H(BalanceGateFilter))
+	app.Use(zip.H(LaneFilter))
+	app.Raw(zip.MethodAll, "/*", func(c *zip.Ctx) error {
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.Unmarshal(c.Body(), &body)
+		model, paid = body.Model, !controllers.FreeOnlyFor(c.Context())
+		c.Fiber().Response().SetBodyStream(strings.NewReader("data: [DONE]\n\n"), -1)
+		return nil
+	})
+	req := httptest.NewRequest(p.Method(), p.Path(), bytes.NewReader(p.Fiber().Request().Body()))
+	p.Fiber().Request().Header.VisitAll(func(k, v []byte) { req.Header.Set(string(k), string(v)) })
+	if _, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second}); err != nil {
+		panic("held: " + err.Error())
+	}
+	return model, paid
+}
+
+// CALLS IN FLIGHT NEVER PASS THE PLAN. Fifty concurrent 200,000-token prompts at a
+// premium model, from a payer whose plan has $1 of its class left: each holds its
+// estimate (about $0.22) while it streams, so four are seated on the paid lane and
+// every other one is answered by the free model, saying why. A payer with $0.01 left
+// is seated for none.
+func TestCallsInFlightNeverPassThePlan(t *testing.T) {
+	paidSwitch(t)
+	gateWith(t, 0)
+	freeModels(t, controllers.FreeModel)
+	for _, tc := range []struct {
+		org    string
+		left   int64
+		seated int
+	}{{"bigco", 1_000_000_000, 4}, {"lowco", 10_000_000, 0}} {
+		balanceGate.setUserKeyCache("tok-"+tc.org, "", tc.org, tc.org, tc.org+"/bo")
+		object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+			if q.Model == controllers.FreeModel {
+				return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
+			}
+			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: tc.left, Settle: func(int64) {}}, nil, nil
+		})
+		prompt := strings.Repeat("x", 600_000)
+		body := []byte(`{"model":"anthropic/claude-opus-5.5","max_tokens":4096,"messages":[{"role":"user","content":"` + prompt + `"}]}`)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		seated, free := 0, 0
+		for range 50 {
+			wg.Go(func() {
+				model, paid := held(ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok-"+tc.org).body(body))
+				mu.Lock()
+				defer mu.Unlock()
+				switch {
+				case paid && model == "anthropic/claude-opus-5.5":
+					seated++
+				case !paid && model == controllers.FreeModel:
+					free++
+				}
+			})
+		}
+		wg.Wait()
+		if seated != tc.seated || free != 50-tc.seated {
+			t.Fatalf("%s with %d nano left: %d seated, %d answered by the free model; want %d and %d", tc.org, tc.left, seated, free, tc.seated, 50-tc.seated)
+		}
 	}
 }
 

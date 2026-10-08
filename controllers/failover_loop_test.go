@@ -94,7 +94,7 @@ func distinct(asked []string) int {
 }
 
 func newAsk(r *modelRoute, w io.Writer, sent func() bool) ask {
-	return ask{route: r, model: "test-model", question: "hi", writer: w, sent: sent}
+	return ask{route: r, model: "test-model", question: "hi", writer: w, sent: sent, ctx: paidSeat(context.Background())}
 }
 
 // THE OUTAGE. One vendor's account is empty; the product must not go dark.

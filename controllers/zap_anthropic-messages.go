@@ -164,6 +164,10 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	if provider.Category != "Model" {
 		return anthropicErr("invalid_request_error", fmt.Sprintf("Provider %s is not a model provider", provider.Name), 400)
 	}
+	if err := zapLane(ctx, provider, request.Model); err != nil {
+		st := statusOf(err)
+		return anthropicErr(anthropicErrorTypeForStatus(st), err.Error(), st)
+	}
 
 	// Set upstream model on the provider.
 	if upstreamModel != "" {

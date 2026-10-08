@@ -164,7 +164,7 @@ func (c *ApiController) VideosGenerations() {
 		return
 	}
 	if paying(c.Context(), provider) {
-		c.ResponseAuthError(paidLaneOff(req.Model))
+		c.ResponseAuthError(laneOff(c.Context(), req.Model))
 		return
 	}
 	if provider.Category != "Model" {
@@ -236,7 +236,7 @@ func (c *ApiController) VideosGenerations() {
 	})
 	if err != nil {
 		hold.settle(0) // nothing produced → release the reservation, bill nothing
-		c.recordVideoUsage(authUser, provider, req.Model, isPremium, 0, "error", err.Error(), startTime)
+		c.recordVideoUsage(c.Context(), authUser, provider, req.Model, isPremium, 0, "error", err.Error(), startTime)
 		c.ResponseError(fmt.Sprintf("Video generation failed: %s", err.Error()))
 		return
 	}
@@ -250,6 +250,8 @@ func (c *ApiController) VideosGenerations() {
 		userModel:  req.Model,
 		isPremium:  isPremium,
 		hold:       hold,
+		bill:       context.WithoutCancel(c.Context()),
+		seat:       seatOf(c.Context()),
 		createdAt:  time.Now(),
 		startTime:  startTime,
 		status:     normalizeVideoStatus(upstreamStatus),
@@ -260,6 +262,8 @@ func (c *ApiController) VideosGenerations() {
 			"Video generation is at capacity; please retry shortly.")
 		return
 	}
+	// The job holds the request's paid-lane seat until its usage settles it.
+	job.seat.keep()
 
 	c.jsonResponse(videoJobResponse(job))
 }
@@ -311,13 +315,13 @@ func (c *ApiController) RetrieveVideo() {
 		// First completion → settle the reservation with the real cost and record
 		// the single billable usage event. Idempotent across repeat polls.
 		if job.markCompleted(videoCostCents(job.userModel, 1)) {
-			c.recordVideoUsage(authUser, provider, job.userModel, job.isPremium, 1, "success", "", job.startTime)
+			c.recordVideoUsage(job.bill, authUser, provider, job.userModel, job.isPremium, 1, "success", "", job.startTime)
 		}
 	case "failed":
 		if job.markFailed("failed") {
 			// A failed job bills nothing (recordUsage filters non-success), but the
 			// trace is emitted once for observability.
-			c.recordVideoUsage(authUser, provider, job.userModel, job.isPremium, 0, "error", errMsg, job.startTime)
+			c.recordVideoUsage(job.bill, authUser, provider, job.userModel, job.isPremium, 0, "error", errMsg, job.startTime)
 		}
 		job.setFailureReason(errMsg)
 	default:
@@ -373,7 +377,7 @@ func (c *ApiController) VideoContent() {
 	// A successful download is proof of a completed video — bill once (covers a
 	// client that skips polling). Idempotent with RetrieveVideo's completion path.
 	if job.markCompleted(videoCostCents(job.userModel, 1)) {
-		c.recordVideoUsage(authUser, provider, job.userModel, job.isPremium, 1, "success", "", job.startTime)
+		c.recordVideoUsage(job.bill, authUser, provider, job.userModel, job.isPremium, 1, "success", "", job.startTime)
 	}
 
 	if mime == "" {
@@ -486,8 +490,9 @@ type videoFailure struct {
 // recordVideoUsage records a single video-generation usage event for billing +
 // observability, mirroring recordImageUsage. videoCount drives the per-video
 // cost; only successful calls are billed (recordUsage filters error status), but
-// the trace is emitted either way.
-func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, videoCount int, status, errMsg string, startTime time.Time) {
+// the trace is emitted either way. bill is the creating request's context (job.bill):
+// who pays and the paid-lane seat are the create's, never the poll's.
+func (c *ApiController) recordVideoUsage(bill context.Context, authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, videoCount int, status, errMsg string, startTime time.Time) {
 	if authUser == nil {
 		return
 	}
@@ -505,7 +510,7 @@ func (c *ApiController) recordVideoUsage(authUser *iam.User, provider *object.Pr
 		ClientIP:     c.Fiber().IP(),
 		RequestID:    uuid.NewString(),
 	}
-	rec.bind(c.Context(), authUser)
+	rec.bind(bill, authUser)
 	recordUsage(rec)
 	recordTrace(c.Context(), rec, startTime)
 }

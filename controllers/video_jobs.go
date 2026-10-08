@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -69,8 +70,14 @@ type videoJob struct {
 	userModel  string      // requested model (e.g. "zen3-video") — re-resolves the provider
 	isPremium  bool        // premium flag for the usage record
 	hold       *budgetHold // balance reservation, settled exactly once
-	createdAt  time.Time   // for the reaper TTL
-	startTime  time.Time   // for the usage-trace latency
+	// bill is the creating request's values without its cancellation: who pays — the
+	// grant, the API key — and the seat on the paid lane the job holds until it ends.
+	// The job's usage is recorded on it, so a poll bills what the create was admitted
+	// as, not as the poll.
+	bill      context.Context
+	seat      *seat     // the paid-lane seat the job keeps, settled by its usage or dropped
+	createdAt time.Time // for the reaper TTL
+	startTime time.Time // for the usage-trace latency
 
 	mu            sync.Mutex
 	status        string    // last observed status (queued|in_progress|completed|failed)
@@ -140,6 +147,7 @@ func (j *videoJob) markFailed(status string) (first bool) {
 		return false
 	}
 	j.hold.settle(0) // release the reservation; nothing is billed for a failed job
+	j.seat.settle(0)
 	j.billed = true
 	j.done = true
 	j.terminalAt = time.Now()
@@ -191,6 +199,7 @@ func (s *videoJobStore) reap(now time.Time) {
 			// Abandoned / wedged: release the held budget and evict. markFailed's
 			// invariants are simple enough to inline here under both locks.
 			j.hold.settle(0)
+			j.seat.settle(0)
 			j.done = true
 			j.billed = true
 			j.status = "failed"

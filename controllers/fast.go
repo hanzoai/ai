@@ -82,8 +82,10 @@ func (c *ApiController) widthFor(user *iam.User, subject string, est int64) (*bu
 // EVERY REQUEST FIELD IS READ NOW, not inside the closure. By the time this
 // fires the handler has returned and fasthttp has recycled the request, so
 // reading the IP there reads whatever the next caller put in its place. The
-// context is Background for the same reason: the request's own is cancelled the
-// moment the response ends, which is before most losers have finished.
+// context keeps the request's values without its cancellation — the request's own
+// is cancelled the moment the response ends, before most losers have finished — so a
+// loser is billed to whoever the request was: its grant and its seat on the paid
+// lane, whose day counts what the loser cost.
 func (c *ApiController) billRaced(model string, user *iam.User, premium, stream bool,
 	requestId string, start time.Time,
 ) func(attempt) {
@@ -91,7 +93,7 @@ func (c *ApiController) billRaced(model string, user *iam.User, premium, stream 
 		return nil
 	}
 	owner, ip := c.billingOrg(user), c.Fiber().IP()
-	ctx := context.Background()
+	ctx := context.WithoutCancel(c.Context())
 	return func(a attempt) {
 		rec := &usageRecord{
 			Owner:            owner,

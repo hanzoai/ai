@@ -1067,6 +1067,12 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	if d.user == nil || d.ledger == "" {
 		return refused(d.rid, decline(http.StatusForbidden, "no organization pays for this call"))
 	}
+	// Jev is bought per call; Kai is ours. Off the paid lane — the switch off, or a
+	// request the gate did not seat, as every ZAP call is — Jev is not asked.
+	if FreeOnlyFor(ctx) && jevNamed(d.model) {
+		err := laneOff(ctx, d.model)
+		return refused(d.rid, decline(statusOf(err), err.Error()))
+	}
 	body, h, bad := scope(d.body, d.ledger)
 	if bad != nil {
 		return refused(d.rid, bad)
@@ -1519,12 +1525,6 @@ func (c *ApiController) decision() {
 	start := time.Now().UTC()
 	_, authUser, _, isPremium, err := c.authResolveProvider(token, model, c.GetOrg())
 	if err != nil {
-		c.decisionReply(refused(rid, decline(statusOf(err), err.Error())))
-		return
-	}
-	// Jev is bought per call; Kai is ours. With the paid lane off, Jev is not asked.
-	if FreeOnlyFor(c.Context()) && jevNamed(model) {
-		err := paidLaneOff(model)
 		c.decisionReply(refused(rid, decline(statusOf(err), err.Error())))
 		return
 	}

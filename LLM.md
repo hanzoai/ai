@@ -1040,10 +1040,11 @@ A `LimitHit` refuses by `Code` with no figure: 429 `usage_cap_exceeded` (a plan
 window, the free lane included — limited mode cannot be farmed), 429
 `free_plan_cap`, 402 `plan_allowance_used`, 402 `paid_plan_required`, 402
 `model_cap` (the model used its share of the plan; `Model` names it or its
-pattern, `Fallback` the Hanzo model that answers instead). A chat past a paid plan's
-included usage (`plan_allowance_used`, `model_cap`) from any client, and any other such
-conversation from a signed-in app (token `aud`) or a client sending
-`X-Hanzo-Fallback: allow`, is handed on instead — `model_cap` to `Fallback`, the other two to `FreeModel` — marked
+pattern, `Fallback` the Hanzo model that answers instead). A conversation from a
+signed-in app (token `aud`) or a client sending `X-Hanzo-Fallback: allow` — and, while
+the paid lane's switch is on, a chat past a paid plan's included usage
+(`plan_allowance_used`, `model_cap`) from any client — is handed on instead —
+`model_cap` to `Fallback`, the other two to `FreeModel` — marked
 `X-Hanzo-Fallback` and `X-Hanzo-Usage-Reason`, and the model it lands on is asked of
 the policy again (up to three asks). Refusal actions: `upgrade`, `switch` (to the
 fallback), and `credits` ("Continue with credits", which turns on the org's
@@ -1080,21 +1081,42 @@ truth; there is no settings row, no `FREE_ONLY` env and no second line (the enso
 reads the same line through `ZEN_SWITCH`).
 
 With the switch on, each request is on one lane (`controllers/lane.go`), decided once
-by `routers.LaneFilter` (after `BalanceGateFilter`) from the host's grant on it:
+by `controllers.Seat` inside `routers.BalanceGateFilter` from the host's grant:
 **paid** when the grant names a paid plan (`LimitGrant.Plan` — cloud `apps/ai/limits`
 `planOf`: an active subscription whose period was paid by card or recorded
-externally, with figures from `apps/flags` `PlanSeeds`, per seat for team rungs) and
-the plan's included usage, or the payer's prepaid/granted credit past it, pays for a
-priced call; **free** otherwise (no plan, a free model, a model's free daily cap, a
-policy that said nothing, a request that never passed the filter — ZAP twins and plane
-completions). Every read on the request path is `FreeOnlyFor(ctx)`; `candidates`,
-`openrouterTail` and `paying` take the request's answer. `PAID_LANE_DAILY` (USD,
-default $10, 0 closes) bounds what all paid-lane calls together spend in a UTC day,
-counted in process from each record's `laneSpend` (single replica); past it payers are
-on the free lane with `X-Hanzo-Lane-Reason: paid_lane_ceiling`, and a chat for a
-third-party model is handed to the free model in limited mode. Responses carry
-`X-Hanzo-Lane: paid|free`. A paid plan's chat past its included usage
-(`plan_allowance_used`, `model_cap`) is answered in limited mode on any client.
+externally, with figures from `apps/flags` `PlanSeeds`, per seat for team rungs), the
+plan's included usage or the payer's prepaid/granted credit past it pays for a priced
+call, and the call's estimate fits; **free** otherwise (no plan, a free model, a
+model's free daily cap, a policy that said nothing, a call that did not fit, and a
+request that never passed the gate — every ZAP handler; the forward bridge is the ZAP
+route that runs the gate). `routers.LaneFilter` only labels a request the gate did not
+seat. Every read on the request path is `FreeOnlyFor(ctx)` (or `shut(ctx, p)`, which
+also lets the org's own key through while the switch is on); `candidates`,
+`openrouterTail`, `paying`, `spendOf` and every ZAP handler (`zapLane`) take its answer.
+
+A seat holds the call's estimate (`estimate`: prompt at a token per 3 bytes, inline
+images as 2,000 tokens, the completion ceiling the handler enforces, at the most of
+list price and cost, ×2 for fast mode; media at unit price) from admission until the
+usage record settles it (`recordUsage` → `seat.settle(laneSpend)`, after the plan's
+settle), against: `PAID_LANE_DAILY` (USD, default $10, 0 or anything not a finite
+amount in (0, 1e9] closes), the paying org's share `PAID_LANE_ORG_SHARE` (default 0.25),
+and for a plan-paid call the plan class's `LimitGrant.Spend` (the host's left at
+admission) less the payer's holds in flight. Wallet-paid calls are held against the
+wallet by their handler (`reserveFor`). A family is sent `X-Hanzo-Spend` only on a seat,
+capped at what it holds. A seat that records nothing is given back by `Unseat` after the
+handler, or after 30 minutes for a stream or a video job (`seat.keep`); race losers and
+a video's later poll settle the creating request's seat (`context.WithoutCancel`,
+`videoJob.bill`). Each org's settled spend per UTC day is kept in the store
+(`object.PaidDay`, table `paid_day`) and read back on the day's first ask, so a restart
+keeps the count; holds are in process (single replica). A payer the lane had no room
+for gets `X-Hanzo-Lane-Reason: paid_lane_ceiling`; a chat for a third-party model is
+handed to the free model in limited mode (never one on the org's own key, `OwnKey`),
+and any other call only the paid lane serves is refused 429 `paid_lane_full`
+(`laneOff`). Responses carry `X-Hanzo-Lane: paid|free` only while the switch is on. The
+enso/zen service's own paid lane (zen lib: the catalog's `paid`, or the `ZEN_SWITCH`
+file's) spends what a fronted request's `X-Hanzo-Spend` allows, which this day counts;
+what zen spends for callers that reach it directly is bounded only by the host's plan
+limiter (cloud `apps/zen` `planSpend`), not by `PAID_LANE_DAILY`.
 
 On the free lane no chat request reaches a priced route, and the routes that stand in
 for it answer, named as what they are; a tool or media request for one, and every

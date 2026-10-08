@@ -84,6 +84,9 @@ func zapImagesHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 	if gateErr := enforceBalanceGate(ctx, authUser, "", req.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
+	if err := zapLane(ctx, provider, req.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+	}
 	isPremium := false
 	if route := resolveModelRoute(req.Model); route != nil {
 		isPremium = route.premium

@@ -1371,6 +1371,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// ctx is the request's context, read once: dispatch and pool also run from a
 	// stream's writer (awaitCommitted's fill), after fiber has recycled c.
 	grant, pm, ctx := grantOf(c.Ctx), markOf(c.Ctx), c.Context()
+	place := seatOf(ctx)
 	unsettled := func() {
 		if grant != nil && pm.settled.CompareAndSwap(false, true) {
 			grant.Settle(pm.owed.Load())
@@ -1553,7 +1554,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// The credential is the family's own: another family's never travels.
 			r.Header.Del("Authorization")
 		}
-		if spend := spendOf(grant, pm, f, s); spend != "" {
+		if spend := spendOf(grant, place, pm, f, s); spend != "" {
 			r.Header.Set(spendHeader, spend)
 			r.Header.Set("TE", planTE)
 		} else {
@@ -1587,13 +1588,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// inside it is as movable as any family's: what the attempt cost is settled
 		// now, and the request goes on to the free pool like any other.
 		if resp != nil && hanzoFamily(f) && committedPlan(resp) {
-			pm.bound.Store(boundOf(resp.Header, grant))
+			pm.bound.Store(min(boundOf(resp.Header, grant), spendCap(grant, place)))
 			pm.tried.Store(true)
-			spend := int64(0)
-			if grant != nil {
-				spend = grant.Spend
-			}
-			if resp, err = awaitCommitted(resp, waiting{pm: pm, spend: spend, dialect: dialect, settle: unsettled, fill: fill, fills: fills}); resp == nil || resp.StatusCode != http.StatusOK {
+			if resp, err = awaitCommitted(resp, waiting{pm: pm, spend: spendCap(grant, place), dialect: dialect, settle: unsettled, fill: fill, fills: fills}); resp == nil || resp.StatusCode != http.StatusOK {
 				unsettled()
 			}
 		}
@@ -1797,7 +1794,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	} else if !lane && FreeOnlyFor(ctx) && FamilyOf(sku) == "" {
 		// The paid lane is off and the model named is a third-party one: it is not
 		// sent, and nothing answers in its place.
-		c.zenError(dialect, paidLaneOff(model).Error(), http.StatusServiceUnavailable)
+		err := laneOff(ctx, model)
+		c.zenError(dialect, err.Error(), statusOf(err))
 		return done()
 	} else if !lane && FreeOnlyFor(ctx) {
 		// The paid lane is off: a priced Hanzo SKU is never sent to its paid route, and

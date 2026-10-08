@@ -90,7 +90,7 @@ func (c *ApiController) Embeddings() {
 		return
 	}
 	if paying(c.Context(), provider) {
-		c.ResponseAuthError(paidLaneOff(head.Model))
+		c.ResponseAuthError(laneOff(c.Context(), head.Model))
 		return
 	}
 	if upstreamModel != "" {
@@ -214,7 +214,7 @@ func (c *ApiController) Rerank() {
 		return
 	}
 	if paying(c.Context(), provider) {
-		c.ResponseAuthError(paidLaneOff(raw.Model))
+		c.ResponseAuthError(laneOff(c.Context(), raw.Model))
 		return
 	}
 	if upstreamModel != "" {

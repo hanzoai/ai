@@ -441,6 +441,9 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	if gateErr := enforceBalanceGate(ctx, authUser, "", request.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
+	if err := zapLane(ctx, provider, request.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+	}
 	isPremium := false
 	if route := resolveModelRoute(request.Model); route != nil {
 		isPremium = route.premium
@@ -574,6 +577,18 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	}
 
 	return object.BuildCloudResponse(200, data, "")
+}
+
+// zapLane is the lane decision for a ZAP request, the HTTP handlers' own: a call to a
+// provider that spends Hanzo's money is refused off the paid lane (paying), and a ZAP
+// request is always off it. Its handlers are not behind the balance gate, which alone
+// seats a request (Seat), so a ZAP request holds no seat; paid-lane traffic over ZAP
+// takes the forward bridge (InitForwardBridge), which runs the gate.
+func zapLane(ctx context.Context, p *object.Provider, model string) error {
+	if paying(ctx, p) {
+		return laneOff(ctx, model)
+	}
+	return nil
 }
 
 // ── Auth helpers ────────────────────────────────────────────────────────

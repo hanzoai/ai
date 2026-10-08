@@ -133,6 +133,9 @@ func zapVideosGenerateHandler(ctx context.Context, auth string, body []byte) (*z
 	if authUser == nil {
 		return object.BuildCloudResponse(401, nil, "Video generation requires an authenticated Hanzo Cloud account. Sign in and add credits to your wallet at "+object.PayURL(zapBrandHost, ""))
 	}
+	if err := zapLane(ctx, provider, req.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+	}
 	subject := authUser.PayerSubject("")
 	if subject == "" {
 		return object.BuildCloudResponse(401, nil, "Video generation requires an authenticated Hanzo Cloud account.")

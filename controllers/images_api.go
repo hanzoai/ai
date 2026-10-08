@@ -103,7 +103,7 @@ func (c *ApiController) ImagesGenerations() {
 		return
 	}
 	if paying(c.Context(), provider) {
-		c.ResponseAuthError(paidLaneOff(req.Model))
+		c.ResponseAuthError(laneOff(c.Context(), req.Model))
 		return
 	}
 	if provider.Category != "Model" {

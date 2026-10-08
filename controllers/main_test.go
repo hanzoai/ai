@@ -11,18 +11,18 @@ import (
 )
 
 // The paid lane is on for this package's tests, which exercise it, and every request
-// in them is on it; a test of the free lane closes it itself and opens it again when
-// it ends, and a test of the lanes themselves (lane_test.go) seats each caller.
+// they build is seated on it (visit, paidSeat); a test of the free lane closes it
+// itself and opens it again when it ends, and a test of the lanes themselves
+// (lane_test.go) seats each caller.
 func TestMain(m *testing.M) {
 	FreeOnly = func() bool { return false }
-	onPaidLane = func(context.Context) bool { return true }
 	os.Exit(m.Run())
 }
 
 // With the paid lane off, a call to any provider but a family's own service is one
 // that spends, and is refused; with it on, none is.
 func TestPayingIsEveryProviderButAFamilys(t *testing.T) {
-	ctx := context.Background()
+	ctx := paidSeat(context.Background())
 	FreeOnly = func() bool { return true }
 	t.Cleanup(func() { FreeOnly = func() bool { return false } })
 	for typ, want := range map[string]bool{"Zen": false, "Enso": false, "OpenAI": true, "OpenRouter": true, "": true} {

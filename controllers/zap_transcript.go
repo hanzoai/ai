@@ -204,6 +204,9 @@ func transcriptOpen(ctx context.Context, auth string, body []byte) (*zap.Message
 	if gateErr := enforceBalanceGate(ctx, authUser, "", req.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
+	if err := zapLane(ctx, provider, req.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+	}
 	if provider.Type == "Zen" {
 		return object.BuildCloudResponse(400, nil, "model \""+req.Model+"\" does not serve the /v1/audio/transcript endpoint")
 	}

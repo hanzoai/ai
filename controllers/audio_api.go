@@ -162,7 +162,7 @@ func (c *ApiController) AudioSpeech() {
 		return
 	}
 	if paying(c.Context(), provider) {
-		c.ResponseAuthError(paidLaneOff(req.Model))
+		c.ResponseAuthError(laneOff(c.Context(), req.Model))
 		return
 	}
 	// Zen family: /v1/audio/speech is the OpenAI-compat alias of zen's voice verb.
@@ -347,7 +347,7 @@ func (c *ApiController) AudioTranscriptions() {
 		return
 	}
 	if paying(c.Context(), provider) {
-		c.ResponseAuthError(paidLaneOff(model))
+		c.ResponseAuthError(laneOff(c.Context(), model))
 		return
 	}
 	// No Zen STT verb exists; a Zen-routed model cannot serve this endpoint.

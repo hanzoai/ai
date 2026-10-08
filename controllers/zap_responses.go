@@ -133,6 +133,9 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 	if gateErr := enforceBalanceGate(ctx, authUser, "", chatRequest.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
+	if err := zapLane(ctx, provider, chatRequest.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+	}
 	isPremium := false
 	if route := resolveModelRoute(chatRequest.Model); route != nil {
 		isPremium = route.premium

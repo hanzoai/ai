@@ -19,10 +19,10 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// LaneFilter decides the lane every request the usage policy governs is served on
-// (controllers.Lane), from the grant BalanceGateFilter left on it. It runs after the
-// gate, so a request the gate refused never reaches it and one the gate handed to the
-// free model is decided as that model.
+// LaneFilter says on the response that a request the usage policy governs and the
+// gate did not seat (controllers.Seat, decided once in BalanceGateFilter) is on the
+// free lane (controllers.Lane). It runs after the gate, so a request the gate refused
+// never reaches it.
 func LaneFilter(c *zip.Ctx) error {
 	if controllers.Entitled(c.Path()) {
 		controllers.Lane(c)

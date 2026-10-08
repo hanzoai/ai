@@ -71,9 +71,8 @@ func TestPrepaidPaysPastTheAllowanceThroughTheWallet(t *testing.T) {
 }
 
 // Limited mode: a conversation the plan can no longer pay for is answered by the free
-// model, saying so — from any client, since limited free usage past the included usage
-// is part of every paid plan. Outside chat no free model answers, and the refusal is
-// 402 plan_allowance_used, naming the class and the ways on, and no figure.
+// model when the client allows it, saying so; a program that did not ask gets 402
+// plan_allowance_used, naming the class and the ways on, and no figure.
 func TestLimitedModeFallsBackOrRefusesWithoutAFigure(t *testing.T) {
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel)
@@ -101,15 +100,8 @@ func TestLimitedModeFallsBackOrRefusesWithoutAFigure(t *testing.T) {
 
 	asked = nil
 	p = chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
-	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != controllers.FreeModel || p.replied("X-Hanzo-Usage") != "limited" ||
-		!strings.Contains(p.handed(), `"model":"`+controllers.FreeModel+`"`) {
-		t.Fatalf("a program past its plan's allowance: %d fallback %q usage %q (%s), want limited mode", p.status(),
-			p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage"), p.said())
-	}
-
-	p = chatWith("anthropic/claude-opus-5.5", "/v1/embeddings")
 	if p.status() != http.StatusPaymentRequired {
-		t.Fatalf("past the allowance outside chat: %d (%s)", p.status(), p.said())
+		t.Fatalf("limited mode, no fallback asked: %d (%s)", p.status(), p.said())
 	}
 	r := refusalOf(t, p.said())
 	if r.Error.Code != object.CodePlanAllowance || !strings.Contains(p.said(), `"class":"premium"`) || !strings.Contains(p.said(), `"kind":"topup"`) {
@@ -150,9 +142,9 @@ func TestACoveredDecisionReachesItsHandlerAtAnEmptyWallet(t *testing.T) {
 }
 
 // A model that has used its share of the plan hands a conversation to its Hanzo
-// fallback, which the policy is asked about in turn, from any client; other premium
-// models are untouched. Outside chat the refusal is 402 model_cap, naming the model
-// and the fallback, offering the switch, and no figure.
+// fallback, which the policy is asked about in turn; other premium models are
+// untouched. A program that did not ask for fallback gets 402 model_cap, naming the
+// model and the fallback, offering the switch, and no figure.
 func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
 	gateWith(t, 0)
 	freeModels(t, "enso", controllers.FreeModel)
@@ -188,13 +180,8 @@ func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
 	}
 
 	p = chatWith("anthropic/claude-opus-4.7", "/v1/chat/completions")
-	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != "enso" || !strings.Contains(p.handed(), `"model":"enso"`) {
-		t.Fatalf("a program's opus past its cap: %d fallback %q (%s), want enso", p.status(), p.replied("X-Hanzo-Fallback"), p.said())
-	}
-
-	p = chatWith("anthropic/claude-opus-4.7", "/v1/embeddings")
 	if p.status() != http.StatusPaymentRequired {
-		t.Fatalf("opus past its cap outside chat: %d (%s)", p.status(), p.said())
+		t.Fatalf("opus past its cap, no fallback asked: %d (%s)", p.status(), p.said())
 	}
 	r := refusalOf(t, p.said())
 	if r.Error.Code != object.CodeModelCap || !strings.Contains(p.said(), `"fallback":"enso"`) ||
@@ -207,12 +194,12 @@ func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
 }
 
 // A payer who holds credit and has not chosen to spend it past the plan is offered
-// that choice instead of a top-up, where a refusal is given (outside chat).
+// that choice instead of a top-up.
 func TestARefusalOffersCreditsToAPayerWhoHoldsThem(t *testing.T) {
 	gateWith(t, 0)
 	policy(t, nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassPremium, Credits: true,
 		Message: "Your plan's included usage of premium models is used for now. Continue with credits or upgrade:"})
-	p := chatWith("anthropic/claude-opus-5.5", "/v1/embeddings")
+	p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
 	if p.status() != http.StatusPaymentRequired || !strings.Contains(p.said(), `"kind":"credits"`) || !strings.Contains(p.said(), `"label":"Continue with credits"`) {
 		t.Fatalf("credits action: %d %s", p.status(), p.said())
 	}

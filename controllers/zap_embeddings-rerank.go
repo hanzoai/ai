@@ -84,6 +84,9 @@ func zapEmbeddingsHandler(ctx context.Context, auth string, body []byte) (*zap.M
 	if gateErr := enforceBalanceGate(ctx, authUser, "", head.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
 	}
+	if err := zapLane(ctx, provider, head.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+	}
 	isPremium := false
 	if route := resolveModelRoute(head.Model); route != nil {
 		isPremium = route.premium
@@ -152,6 +155,9 @@ func zapRerankHandler(ctx context.Context, auth string, body []byte) (*zap.Messa
 
 	if gateErr := enforceBalanceGate(ctx, authUser, "", raw.Model); gateErr != nil {
 		return object.BuildCloudResponse(uint32(statusOf(gateErr)), nil, gateErr.Error())
+	}
+	if err := zapLane(ctx, provider, raw.Model); err != nil {
+		return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
 	}
 	isPremium := false
 	if route := resolveModelRoute(raw.Model); route != nil {

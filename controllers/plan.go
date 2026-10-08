@@ -198,7 +198,8 @@ func markOf(c *zip.Ctx) *planMark {
 }
 
 // spendFor is the spend a dispatch of this request to f for sku carries, in USD: the
-// plan's hold, to a Hanzo family only, for a SKU that family lists as plan-capable
+// plan's hold, to a Hanzo family only, for a request on the paid lane, never more than
+// its seat holds (spendCap), for a SKU that family lists as plan-capable
 // (zenModel.Plan), and only until a paid rung was tried — one request buys at most one
 // paid answer. "" sends none.
 //
@@ -207,19 +208,20 @@ func markOf(c *zip.Ctx) *planMark {
 // only between two sides that both said so, so a catalog that gains plan rungs pays
 // for nothing until both run the committed answer.
 func spendFor(c *zip.Ctx, f *modelFamily, sku string) string {
-	return spendOf(grantOf(c), markOf(c), f, sku)
+	return spendOf(grantOf(c), seatOf(c.Context()), markOf(c), f, sku)
 }
 
-// spendOf is spendFor from the request's grant and mark, read once, which a stream's
-// writer may hold after the request itself is gone.
-func spendOf(g *object.LimitGrant, m *planMark, f *modelFamily, sku string) string {
-	if g == nil || g.Spend <= 0 || !hanzoFamily(f) || m.tried.Load() || m.asked.Load() {
+// spendOf is spendFor from the request's grant, seat and mark, read once, which a
+// stream's writer may hold after the request itself is gone.
+func spendOf(g *object.LimitGrant, s *seat, m *planMark, f *modelFamily, sku string) string {
+	spend := spendCap(g, s)
+	if spend <= 0 || !hanzoFamily(f) || m.tried.Load() || m.asked.Load() {
 		return ""
 	}
 	if m, ok := f.lookup(sku); !ok || !m.Plan {
 		return ""
 	}
-	return spendUSD(g.Spend)
+	return spendUSD(spend)
 }
 
 // planTE is the TE a spend travels with: ai reads the trailers a committed answer

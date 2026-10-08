@@ -632,10 +632,12 @@ func candidates(org string, route *modelRoute, prior []attempt, free bool) []can
 		}
 		ready = append(ready, c)
 	}
-	// With the paid lane off, a route's own vendors — each sells its answers — are
-	// not asked; the free floor below is.
-	if !free {
+	// With the paid lane closed, a route's own vendors — each sells its answers — are
+	// not asked; the free floor below is. The org's own key is still its own (shut).
+	if !free || (!FreeOnly() && ownRow(org, route.providerName)) {
 		add(route.providerName, route.upstreamModel)
+	}
+	if !free {
 		for _, fb := range route.fallbacks {
 			add(fb.providerName, fb.upstreamModel)
 		}
@@ -752,11 +754,11 @@ func parseProblem(err error) string {
 }
 
 // paying reports whether a call to provider spends Hanzo's money while the paid lane
-// is closed to the request on ctx: every provider but a family's own service (zen,
-// enso), whose catalog decides for itself what it spends, and a service we operate
-// (operated).
+// is closed to it for the request on ctx (shut): every provider but a family's own
+// service (zen, enso), whose catalog decides for itself what it spends, and a service
+// we operate (operated).
 func paying(ctx context.Context, p *object.Provider) bool {
-	return FreeOnlyFor(ctx) && p != nil && p.Type != "Zen" && p.Type != "Enso" &&
+	return p != nil && shut(ctx, p) && p.Type != "Zen" && p.Type != "Enso" &&
 		!(p.Owner == "admin" && operated[p.Name])
 }
 
