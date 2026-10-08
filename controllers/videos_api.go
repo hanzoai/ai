@@ -250,7 +250,7 @@ func (c *ApiController) VideosGenerations() {
 		userModel:  req.Model,
 		isPremium:  isPremium,
 		hold:       hold,
-		bill:       context.WithoutCancel(c.Context()),
+		bill:       billing(c.Context()),
 		seat:       seatOf(c.Context()),
 		createdAt:  time.Now(),
 		startTime:  startTime,
@@ -490,11 +490,15 @@ type videoFailure struct {
 // recordVideoUsage records a single video-generation usage event for billing +
 // observability, mirroring recordImageUsage. videoCount drives the per-video
 // cost; only successful calls are billed (recordUsage filters error status), but
-// the trace is emitted either way. bill is the creating request's context (job.bill):
-// who pays and the paid-lane seat are the create's, never the poll's.
+// the trace is emitted either way. bill is the creating request's context for a job
+// created on the paid lane (job.bill): who pays and the seat are the create's, never
+// the poll's. Nil binds the request recording it.
 func (c *ApiController) recordVideoUsage(bill context.Context, authUser *iam.User, provider *object.Provider, userModel string, isPremium bool, videoCount int, status, errMsg string, startTime time.Time) {
 	if authUser == nil {
 		return
+	}
+	if bill == nil {
+		bill = c.Context()
 	}
 	rec := &usageRecord{
 		Owner:        c.billingOrg(authUser),

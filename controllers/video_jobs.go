@@ -70,10 +70,11 @@ type videoJob struct {
 	userModel  string      // requested model (e.g. "zen3-video") — re-resolves the provider
 	isPremium  bool        // premium flag for the usage record
 	hold       *budgetHold // balance reservation, settled exactly once
-	// bill is the creating request's values without its cancellation: who pays — the
-	// grant, the API key — and the seat on the paid lane the job holds until it ends.
-	// The job's usage is recorded on it, so a poll bills what the create was admitted
-	// as, not as the poll.
+	// bill is the creating request's values without its cancellation, for a job
+	// created on the paid lane (billing): who pays — the grant, the API key — and the
+	// seat the job holds until it ends. The job's usage is recorded on it, so a poll
+	// bills what the create was admitted as. Nil off the paid lane: the poll that sees
+	// the job end records it, as its own.
 	bill      context.Context
 	seat      *seat     // the paid-lane seat the job keeps, settled by its usage or dropped
 	createdAt time.Time // for the reaper TTL

@@ -1072,12 +1072,16 @@ func openAIChatResponseToResponses(body []byte, request *OpenAIResponsesRequest,
 // property of the request rather than of which path happened to serve it. A path
 // flushes its own buffered writer after each chunk; the bridge emits and flushes
 // each Responses event as the chunk arrives, so the answer still streams.
+//
+// On the paid lane the stream is paced by its seat (seat.paced): each chunk the
+// client takes keeps the seat's hold, and a stream nobody reads gives it back.
 func (c *ApiController) SendStreamWriter(fn func(*bufio.Writer)) error {
+	s := seatOf(c.Context())
 	to := c.answer
 	if to == nil || to.wrap == nil {
-		return c.Ctx.SendStreamWriter(fn)
+		return c.Ctx.SendStreamWriter(s.paced(fn))
 	}
-	return c.Ctx.SendStreamWriter(func(bw *bufio.Writer) {
+	return c.Ctx.SendStreamWriter(s.paced(func(bw *bufio.Writer) {
 		out := to.wrap(bw)
 		in := bufio.NewWriter(out)
 		fn(in)
@@ -1094,7 +1098,7 @@ func (c *ApiController) SendStreamWriter(fn func(*bufio.Writer)) error {
 				log.Error(fmt.Sprintf("Responses: closing the stream failed: %s", err.Error()))
 			}
 		}
-	})
+	}))
 }
 
 // answerBody writes one whole successful answer in the shape this request asked

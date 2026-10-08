@@ -110,6 +110,13 @@ func (a ask) race() (*model.ModelResult, served, []attempt, error) {
 		return nil, served{}, a.prior, err
 	}
 
+	// The request's seat on the paid lane holds until every provider asked is counted:
+	// the winner by the answer's own usage, each loser by fan.bill.
+	place := seatOf(a.context())
+	if a.fan.bill != nil {
+		place.race(len(queue) - 1)
+	}
+
 	done := make(chan shot, len(queue))
 	runs := make([]hedge.Attempt, len(queue))
 	for i, c := range queue {
@@ -145,7 +152,11 @@ func (a ask) race() (*model.ModelResult, served, []attempt, error) {
 	if won < 0 {
 		// Nobody produced a byte, and Race only says that once EVERY attempt has
 		// returned — so all of them are on the channel and none of this waits.
-		// The client is told who was asked, exactly as the cascade tells it.
+		// The client is told who was asked, exactly as the cascade tells it. Every
+		// one of them is a loser, billed through fan.bill.
+		if a.fan.bill != nil {
+			place.race(1)
+		}
 		raced := a.settle(over, done, len(queue)-len(over))
 		if len(raced) == 0 {
 			return nil, served{}, a.prior, err

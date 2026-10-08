@@ -2009,7 +2009,8 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		if request.MaxTokens == 0 {
 			request.MaxTokens = request.MaxCompletionTokens
 		}
-		request.MaxTokens = clampMaxTokens(request.MaxTokens)
+		// On the paid lane the ceiling is never above the one its seat was sized for.
+		request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.MaxTokens))
 		// The vendor bills the whole body — tools, schemas and call arguments as well
 		// as message text — so the hold is never priced on less than its size.
 		est := estimateRequestCostCents(request.Model, max(measured, len(c.Body())/4), request.MaxTokens)

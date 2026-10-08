@@ -1064,14 +1064,15 @@ func refused(rid string, r *decisionRefusal) decisionReply {
 // org before anything is sent, the in-process ledger is settled before the reply,
 // and the debit — the call to the books — is filed once the reply has gone.
 func decide(ctx context.Context, d decisionCall) decisionReply {
-	if d.user == nil || d.ledger == "" {
-		return refused(d.rid, decline(http.StatusForbidden, "no organization pays for this call"))
-	}
 	// Jev is bought per call; Kai is ours. Off the paid lane — the switch off, or a
-	// request the gate did not seat, as every ZAP call is — Jev is not asked.
+	// request the gate did not seat, as every ZAP call is — Jev is not asked, whoever
+	// is asking.
 	if FreeOnlyFor(ctx) && jevNamed(d.model) {
 		err := laneOff(ctx, d.model)
 		return refused(d.rid, decline(statusOf(err), err.Error()))
+	}
+	if d.user == nil || d.ledger == "" {
+		return refused(d.rid, decline(http.StatusForbidden, "no organization pays for this call"))
 	}
 	body, h, bad := scope(d.body, d.ledger)
 	if bad != nil {
@@ -1307,22 +1308,22 @@ func settle(j settleJob) {
 }
 
 // Settled waits until every debit filed after its reply has been handed to the
-// ledger, or ctx ends. A stopping process calls it once it has stopped taking
-// requests, with at least SettleBudget.
+// ledger, and the paid lane's day is written to the store (laneBook.drain), or ctx
+// ends. A stopping process calls it once it has stopped taking requests, with at least
+// SettleBudget.
 func Settled(ctx context.Context) error {
 	settling.mu.Lock()
 	idle := settling.idle
 	n := settling.n
 	settling.mu.Unlock()
-	if n == 0 {
-		return nil
+	if n > 0 {
+		select {
+		case <-idle:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	select {
-	case <-idle:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return paidDay.drain(ctx)
 }
 
 // DecisionPath reports whether path is /v1/decisions, whose answers Restate words,

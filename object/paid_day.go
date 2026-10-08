@@ -44,22 +44,20 @@ func PaidDays(day string) (map[string]int64, error) {
 	return out, nil
 }
 
-// CountPaidDay adds nanos to what org's paid-lane calls spent on day. The caller makes
-// one call at a time (controllers' laneBook), so the row an update misses is inserted
-// by exactly one.
+// CountPaidDay adds nanos to what org's paid-lane calls spent on day, in one statement:
+// the row is inserted, or its count raised, atomically, whoever else writes it.
 func CountPaidDay(day, org string, nanos int64) error {
 	if adapter == nil || adapter.db == nil || nanos == 0 {
 		return nil
 	}
-	res, err := adapter.db.NewQuery("UPDATE {{paid_day}} SET [[nanos]] = [[nanos]] + {:n} WHERE [[day]] = {:day} AND [[org]] = {:org}").
-		Bind(dbx.Params{"n": nanos, "day": day, "org": org}).Execute()
-	if err != nil {
-		return err
+	upsert := "INSERT INTO {{paid_day}} ([[day]], [[org]], [[nanos]]) VALUES ({:day}, {:org}, {:n}) " +
+		"ON CONFLICT ([[day]], [[org]]) DO UPDATE SET [[nanos]] = {{paid_day}}.[[nanos]] + excluded.[[nanos]]"
+	if adapter.driverName == "mysql" {
+		upsert = "INSERT INTO {{paid_day}} ([[day]], [[org]], [[nanos]]) VALUES ({:day}, {:org}, {:n}) " +
+			"ON DUPLICATE KEY UPDATE [[nanos]] = [[nanos]] + VALUES([[nanos]])"
 	}
-	if n, err := res.RowsAffected(); err == nil && n > 0 {
-		return nil
-	}
-	return insertRow(adapter.db, &PaidDay{Day: day, Org: org, Nanos: nanos})
+	_, err := adapter.db.NewQuery(upsert).Bind(dbx.Params{"day": day, "org": org, "n": nanos}).Execute()
+	return err
 }
 
 // DropPaidDays deletes every day before day: a day's count is read only while it is

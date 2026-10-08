@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,7 +68,7 @@ const maximal = `{
   ],
   "tools": [
     {"name": "get_weather", "description": "Weather by city.", "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": false}, "strict": true, "eager_input_streaming": true, "cache_control": {"type": "ephemeral"}},
-    {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 2},
+    {"type": "text_editor_20250728", "name": "str_replace_based_edit_tool"},
     {"type": "bash_20250124", "name": "bash"}
   ],
   "tool_choice": {"type": "auto", "disable_parallel_tool_use": true},
@@ -88,7 +89,8 @@ const maximal = `{
 
 // everything is maximal plus what only the caller's own connected account serves:
 // a held file, a container, a remote MCP server, cache diagnostics, a faster lane,
-// a paid server tool, and a field not published yet.
+// a paid server tool, a tool and an edit that run the model again over the prompt,
+// and a field not published yet.
 var everything = strings.NewReplacer(
 	`"stream": false`, `"stream": false,
   "mcp_servers": [{"type": "url", "url": "https://mcp.example.com/sse", "name": "ex"}],
@@ -96,7 +98,8 @@ var everything = strings.NewReplacer(
   "diagnostics": {"previous_message_id": null},
   "x_unreleased": {"n": 1.50e+2, "big": 12345678901234567890}`,
 	`"speed": "standard"`, `"speed": "fast"`,
-	`{"type": "bash_20250124", "name": "bash"}`, `{"type": "web_search_20260209", "name": "web_search"}, {"type": "mcp_toolset", "mcp_server_name": "ex"}`,
+	`{"type": "bash_20250124", "name": "bash"}`, `{"type": "web_search_20260209", "name": "web_search"}, {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 2}, {"type": "mcp_toolset", "mcp_server_name": "ex"}`,
+	`{"type": "clear_tool_uses_20250919"}`, `{"type": "compact_20260112"}`,
 	`"source": {"type": "url", "url": "https://example.com/a.pdf"}`, `"source": {"type": "file", "file_id": "file_011"}`,
 ).Replace(maximal)
 
@@ -446,6 +449,11 @@ func TestSharedAccountServesOnlyWhatItPrices(t *testing.T) {
 		"code execution 01":            tool(`{"type": "code_execution_20260120", "name": "code_execution"}`),
 		"the advisor":                  tool(`{"type": "advisor_20260301", "name": "advisor", "model": "claude-opus-5-5"}`),
 		"an MCP toolset":               tool(`{"type": "mcp_toolset", "mcp_server_name": "ex"}`),
+		"web fetch":                    tool(`{"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 2}`),
+		"tool search":                  tool(`{"type": "tool_search_tool_regex_20251119", "name": "tool_search_tool_regex"}`),
+		"compaction":                   strings.Replace(maximal, `{"type": "clear_tool_uses_20250919"}`, `{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 50000}}`, 1),
+		"compaction spelled apart":     strings.Replace(maximal, `{"type": "clear_tool_uses_20250919"}`, `{"Type": "Compact_20260112"}`, 1),
+		"compaction among the edits":   strings.Replace(maximal, `"edits": [{"type": "clear_tool_uses_20250919"}]`, `"Edits": [{"type": "clear_tool_uses_20250919"}, {"type": "compact_20260112"}]`, 1),
 		"a type written twice":         tool(`{"type": "bash_20250124", "name": "web_search", "type": "web_search_20260209"}`),
 		"a type in two cases":          tool(`{"type": "web_search_20260209", "Type": "bash_20250124", "name": "web_search"}`),
 		"an escaped key":               tool(`{"type": "web_search_20260209", "name": "web_search"}`),
@@ -471,7 +479,8 @@ func TestSharedAccountServesOnlyWhatItPrices(t *testing.T) {
 		})
 	}
 	for _, beta := range []string{"context-1m-2025-08-07", "files-api-2025-04-14", "cache-diagnosis-2026-04-07",
-		"mcp-client-2025-11-20", "fast-mode-2026-02-01", "some-future-paid-beta-2027-01-01"} {
+		"mcp-client-2025-11-20", "fast-mode-2026-02-01", "compact-2026-01-12", "web-fetch-2025-09-10",
+		"some-future-paid-beta-2027-01-01"} {
 		t.Run(beta, func(t *testing.T) {
 			url, got := nativeUpstream(t, "application/json", nativeReply)
 			p := nativePayer(t, globalProviderOwner, url)
@@ -489,17 +498,15 @@ func TestSharedAccountServesOnlyWhatItPrices(t *testing.T) {
 	}
 }
 
-// Compaction, the computer toolset and tool search are priced in tokens, compaction
-// per iteration, so the shared account sends them.
+// The computer toolset runs on the caller's side and clearing old tool uses only
+// shortens the prompt: each is priced in tokens over a request read once, so the
+// shared account sends them.
 func TestSharedAccountServesWhatItPrices(t *testing.T) {
 	url, got := nativeUpstream(t, "application/json", nativeReply)
 	p := nativePayer(t, globalProviderOwner, url)
-	req := strings.Replace(maximal, `"context_management": {"edits": [{"type": "clear_tool_uses_20250919"}]}`,
-		`"context_management": {"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 50000}}]}`, 1)
-	req = strings.Replace(req, `{"type": "bash_20250124", "name": "bash"}`,
-		`{"type": "computer_toolset_20260801"}, {"type": "tool_search_tool_regex_20251119", "name": "tool_search_tool_regex"}`, 1)
+	req := strings.Replace(maximal, `{"type": "bash_20250124", "name": "bash"}`, `{"type": "computer_toolset_20260801"}`, 1)
 	c := as(visit("POST", "/v1/messages"), p.credential)
-	c.Fiber().Request().Header.Add("anthropic-beta", "compact-2026-01-12,context-management-2025-06-27")
+	c.Fiber().Request().Header.Add("anthropic-beta", "context-management-2025-06-27")
 	c.Fiber().Request().SetBody([]byte(req))
 	c.AnthropicMessages()
 	if answered(c) != http.StatusOK {
@@ -806,6 +813,27 @@ func TestATextRequestArrivesAsSent(t *testing.T) {
 	}
 	if _, path, sentBody, _ := got.get(); path != "/v1/messages" || sentBody != addressed(t, req) {
 		t.Errorf("the upstream was not sent the caller's bytes at /v1/messages (%s): %s", path, sentBody)
+	}
+}
+
+// A CALL THE PAID LANE SIZED DOWN IS SENT AT ITS SEAT'S CEILING: the upstream is asked
+// for no more completion than the seat holds for.
+func TestASeatSizedDownSendsItsCeiling(t *testing.T) {
+	url, got := nativeUpstream(t, "application/json", nativeReply)
+	p := nativePayer(t, globalProviderOwner, url)
+	c := as(visit("POST", "/v1/messages"), p.credential)
+	c.SetContext(context.WithValue(c.Context(), laneKey{}, &laneState{seat: &seat{book: &laneBook{}, held: math.MaxInt64, tokens: 7000}}))
+	c.Fiber().Request().SetBody([]byte(`{"model": "claude-opus-4", "max_tokens": 20000, "stream": false, "messages": [{"role": "user", "content": "hi"}]}`))
+	c.AnthropicMessages()
+	if answered(c) != http.StatusOK {
+		t.Fatalf("status %d: %s", answered(c), sent(c))
+	}
+	_, _, sentBody, _ := got.get()
+	var upstream struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal([]byte(sentBody), &upstream); err != nil || upstream.MaxTokens != 7000 {
+		t.Fatalf("the upstream was asked for max_tokens %d (%v), want the seat's 7000: %s", upstream.MaxTokens, err, sentBody)
 	}
 }
 

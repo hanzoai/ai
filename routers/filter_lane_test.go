@@ -31,9 +31,11 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// paidSwitch turns the platform's paid lane on for one test.
+// paidSwitch turns the platform's paid lane on for one test, in a process that is
+// the only replica, as the lane's day requires.
 func paidSwitch(t *testing.T) {
 	t.Helper()
+	t.Setenv("CLOUD_API_REPLICAS", "1")
 	saved := controllers.FreeOnly
 	controllers.FreeOnly = func() bool { return false }
 	t.Cleanup(func() { controllers.FreeOnly = saved })
@@ -204,11 +206,11 @@ func held(p probe) (model string, paid bool) {
 	return model, paid
 }
 
-// CALLS IN FLIGHT NEVER PASS THE PLAN. Fifty concurrent 200,000-token prompts at a
-// premium model, from a payer whose plan has $1 of its class left: each holds its
-// estimate (about $0.22) while it streams, so four are seated on the paid lane and
-// every other one is answered by the free model, saying why. A payer with $0.01 left
-// is seated for none.
+// CALLS IN FLIGHT NEVER PASS THE PLAN. Fifty concurrent 600 KB prompts at a premium
+// model, from a payer whose plan has $2 of its class left: each holds its quote (a
+// token per byte at the model's $1 per million, about $0.62) while it streams, so
+// three are seated on the paid lane and every other one is answered by the free model,
+// saying why. A payer with $0.01 left is seated for none.
 func TestCallsInFlightNeverPassThePlan(t *testing.T) {
 	paidSwitch(t)
 	gateWith(t, 0)
@@ -217,7 +219,7 @@ func TestCallsInFlightNeverPassThePlan(t *testing.T) {
 		org    string
 		left   int64
 		seated int
-	}{{"bigco", 1_000_000_000, 4}, {"lowco", 10_000_000, 0}} {
+	}{{"bigco", 2_000_000_000, 3}, {"lowco", 10_000_000, 0}} {
 		balanceGate.setUserKeyCache("tok-"+tc.org, "", tc.org, tc.org, tc.org+"/bo")
 		object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 			if q.Model == controllers.FreeModel {

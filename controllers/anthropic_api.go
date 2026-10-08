@@ -665,7 +665,8 @@ func (c *ApiController) AnthropicMessages() {
 	}
 
 	// ── Balance reservation (shared by the proxies and the QueryText path) ──
-	request.MaxTokens = clampMaxTokens(request.MaxTokens)
+	// On the paid lane the ceiling is never above the one its seat was sized for.
+	request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.MaxTokens))
 	var hold *budgetHold
 	if authUser != nil {
 		ledger := c.billingOrg(authUser)
@@ -1338,27 +1339,31 @@ var sharedFields = map[string][]string{
 }
 
 // sharedTools are the tool types a request may declare on the shared account: its
-// own tools, and the vendor's that are priced in tokens alone. Search, code
-// execution, the advisor and remote MCP toolsets are billed per use or run
-// elsewhere, and are not on it.
-var sharedTools = []string{"bash_", "text_editor_", "computer_", "memory_", "web_fetch_", "tool_search_tool_"}
+// own tools, and the vendor's that the caller runs and that are priced in tokens
+// alone. Search, code execution, the advisor and remote MCP toolsets are billed per
+// use or run elsewhere; web fetch and tool search run in the vendor's own loop, which
+// reads the whole prompt again on every pass, so what one request costs is not
+// bounded by what it sends (quote.go). None of them is on it.
+var sharedTools = []string{"bash_", "text_editor_", "computer_", "memory_"}
 
 // sharedBetas are the anthropic-beta features a request may turn on on the shared
-// account: the ones priced in tokens, with compaction billed per iteration
-// (AnthropicUsage.billed) and the one-hour cache TTL priced apart (hourAsMinutes).
+// account: the ones priced in tokens whose request is read once, with the one-hour
+// cache TTL priced apart (hourAsMinutes). Compaction and web fetch run the model again
+// over the prompt, and are not on it.
 var sharedBetas = fieldSet(
 	"prompt-caching-2024-07-31", "extended-cache-ttl-2025-04-11",
 	"interleaved-thinking-2025-05-14", "fine-grained-tool-streaming-2025-05-14",
 	"token-efficient-tools-2025-02-19", "output-128k-2025-02-19",
-	"context-management-2025-06-27", "compact-2026-01-12",
+	"context-management-2025-06-27",
 	"structured-outputs-2025-11-13", "claude-code-20250219",
 	"thinking-display-updates-2026-08-18", "mid-conversation-output-config-2026-07-01",
 	"mid-conversation-system-clear-at-2026-08-21",
-	"computer-use-2025-01-24", "computer-use-2025-11-24", "web-fetch-2025-09-10",
+	"computer-use-2025-01-24", "computer-use-2025-11-24",
 )
 
 // shared refuses what the shared account does not serve: a field, value, tool or
-// beta off the lists above, or a reference to a file held in the account. Every
+// beta off the lists above, a context edit that compacts (the model run again over
+// the prompt), or a reference to a file held in the account. Every
 // answer on it is priced from the tokens it reports at the rate of the model the
 // caller named, and the account is one workspace for every tenant, so what is not
 // priced in tokens is served at our cost and what reaches the account's stored
@@ -1371,7 +1376,7 @@ func shared(body []byte, betas []string) error {
 	refuse := func(format string, a ...any) error {
 		return forbiddenError("%s is not served on the shared account; it is served on your organization's own connected account", fmt.Sprintf(format, a...))
 	}
-	var tools []json.RawMessage
+	var tools, edits []json.RawMessage
 	err := members(body, func(key string, value json.RawMessage, _ int) error {
 		allowed, ok := sharedFields[key]
 		if !ok {
@@ -1380,6 +1385,21 @@ func shared(body []byte, betas []string) error {
 		if key == "tools" {
 			if err := json.Unmarshal(value, &tools); err != nil {
 				return modelError("tools: %s", err.Error())
+			}
+		}
+		if key == "context_management" && string(value) != "null" {
+			if err := members(value, func(k string, v json.RawMessage, _ int) error {
+				var some []json.RawMessage
+				if fold(k) != fold("edits") || string(v) == "null" {
+					return nil
+				}
+				if err := json.Unmarshal(v, &some); err != nil {
+					return modelError("context_management: %s", err.Error())
+				}
+				edits = append(edits, some...)
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 		if allowed == nil || string(value) == "null" {
@@ -1395,6 +1415,21 @@ func shared(body []byte, betas []string) error {
 		return err
 	}
 	typ := fold("type")
+	for _, edit := range edits {
+		err := members(edit, func(key string, value json.RawMessage, _ int) error {
+			var name string
+			if fold(key) != typ {
+				return nil
+			}
+			if json.Unmarshal(value, &name) != nil || strings.HasPrefix(strings.ToLower(name), "compact") {
+				return refuse("the context edit %s", value)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
 	for _, tool := range tools {
 		err := members(tool, func(key string, value json.RawMessage, _ int) error {
 			if fold(key) != typ {

@@ -13,9 +13,11 @@ import (
 // The paid lane is on for this package's tests, which exercise it, and every request
 // they build is seated on it (visit, paidSeat); a test of the free lane closes it
 // itself and opens it again when it ends, and a test of the lanes themselves
-// (lane_test.go) seats each caller.
+// (lane_test.go) seats each caller. The test process is the only replica, which the
+// lane's day requires (paidLaneDaily).
 func TestMain(m *testing.M) {
 	FreeOnly = func() bool { return false }
+	_ = os.Setenv("CLOUD_API_REPLICAS", "1")
 	os.Exit(m.Run())
 }
 

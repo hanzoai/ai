@@ -1094,29 +1094,47 @@ seat. Every read on the request path is `FreeOnlyFor(ctx)` (or `shut(ctx, p)`, w
 also lets the org's own key through while the switch is on); `candidates`,
 `openrouterTail`, `paying`, `spendOf` and every ZAP handler (`zapLane`) take its answer.
 
-A seat holds the call's estimate (`estimate`: prompt at a token per 3 bytes, inline
-images as 2,000 tokens, the completion ceiling the handler enforces, at the most of
-list price and cost, ×2 for fast mode; media at unit price) from admission until the
-usage record settles it (`recordUsage` → `seat.settle(laneSpend)`, after the plan's
-settle), against: `PAID_LANE_DAILY` (USD, default $10, 0 or anything not a finite
-amount in (0, 1e9] closes), the paying org's share `PAID_LANE_ORG_SHARE` (default 0.25),
-and for a plan-paid call the plan class's `LimitGrant.Spend` (the host's left at
-admission) less the payer's holds in flight. Wallet-paid calls are held against the
-wallet by their handler (`reserveFor`). A family is sent `X-Hanzo-Spend` only on a seat,
-capped at what it holds. A seat that records nothing is given back by `Unseat` after the
-handler, or after 30 minutes for a stream or a video job (`seat.keep`); race losers and
-a video's later poll settle the creating request's seat (`context.WithoutCancel`,
-`videoJob.bill`). Each org's settled spend per UTC day is kept in the store
-(`object.PaidDay`, table `paid_day`) and read back on the day's first ask, so a restart
-keeps the count; holds are in process (single replica). A payer the lane had no room
-for gets `X-Hanzo-Lane-Reason: paid_lane_ceiling`; a chat for a third-party model is
-handed to the free model in limited mode (never one on the org's own key, `OwnKey`),
-and any other call only the paid lane serves is refused 429 `paid_lane_full`
-(`laneOff`). Responses carry `X-Hanzo-Lane: paid|free` only while the switch is on. The
-enso/zen service's own paid lane (zen lib: the catalog's `paid`, or the `ZEN_SWITCH`
-file's) spends what a fronted request's `X-Hanzo-Spend` allows, which this day counts;
-what zen spends for callers that reach it directly is bounded only by the host's plan
-limiter (cloud `apps/zen` `planSpend`), not by `PAID_LANE_DAILY`.
+A seat holds the call's quote (`controllers/quote.go`, `quoteOf`): every body byte as
+a token (a tokenizer never reads fewer than one byte per token), plus 1,024 for the
+vendor's framing and 2,000 per vendor-defined tool; a decodable picture (PNG, JPEG,
+GIF, WebP, ≤ 20 MiB) in an image part as its 768-px tiles at 258 tokens (at least
+6,000, never below $0.01) in place of its bytes; a remote picture as an 8,000-px one; a
+PDF, a remote document or a stored file as a whole 1M-token context (or the model's
+declared window when larger); a prompt with `cache_control` at the hour-long cache-write
+rate; the completion ceiling the handler sends (`reserveCompletionTokens`) × `n`, plus a
+predicted output at the completion rate — at the most of list price and cost, the
+platform's and the org's, ×2 for fast mode; media at unit price. It holds against:
+`PAID_LANE_DAILY` (USD, default $10, 0 or anything not a finite amount in (0, 1e9]
+closes; the lane is also closed unless `CLOUD_API_REPLICAS=1` says this process is the
+only replica), the paying org's share `PAID_LANE_ORG_SHARE` (default 0.25; an org with
+nothing in flight and share left may seat one call larger than it, up to the day's
+room), for a plan-paid call the plan class's `LimitGrant.Spend` less the payer's holds,
+and at most 8 seats per payer. A chat that does not fit at the ceiling it asked for is
+sent with the highest one that fits (never below 4,096), named in
+`X-Hanzo-Lane-Max-Tokens` (`laneTokens` in the handlers). Wallet-paid calls are held
+against the wallet by their handler (`reserveFor`). A family is sent `X-Hanzo-Spend` only
+on a seat, capped at what it holds. A seat closes exactly once, when its answer is
+counted (`recordUsage` → `seat.settle(laneSpend)`, after the plan's settle); a fast
+mode loser adds its cost and gives nothing back (`seat.lost`; `ask.race` holds the seat
+until every loser is counted); `Unseat` closes one that recorded nothing after its
+handler; a stream whose client takes nothing for 2 minutes (`seat.paced`, applied in
+`ApiController.SendStreamWriter`) and any seat after 30 minutes lapse. Race losers and a
+video's later poll bill the creating request's context only on a seat (`billing`); off
+it they bill as before. The day lives in memory, only moves forward, carries holds over
+midnight, and is written to the store off the request path (`object.PaidDay`, table
+`paid_day`, one atomic upsert per row, retried until it lands, drained by
+`controllers.Settled`), read back on the day's first ask. Provider-side loops — web
+fetch, tool search, compaction — are not served on the shared Anthropic account. A payer
+the lane had no room for gets `X-Hanzo-Lane-Reason: paid_lane_ceiling`; a chat for a
+third-party model is handed to the free model in limited mode (never one on the org's
+own key, `OwnKey`), and any other call only the paid lane serves is refused
+`paid_lane_full` (`laneOff`): 429 "full right now", 429 "after 00:00 UTC" when the day or
+the org's share is spent, 429 "closed", 413 when no day can hold the call. Responses
+carry `X-Hanzo-Lane: paid|free` only while the switch is on. The enso/zen service's own
+paid lane (zen lib: the catalog's `paid`, or the `ZEN_SWITCH` file's) spends what a
+fronted request's `X-Hanzo-Spend` allows, which this day counts; what zen spends for
+callers that reach it directly is bounded only by the host's plan limiter (cloud
+`apps/zen` `planSpend`), not by `PAID_LANE_DAILY`.
 
 On the free lane no chat request reaches a priced route, and the routes that stand in
 for it answer, named as what they are; a tool or media request for one, and every

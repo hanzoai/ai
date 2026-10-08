@@ -82,10 +82,14 @@ func (c *ApiController) widthFor(user *iam.User, subject string, est int64) (*bu
 // EVERY REQUEST FIELD IS READ NOW, not inside the closure. By the time this
 // fires the handler has returned and fasthttp has recycled the request, so
 // reading the IP there reads whatever the next caller put in its place. The
-// context keeps the request's values without its cancellation — the request's own
-// is cancelled the moment the response ends, before most losers have finished — so a
-// loser is billed to whoever the request was: its grant and its seat on the paid
-// lane, whose day counts what the loser cost.
+// context is Background for the same reason: the request's own is cancelled the
+// moment the response ends, which is before most losers have finished.
+//
+// A request on the paid lane is the exception: its loser is billed to whoever the
+// request was — the request's values without its cancellation, its grant among them
+// — and what it spent is added to the day on the request's seat (seat.lost), which
+// holds until every loser is counted. A loser never gives the seat back: only the
+// answer's own usage does.
 func (c *ApiController) billRaced(model string, user *iam.User, premium, stream bool,
 	requestId string, start time.Time,
 ) func(attempt) {
@@ -93,7 +97,10 @@ func (c *ApiController) billRaced(model string, user *iam.User, premium, stream 
 		return nil
 	}
 	owner, ip := c.billingOrg(user), c.Fiber().IP()
-	ctx := context.WithoutCancel(c.Context())
+	place, ctx := seatOf(c.Context()), billing(c.Context())
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return func(a attempt) {
 		rec := &usageRecord{
 			Owner:            owner,
@@ -113,14 +120,21 @@ func (c *ApiController) billRaced(model string, user *iam.User, premium, stream 
 			RequestID:        requestId,
 		}
 		rec.bind(ctx, user)
+		// A loser is counted on the seat by place.lost, never settled by recordUsage.
+		rec.seat = nil
 		// Whose key paid decides what this costs, and for a beaten provider that
 		// is ITS row — not the one auth resolved before the race started.
 		rec.BYO, rec.Account = providerBYO(a.row, user)
 		// A vendor that refused before producing anything spent nothing, and the
 		// row still goes to the trace so the refusal is visible.
+		spent := int64(0)
 		if a.prompt > 0 || a.completion > 0 {
 			recordUsage(rec)
+			if place != nil {
+				spent = laneSpend(rec)
+			}
 		}
+		place.lost(spent)
 		recordTrace(ctx, rec, start)
 	}
 }

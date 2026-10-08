@@ -29,30 +29,40 @@ package controllers
 //     whose call does not fit, and any request that reached a handler without passing
 //     the gate (a ZAP handler: the forward bridge is the ZAP route that runs the gate).
 //
-// WHAT A SEAT HOLDS. A call on the paid lane holds its estimate (estimate: its prompt
-// and its completion ceiling at the most of the model's list price and its cost, for
-// every provider fast mode races it to) from admission until its usage is recorded,
-// against three bounds at once:
+// WHAT A SEAT HOLDS. A call on the paid lane holds its quote (quote.go: the most it can
+// cost, for every provider fast mode races it to) from admission until its answer is
+// counted, against three bounds at once:
 //
-//   - the platform's day: PAID_LANE_DAILY, USD, default 10; 0 closes the lane;
+//   - the platform's day: PAID_LANE_DAILY, USD, default 10; 0 closes the lane, and so
+//     does a process that is not known to be the only replica (CLOUD_API_REPLICAS=1);
 //   - the paying org's share of that day: PAID_LANE_ORG_SHARE, a fraction, default
-//     0.25, so one org cannot move every other payer to the free lane;
+//     0.25, so one org cannot move every other payer to the free lane. An org with no
+//     call in flight and some of its share left may seat one call larger than what is
+//     left of it, up to the day's room, so a single call of any size the day can hold
+//     is served;
 //   - for a call the plan pays, what the plan's class has left (LimitGrant.Spend, the
 //     host's figure at admission) less what the payer's calls in flight hold. A call
 //     the payer's prepaid or granted credit pays is held against the wallet by its
 //     handler (reserveFor), as every wallet-paid call is.
 //
-// A call that does not fit is not seated: a payer owed the paid lane is on the free
-// lane, told why. Its usage record settles a seat at what the call spent (laneSpend),
-// after the plan's own settle; a call that records nothing gives the hold back when
-// its handler is done (Unseat); a stream or a job that never records gives it back
-// after seatLapse. So in-flight calls together never pass a bound by more than what
-// one call spends past its estimate.
+// A conversation whose quote at the completion ceiling it asked for does not fit is
+// sent with a lower ceiling that does (X-Hanzo-Lane-Max-Tokens), never below the
+// least its handler sends; one that fits at no ceiling is not seated. One payer holds
+// at most paidLaneCalls seats at once.
 //
-// THE DAY IS KEPT IN THE STORE. What each org's paid-lane calls spent each UTC day is
-// written to this process's database (object.PaidDay) as it settles and read back the
+// A seat is given back exactly once, when its answer is counted (recordUsage, after
+// the plan's own settle). A provider fast mode raced and beat adds what it spent to the
+// count and gives nothing back (seat.lost); the seat closes once its answer and every
+// such loser are counted. A call that records nothing gives the hold back when its
+// handler is done (Unseat). A stream that stops writing gives it back after
+// streamIdle, and any seat after seatLapse. So calls in flight never pass a bound by
+// more than what the calls a lapse let go spend past it.
+//
+// THE DAY IS KEPT IN MEMORY AND WRITTEN TO THE STORE. What each org's paid-lane calls
+// spent each UTC day is counted in this process and written to its database
+// (object.PaidDay) off the request path, retried until it lands, and read back the
 // first time the day is asked about, so a restart or a rollout keeps the count. The
-// holds are this process's: ai runs as one replica (bootstrap's single-pod invariant).
+// day only moves forward; calls in flight at midnight hold on the new day.
 //
 // Every read of the switch on the request path asks FreeOnlyFor, never FreeOnly.
 //
@@ -60,20 +70,19 @@ package controllers
 // X-Hanzo-Lane-Reason is paid_lane_ceiling when a payer owed the paid lane had no room
 // on it. A chat for a model only the paid lane serves is then answered by the free
 // model in limited mode (routers' BalanceGateFilter); any other call for one is
-// refused 429 paid_lane_full (laneOff). Who pays is the grant's, unchanged by the lane
-// (X-Hanzo-Paid-By).
+// refused paid_lane_full (laneOff), saying why. Who pays is the grant's, unchanged by
+// the lane (X-Hanzo-Paid-By).
 
 import (
-	"bytes"
-	"cmp"
+	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hanzoai/ai/conf"
@@ -87,6 +96,10 @@ const (
 	LaneHeader = "X-Hanzo-Lane"
 	// LaneReasonHeader says why a payer is on the free lane: ReasonCeiling.
 	LaneReasonHeader = "X-Hanzo-Lane-Reason"
+	// LaneTokensHeader names the completion ceiling a conversation on the paid lane is
+	// sent with when it is lower than the one it asked for: the most whose worst case
+	// fits what the lane had left for it.
+	LaneTokensHeader = "X-Hanzo-Lane-Max-Tokens"
 	// ReasonCeiling is why a payer owed the paid lane is on the free lane: the
 	// platform's day, the org's share of it or the plan's allowance had no room for the
 	// call.
@@ -96,13 +109,29 @@ const (
 	codeLaneFull = "paid_lane_full"
 )
 
+// Why the paid lane had no room for a call it was owed (laneState.why).
+const (
+	// whyClosed: the lane seats nobody — its day is 0, the day's count cannot be read,
+	// or this process is not known to be the only replica.
+	whyClosed = "closed"
+	// whyLarge: the call's least worst case is more than the day, or the plan's class,
+	// can ever hold for it.
+	whyLarge = "large"
+	// whySpent: what the day or the org's share has spent leaves no room until the next
+	// UTC day.
+	whySpent = "spent"
+	// whyBusy: calls in flight hold the room it needs, or its payer holds
+	// paidLaneCalls seats.
+	whyBusy = "busy"
+)
+
 // Seating is what Seat decided for a request.
 type Seating int
 
 const (
 	// SeatFree: the request is not owed the paid lane.
 	SeatFree Seating = iota
-	// SeatPaid: the request is on the paid lane and its estimate is held.
+	// SeatPaid: the request is on the paid lane and its quote is held.
 	SeatPaid
 	// SeatFull: the request is owed the paid lane, which had no room for it.
 	SeatFull
@@ -111,11 +140,11 @@ const (
 // laneKey is where a request carries its lane (*laneState).
 type laneKey struct{}
 
-// laneState is a request's lane as the gate decided it: its seat, nil on the free lane, and
-// whether it was owed one that had no room.
+// laneState is a request's lane as the gate decided it: its seat, nil on the free
+// lane, and why a payer owed one had no room ("" when it was not owed one).
 type laneState struct {
 	seat *seat
-	full bool
+	why  string
 }
 
 func laneOf(ctx context.Context) *laneState {
@@ -142,35 +171,42 @@ func FreeOnlyFor(ctx context.Context) bool {
 
 // Seat decides the lane of the request on c, once, from the grant g the balance gate
 // admitted it with for model: org is the org whose ledger pays and payer its billing
-// subject. A request owed the paid lane holds its estimate on it, or is SeatFull when
-// that does not fit. A request seated before — the gate asks again for a model it
-// handed the request to — gives that seat back first. With the switch off it decides
-// nothing and says nothing.
+// subject. A request owed the paid lane holds its quote on it, or is SeatFull when that
+// does not fit. A request seated before — the gate asks again for a model it handed
+// the request to — gives that seat back first. With the switch off it decides nothing
+// and says nothing.
 func Seat(c *zip.Ctx, g *object.LimitGrant, org, payer, model string) Seating {
 	if FreeOnly() {
 		return SeatFree
 	}
 	seatOf(c.Context()).settle(0)
+	c.Fiber().Response().Header.Del(LaneTokensHeader)
 	l, out := &laneState{}, SeatFree
+	var q quote
 	if planPays(g) {
-		allow, who := int64(math.MaxInt64), ""
+		allow, plan := int64(math.MaxInt64), ""
 		if g.Pays == object.PaysPlan {
-			allow, who = g.Spend, org+"\x00"+payer+"\x00"+g.Class
+			allow, plan = g.Spend, org+"\x00"+payer+"\x00"+g.Class
 		}
-		if s := paidDay.reserve(org, who, estimate(c, model), allow, time.Now()); s != nil {
-			l.seat, out = s, SeatPaid
+		q = quoteOf(c, org, model)
+		if l.seat, l.why = paidDay.reserve(org, org+"\x00"+payer, plan, q, allow); l.seat != nil {
+			out = SeatPaid
 		} else {
-			l.full, out = true, SeatFull
+			out = SeatFull
 		}
 	}
 	c.SetContext(context.WithValue(c.Context(), laneKey{}, l))
-	if out == SeatPaid {
+	switch out {
+	case SeatPaid:
 		c.SetHeader(LaneHeader, "paid")
-	} else {
+		if l.seat.tokens > 0 && l.seat.tokens < q.ceiling {
+			c.SetHeader(LaneTokensHeader, strconv.Itoa(l.seat.tokens))
+		}
+	case SeatFull:
 		c.SetHeader(LaneHeader, "free")
-	}
-	if out == SeatFull {
 		c.SetHeader(LaneReasonHeader, ReasonCeiling)
+	default:
+		c.SetHeader(LaneHeader, "free")
 	}
 	return out
 }
@@ -198,6 +234,26 @@ func Unseat(c *zip.Ctx) {
 	s.end()
 }
 
+// billing is the context a usage recorded after its request is over is bound to: the
+// request's values without its cancellation when it holds a seat on the paid lane, so
+// the usage bills the request's grant and counts on its seat; nil off the paid lane,
+// where the recorder binds its own.
+func billing(ctx context.Context) context.Context {
+	if seatOf(ctx) == nil {
+		return nil
+	}
+	return context.WithoutCancel(ctx)
+}
+
+// laneTokens is n, the completion ceiling a handler sends, no higher than the one the
+// request's seat on the paid lane was sized for.
+func laneTokens(ctx context.Context, n int) int {
+	if s := seatOf(ctx); s != nil && s.tokens > 0 {
+		return min(n, s.tokens)
+	}
+	return n
+}
+
 // planPays reports whether a grant puts its request on the paid lane: it names a paid
 // plan, the call is priced, and the plan's included usage or the payer's credit pays.
 func planPays(g *object.LimitGrant) bool {
@@ -216,14 +272,27 @@ func planPays(g *object.LimitGrant) bool {
 }
 
 // laneOff is the refusal for a call only the paid lane serves, for the request on ctx:
-// 429 paid_lane_full when its payer was owed the lane and it had no room, else the
-// switch's own refusal (paidLaneOff).
+// paid_lane_full, saying why, when its payer was owed the lane and it had no room —
+// 413 for a call it can never hold, 429 otherwise — else the switch's own refusal
+// (paidLaneOff).
 func laneOff(ctx context.Context, model string) error {
-	if l := laneOf(ctx); l != nil && l.full {
-		return &apiError{status: http.StatusTooManyRequests, code: codeLaneFull,
-			msg: fmt.Sprintf("model %q is not being served right now: the paid lane is full. Choose an Enso or Zen model, or try again after 00:00 UTC.", model)}
+	l := laneOf(ctx)
+	if l == nil || l.why == "" {
+		return paidLaneOff(model)
 	}
-	return paidLaneOff(model)
+	status, said := http.StatusTooManyRequests, ""
+	switch l.why {
+	case whyClosed:
+		said = "the paid lane is closed. Choose an Enso or Zen model."
+	case whyLarge:
+		status = http.StatusRequestEntityTooLarge
+		said = "this call can cost more than the paid lane holds for one call. Send a shorter prompt or a lower max_tokens, or choose an Enso or Zen model."
+	case whySpent:
+		said = "the paid lane's day is used. Choose an Enso or Zen model, or try again after 00:00 UTC."
+	default:
+		said = "the paid lane is full right now. Choose an Enso or Zen model, or try again in a few minutes."
+	}
+	return &apiError{status: status, code: codeLaneFull, msg: fmt.Sprintf("model %q is not being served: %s", model, said)}
 }
 
 // shut reports whether the paid lane is closed to a call to p for the request on ctx:
@@ -250,22 +319,40 @@ func OwnKey(org, model string) bool {
 
 // ── the platform's day ──────────────────────────────────────────────────────
 
-// paidLaneDefault is the platform's paid-lane day when PAID_LANE_DAILY is unset, in
-// nano-dollars: $10.
-const paidLaneDefault = 10 * 1_000_000_000
-
-// paidLaneMaxUSD is the most PAID_LANE_DAILY can state: every amount up to it is a
-// whole number of nano-dollars an int64 holds, on every CPU.
-const paidLaneMaxUSD = 1e9
-
-// paidLaneShare is the most of the platform's day one org's calls may hold and spend
-// when PAID_LANE_ORG_SHARE is unset.
-const paidLaneShare = 0.25
+const (
+	// paidLaneDefault is the platform's paid-lane day when PAID_LANE_DAILY is unset, in
+	// nano-dollars: $10.
+	paidLaneDefault = 10 * 1_000_000_000
+	// paidLaneMaxUSD is the most PAID_LANE_DAILY can state: every amount up to it is a
+	// whole number of nano-dollars an int64 holds, on every CPU.
+	paidLaneMaxUSD = 1e9
+	// paidLaneShare is the most of the platform's day one org's calls may hold and
+	// spend when PAID_LANE_ORG_SHARE is unset.
+	paidLaneShare = 0.25
+	// paidLaneCalls is the most seats one payer holds at once.
+	paidLaneCalls = 8
+	// seatLapse is the longest a seat holds when nothing settles it: a whole answer
+	// whose handler never finished, a job nobody polled to its end.
+	seatLapse = 30 * time.Minute
+	// streamIdle is how long a stream holds once its client stops taking what it
+	// writes.
+	streamIdle = 2 * time.Minute
+	// loadRetry is how often a day whose count could not be read is asked for again.
+	loadRetry = 5 * time.Second
+	// keptDays is how many past days the store keeps.
+	keptDays = 7
+)
 
 // paidLaneDaily is what every paid-lane call together may spend in a UTC day, in
 // nano-dollars. PAID_LANE_DAILY states it in USD; 0 closes the paid lane, and a value
-// that is not a finite amount above 0 and at most paidLaneMaxUSD closes it too.
+// that is not a finite amount above 0 and at most paidLaneMaxUSD closes it too. The
+// day's holds and count live in this process, so the lane is closed unless
+// CLOUD_API_REPLICAS states this process is the only replica: two would each hold a
+// whole day.
 func paidLaneDaily() int64 {
+	if n, ok := object.SinglePodReplicaHint(); !ok || n != 1 {
+		return 0
+	}
 	s := strings.TrimSpace(conf.GetConfigString("PAID_LANE_DAILY"))
 	if s == "" {
 		return paidLaneDefault
@@ -292,101 +379,156 @@ func orgShare(ceiling int64) int64 {
 	return min(int64(float64(ceiling)*f), ceiling)
 }
 
-// seatLapse is how long a seat holds its estimate when nothing settles it: a stream
-// whose writer never recorded, a job nobody polled to its end.
-const seatLapse = 30 * time.Minute
-
-// laneBook is one UTC day of the paid lane: what was spent, what calls in flight hold,
-// each org's share of both, and each plan payer's holds.
+// laneBook is the paid lane's current UTC day: what was spent, what calls in flight
+// hold, each org's share of both, each plan payer's holds and each payer's seats. mu
+// guards every field below it but the writer's own (kick, writer, wmu).
 type laneBook struct {
+	clock  func() time.Time // the time; time.Now when nil
 	mu     sync.Mutex
 	day    string
-	loaded bool
+	loaded bool      // the store's count for day was read
+	tried  time.Time // when that read last failed
 	spent  int64
 	held   int64
 	orgs   map[string]*laneUse
-	payers map[string]int64
+	plans  map[string]int64
+	calls  map[string]int
 	open   map[*seat]struct{}
-	// store says the day is kept in the store (object.PaidDay); wmu makes one write at
-	// a time.
-	store bool
-	wmu   sync.Mutex
+
+	// store says the day is written to the store (object.PaidDay). pending is what was
+	// counted and is not written yet, by day and org; the writer (write) takes it to
+	// the store off the request path, one flush at a time (wmu).
+	store   bool
+	pending map[dayOrg]int64
+	kick    chan struct{}
+	writer  sync.Once
+	wmu     sync.Mutex
+	dropped string // the day past days were last dropped on
 }
 
 // laneUse is one org's spend and holds on the day.
 type laneUse struct{ spent, held int64 }
 
+// dayOrg keys what an org spent on a day.
+type dayOrg struct{ day, org string }
+
 // paidDay is the platform's paid-lane day.
 var paidDay = &laneBook{store: true}
 
-// seat is one call's place on the paid lane: what it holds, against which org's share
-// and which plan payer, since when. open and kept are guarded by book.mu.
+// seat is one call's place on the paid lane: what it holds, against which org's share,
+// which payer's seats and which plan payer, since when. Every field but last is
+// guarded by book.mu.
 type seat struct {
-	book       *laneBook
-	day        string
-	org, payer string
-	held       int64
-	at         time.Time
-	open, kept bool
+	book   *laneBook
+	org    string
+	caller string // the payer whose seats it counts against: org and subject
+	plan   string // the plan payer whose allowance it holds against, "" when the plan does not pay
+	held   int64
+	tokens int // the completion ceiling it was sized for; 0 for a call with none
+	at     time.Time
+	// last is when the client last took what the call's stream wrote, in Unix
+	// nanoseconds; 0 for a call that does not stream.
+	last atomic.Int64
+	// open: it holds. kept: a job outlives its request (keep). done: its answer was
+	// counted or its handler is done. racing: providers it raced that lost and are not
+	// counted yet.
+	open, kept, done bool
+	racing           int
 }
 
-// reserve seats a call for org that may cost est: it fits the day, the org's share and,
-// for a payer the plan pays, allow less what the payer's calls in flight hold. Nil when
-// it does not fit, or when the day's count cannot be read.
-func (b *laneBook) reserve(org, payer string, est, allow int64, now time.Time) *seat {
+func (b *laneBook) now() time.Time {
+	if b.clock != nil {
+		return b.clock()
+	}
+	return time.Now()
+}
+
+// reserve seats a call for org quoted q, for caller — the payer whose seats it counts
+// against — and, for a call a plan pays, against plan's allow less what its calls in
+// flight hold. It fits the day, the org's share and the plan; a conversation is sized
+// down to the highest completion ceiling that fits (quote.fit). Nil and why when it
+// does not fit.
+func (b *laneBook) reserve(org, caller, plan string, q quote, allow int64) (*seat, string) {
 	ceiling := paidLaneDaily()
 	share := orgShare(ceiling)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if !b.roll(now) {
-		return nil
+	now := b.now()
+	b.turn(now)
+	if ceiling <= 0 || share <= 0 || !b.load(now) {
+		return nil, whyClosed
 	}
 	b.lapse(now)
+	least := q.at(q.floor)
+	if least > ceiling || (plan != "" && least > allow) {
+		return nil, whyLarge
+	}
 	u := b.use(org)
-	if est > ceiling-b.spent-b.held || est > share-u.spent-u.held || (payer != "" && est > allow-b.payers[payer]) {
-		return nil
+	day := ceiling - b.spent
+	if least > day || u.spent >= share {
+		return nil, whySpent
 	}
-	s := &seat{book: b, day: b.day, org: org, payer: payer, held: est, at: now, open: true}
-	b.held += est
-	u.held += est
-	if payer != "" {
-		b.payers[payer] += est
+	room := day - b.held
+	if u.held > 0 {
+		room = min(room, share-u.spent-u.held)
 	}
+	if plan != "" {
+		room = min(room, allow-b.plans[plan])
+	}
+	tokens, ok := q.fit(room)
+	if !ok || b.calls[caller] >= paidLaneCalls {
+		return nil, whyBusy
+	}
+	s := &seat{book: b, org: org, caller: caller, plan: plan, held: q.at(tokens), at: now, open: true}
+	if q.ceiling > 0 {
+		s.tokens = tokens
+	}
+	b.held += s.held
+	u.held += s.held
+	if plan != "" {
+		b.plans[plan] += s.held
+	}
+	b.calls[caller]++
 	b.open[s] = struct{}{}
-	return s
+	return s, ""
 }
 
-// settle gives back what s holds and counts n nano-dollars of spend against the day
-// and its org. A seat settles its hold once; every later settle only counts.
-func (b *laneBook) settle(s *seat, n int64, now time.Time) {
-	b.mu.Lock()
-	b.close(s)
-	day := utcDay(now)
-	if n > 0 && b.roll(now) {
-		b.use(s.org).spent += n
-		b.spent += n
+// turn moves the book to now's UTC day, never back to an earlier one. A new day starts
+// with nothing spent but what the store holds for it (load); what calls in flight hold
+// is carried into it.
+func (b *laneBook) turn(now time.Time) {
+	if b.open == nil {
+		b.orgs, b.plans, b.calls = map[string]*laneUse{}, map[string]int64{}, map[string]int{}
+		b.open, b.pending = map[*seat]struct{}{}, map[dayOrg]int64{}
 	}
-	b.mu.Unlock()
-	if n > 0 && b.store {
-		b.write(day, s.org, n)
+	day := utcDay(now)
+	if day <= b.day {
+		return
+	}
+	b.day, b.loaded, b.tried, b.spent = day, false, time.Time{}, 0
+	for org, u := range b.orgs {
+		if u.spent = 0; u.held == 0 {
+			delete(b.orgs, org)
+		}
 	}
 }
 
-// roll turns the book to now's UTC day and reads what the store holds for it the
-// first time the day is asked about. It reports false while that read fails: a day
-// whose count cannot be read seats nobody.
-func (b *laneBook) roll(now time.Time) bool {
-	day := utcDay(now)
-	if b.day != day {
-		b.day, b.loaded, b.spent, b.held = day, false, 0, 0
-		b.orgs, b.payers, b.open = map[string]*laneUse{}, map[string]int64{}, map[*seat]struct{}{}
-	}
+// load adds what the store holds for the book's day, once per day: what this process
+// counted before it started and what any before it spent. It reports false while that
+// read fails, asking again at most every loadRetry: a day whose count cannot be read
+// seats nobody. Nothing of the day is written before it is read (flush), so nothing is
+// counted twice.
+func (b *laneBook) load(now time.Time) bool {
 	if b.loaded {
 		return true
 	}
 	if b.store {
-		kept, err := object.PaidDays(day)
+		if !b.tried.IsZero() && now.Sub(b.tried) < loadRetry {
+			return false
+		}
+		kept, err := object.PaidDays(b.day)
 		if err != nil {
+			b.tried = now
 			log.Error("paid lane: the day's count could not be read; nobody is seated: %v", err)
 			return false
 		}
@@ -394,20 +536,22 @@ func (b *laneBook) roll(now time.Time) bool {
 			b.use(org).spent += n
 			b.spent += n
 		}
-		if err := object.DropPaidDays(utcDay(now.AddDate(0, 0, -7))); err != nil {
-			log.Warn("paid lane: past days could not be dropped: %v", err)
-		}
 	}
 	b.loaded = true
+	b.wake()
 	return true
 }
 
-// write keeps n nano-dollars of org's spend on day in the store.
-func (b *laneBook) write(day, org string, n int64) {
-	b.wmu.Lock()
-	defer b.wmu.Unlock()
-	if err := object.CountPaidDay(day, org, n); err != nil {
-		log.Error("paid lane: %d nano of %s's spend on %s could not be kept: %v", n, org, day, err)
+// count adds n nano-dollars of org's spend to the day, to be written to the store.
+func (b *laneBook) count(org string, n int64) {
+	if n <= 0 {
+		return
+	}
+	b.use(org).spent += n
+	b.spent += n
+	if b.store {
+		b.pending[dayOrg{b.day, org}] += n
+		b.wake()
 	}
 }
 
@@ -418,31 +562,33 @@ func (b *laneBook) close(s *seat) {
 	}
 	s.open = false
 	delete(b.open, s)
-	if s.day != b.day {
-		return
-	}
 	b.held -= s.held
 	b.use(s.org).held -= s.held
-	if s.payer != "" {
-		if b.payers[s.payer] -= s.held; b.payers[s.payer] <= 0 {
-			delete(b.payers, s.payer)
+	if s.plan != "" {
+		if b.plans[s.plan] -= s.held; b.plans[s.plan] <= 0 {
+			delete(b.plans, s.plan)
 		}
+	}
+	if b.calls[s.caller]--; b.calls[s.caller] <= 0 {
+		delete(b.calls, s.caller)
 	}
 }
 
-// lapse closes every seat held past seatLapse.
+// lapse closes every seat held past seatLapse, and every stream whose client has taken
+// nothing for streamIdle.
 func (b *laneBook) lapse(now time.Time) {
 	for s := range b.open {
-		if now.Sub(s.at) > seatLapse {
+		idle := now.Sub(s.at) > seatLapse
+		if t := s.last.Load(); t != 0 && now.Sub(time.Unix(0, t)) > streamIdle {
+			idle = true
+		}
+		if idle {
 			b.close(s)
 		}
 	}
 }
 
 func (b *laneBook) use(org string) *laneUse {
-	if b.orgs == nil {
-		b.orgs = map[string]*laneUse{}
-	}
 	u := b.orgs[org]
 	if u == nil {
 		u = &laneUse{}
@@ -451,21 +597,157 @@ func (b *laneBook) use(org string) *laneUse {
 	return u
 }
 
-// settle gives back what the seat holds and counts n nano-dollars the call spent.
-func (s *seat) settle(n int64) {
-	if s != nil {
-		s.book.settle(s, n, time.Now())
+// ── the store ────────────────────────────────────────────────────────────────
+
+// wake has the writer write what is pending. The writer runs off the request path,
+// started the first time anything is pending.
+func (b *laneBook) wake() {
+	if !b.store || len(b.pending) == 0 {
+		return
+	}
+	b.writer.Do(func() {
+		b.kick = make(chan struct{}, 1)
+		go b.write()
+	})
+	select {
+	case b.kick <- struct{}{}:
+	default:
 	}
 }
 
-// end gives back what the seat holds unless a job kept it (keep).
+// write flushes each time it is woken, and again after a growing pause while a flush
+// fails, until it lands.
+func (b *laneBook) write() {
+	for range b.kick {
+		for wait := time.Second; b.flush(false) != nil; wait = min(2*wait, time.Minute) {
+			time.Sleep(wait)
+		}
+	}
+}
+
+// flush writes what is pending to the store, a row per day and org, and puts back what
+// could not be written. A day not yet read (load) is left pending unless all says to
+// write everything, as a process that stops does; it is then read with it in.
+func (b *laneBook) flush(all bool) error {
+	b.wmu.Lock()
+	defer b.wmu.Unlock()
+	b.mu.Lock()
+	batch := map[dayOrg]int64{}
+	for k, n := range b.pending {
+		if all || k.day < b.day || b.loaded {
+			batch[k] = n
+			delete(b.pending, k)
+		}
+	}
+	drop := ""
+	if b.loaded && b.dropped != b.day {
+		drop = utcDay(b.now().AddDate(0, 0, -keptDays))
+	}
+	day := b.day
+	b.mu.Unlock()
+	var failed error
+	for k, n := range batch {
+		if err := object.CountPaidDay(k.day, k.org, n); err != nil {
+			failed = err
+			b.mu.Lock()
+			b.pending[k] += n
+			b.mu.Unlock()
+		}
+	}
+	if failed != nil {
+		log.Error("paid lane: spend could not be written to the store; it is kept in memory and written again: %v", failed)
+		return failed
+	}
+	if drop != "" {
+		if err := object.DropPaidDays(drop); err != nil {
+			log.Warn("paid lane: past days could not be dropped: %v", err)
+		} else {
+			b.mu.Lock()
+			b.dropped = day
+			b.mu.Unlock()
+		}
+	}
+	return nil
+}
+
+// drain writes everything pending before ctx ends: what a process that stops owes the
+// store.
+func (b *laneBook) drain(ctx context.Context) error {
+	if !b.store {
+		return nil
+	}
+	for wait := 100 * time.Millisecond; ; wait = min(2*wait, time.Second) {
+		if b.flush(true) == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+}
+
+// ── a seat ───────────────────────────────────────────────────────────────────
+
+// settle counts n nano-dollars the call's answer spent and gives back what the seat
+// holds, once every provider it raced is counted too. Only the first settle closes it;
+// a later one only counts.
+func (s *seat) settle(n int64) {
+	if s == nil {
+		return
+	}
+	b := s.book
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.turn(b.now())
+	b.count(s.org, n)
+	s.done = true
+	if s.racing <= 0 {
+		b.close(s)
+	}
+}
+
+// race says n more providers are raced for the call: each is counted by lost, and the
+// seat holds until they are.
+func (s *seat) race(n int) {
+	if s == nil {
+		return
+	}
+	s.book.mu.Lock()
+	s.racing += n
+	s.book.mu.Unlock()
+}
+
+// lost counts n nano-dollars a raced provider that did not serve the answer spent. It
+// gives nothing back: the seat closes once the answer and every loser are counted.
+func (s *seat) lost(n int64) {
+	if s == nil {
+		return
+	}
+	b := s.book
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.turn(b.now())
+	b.count(s.org, n)
+	if s.racing--; s.racing <= 0 && s.done {
+		b.close(s)
+	}
+}
+
+// end gives back what the seat holds when its handler is done, unless a job kept it
+// (keep) or a raced provider is still to be counted.
 func (s *seat) end() {
 	if s == nil {
 		return
 	}
 	s.book.mu.Lock()
 	defer s.book.mu.Unlock()
-	if !s.kept {
+	if s.kept {
+		return
+	}
+	s.done = true
+	if s.racing <= 0 {
 		s.book.close(s)
 	}
 }
@@ -479,6 +761,41 @@ func (s *seat) keep() {
 	s.book.mu.Lock()
 	s.kept = true
 	s.book.mu.Unlock()
+}
+
+// touch says the client took what the call's stream wrote.
+func (s *seat) touch() { s.last.Store(s.book.now().UnixNano()) }
+
+// paced is fn writing a stream through a writer that touches the seat each time the
+// client takes a chunk, so a stream nobody reads gives its hold back (lapse). fn
+// itself off the paid lane.
+func (s *seat) paced(fn func(*bufio.Writer)) func(*bufio.Writer) {
+	if s == nil {
+		return fn
+	}
+	return func(bw *bufio.Writer) {
+		s.touch()
+		w := bufio.NewWriter(pace{bw, s})
+		fn(w)
+		_ = w.Flush()
+	}
+}
+
+// pace sends each chunk on to the client at once and touches its seat once it went.
+type pace struct {
+	w *bufio.Writer
+	s *seat
+}
+
+func (p pace) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
+	if err == nil {
+		err = p.w.Flush()
+	}
+	if err == nil {
+		p.s.touch()
+	}
+	return n, err
 }
 
 // spendCap is the most a Hanzo family may spend on paid upstream for a covered request
@@ -505,96 +822,4 @@ func laneSpend(r *usageRecord) int64 {
 		n = max(n, *m.CostNano)
 	}
 	return n
-}
-
-// ── the estimate ────────────────────────────────────────────────────────────
-
-// pictureTokens is what an inline image is counted as in a prompt: about what a vendor
-// bills for one picture, rather than its encoded bytes.
-const pictureTokens = 2000
-
-// audioBytesPerSecond reads a recording's length from its size at 16 kbit/s, a lower
-// rate than any speech codec sends, so no recording is read as shorter than it is.
-const audioBytesPerSecond = 2000
-
-// estimate is the most a call to model at c's path can cost, in nano-dollars: what
-// the paid lane holds for it. A conversation is its prompt (promptTokens) and the
-// completion ceiling its handler enforces (reserveCompletionTokens), for each
-// provider fast mode races it to; images and video are their unit prices; speech its
-// characters, a transcription its recording's length; anything else its body as a
-// prompt. Tokens are priced at the most of the model's list price and its cost.
-func estimate(c *zip.Ctx, model string) int64 {
-	path := strings.ToLower(strings.TrimRight(c.Path(), "/"))
-	body := c.Body()
-	var n int64
-	switch {
-	case ChatPath(path):
-		n = worst(model, promptTokens(body), reserveCompletionTokens(completionAsked(body)))
-		if (&ApiController{Ctx: c}).wantsFast() {
-			n *= fastWidth
-		}
-	case path == "/v1/images/generations":
-		var r struct {
-			N int `json:"n"`
-		}
-		_ = json.Unmarshal(body, &r)
-		n = imageCostCents(model, max(r.N, 1)) * nanoPerCent
-	case path == "/v1/videos/generations":
-		n = videoCostCents(model, 1) * nanoPerCent
-	case path == "/v1/audio/speech":
-		var r struct {
-			Input string `json:"input"`
-		}
-		_ = json.Unmarshal(body, &r)
-		n = ttsCostNano(model, len(r.Input))
-	case path == "/v1/audio/transcriptions", path == "/v1/audio/translations", strings.HasPrefix(path, transcriptPath):
-		n = sttCostNano(model, float64(len(body))/audioBytesPerSecond)
-	default:
-		n = worst(model, promptTokens(body), 0)
-	}
-	return max(n, 1)
-}
-
-// worst prices prompt and completion tokens of model at the most of its list price and
-// its cost.
-func worst(model string, prompt, completion int) int64 {
-	n := tokenCostNano(model, prompt, completion, 0, 0)
-	if c := tokenProviderCostNano(model, prompt, completion, 0, 0); c != nil {
-		n = max(n, *c)
-	}
-	return n
-}
-
-// promptTokens is what a request body may count as a prompt, in tokens: a token for
-// every three bytes — a CJK character is one token in three bytes, English text one in
-// four — and each inline image (a data: URL) a picture's worth.
-func promptTokens(body []byte) int {
-	text, pictures := len(body), 0
-	for rest := body; ; {
-		i := bytes.Index(rest, []byte(`"data:`))
-		if i < 0 {
-			break
-		}
-		rest = rest[i+1:]
-		j := bytes.IndexByte(rest, '"')
-		if j < 0 {
-			j = len(rest)
-		}
-		text -= j
-		pictures++
-		rest = rest[j:]
-	}
-	return max(text, 0)/3 + 1 + pictures*pictureTokens
-}
-
-// completionAsked is the completion ceiling a conversation names, under any of its
-// dialects' keys; 0 when it names none.
-func completionAsked(body []byte) int {
-	var r struct {
-		MaxTokens           int `json:"max_tokens"`
-		MaxCompletionTokens int `json:"max_completion_tokens"`
-		MaxOutputTokens     int `json:"max_output_tokens"`
-	}
-	_ = json.Unmarshal(body, &r)
-	return cmp.Or(r.MaxTokens, r.MaxCompletionTokens, r.MaxOutputTokens)
 }
