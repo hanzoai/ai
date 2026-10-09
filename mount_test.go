@@ -28,7 +28,11 @@ package ai
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/hanzoai/ai/object"
+	"github.com/zap-proto/zip"
 )
 
 // A request that arrives before the app is built is answered 503, not 500 and not a
@@ -46,5 +50,33 @@ func TestHandlerRefusesBeforeTheAppIsBuilt(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 before the runtime exists", rec.Code)
+	}
+}
+
+// A program in this process states the customer its call is for, and the app reads
+// it off the request; a request from the network states none.
+func TestForStatesTheCaller(t *testing.T) {
+	app := zip.New(zip.Config{DisableStartupMessage: true})
+	app.Raw(http.MethodPost, "/v1/embeddings", func(c *zip.Ctx) error {
+		who, ok := object.RequestCaller(c.Fiber().RequestCtx())
+		if !ok {
+			return c.Bytes(http.StatusOK, []byte("none"))
+		}
+		return c.Bytes(http.StatusOK, []byte(who.Org+" "+who.Person+" "+who.Project+" "+string(c.Body())))
+	})
+	prev := built.Load()
+	built.Store(app)
+	t.Cleanup(func() { built.Store(prev) })
+
+	rec := httptest.NewRecorder()
+	For(object.Caller{Org: "globex", Person: "globex/ada", Project: "search"}).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"input":"hi"}`)))
+	if rec.Code != http.StatusOK || rec.Body.String() != `globex globex/ada search {"input":"hi"}` {
+		t.Fatalf("For answered %d %q", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{}`)))
+	if rec.Body.String() != "none" {
+		t.Fatalf("a request through Handler stated %q", rec.Body.String())
 	}
 }

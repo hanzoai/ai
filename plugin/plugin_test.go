@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/ai/plugin"
 	"github.com/hanzoai/ai/internal/stub"
+	"github.com/hanzoai/ai/plugin"
 )
 
 // relay registers the stub plugin as name, relaying to upstream, and returns a

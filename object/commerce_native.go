@@ -81,7 +81,8 @@ type UsageEvent struct {
 	// provider states no cost. A free call has a cost too, and it is ours.
 	CostUSD string
 	// PaidBy names who pays when it is not the wallet: "plan" (the caller's plan or
-	// a free cap covered it) or "hanzo" (a free model, absorbed by the platform).
+	// a free cap covered it), "caller" (a program in this process charges the
+	// customer itself; Caller) or "hanzo" (a free model, absorbed by the platform).
 	// Empty: the wallet pays, and the ledger records which part of it did.
 	PaidBy string
 	// Key is the API key the call arrived on (GenAIAttribution.Key), "<org>/<id>":
@@ -146,6 +147,7 @@ const (
 	PaysPrepaid = "prepaid" // the wallet, cash first
 	PaysCredits = "credits" // the wallet's granted credit
 	PaysFree    = "free"    // a capped free request: no wallet is asked
+	PaysCaller  = "caller"  // a program in this process meters it itself (Caller): no wallet is asked
 )
 
 // LimitGrant is the host's answer for an admitted request: who pays, in which class,
@@ -174,10 +176,10 @@ type LimitGrant struct {
 	Release func()
 }
 
-// Covered reports whether the wallet is left out of the request: the plan or a free
-// cap pays for it.
+// Covered reports whether the wallet is left out of the request: the plan, a free
+// cap or the program that made the call pays for it.
 func (g *LimitGrant) Covered() bool {
-	return g != nil && (g.Pays == PaysPlan || g.Pays == PaysFree)
+	return g != nil && (g.Pays == PaysPlan || g.Pays == PaysFree || g.Pays == PaysCaller)
 }
 
 // LimitHit is why the host refuses a request.

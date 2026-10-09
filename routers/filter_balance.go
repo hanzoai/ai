@@ -275,6 +275,13 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	//
 	// A policy that cannot be read decides nothing: the wallet and the free allowance
 	// below gate the request exactly as they would with no plans at all.
+	// A CALL A PROGRAM IN THIS PROCESS MADE FOR A CUSTOMER (object.Caller) is metered
+	// by that program, which charges the customer for it: it debits no wallet here —
+	// the deployment's whose token carried it least of all — and is seated on the lane
+	// as the customer's.
+	if who, ok := object.CallerOf(c.Context()); ok && model != "" {
+		return callerPays(c, who, subject, model)
+	}
 	if limits := object.Limits(); limits != nil && model != "" && controllers.Entitled(path) {
 		for try := 0; try < 3; try++ {
 			priced := !costsNothing(model, namespace)
@@ -396,6 +403,21 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		return BalanceGateFilter(c)
 	}
 	return denied(c, deny, subject, namespace, balance, path)
+}
+
+// callerPays serves a call a program in this process made for who, covered by that
+// program's own meter: the wallet is never asked, the paid lane seats it as who's,
+// and its usage is recorded to who's org with nothing to debit (PaidBy "caller").
+func callerPays(c *zip.Ctx, who object.Caller, subject, model string) error {
+	g := &object.LimitGrant{
+		Plan: object.PaysCaller, Pays: object.PaysCaller, Class: controllers.ClassOf(model),
+		Settle: func(int64) {},
+	}
+	controllers.Seat(c, g, who.Org, subject, model)
+	defer controllers.Unseat(c)
+	usage(c, g)
+	controllers.Cover(c, g)
+	return c.Continue()
 }
 
 // fallBack hands a chat request to model to and says so on the response: the lane

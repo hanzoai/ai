@@ -1156,12 +1156,16 @@ func person(ctx context.Context, u *iam.User) string {
 	return ""
 }
 
-// tenant is the org a model family is told a call is for (X-Org-Id): the org of the
-// person a machine credential acts for (person), else the org the request bills, else
-// the caller's own. A sibling's call over the plane is the platform working for that
+// tenant is the org a model family is told a call is for (X-Org-Id): the customer a
+// program in this process stated (object.Caller), else the org of the person a
+// machine credential acts for (person), else the org the request bills, else the
+// caller's own. A sibling's call over the plane is the platform working for that
 // person's org, and the family keeps its per-org share by it. Money is not moved by
 // it: ai settles the call, and the family is told so (X-Hanzo-Fronted-By).
 func tenant(ctx context.Context, org string, u *iam.User) string {
+	if who, ok := object.CallerOf(ctx); ok {
+		return who.Org
+	}
 	if o, _, _ := strings.Cut(person(ctx, u), "/"); o != "" {
 		return o
 	}
@@ -1253,6 +1257,8 @@ func (r *usageRecord) shownID() string {
 // that covered it, or the platform for a free model it absorbs. "" is the wallet.
 func paidBy(record *usageRecord) string {
 	switch {
+	case record.plan != nil && record.plan.Pays == object.PaysCaller:
+		return object.PaysCaller
 	case record.plan != nil:
 		return object.PaysPlan
 	case usageFree(record):

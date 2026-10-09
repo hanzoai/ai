@@ -265,7 +265,7 @@ func planPays(g *object.LimitGrant) bool {
 		return false
 	}
 	switch g.Pays {
-	case object.PaysPlan, object.PaysPrepaid, object.PaysCredits:
+	case object.PaysPlan, object.PaysPrepaid, object.PaysCredits, object.PaysCaller:
 		return true
 	}
 	return false

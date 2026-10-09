@@ -520,3 +520,40 @@ func TestTheFamilyIsToldTheOrgACallIsFor(t *testing.T) {
 		}
 	}
 }
+
+// A call a program in this process made for a customer (object.Caller) is that
+// customer's: the family is told the customer's org, the usage is recorded on the
+// customer's books with the person who asked, and nothing is debited — the program
+// charges the customer itself (PaidBy "caller"), and the deployment's wallet is not
+// the one that pays.
+func TestACallersCallIsTheCustomersAndDebitsNothing(t *testing.T) {
+	z := zenServiceAt(t, true)
+	got := ledger(t)
+	deployment := &iam.User{Owner: "hanzo", Name: "cloud", Type: "application"}
+	who := object.Caller{Org: "globex", Person: "globex/ada", Project: "search"}
+	grant := &object.LimitGrant{Plan: object.PaysCaller, Pays: object.PaysCaller, Settle: func(int64) {}}
+
+	body := []byte(`{"model":"zen-embedding","input":"hello"}`)
+	c := visit(http.MethodPost, "/v1/embeddings")
+	c.SetContext(object.WithGenAIAttribution(object.WithCaller(c.Context(), who), object.GenAIAttribution{Org: who.Org, User: who.Person, Project: who.Project}))
+	Cover(c.Ctx, grant)
+	c.Fiber().Request().SetBody(body)
+	if org := c.billingOrg(deployment); org != "globex" {
+		t.Fatalf("billed to %q, want the customer's org", org)
+	}
+	if out := c.pipeToFamily(zenFam, "embeddings", "openai", "zen-embedding", body, false, 0, deployment.Owner, deployment, true, nil, time.Now()); out != nil {
+		t.Fatalf("refused %+v", out)
+	}
+	settled(t)
+	if _, orgs := z.heard(); len(orgs) == 0 || orgs[len(orgs)-1] != "globex" {
+		t.Errorf("the family was told %v, want globex", orgs)
+	}
+	ev := got()
+	if len(ev) != 1 {
+		t.Fatalf("recorded %d usage events, want 1", len(ev))
+	}
+	e := ev[0]
+	if e.Namespace != "globex" || !e.Plan || e.PaidBy != object.PaysCaller || e.Actor != "globex/ada" {
+		t.Errorf("recorded %+v, want globex's books, covered, paid by the caller, for globex/ada", e)
+	}
+}

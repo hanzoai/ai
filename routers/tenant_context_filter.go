@@ -62,6 +62,11 @@ func TenantContextFilter(c *zip.Ctx) error {
 	userID := getTenantHeader(c, "X-User-Id")
 	projectID := getTenantHeader(c, "X-Project-Id")
 	env := getTenantHeader(c, "X-Environment")
+	// A call a program in this process made for a customer is that customer's: the
+	// org, person and project it stated (object.Caller), never a header.
+	if who, ok := object.CallerOf(c.Context()); ok {
+		orgID, userID, projectID = who.Org, who.Person, who.Project
+	}
 
 	if orgID != "" {
 		c.Locals(tenantContextOrgIDKey, orgID)

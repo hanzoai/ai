@@ -60,6 +60,9 @@ func InstallFilters(app *zip.App) {
 	// FIRST of everything that runs a handler, so it covers the filters below as well
 	// as the handlers. See recover.go for why this is a move rather than an addition.
 	app.Use(zip.H(Recovered))
+	// A call a program in this process made for a customer carries its caller
+	// (object.Caller) from here on, ahead of everything that bills or attributes it.
+	app.Use(zip.H(CallerFilter))
 	app.Use(zip.H(CorsFilter))
 	// Live request-geo tap: folds each inbound hit into the in-process traffic
 	// aggregate (edge country/region + service class only — never an IP). A pure

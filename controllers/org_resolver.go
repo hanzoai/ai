@@ -236,6 +236,11 @@ func (c *ApiController) billingOrg(user *iam.User) string {
 	if user.Owner == publicOrg {
 		return publicOrg
 	}
+	// A call a program in this process made for a customer is billed to that
+	// customer's books, at nothing: the program charges them itself (object.Caller).
+	if who, ok := object.CallerOf(c.Context()); ok {
+		return who.Org
+	}
 	requested := strings.TrimSpace(c.Header("X-Org-Id"))
 	if requested == "" || requested == user.Owner {
 		// Dominant path: no switch asked for. Byte-identical to keying on

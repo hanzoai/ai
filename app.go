@@ -28,10 +28,13 @@
 package ai
 
 import (
+	"io"
+	"net"
 	"net/http"
 	"sync/atomic"
 
 	luxlog "github.com/luxfi/log"
+	"github.com/valyala/fasthttp"
 	"github.com/zap-proto/fiber/v3/middleware/adaptor"
 	"github.com/zap-proto/zip"
 
@@ -204,6 +207,56 @@ func Handler() http.Handler {
 			return
 		}
 		adaptor.FiberApp(app.Fiber())(w, r)
+	})
+}
+
+// For is Handler for a call a program in this process makes for caller: the same
+// app and filters, the call attributed to caller's org, person and project and
+// charged to no wallet here, because the program that states caller meters it and
+// charges the customer itself (object.Caller). Nothing a request carries can state
+// a caller; only code linked into this process can call For.
+//
+// The answer is written whole: a streamed one is read to its end first.
+func For(caller object.Caller) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		app := built.Load()
+		if app == nil {
+			http.Error(w, "ai runtime not initialized", http.StatusServiceUnavailable)
+			return
+		}
+		limit := int64(app.Fiber().Config().BodyLimit)
+		body, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if int64(len(body)) > limit {
+			http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+			return
+		}
+		var req fasthttp.Request
+		req.Header.SetMethod(r.Method)
+		req.SetRequestURI(r.URL.RequestURI())
+		req.SetHost(r.Host)
+		for k, vs := range r.Header {
+			for _, v := range vs {
+				req.Header.Add(k, v)
+			}
+		}
+		req.SetBody(body)
+		var fctx fasthttp.RequestCtx
+		fctx.Init(&req, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}, nil)
+		object.SetCaller(&fctx, caller)
+		app.Fiber().Handler()(&fctx)
+		for k, v := range fctx.Response.Header.All() {
+			w.Header().Add(string(k), string(v))
+		}
+		w.WriteHeader(fctx.Response.StatusCode())
+		if s := fctx.Response.BodyStream(); s != nil {
+			_, _ = io.Copy(w, s)
+			return
+		}
+		_, _ = w.Write(fctx.Response.Body())
 	})
 }
 

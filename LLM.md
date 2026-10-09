@@ -585,6 +585,40 @@ same request id, billed nothing (`failoverRows`), as the in-process zen filed th
 A test that drives this whole contract stands up `zenService` in
 `family_service_test.go`.
 
+## A family in process: wasm2go plugins (`plugin/`)
+
+A family service may instead run in this process: its Rust core built for
+wasm32-wasip1, translated to a Go package by wasm2go (github.com/hanzoai/wasm2go), and
+registered with `plugin.Register(plugin.Plugin{Name, New, Config, Keys, Reply, Client})`.
+The address decides: `ZEN_URL=plugin://zen` is the plugin registered as `zen`, any http(s)
+address the service over the network. ai's family, discovery and decision clients carry
+the scheme (`reaching`), so relay, billing, failover rows, caching and attribution are the
+HTTP path's, unchanged. One transport per hop: there is no third.
+
+- **ABI** (`plugin/plugin.go`): exports `hz_alloc`, `hz_free`, `hz_init`, `hz_begin`,
+  `hz_poll`, `hz_cancel`; imports (module `hanzo`) `hz_open`, `hz_head`, `hz_read`,
+  `hz_close`, `hz_reply`, `hz_write`, `hz_end`, `hz_now`. Metas are JSON: `Ask` (method,
+  path, org, request id, capabilities, capture, spend, fronted, headers), `Reply` (status,
+  headers, tells, declared trailers), `End` (tells, cogs, cost), `Open`, `Head`.
+- **The host makes every upstream request** (`hz_open`) and resolves the key the plugin
+  names (`Keys`, KMS-fed); no key enters plugin memory, and `Sandbox` gives its WASI no
+  environment, files, sockets or processes. One instance answers every call; a trap ends
+  the calls in flight and the next request gets a fresh instance.
+- **Back-pressure**: a 64 KiB window each side, so a caller that stops reading stops the
+  plugin and its upstream. A reply not given within `Reply` ends the call.
+- **Tells** cross as the X-Hanzo-* headers a service sends; `End` arrives as trailers.
+- Tested against `internal/stub` (no_std Rust, built the way every plugin is).
+
+**Acceptance bar before a plugin serves production** (owner review): (1) it answers as the
+native Rust service on the whole conformance set (the zen suite's 25 scripted cases byte
+for byte, and streaming); (2) the amd64 and arm64 builds agree (dgx arm64, evo amd64);
+(3) CPU, RSS, allocation rate and per-request latency measured in the cloud pod's limits,
+plugin against today's relay; (4) Memory64 only for a module past 4 GiB, and then growth
+past 4 GiB and the bounds around the 32-bit wrap tested; (5) nothing untrusted runs
+through wasm2go: guest code stays in the hanzoai/wasm sandbox, which refuses Memory64.
+wasm2go is ahead-of-time translation: it removes the VM's overhead, not the module's own
+execution cost.
+
 ## Strict mode — served unchanged or refused (`controllers/strict.go`)
 
 `X-Hanzo-Strict: 1` on `/v1/chat/completions` asks for the request to reach the
@@ -1117,6 +1151,25 @@ window, cap or share. A stream is served from its first byte.
 and the last-resort `Allow` floor: with an org enabled-models allowlist, exactly
 what it names; without one, only Hanzo classes (ours + free). A premium model
 answers `auto` only when the org allowlisted it; otherwise a caller names it.
+
+## A call a program in this process makes for a customer (`object.Caller`, `ai.For`)
+
+A sibling app's embeddings, rerank or completion bought over the host's plane (cloud
+`apps/ai/chat_rpc.go`) reaches ai through `ai.For(object.Caller{Org, Person, Project})`:
+the same app and filters, with the caller stated as a fasthttp user value, which only
+code in this process can write. `CallerFilter` moves it onto the context. Then:
+
+- **Attribution is the customer's**: `TenantContextFilter` takes org, person and
+  project from the caller, never headers; `billingOrg` is the caller's org, so the
+  usage row is on the customer's books; `tenant` tells a family the caller's org.
+- **Billing happens once, by the program**: the program meters the call and charges
+  the customer itself (cloud `metered_ai.go`), so the gate covers it with a
+  `PaysCaller` grant (`callerPays`): no wallet is asked, the deployment's whose token
+  carried it least of all, the plan is not asked, the paid lane seats it as the
+  customer's, and the usage event is `Plan: true`, `PaidBy: "caller"` (no debit),
+  priced as usual for the record.
+- A request from the network states no caller whatever headers it carries
+  (`TestARequestFromTheNetworkStatesNoCaller`).
 
 ## The paid lane: ONE switch, then the plan that pays
 
