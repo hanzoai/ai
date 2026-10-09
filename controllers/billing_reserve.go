@@ -152,28 +152,39 @@ const (
 // A normal client cap (0 < mt <= maxReserveCompletionTokens) is preserved as-is, and
 // a larger one is lowered to maxReserveCompletionTokens, so the proxied (tool/stream)
 // upstream can never emit an unbounded completion. A request that names no cap gets
-// reserveCompletionFloor — except on a paid Hanzo tier (thinks), whose models think
-// before they answer and spend the ceiling on it: there a request that names none
-// gets maxReserveCompletionTokens, or the answer is all reasoning, cut at `length`,
-// and billed. The caller MUST assign this back to request.MaxTokens before the
+// reserveCompletionFloor — except on a paid tier of Zen or Enso (thinks), whose
+// models think before they answer and spend the ceiling on it: there a request that
+// names none gets maxReserveCompletionTokens, or the answer is all reasoning, cut at
+// `length`, and billed. Whatever the ceiling, it is never above the most one answer
+// of model may hold where its catalog states it (gpt-4o: 16,384), which its vendor
+// would refuse. The caller MUST assign this back to request.MaxTokens before the
 // upstream call.
 func clampMaxTokens(model string, maxTokens int) int {
+	c := reserveCompletionFloor
 	switch {
 	case maxTokens > maxReserveCompletionTokens:
-		return maxReserveCompletionTokens
+		c = maxReserveCompletionTokens
 	case maxTokens > 0:
-		return maxTokens
+		c = maxTokens
 	case thinks(model):
-		return maxReserveCompletionTokens
+		c = maxReserveCompletionTokens
 	}
-	return reserveCompletionFloor
+	if m, ok := familyLookup(model); ok && m.MaxOut > 0 && c > m.MaxOut {
+		c = m.MaxOut
+	}
+	return c
 }
 
-// thinks reports whether model is a paid tier of a Hanzo family: priced, so served
-// by models that always reason. Read from the discovery snapshot, never a refresh.
+// thinks reports whether model is a paid tier of Zen or Enso: priced, so served by
+// models that always reason. A model resold from another vendor's catalog is not
+// one. Read from the discovery snapshot, never a refresh.
 func thinks(model string) bool {
-	m, ok := familyLookup(model)
-	return ok && m.priced()
+	for _, f := range []*modelFamily{zenFam, ensoFam} {
+		if m, ok := f.lookup(model); ok {
+			return m.priced()
+		}
+	}
+	return false
 }
 
 // reserveCompletionTokens is the completion-token count to RESERVE for: the larger

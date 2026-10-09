@@ -204,6 +204,40 @@ func TestAPaidTierThatReasonsGetsRoomToAnswer(t *testing.T) {
 	}
 }
 
+// A model resold from OpenRouter's catalog is not a Hanzo tier that reasons: one
+// that names no ceiling gets the floor. And no ceiling is ever above the most one
+// answer may hold where the catalog states it, which the vendor would refuse.
+func TestAResoldModelKeepsTheFloorAndItsOwnMost(t *testing.T) {
+	gpt4o := `{"id":"openai/gpt-4o","context_length":128000,` +
+		`"architecture":{"input_modalities":["text","image"],"output_modalities":["text"]},` +
+		`"pricing":{"prompt":"0.0000025","completion":"0.00001"},"top_provider":{"max_completion_tokens":16384},` +
+		`"supported_parameters":["tools"]}`
+	listingVendor(t, listOf(gpt4o, laguna))
+	syncNow(t)
+	openrouterFam.mu.Lock()
+	openrouterFam.loaded = false
+	openrouterFam.mu.Unlock()
+	openrouterFam.serves("openai/gpt-4o")
+	if m, ok := familyLookup("openai/gpt-4o"); !ok || !m.priced() || m.MaxOut != 16384 {
+		t.Fatalf("the resale catalog was not loaded: %+v %v", m, ok)
+	}
+	for _, c := range []struct {
+		model    string
+		in, want int
+	}{
+		{"openai/gpt-4o", 0, reserveCompletionFloor},
+		{"openai/gpt-4o", 30_000, 16_384},
+		{"openai/gpt-4o", 100_000_000, 16_384},
+		{"openai/gpt-4o", 2_000, 2_000},
+		{"poolside/laguna-s-2.1", 0, reserveCompletionFloor},
+		{"poolside/laguna-s-2.1", 100_000_000, maxReserveCompletionTokens},
+	} {
+		if got := clampMaxTokens(c.model, c.in); got != c.want {
+			t.Errorf("clampMaxTokens(%q, %d) = %d, want %d", c.model, c.in, got, c.want)
+		}
+	}
+}
+
 // TestReserveCoversModelLayerCeiling: the QueryText pipeline caps completion at
 // reserveCompletionFloor regardless of a low client cap, so the reservation MUST
 // cover that ceiling even when the client capped lower.
