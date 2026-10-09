@@ -277,6 +277,18 @@ func tierNamespace(subject string) string {
 	return subject
 }
 
+// PaidCustomer reports whether a program in this process may seat a call it makes for
+// who on model's paid lane. Free users get free models: on a priced tier of Zen or
+// Enso the customer must be a confirmed paying subscriber, read as the funding gate
+// reads one (familyFundingAllowed: a commerce plan that is not free or a trial,
+// failing closed when the plan cannot be read). Any other model is not this rule's.
+func PaidCustomer(who object.Caller, model string) bool {
+	if !thinks(model) {
+		return true
+	}
+	return familyFundingAllowed(account.PayerOf(who.Org, who.Person).Subject(), model)
+}
+
 // ── the funding gate: solvency, not upsell ───────────────────────────────────
 
 // familyFundingAllowed reports whether the caller may spend a PREPAID (real-cash)

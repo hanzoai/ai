@@ -39,7 +39,7 @@ type zenService struct {
 	// barred refuses every inference call 401, as a family does a credential it
 	// does not hold.
 	barred bool
-	payers  []string // the X-Hanzo-Payer each inference call carried
+	payers []string // the X-Hanzo-Payer each inference call carried
 }
 
 const zenServiceToken = "admin-token"

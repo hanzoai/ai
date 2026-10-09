@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
 )
@@ -72,5 +73,28 @@ func TestACallersCallIsTheCustomers(t *testing.T) {
 	attr := object.GenAIAttributionFromContext(p.left())
 	if attr.Org != "globex" || attr.User != "globex/ada" || attr.Project != "search" {
 		t.Fatalf("attributed to %+v, want globex, globex/ada, search", attr)
+	}
+}
+
+// A program's call for a customer is seated on the paid lane only for a customer the
+// rule says pays (controllers.PaidCustomer): free users get free models, whoever
+// asks for them.
+func TestAProgramsCallSeatsOnlyForAPayingCustomer(t *testing.T) {
+	paidSwitch(t)
+	gateWith(t, 0)
+	policy(t, nil, nil)
+	prev := paidCustomer
+	t.Cleanup(func() { paidCustomer = prev })
+	for _, pays := range []bool{false, true} {
+		paidCustomer = func(object.Caller, string) bool { return pays }
+		p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").
+			body([]byte(`{"model":"enso-ultra","messages":[{"role":"user","content":"hi"}]}`)).
+			through(stated(object.Caller{Org: "hanzo", Person: "hanzo/alice"}), CallerFilter, BalanceGateFilter)
+		if p.status() != http.StatusOK {
+			t.Fatalf("pays %v: status %d (%s)", pays, p.status(), p.said())
+		}
+		if seated := !controllers.FreeOnlyFor(p.left()); seated != pays {
+			t.Errorf("a customer who pays %v was seated on the paid lane %v", pays, seated)
+		}
 	}
 }

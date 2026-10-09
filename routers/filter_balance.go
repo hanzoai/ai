@@ -453,12 +453,21 @@ func callerPays(c *zip.Ctx, who object.Caller, subject, model string) error {
 		Plan: object.PaysCaller, Pays: object.PaysCaller, Class: controllers.ClassOf(model),
 		Settle: func(int64) {},
 	}
-	controllers.Seat(c, g, who.Org, subject, model)
+	// Free users get free models, whoever asks for them: a priced Hanzo tier seats a
+	// program's call only for a customer with a paid plan. Unseated, the family
+	// answers from its free models.
+	if paidCustomer(who, model) {
+		controllers.Seat(c, g, who.Org, subject, model)
+	}
 	defer controllers.Unseat(c)
 	usage(c, g)
 	controllers.Cover(c, g)
 	return c.Continue()
 }
+
+// paidCustomer is controllers.PaidCustomer, indirected so the gate's tests state who
+// pays.
+var paidCustomer = controllers.PaidCustomer
 
 // fallBack hands a chat request to model to and says so on the response: the lane
 // that answers (X-Hanzo-Fallback), why (X-Hanzo-Usage-Reason, the refusal's own
