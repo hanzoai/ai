@@ -79,33 +79,39 @@ func TestUnnamedCallerStillResolvesAFamilyRoute(t *testing.T) {
 	}
 }
 
-// A program's call for a customer seats on a priced Zen or Enso tier only for a
-// customer with a paid plan: free users get free models, whoever asks for them.
+// A program's call for a customer seats on a priced model — a Zen or Enso tier or
+// another vendor's — only for a customer with a paid plan: free users get free
+// models, whoever asks for them.
 func TestAProgramsCallForAFreeCustomerIsNeverPaid(t *testing.T) {
 	const sku = "enso-ultra-test-paid"
 	t.Setenv(ensoFam.urlKey, "http://enso.invalid")
 	saved, savedLoaded, savedAt := ensoFam.byID, ensoFam.loaded, ensoFam.fetchedAt
 	t.Cleanup(func() { ensoFam.byID, ensoFam.loaded, ensoFam.fetchedAt = saved, savedLoaded, savedAt })
-	ensoFam.byID = map[string]zenModel{sku: {ID: sku, MinTier: "paid", Funding: "prepaid", Base: zenTier{In: decimal.MustParse("6.6"), Out: decimal.MustParse("33")}}}
+	ensoFam.byID = map[string]zenModel{
+		sku:              {ID: sku, MinTier: "paid", Funding: "prepaid", Base: zenTier{In: decimal.MustParse("6.6"), Out: decimal.MustParse("33")}},
+		"enso-free-test": {ID: "enso-free-test"},
+	}
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 	prev := familyTier
 	t.Cleanup(func() { familyTier = prev })
 	plans := map[string]string{"hanzo/alice": "free", "hanzo/bob": "max-20x", "acme": "team"}
 	familyTier = func(subject string) string { return plans[subject] }
-	for _, c := range []struct {
-		who  object.Caller
-		want bool
-	}{
-		{object.Caller{Org: "hanzo", Person: "hanzo/alice"}, false},
-		{object.Caller{Org: "hanzo", Person: "hanzo/bob"}, true},
-		{object.Caller{Org: "acme", Person: "acme/carol"}, true},
-		{object.Caller{Org: "hanzo", Person: "hanzo/nobody"}, false},
-	} {
-		if got := PaidCustomer(c.who, sku); got != c.want {
-			t.Errorf("PaidCustomer(%+v) = %v, want %v", c.who, got, c.want)
+	for _, model := range []string{sku, "anthropic/claude-opus-5.5"} {
+		for _, c := range []struct {
+			who  object.Caller
+			want bool
+		}{
+			{object.Caller{Org: "hanzo", Person: "hanzo/alice"}, false},
+			{object.Caller{Org: "hanzo", Person: "hanzo/bob"}, true},
+			{object.Caller{Org: "acme", Person: "acme/carol"}, true},
+			{object.Caller{Org: "hanzo", Person: "hanzo/nobody"}, false},
+		} {
+			if got := PaidCustomer(c.who, model); got != c.want {
+				t.Errorf("PaidCustomer(%+v, %s) = %v, want %v", c.who, model, got, c.want)
+			}
 		}
 	}
-	if !PaidCustomer(object.Caller{Org: "hanzo", Person: "hanzo/alice"}, "enso-free") {
+	if !PaidCustomer(object.Caller{Org: "hanzo", Person: "hanzo/alice"}, "enso-free-test") {
 		t.Error("a free model was refused a free customer")
 	}
 }

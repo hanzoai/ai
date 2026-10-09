@@ -455,9 +455,10 @@ func callerPays(c *zip.Ctx, who object.Caller, subject, model string) error {
 		Plan: object.PaysCaller, Pays: object.PaysCaller, Class: controllers.ClassOf(model),
 		Settle: func(int64) {},
 	}
-	// Free users get free models, whoever asks for them: a priced Hanzo tier seats a
-	// program's call only for a customer with a paid plan. Unseated, the family
-	// answers from its free models.
+	// Free users get free models, whoever asks for them: a priced model seats a
+	// program's call only for a customer with a paid plan. Unseated, a Hanzo family
+	// answers from its free models and any other priced model is refused the paid
+	// lane, as for a free caller of its own.
 	if paidCustomer(who, model) {
 		controllers.Seat(c, g, who.Org, subject, model)
 	}
