@@ -234,7 +234,11 @@ func (f *modelFamily) sync(ctx context.Context, p *object.Provider, now time.Tim
 	if err := object.AddListingEvents(s.events); err != nil {
 		return nil, err
 	}
-	object.PublishListing(ctx, s.events)
+	// A sync that seeds an empty store changed nothing anyone was told of: its rows
+	// are recorded, and the bus hears from the next sync on.
+	if len(rows) > 0 {
+		object.PublishListing(ctx, s.events)
+	}
 	if err := object.DropServed(now.Add(-servedKeep)); err != nil {
 		log.Warning("%s listing: served hours not dropped: %v", f.name, err)
 	}

@@ -116,8 +116,8 @@ func TestASyncKeepsEveryModelAsListed(t *testing.T) {
 			t.Errorf("%s free = %v", r.ID, r.Free)
 		}
 	}
-	if len(*told) != 3 {
-		t.Errorf("the bus was told %d changes, want 3 new models", len(*told))
+	if len(*told) != 0 {
+		t.Errorf("a sync that seeded the store told the bus %d changes, want none", len(*told))
 	}
 
 	openrouterFam.mu.Lock()
@@ -188,8 +188,8 @@ func TestASyncRecordsWhatChanged(t *testing.T) {
 	if kinds["anthropic/claude-haiku-5.5"] != object.ListingBack || kinds["google/gemma-4-31b-it:free"] != object.ListingFree || len(s.events) != 2 {
 		t.Errorf("the third sync read %+v", s.events)
 	}
-	if len(*told) != 3+3+2 {
-		t.Errorf("the bus was told %d changes, want 8", len(*told))
+	if len(*told) != 3+2 {
+		t.Errorf("the bus was told %d changes, want the 5 after the seeding sync", len(*told))
 	}
 
 	evs, err := object.ListingEvents("openrouter", "google/gemma-4-31b-it:free", 10)

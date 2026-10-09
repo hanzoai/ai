@@ -1217,7 +1217,8 @@ rows, and the free lane reads the same rows.
 - **Changes**: `object.ListingEvent` rows `new`, `back`, `gone`, `price`, `free`
   (priced → free), `paid` (free → priced), with `Was`/`Now` price lists, then
   `object.PublishListing` (the host installs `SetListingPublisher`: cloud puts them on
-  its bus). A gone model leaves the catalog and is served no longer; its row and
+  its bus). A sync that seeds an empty store records its rows and tells the bus
+  nothing. A gone model leaves the catalog and is served no longer; its row and
   history stay.
 - **Billing a resold SKU** (`zenModel.bill`): tokens at the tier the prompt reaches
   (`min_prompt_tokens` overrides are tiers, the dearer side of the line; an hours-of-day
