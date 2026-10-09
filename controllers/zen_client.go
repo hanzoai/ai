@@ -45,6 +45,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/plugin"
 	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/decimal"
 )
@@ -881,7 +882,16 @@ const engineModel = "default"
 // property of a constant here rather than of a catalogue an operator does not own.
 const spareTries = 3
 
-var zenDiscoveryClient = &http.Client{Timeout: 15 * time.Second}
+var zenDiscoveryClient = &http.Client{Timeout: 15 * time.Second, Transport: reaching(&http.Transport{Proxy: http.ProxyFromEnvironment})}
+
+// reaching is t with the plugin scheme registered on it: a family or decision
+// service whose address is plugin://<name> is answered in this process by the
+// plugin registered under that name (package plugin), every other address by t.
+// The address decides; the code that relays is the same either way.
+func reaching(t *http.Transport) *http.Transport {
+	t.RegisterProtocol(plugin.Scheme, plugin.Transport{})
+	return t
+}
 
 // refresh fetches GET <family>/v1/models and swaps in a fresh snapshot. Best-effort:
 // on any error the previous snapshot stands.
@@ -1309,10 +1319,10 @@ var commitWait = zenPipeHeader
 // zenPipeClient forwards inference to a family. No client-level timeout: that would
 // count the body, which is the part that is long on purpose.
 var zenPipeClient = &http.Client{
-	Transport: &http.Transport{
+	Transport: reaching(&http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		ResponseHeaderTimeout: zenPipeHeader,
-	},
+	}),
 }
 
 var (

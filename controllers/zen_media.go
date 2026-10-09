@@ -97,7 +97,10 @@ func zenMedia(ctx context.Context, w whence, apiPath, model string, raw []byte, 
 	if rErr != nil {
 		return media{status: http.StatusBadGateway, msg: "read zen response: " + rErr.Error()}
 	}
+	// What the family stated after the body (a plugin's End) is read over what its
+	// head said, as it is for a chat answer.
 	sv := servingOf(resp.Header)
+	sv.merge(resp.Trailer)
 	if resp.StatusCode != http.StatusOK {
 		// A failed call is never charged: the deferred settle(0) releases the hold.
 		// The arms zen asked before it gave up are on the books all the same.

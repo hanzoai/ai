@@ -773,7 +773,7 @@ func (h *handleCosts) note(org, id string, tokens int) {
 // a fraction of a millisecond beside a forward pass.
 var decisionsClient = &http.Client{
 	Timeout:   120 * time.Second,
-	Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, DisableKeepAlives: true},
+	Transport: reaching(&http.Transport{Proxy: http.ProxyFromEnvironment, DisableKeepAlives: true}),
 }
 
 // Relayed are the service's headers a caller is owed: the request id, and how long

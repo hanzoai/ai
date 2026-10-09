@@ -1,0 +1,1 @@
+{"method":"","url":"","key":"STUB_KEY","headers":[["content-type","application/json"]]}{"status":502,"headers":[["content-type","application/json"]]}{"error":{"message":"stub: no upstream"}}{}{"arm":"stub-arm","provider":"stub","trailers":["X-Hanzo-Cogs"],{"cogs":"0.000123","failover":["vendor/a (free): upstream status 429"]}":"pathmethod

@@ -1,0 +1,57 @@
+//go:build unix
+
+package stub
+
+import (
+	"fmt"
+	"os"
+	"syscall"
+)
+
+const mmapSupported = true
+
+// mmapImage maps the image as one instance's linear memory: MAP_PRIVATE, so
+// reads share the image's physical pages with every other instance and a write
+// faults in a private copy of just that page.
+//
+// The file is sparse-extended to the ceiling first, so the whole range is
+// mappable and everything past the image reads as zeros — which is what a
+// freshly grown wasm page must contain. Mapping past the end of the file
+// instead would fault with SIGBUS on first access.
+func mmapImage(f *os.File, ceiling int) ([]byte, error) {
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if fi.Size() < int64(ceiling) {
+		if err := f.Truncate(int64(ceiling)); err != nil {
+			return nil, fmt.Errorf("wasm2go: sizing the shared memory image: %w", err)
+		}
+	}
+	mem, err := syscall.Mmap(int(f.Fd()), 0, ceiling,
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE)
+	if err != nil {
+		return nil, fmt.Errorf("wasm2go: mapping the shared memory image: %w", err)
+	}
+	return mem, nil
+}
+
+// mmapShared maps the image file MAP_SHARED, for an in-place builder:
+// every page the builder writes lands directly in the file's page cache
+// and IS the image — no intermediate buffer, no copy, no write-out. The
+// caller has already sized the file (sparse) to length.
+func mmapShared(f *os.File, length int) ([]byte, error) {
+	mem, err := syscall.Mmap(int(f.Fd()), 0, length,
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return nil, fmt.Errorf("wasm2go: mapping the image for in-place build: %w", err)
+	}
+	return mem, nil
+}
+
+func unmapMemory(mem []byte) {
+	if len(mem) == 0 {
+		return
+	}
+	_ = syscall.Munmap(mem)
+}
