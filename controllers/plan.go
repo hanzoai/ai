@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
 )
@@ -235,9 +236,14 @@ func hanzoFamily(f *modelFamily) bool { return f == zenFam || f == ensoFam }
 // Apps are the registered apps the request's validated token was minted for (its
 // `aud`), empty for an API key or an unvalidated token. A plan covers its consumer
 // apps' requests only, and this is the boundary's own answer to which app asked.
+//
+// A token delegated for model calls (iam.Inference) names none either. Its `aud` is
+// the API it may call (RFC 8707), not an app, and what holds it is a program acting
+// for a person, which named its model: like an API key, it gets that model or a
+// refusal (402, saying what pays), never limited mode's free model in its place.
 func Apps(c *zip.Ctx) []string {
 	claims := (&ApiController{Ctx: c}).GetSessionClaims()
-	if claims == nil {
+	if claims == nil || iam.Confined(bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))) {
 		return nil
 	}
 	return append([]string(nil), claims.Audience...)

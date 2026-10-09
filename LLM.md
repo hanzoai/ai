@@ -933,6 +933,10 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   before any verifier is asked, wherever in the request it rides, and so do the
   identity seams they share (`zapResolveAuth`, `zapResolveUser`, `zapPrincipal`).
   `controllers/zap_confined.go`; `TestNoZapDoorServesAConfinedToken`.
+- **A delegated token names no app** — its `aud` is the API (RFC 8707), so
+  `controllers.Apps` answers none for it, as for an API key: a program that named
+  its model gets that model or the 402 saying what pays, never limited mode's free
+  model in its place. `TestADelegatedTokenNamesNoApp`.
 - **Retrieval is stated once** — `retrieval.Asked` / `retrieval.Store` (a leaf) is
   when a model call searches the org's documents into its prompt; the controllers
   and the host that refuses retrieval to a delegated token read the same function.
