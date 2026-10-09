@@ -594,13 +594,13 @@ func toHost(host string) probe {
 func TestTheFreeViewIsTheSuperAdmins(t *testing.T) {
 	orgAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
 	globalAdmin := &iam.User{Owner: "admin", Name: "root"}
-	if q := asUser(t, "GET", "/v1/admin/free", nil).through(permissionFilter); q.status() != http.StatusUnauthorized {
-		t.Errorf("anonymous GET /v1/admin/free = %d, want 401", q.status())
+	if q := asUser(t, "GET", "/v1/admin/ai/free", nil).through(permissionFilter); q.status() != http.StatusUnauthorized {
+		t.Errorf("anonymous GET /v1/admin/ai/free = %d, want 401", q.status())
 	}
-	if q := asUser(t, "GET", "/v1/admin/free", orgAdmin).through(permissionFilter); q.status() != http.StatusForbidden {
-		t.Errorf("an org admin's GET /v1/admin/free = %d, want 403", q.status())
+	if q := asUser(t, "GET", "/v1/admin/ai/free", orgAdmin).through(permissionFilter); q.status() != http.StatusForbidden {
+		t.Errorf("an org admin's GET /v1/admin/ai/free = %d, want 403", q.status())
 	}
-	if q := asUser(t, "GET", "/v1/admin/free", globalAdmin).through(permissionFilter); q.status() != http.StatusOK {
-		t.Errorf("the SuperAdmin's GET /v1/admin/free = %d, want through", q.status())
+	if q := asUser(t, "GET", "/v1/admin/ai/free", globalAdmin).through(permissionFilter); q.status() != http.StatusOK {
+		t.Errorf("the SuperAdmin's GET /v1/admin/ai/free = %d, want through", q.status())
 	}
 }

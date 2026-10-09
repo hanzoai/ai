@@ -1283,7 +1283,7 @@ rows, and the free lane reads the same rows.
 - **Read**: `GET /v1/models/vendors/openrouter[?free=1]` (anonymous) answers
   `{vendor, synced, data:[the vendor's entries]}`, the shape the free lane parses;
   `GET /v1/models/vendors/openrouter/events[?id=&limit=]` the history; SuperAdmin
-  `GET /v1/admin/free` the free set with the last 24 h per model (answered, failed,
+  `GET /v1/admin/ai/free` the free set with the last 24 h per model (answered, failed,
   rate) and per account. Counts are `object.Served` (vendor, model, account name,
   UTC hour; 48 h kept): each free request ai sends on its ring (`counting`), each
   free arm a family ran on a listed vendor (`X-Hanzo-Key` names the account), and

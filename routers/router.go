@@ -123,10 +123,12 @@ func registerAPI(app *zip.App) {
 	// A vendor's model list as the store keeps it (controllers/listing.go): every model
 	// it lists now, each entry as listed, and every change a sync read. Public, as the
 	// vendor's own list is. The free set with what the last day did with it is the
-	// SuperAdmin's.
+	// SuperAdmin's, under /v1/admin/ai: a host files the operator's view of an app
+	// at /v1/admin/<app> (HIP-0139 §3), and cloud routes the rest of /v1/admin to its
+	// own admin app.
 	route(app, "/v1/models/vendors/:vendor", "GET:ListListing")
 	route(app, "/v1/models/vendors/:vendor/events", "GET:ListListingEvents")
-	route(app, "/v1/admin/free", "GET:AdminFree")
+	route(app, "/v1/admin/ai/free", "GET:AdminFree")
 
 	// OpenAI-compatible embeddings and Cohere/Jina-compatible rerank. Both ride
 	// the same auth + provider routing as /v1/chat/completions.

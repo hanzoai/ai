@@ -121,7 +121,7 @@ var superAdminEndpoints = map[string]struct{}{
 	"add-model-route": {}, "update-model-route": {}, "delete-model-route": {},
 	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
 	// The free set with each model's last day and the accounts that served it.
-	"admin/free": {},
+	"admin/ai/free": {},
 	// DO usage backfill — writes the platform-wide financial ledger (cloud_usage).
 	"admin/usage/backfill-do": {},
 	// Per-org settings is served ZAP-native (/v1/ai/org/settings, super-admin gated in
