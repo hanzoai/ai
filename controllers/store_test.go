@@ -62,6 +62,7 @@ type people struct {
 	// second standing up beside it: sk- keys and pk- keys answer at the endpoints
 	// above, and a signed token is verified against the JWKS this publishes.
 	key    *rsa.PrivateKey
+	kid    string // this double's own: a verifier that cached an earlier test's key under a shared kid refused this one's signatures
 	issuer string
 }
 
@@ -81,7 +82,7 @@ func (p *people) signedIn(t *testing.T, user *iam.User) string {
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	token.Header["kid"] = iamTestKid
+	token.Header["kid"] = p.kid
 	signed, err := token.SignedString(p.key)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +91,6 @@ func (p *people) signedIn(t *testing.T, user *iam.User) string {
 }
 
 const (
-	iamTestKid      = "test-key"
 	iamTestAudience = "hanzo-test"
 )
 
@@ -136,10 +136,10 @@ func withIAM(t *testing.T) *people {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &people{by: map[string]*iam.User{}, orgs: map[string]string{}, key: key}
+	p := &people{by: map[string]*iam.User{}, orgs: map[string]string{}, key: key, kid: fmt.Sprintf("test-%x", key.PublicKey.N.Bytes()[:8])}
 	jwks := map[string]any{"keys": []map[string]string{{
 		"kty": "RSA",
-		"kid": iamTestKid,
+		"kid": p.kid,
 		"n":   base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
 		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()),
 	}}}

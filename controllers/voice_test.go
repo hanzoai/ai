@@ -88,7 +88,7 @@ func TestVoiceSessionAcceptsABearerFromTheBrandIssuer(t *testing.T) {
 			"exp":  time.Now().Add(time.Hour).Unix(),
 			"orgs": []map[string]string{{"org": "acme", "role": "owner"}},
 		})
-		token.Header["kid"] = iamTestKid
+		token.Header["kid"] = p.kid
 		signed, err := token.SignedString(p.key)
 		if err != nil {
 			t.Fatal(err)
