@@ -163,6 +163,13 @@ func seatOf(ctx context.Context) *seat {
 	return nil
 }
 
+// PaidLaneOpen reports whether the paid lane can seat anyone: the platform's switch
+// is on and its day holds something (PAID_LANE_DAILY, in the one replica). Read only:
+// it holds nothing.
+func PaidLaneOpen() bool {
+	return !FreeOnly() && paidLaneDaily() > 0
+}
+
 // FreeOnlyFor reports whether the paid lane is closed to the request on ctx: the
 // platform's switch is off, or the request holds no seat on it.
 func FreeOnlyFor(ctx context.Context) bool {

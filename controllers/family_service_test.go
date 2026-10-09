@@ -610,3 +610,30 @@ func TestACallersCallIsTheCustomersAndDebitsNothing(t *testing.T) {
 		t.Errorf("recorded %+v, want globex's books, covered, paid by the caller, for globex/ada", e)
 	}
 }
+
+// A caller the paid lane does not seat — a free user, whatever cap or grant admitted
+// it — is never sent a paid tier's own route: the family's free routes answer in its
+// place, or nothing does, and nothing is debited.
+func TestAFreeCallerNeverReachesAPaidTier(t *testing.T) {
+	z := zenServiceAt(t, true)
+	got := ledger(t)
+	alice := &iam.User{Owner: "acme", Name: "alice"}
+	for _, stream := range []bool{true, false} {
+		body := []byte(fmt.Sprintf(`{"model":"zen5-pro","stream":%t,"messages":[{"role":"user","content":"hi"}]}`, stream))
+		c := unseated(visit(http.MethodPost, "/v1/chat/completions"))
+		c.Fiber().Request().SetBody(body)
+		_ = c.pipeToFamily(zenFam, "chat/completions", "openai", "zen5-pro", body, stream, 0, "acme", alice, true, nil, time.Now())
+		_ = drain(t, c)
+	}
+	asked, _ := z.heard()
+	for _, m := range asked {
+		if m == "zen5-pro" {
+			t.Fatalf("a free caller reached the paid tier: the family was asked %v", asked)
+		}
+	}
+	for _, e := range got() {
+		if e.USD != "0" && e.USD != "" {
+			t.Errorf("a free caller was debited %+v", e)
+		}
+	}
+}

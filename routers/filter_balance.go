@@ -236,22 +236,45 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			model, session = m, true
 		}
 	}
+	// THE DEPTH LIFT. The default free id is served as the priced SKU router.depth
+	// names at the request's reasoning depth for a caller who pays for it, and gated
+	// and billed as that SKU; anyone else keeps the free id, answered as it always is.
+	//
+	// With no usage policy the wallet decides, here. With one, the policy decides in
+	// the one ask that serves the call (the loop below): the request is lifted
+	// tentatively, and lifted it stays only when a PAID PLAN pays for the SKU — its
+	// included usage, or past it the payer's own funded wallet — and the paid lane
+	// seats it. A free plan, no plan, a free cap and granted credit never lift, and
+	// neither does a call while the paid lane is closed: free callers get free models.
+	// A lift the policy refuses gives back what its ask took and asks again as the
+	// free id. A call a program in this process made for a customer is never lifted.
 	sku, lift := depthRoute(model, c.Body())
-	funded := lift && balanceGate.funds(c, subject, namespace, userKey, sku, path, session)
-	// What Enso decided and why, for the answer and its trace to say.
-	if r := controllers.DepthRouting(model, c.Body(), funded); r != nil {
-		controllers.SetRouting(c, r)
+	_, stated := object.CallerOf(c.Context())
+	funded := lift && object.Limits() == nil && balanceGate.funds(c, subject, namespace, userKey)
+	tentative := lift && object.Limits() != nil && !stated && controllers.PaidLaneOpen()
+	asked, before := model, c.Body()
+	lifted := false
+	route := func(funded bool) {
+		if r := controllers.DepthRouting(asked, before, funded); r != nil {
+			controllers.SetRouting(c, r)
+		}
 	}
-	if funded {
-		// The default free id, asked by a caller whose plan or bought credit pays for
-		// the priced SKU router.depth names at this depth: the request is served, gated
-		// and billed as that SKU. A caller it does not fund keeps the free id.
+	if funded || tentative {
 		if body, ok := controllers.WithModel(c.Body(), sku); ok {
+			before = append([]byte(nil), c.Body()...)
 			c.Fiber().Request().SetBody(body)
 			c.Fiber().Request().Header.Del("Content-Encoding")
 			c.SetHeader(controllers.RoutedModelHeader, sku)
-			model = sku
+			model, lifted = sku, tentative
 		}
+	}
+	route(funded || lifted)
+	// unlift puts a refused lift back: the free id, as the caller sent it.
+	unlift := func() {
+		c.Fiber().Request().SetBody(before)
+		c.Fiber().Response().Header.Del(controllers.RoutedModelHeader)
+		model, lifted = asked, false
+		route(false)
 	}
 	// WHO PAYS IS THE HOST'S CALL. Its usage policy puts every model in a class and
 	// spends, in order: the plan's included usage for that class, then prepaid cash,
@@ -283,7 +306,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		return callerPays(c, who, subject, model)
 	}
 	if limits := object.Limits(); limits != nil && model != "" && controllers.Entitled(path) {
-		for try := 0; try < 3; try++ {
+		for try := 0; try < 4; try++ {
 			priced := !costsNothing(model, namespace)
 			grant, hit, err := limits(c.Context(), object.LimitAsk{
 				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
@@ -293,6 +316,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			if err != nil {
 				log.Warning("limits: unreadable, refusing subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
 				return denied(c, object.UsageUnavailable(), subject, namespace, 0, path)
+			}
+			if hit != nil && lifted {
+				unlift()
+				continue
 			}
 			if hit != nil {
 				log.Info("limits: %s %s subject=%s namespace=%s actor=%s path=%s model=%s", hit.Code, hit.Name, subject, namespace, userKey, path, model)
@@ -310,18 +337,31 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				return limitReached(c, hit, namespace)
 			}
 			if grant == nil {
+				if lifted {
+					unlift()
+					continue
+				}
 				break
 			}
-			if controllers.Seat(c, grant, namespace, subject, model) == controllers.SeatFull &&
+			// A tentative lift holds only for a paid plan whose included usage, or past
+			// it the payer's own funded wallet, pays, and only on a seat of the paid
+			// lane; the wallet is read before the seat holds anything.
+			if lifted && !(paidPlan(grant) && (grant.Pays == object.PaysPlan || grant.Pays == object.PaysPrepaid && balanceGate.funds(c, subject, namespace, userKey))) {
+				giveBack(grant)
+				unlift()
+				continue
+			}
+			seat := controllers.Seat(c, grant, namespace, subject, model)
+			if lifted && seat != controllers.SeatPaid {
+				giveBack(grant)
+				unlift()
+				continue
+			}
+			if seat == controllers.SeatFull &&
 				priced && controllers.FamilyOf(model) == "" && !strings.EqualFold(model, controllers.FreeModel) &&
 				controllers.ChatPath(path) && !controllers.OwnKey(namespace, model) &&
 				fallBack(c, controllers.FreeModel, controllers.ReasonCeiling, namespace, "") {
-				if grant.Release != nil {
-					grant.Release()
-				}
-				if grant.Settle != nil {
-					grant.Settle(0)
-				}
+				giveBack(grant)
 				model = controllers.FreeModel
 				continue
 			}
@@ -469,47 +509,33 @@ var decisionFree = controllers.DecisionFree
 // (controllers.DepthRoute), indirected so the gate's tests state the table directly.
 var depthRoute = controllers.DepthRoute
 
-// funds reports whether the caller pays for a priced call to model, the SKU a free
-// default id would be lifted to. Any refusal or unreadable answer is no, which leaves
-// the caller on the free id it sent.
-//
-// Where a usage policy is installed it decides, as it decides every request: model is
-// lifted to when the policy admits it, either covered (a plan within its windows and
-// included usage, or a free cap) or sent to a wallet whose balance pays. The request
-// is then asked of the policy again, as the lifted SKU, by the loop that serves it, so
-// what this ask took is given back here, as a seat that was full gives back its grant.
-// A call a program in this process made for a customer is that program's to meter and
-// is never lifted. With no policy, the wallet decides alone.
-func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey, model, path string, session bool) bool {
-	wallet := func() bool {
-		sufficient, _, _ := g.checkBalance(c.Host(), subject, namespace, userKey)
-		return sufficient
+// funds reports whether the caller's wallet pays for a priced call: its balance
+// admits it. Any refusal or unreadable answer is no.
+func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey string) bool {
+	sufficient, _, _ := g.checkBalance(c.Host(), subject, namespace, userKey)
+	return sufficient
+}
+
+// paidPlan reports whether g comes from a paid plan: a subscription the policy names
+// that is not the free plan, for a class that is not the free one. A free cap, granted
+// credit and a wallet with no plan behind it are not one: no marker says such credit
+// may buy a paid model, so it never lifts a call onto one.
+func paidPlan(g *object.LimitGrant) bool {
+	p := strings.TrimSpace(g.Plan)
+	return p != "" && !strings.EqualFold(p, "free") && !strings.EqualFold(g.Class, object.ClassFree)
+}
+
+// giveBack returns what admitting g took, for a request that will not be served as
+// the model it was admitted for: its windows and caps (Release) and its hold
+// (Settle at nothing). The policy's own Release logs a give-back that fails; a count
+// it could not give back lapses with its window.
+func giveBack(g *object.LimitGrant) {
+	if g.Release != nil {
+		g.Release()
 	}
-	limits := object.Limits()
-	if limits == nil {
-		return wallet()
+	if g.Settle != nil {
+		g.Settle(0)
 	}
-	if _, ok := object.CallerOf(c.Context()); ok {
-		return false
-	}
-	grant, hit, err := limits(c.Context(), object.LimitAsk{
-		Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
-		Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: !costsNothing(model, namespace),
-		Apps: controllers.Apps(c), Spend: controllers.ChatPath(path), Session: session,
-	})
-	if err != nil || hit != nil {
-		return false
-	}
-	if grant == nil {
-		return wallet()
-	}
-	if grant.Release != nil {
-		grant.Release()
-	}
-	if grant.Settle != nil {
-		grant.Settle(0)
-	}
-	return grant.Covered() || wallet()
 }
 
 // limitReached writes the host's refusal, named by its code and never by a figure:
