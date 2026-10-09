@@ -202,6 +202,10 @@ var (
 	modelFamilies = []*modelFamily{zenFam, ensoFam, openrouterFam}
 )
 
+// ours reports whether f is a Hanzo service ai fronts (Zen, Enso), which may be
+// told who a call is for. A vendor's API is not one.
+func (f *modelFamily) ours() bool { return f == zenFam || f == ensoFam }
+
 // window returns the context window ai guarantees when listing and routing a SKU,
 // or 0 when the family guarantees none. It applies only to a configured family, so
 // a bare or unconfigured family reports no guaranteed window.
@@ -1654,9 +1658,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	upstream.Authorize(req, prov)
 	// Tenant attribution: the family needs a billable tenant, and ai — which settles
 	// the ledger — tells the family it fronts this call so it meters without
-	// double-charging.
+	// double-charging. A Hanzo family is also told who pays (dispatch), by which it
+	// keeps each payer's share of its free lane; a vendor's API never is.
+	var who string
 	if org := tenant(ctx, orgId, authUser); org != "" {
 		req.Header.Set("X-Org-Id", org)
+		who = payerOf(ctx, org, authUser)
 	}
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
@@ -1700,6 +1707,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if f != fam {
 			// The credential is the family's own: another family's never travels.
 			r.Header.Del("Authorization")
+		}
+		if f.ours() && who != "" {
+			r.Header.Set(payerHeader, who)
 		}
 		if spend := spendOf(grant, place, pm, f, s); spend != "" {
 			r.Header.Set(spendHeader, spend)

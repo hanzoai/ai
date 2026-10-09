@@ -36,6 +36,7 @@ type zenService struct {
 	catalog string
 	asked   []string // the model each inference call named
 	orgs    []string // the X-Org-Id each inference call carried
+	payers  []string // the X-Hanzo-Payer each inference call carried
 }
 
 const zenServiceToken = "admin-token"
@@ -94,6 +95,7 @@ func (z *zenService) serve(w http.ResponseWriter, r *http.Request) {
 	z.mu.Lock()
 	z.asked = append(z.asked, in.Model)
 	z.orgs = append(z.orgs, r.Header.Get("X-Org-Id"))
+	z.payers = append(z.payers, r.Header.Get(payerHeader))
 	z.mu.Unlock()
 	if r.Header.Get("X-Hanzo-Fronted-By") == "ai" {
 		w.Header().Set(armHeader, "vendor/glm")
@@ -519,6 +521,54 @@ func TestTheFamilyIsToldTheOrgACallIsFor(t *testing.T) {
 			t.Errorf("%s: the family was told %v, want %s for embeddings and rerank", tc.name, got, tc.want)
 		}
 	}
+}
+
+// The family is told who pays for a call, beside its org: the person in the signup
+// org, whose members each pay for themselves, and the org itself where its members
+// pool. The family keeps its free lane's share by it, so one stranger in the signup
+// org cannot spend every other's. A machine acting for a person, and a program's call
+// for a customer, name the person or customer the call is for, as X-Org-Id does.
+func TestTheFamilyIsToldWhoPays(t *testing.T) {
+	z := zenServiceAt(t, true)
+	deployment := &iam.User{Owner: "hanzo", Name: "cloud", Type: "application"}
+	cases := []struct {
+		name   string
+		user   *iam.User
+		said   string // X-User-Id
+		caller *object.Caller
+		org    string
+		want   string
+	}{
+		{"a person in the signup org", &iam.User{Owner: "hanzo", Name: "alice"}, "", nil, "hanzo", "hanzo/alice"},
+		{"another person in the signup org", &iam.User{Owner: "hanzo", Name: "bob"}, "", nil, "hanzo", "hanzo/bob"},
+		{"a person in a pooled org", &iam.User{Owner: "acme", Name: "carol"}, "", nil, "acme", "acme"},
+		{"a machine for a person in the signup org", deployment, "hanzo/dave", nil, "hanzo", "hanzo/dave"},
+		{"a machine for a person in a pooled org", deployment, "acme/erin", nil, "acme", "acme"},
+		{"a program's call for a customer", deployment, "", &object.Caller{Org: "globex", Person: "globex/ada"}, "globex", "globex"},
+	}
+	for _, tc := range cases {
+		body := []byte(`{"model":"zen6","messages":[{"role":"user","content":"hi"}]}`)
+		c := visit(http.MethodPost, "/v1/chat/completions")
+		ctx := c.Context()
+		if tc.caller != nil {
+			ctx = object.WithCaller(ctx, *tc.caller)
+		}
+		c.SetContext(object.WithGenAIAttribution(ctx, object.GenAIAttribution{User: tc.said}))
+		c.Fiber().Request().SetBody(body)
+		if out := c.pipeToFamily(zenFam, "chat/completions", "openai", "zen6", body, false, 0, tc.user.Owner, tc.user, true, nil, time.Now()); out != nil {
+			t.Fatalf("%s: refused %+v", tc.name, out)
+		}
+		z.mu.Lock()
+		org, who := z.orgs[len(z.orgs)-1], z.payers[len(z.payers)-1]
+		z.mu.Unlock()
+		if org != tc.org || who != tc.want {
+			t.Errorf("%s: the family was told org %q payer %q, want %q %q", tc.name, org, who, tc.org, tc.want)
+		}
+	}
+	if openrouterFam.ours() || !ensoFam.ours() || !zenFam.ours() {
+		t.Error("only Zen and Enso are told who pays; a vendor's API never is")
+	}
+	settled(t)
 }
 
 // A call a program in this process made for a customer (object.Caller) is that

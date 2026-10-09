@@ -1181,6 +1181,29 @@ func tenant(ctx context.Context, org string, u *iam.User) string {
 	return ""
 }
 
+// payerHeader tells a Hanzo family the account a call is for (zen's Tenant wallet),
+// beside the org in X-Org-Id. The family keeps its free lane's share per payer, so
+// the members of the signup org, who each pay for themselves, each hold a share of
+// their own rather than all of them one share of the org's.
+const payerHeader = "X-Hanzo-Payer"
+
+// payerOf is the account a model family is told a call is for, named in the order
+// tenant names its org: the customer a program in this process stated, else the
+// person a machine credential acts for, else the caller's own payer in org. "" when
+// none resolves, and the family then counts the call against the org.
+func payerOf(ctx context.Context, org string, u *iam.User) string {
+	if who, ok := object.CallerOf(ctx); ok {
+		return account.PayerOf(who.Org, who.Person).Subject()
+	}
+	if named := person(ctx, u); named != "" {
+		return account.PayerOf("", named).Subject()
+	}
+	if u != nil {
+		return u.PayerSubject(org)
+	}
+	return ""
+}
+
 // unownedWarned dedupes the unowned-spend report to once per agent, so a busy
 // application logs one actionable line instead of one per request.
 var unownedWarned sync.Map
