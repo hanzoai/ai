@@ -237,7 +237,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 	sku, lift := depthRoute(model, c.Body())
-	funded := lift && balanceGate.funds(c, subject, namespace, userKey, sku)
+	funded := lift && balanceGate.funds(c, subject, namespace, userKey, sku, path, session)
 	// What Enso decided and why, for the answer and its trace to say.
 	if r := controllers.DepthRouting(model, c.Body(), funded); r != nil {
 		controllers.SetRouting(c, r)
@@ -469,18 +469,47 @@ var decisionFree = controllers.DecisionFree
 // (controllers.DepthRoute), indirected so the gate's tests state the table directly.
 var depthRoute = controllers.DepthRoute
 
-// funds reports whether the caller pays for a priced call to model: no plans are
-// installed and the balance admits it. Any refusal or unreadable answer is no, which
-// leaves the caller on the free id it sent.
-func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey, model string) bool {
-	// Where plans are installed a Hanzo SKU is a plan's, never a per-call charge: a
-	// plan reaches paid upstream through its family's paid rungs, within its budget,
-	// so nothing lifts a free id onto a priced one.
-	if object.Limits() != nil {
+// funds reports whether the caller pays for a priced call to model, the SKU a free
+// default id would be lifted to. Any refusal or unreadable answer is no, which leaves
+// the caller on the free id it sent.
+//
+// Where a usage policy is installed it decides, as it decides every request: model is
+// lifted to when the policy admits it, either covered (a plan within its windows and
+// included usage, or a free cap) or sent to a wallet whose balance pays. The request
+// is then asked of the policy again, as the lifted SKU, by the loop that serves it, so
+// what this ask took is given back here, as a seat that was full gives back its grant.
+// A call a program in this process made for a customer is that program's to meter and
+// is never lifted. With no policy, the wallet decides alone.
+func (g *BalanceGate) funds(c *zip.Ctx, subject, namespace, userKey, model, path string, session bool) bool {
+	wallet := func() bool {
+		sufficient, _, _ := g.checkBalance(c.Host(), subject, namespace, userKey)
+		return sufficient
+	}
+	limits := object.Limits()
+	if limits == nil {
+		return wallet()
+	}
+	if _, ok := object.CallerOf(c.Context()); ok {
 		return false
 	}
-	sufficient, _, _ := g.checkBalance(c.Host(), subject, namespace, userKey)
-	return sufficient
+	grant, hit, err := limits(c.Context(), object.LimitAsk{
+		Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
+		Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: !costsNothing(model, namespace),
+		Apps: controllers.Apps(c), Spend: controllers.ChatPath(path), Session: session,
+	})
+	if err != nil || hit != nil {
+		return false
+	}
+	if grant == nil {
+		return wallet()
+	}
+	if grant.Release != nil {
+		grant.Release()
+	}
+	if grant.Settle != nil {
+		grant.Settle(0)
+	}
+	return grant.Covered() || wallet()
 }
 
 // limitReached writes the host's refusal, named by its code and never by a figure:
