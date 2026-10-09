@@ -124,7 +124,7 @@ func (c *ApiController) GetAdminProviders() {
 	c.ResponseOk(views)
 }
 
-// toggleProviderRequest is the body of POST /v1/admin/providers/toggle.
+// toggleProviderRequest is the body of POST /v1/admin/ai/providers/toggle.
 type toggleProviderRequest struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
@@ -181,7 +181,7 @@ func (c *ApiController) ToggleAdminProvider() {
 	c.ResponseOk(toAdminProviderView(updated, modelCountByProvider()))
 }
 
-// setPrimaryRequest is the body of POST /v1/admin/providers/primary.
+// setPrimaryRequest is the body of POST /v1/admin/ai/providers/primary.
 type setPrimaryRequest struct {
 	Name string `json:"name"`
 }

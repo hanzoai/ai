@@ -44,8 +44,8 @@ func gwResp(t *testing.T, msg *zap.Message) (uint32, Response) {
 // longest-prefix, so every path in this group resolves here.
 func TestZapModelRoutingRegistered(t *testing.T) {
 	want := []string{
-		"/v1/models/", "/v1/admin/model-access",
-		"/v1/admin/reload-model-config", "/v1/admin/refresh-model-pricing",
+		"/v1/models/", "/v1/admin/ai/model-access",
+		"/v1/admin/ai/reload-model-config", "/v1/admin/ai/refresh-model-pricing",
 	}
 	for _, p := range want {
 		found := false
@@ -66,13 +66,13 @@ func TestZapModelRoutingRegistered(t *testing.T) {
 // model; the bare list path and malformed shapes yield "" (so they fall through).
 func TestZapModelFromAccessPath(t *testing.T) {
 	cases := map[string]string{
-		"/v1/models/enso/access":  "enso",
-		"/v1/models/gpt-5/access": "gpt-5",
-		"/v1/models":              "",
-		"/v1/models/":             "",
-		"/v1/models/enso":         "", // no /access suffix segment
-		"/v1/models/a/b/access":   "", // nested — not a flat model id
-		"/v1/admin/model-access":  "",
+		"/v1/models/enso/access":    "enso",
+		"/v1/models/gpt-5/access":   "gpt-5",
+		"/v1/models":                "",
+		"/v1/models/":               "",
+		"/v1/models/enso":           "", // no /access suffix segment
+		"/v1/models/a/b/access":     "", // nested — not a flat model id
+		"/v1/admin/ai/model-access": "",
 	}
 	for in, want := range cases {
 		if got := zapModelFromAccessPath(in); got != want {

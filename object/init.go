@@ -503,7 +503,7 @@ func renameClaudeToAnthropic() {
 //
 //	The seed sets State and IsDefault ONLY on initial CREATE. For an
 //	already-existing record they are NEVER overwritten — an admin toggle made
-//	via /v1/admin/providers persists across restarts. Type / SubType /
+//	via /v1/admin/ai/providers persists across restarts. Type / SubType /
 //	ProviderUrl / ClientSecret DO continue to self-heal from the seed on every
 //	boot (so a stale upstream URL or KMS reference is corrected automatically);
 //	State and IsDefault are deliberately excluded from that self-heal because
@@ -529,7 +529,7 @@ func initLLMProviders() {
 			//
 			// NOTE: State and IsDefault are INTENTIONALLY NOT self-healed here —
 			// they are admin-owned runtime toggles (see the invariant above). A
-			// provider an operator disabled via /v1/admin/providers must stay
+			// provider an operator disabled via /v1/admin/ai/providers must stay
 			// disabled across restarts; re-syncing State from the seed would
 			// silently revert that decision on the next boot.
 			needsUpdate := false

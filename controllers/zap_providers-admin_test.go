@@ -102,14 +102,14 @@ func TestZapProviderRegistry(t *testing.T) {
 		}
 	}
 
-	// Gateway longest-prefix: /v1/admin/providers/toggle must resolve to the
-	// toggle handler, NOT the shorter /v1/admin/providers registration. Prove it
+	// Gateway longest-prefix: /v1/admin/ai/providers/toggle must resolve to the
+	// toggle handler, NOT the shorter /v1/admin/ai/providers registration. Prove it
 	// by driving the resolved handler with an empty credential and asserting the
 	// gated 401 (both are gated, but an unregistered path would return !ok).
 
-	h, ok := lookupGatewayHandler("/v1/admin/providers/toggle")
+	h, ok := lookupGatewayHandler("/v1/admin/ai/providers/toggle")
 	if !ok {
-		t.Fatalf("/v1/admin/providers/toggle not registered")
+		t.Fatalf("/v1/admin/ai/providers/toggle not registered")
 	}
 	msg, _ := h(context.Background(), "", []byte("{}"))
 	if got := msg.Root().Uint32(object.CloudRespStatus); got != 401 {

@@ -58,9 +58,9 @@ func registerAPI(app *zip.App) {
 
 	// Provider-admin management surface (super-admin gated in authz_filter.go).
 	// Reads/writes the SAME object.Provider records as the CRUD routes above.
-	route(app, "/v1/admin/providers", "GET:GetAdminProviders")
-	route(app, "/v1/admin/providers/toggle", "POST:ToggleAdminProvider")
-	route(app, "/v1/admin/providers/primary", "POST:SetPrimaryAdminProvider")
+	route(app, "/v1/admin/ai/providers", "GET:GetAdminProviders")
+	route(app, "/v1/admin/ai/providers/toggle", "POST:ToggleAdminProvider")
+	route(app, "/v1/admin/ai/providers/primary", "POST:SetPrimaryAdminProvider")
 	// Public, secret-free projection of /v1/models: who serves the listed catalog.
 	// Registered beside the model routes below, not here — see /v1/models.
 
@@ -81,7 +81,7 @@ func registerAPI(app *zip.App) {
 
 	// Super-admin (authz_filter.go superAdminEndpoints): backfill the usage ledger
 	// from DigitalOcean billing for windows native metering missed. Dry-run by default.
-	route(app, "/v1/admin/usage/backfill-do", "POST:PostBackfillDOUsage")
+	route(app, "/v1/admin/ai/usage/backfill-do", "POST:PostBackfillDOUsage")
 
 	// No /v1/health here: the HOST owns it (cloud/serve.go), answering for
 	// every mounted plane with degradation detail. A second declaration in
@@ -117,9 +117,9 @@ func registerAPI(app *zip.App) {
 	// standing; a SuperAdmin grants and lists. Registered as a deeper path than
 	// /v1/models so the literal segment is not captured as a :param.
 	route(app, "/v1/models/:model/access", "GET:GetModelAccessStatus;POST:RequestModelAccess")
-	route(app, "/v1/admin/model-access", "GET:AdminListModelAccess;POST:AdminGrantModelAccess")
-	route(app, "/v1/admin/reload-model-config", "POST:ReloadModelConfig")
-	route(app, "/v1/admin/refresh-model-pricing", "POST:RefreshModelPricing")
+	route(app, "/v1/admin/ai/model-access", "GET:AdminListModelAccess;POST:AdminGrantModelAccess")
+	route(app, "/v1/admin/ai/reload-model-config", "POST:ReloadModelConfig")
+	route(app, "/v1/admin/ai/refresh-model-pricing", "POST:RefreshModelPricing")
 	// A vendor's model list as the store keeps it (controllers/listing.go): every model
 	// it lists now, each entry as listed, and every change a sync read. Public, as the
 	// vendor's own list is. The free set with what the last day did with it is the

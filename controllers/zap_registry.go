@@ -30,8 +30,8 @@
 //     registerGatewayRoute / lookupGatewayRoutes.
 //
 // Both gateway registries resolve by LONGEST matching prefix, so a specific
-// route ("/v1/admin/providers/toggle") always beats a broader sibling
-// ("/v1/admin/providers"). The gateway handler consults the HTTP-shaped registry
+// route ("/v1/admin/ai/providers/toggle") always beats a broader sibling
+// ("/v1/admin/ai/providers"). The gateway handler consults the HTTP-shaped registry
 // first, then the body-only one.
 //
 // A prefix is a claim on a SUBTREE, though, and a subtree holds siblings that

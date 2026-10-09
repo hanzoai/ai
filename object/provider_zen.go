@@ -36,7 +36,7 @@ import (
 // is not a database row: its address is configuration, so this repository carries
 // no routing detail". The second half still holds — a row is runtime data and
 // never lands in the repo, so nothing is disclosed by reading one — but the first
-// half cost us the admin surface. /v1/admin/providers listed `openrouter` and
+// half cost us the admin surface. /v1/admin/ai/providers listed `openrouter` and
 // offered a toggle that flipped a row this function never read, so enabling a
 // family from the console did nothing and reported success. A control that
 // silently does nothing is worse than no control.

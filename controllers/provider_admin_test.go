@@ -165,7 +165,7 @@ func TestAdminProviderView_NeverSerializesSecrets(t *testing.T) {
 // toggling is a request at the provider-admin toggle, carrying auth. The endpoint is
 // named once here; who is calling is whatever credential the caller presents.
 func toggling(auth string) *ApiController {
-	return presenting(visit(http.MethodPost, "/v1/admin/providers/toggle"), auth)
+	return presenting(visit(http.MethodPost, "/v1/admin/ai/providers/toggle"), auth)
 }
 
 func TestRequireSuperAdmin_NoPrincipal401(t *testing.T) {

@@ -24,7 +24,7 @@
 //   GET  /v1/get-users
 //   GET  /v1/get-user-table-infos
 //   GET  /v1/get-cloud-usages
-//   POST /v1/admin/usage/backfill-do
+//   POST /v1/admin/ai/usage/backfill-do
 //
 // Identity is derived ONLY from the Bearer token (never the body) via the shared
 // zapPrincipalUser seam (zap_model-routing-config.go): sk- IAM keys through
@@ -59,7 +59,7 @@ import (
 // arm. Every route is HTTP-over-ZAP (MsgType 200) — there is no native cloud
 // method for these HTTP/query-driven admin reads.
 func registerZapBillingUsage() {
-	registerGatewayRoute("/v1/admin/usage/backfill-do", zapPostBackfillDOUsageHandler)
+	registerGatewayRoute("/v1/admin/ai/usage/backfill-do", zapPostBackfillDOUsageHandler)
 }
 
 func init() { registerZapBillingUsage() }
@@ -118,7 +118,7 @@ func zapResolveCloudUsageScope(user *iam.User, ownBrand bool, query string) (org
 	return target, false
 }
 
-// ── POST /v1/admin/usage/backfill-do ──
+// ── POST /v1/admin/ai/usage/backfill-do ──
 
 func zapPostBackfillDOUsageHandler(ctx context.Context, method, _, query, auth string, _ []byte) (*zap.Message, error) {
 	// A WRITE to the platform-wide financial ledger — restrict to POST like the

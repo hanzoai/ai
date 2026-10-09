@@ -50,13 +50,13 @@ func gwStatusMsg(t *testing.T, m *zap.Message) (status uint32, envStatus, envMsg
 // group so no handler can silently drift open.
 func TestZapUsageHandlers_RejectEmptyAuth(t *testing.T) {
 	handlers := map[string]zapGatewayHandler{
-		"/v1/admin/usage/backfill-do": zapPostBackfillDOUsageHandler,
+		"/v1/admin/ai/usage/backfill-do": zapPostBackfillDOUsageHandler,
 	}
 
 	for path, h := range handlers {
 		t.Run(path, func(t *testing.T) {
 			method := "GET"
-			if path == "/v1/admin/usage/backfill-do" {
+			if path == "/v1/admin/ai/usage/backfill-do" {
 				method = "POST"
 			}
 			msg, err := h(context.Background(), method, path, "", "" /* empty auth */, nil)
@@ -78,7 +78,7 @@ func TestZapUsageHandlers_RejectEmptyAuth(t *testing.T) {
 // must never execute it. A GET (with any auth) is refused at the method gate
 // before principal resolution — parity with the router's POST-only route.
 func TestZapBackfill_RejectsNonPost(t *testing.T) {
-	msg, err := zapPostBackfillDOUsageHandler(context.Background(), "GET", "/v1/admin/usage/backfill-do", "", "Bearer whatever", nil)
+	msg, err := zapPostBackfillDOUsageHandler(context.Background(), "GET", "/v1/admin/ai/usage/backfill-do", "", "Bearer whatever", nil)
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
 	}

@@ -325,7 +325,7 @@ var callProvider = func(
 		// GetModelProviderByNameForOrg returns nil for BOTH a missing provider
 		// and one an admin switched off. Either way this vendor cannot serve and
 		// the next candidate must be tried, which is how a route's fallbacks stay
-		// honoured when the primary is toggled off from /v1/admin/providers.
+		// honoured when the primary is toggled off from /v1/admin/ai/providers.
 		//
 		return nil, nil, unavailable(c.provider)
 	}

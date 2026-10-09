@@ -49,8 +49,8 @@ func TestRequiresGlobalAdminClassification(t *testing.T) {
 	sensitive := []string{
 		"get-providers", "get-provider", "get-global-providers",
 		"add-provider", "update-provider", "delete-provider",
-		"get-storage-providers", "get-model-routes", "admin/reload-model-config", "admin/refresh-model-pricing",
-		"admin/usage/backfill-do",
+		"get-storage-providers", "get-model-routes", "admin/ai/reload-model-config", "admin/ai/refresh-model-pricing",
+		"admin/ai/usage/backfill-do",
 		"get-nodes", "get-k8s-status",
 	}
 	for _, e := range sensitive {
@@ -274,33 +274,33 @@ func TestTheTalkSocketPassesOnItsTicket(t *testing.T) {
 // c1BypassVariants are the request paths that the router dispatches to a gated admin
 // controller but that the un-normalized gate missed. Canonical form is first.
 var c1BypassVariants = []struct{ method, path, note string }{
-	{"GET", "/v1/admin/providers", "canonical read"},
-	{"GET", "/v1/admin/providers/", "trailing slash"},
-	{"GET", "/v1//admin/providers", "double slash after v1"},
-	{"GET", "/v1/admin//providers", "double slash mid-path"},
-	{"GET", "/v1/admin/providers//", "trailing double slash"},
-	{"GET", "/v1/./admin/providers", "dot segment"},
-	{"GET", "/v1/admin/../admin/providers", "dotdot segment"},
-	{"POST", "/v1/admin/providers/toggle", "canonical toggle"},
-	{"POST", "/v1/admin/providers/toggle/", "toggle trailing slash"},
-	{"POST", "/v1//admin/providers/toggle", "toggle double leading slash"},
-	{"POST", "/v1/admin/providers/primary", "canonical primary"},
-	{"POST", "/v1/admin/providers/primary/", "primary trailing slash"},
+	{"GET", "/v1/admin/ai/providers", "canonical read"},
+	{"GET", "/v1/admin/ai/providers/", "trailing slash"},
+	{"GET", "/v1//admin/ai/providers", "double slash after v1"},
+	{"GET", "/v1/admin//ai/providers", "double slash mid-path"},
+	{"GET", "/v1/admin/ai/providers//", "trailing double slash"},
+	{"GET", "/v1/./admin/ai/providers", "dot segment"},
+	{"GET", "/v1/admin/../admin/ai/providers", "dotdot segment"},
+	{"POST", "/v1/admin/ai/providers/toggle", "canonical toggle"},
+	{"POST", "/v1/admin/ai/providers/toggle/", "toggle trailing slash"},
+	{"POST", "/v1//admin/ai/providers/toggle", "toggle double leading slash"},
+	{"POST", "/v1/admin/ai/providers/primary", "canonical primary"},
+	{"POST", "/v1/admin/ai/providers/primary/", "primary trailing slash"},
 }
 
 // TestNormalizedControllerName_CollapsesVariants asserts the helper maps every
 // dispatched variant to the canonical controllerName the gate map is keyed on.
 func TestNormalizedControllerName_CollapsesVariants(t *testing.T) {
 	cases := []struct{ raw, want string }{
-		{"/v1/admin/providers", "admin/providers"},
-		{"/v1/admin/providers/", "admin/providers"},
-		{"/v1//admin/providers", "admin/providers"},
-		{"/v1/admin//providers", "admin/providers"},
-		{"/v1/admin/providers//", "admin/providers"},
-		{"/v1/./admin/providers", "admin/providers"},
-		{"/v1/admin/../admin/providers", "admin/providers"},
-		{"/v1/admin/providers/toggle/", "admin/providers/toggle"},
-		{"/v1/admin/providers/primary/", "admin/providers/primary"},
+		{"/v1/admin/ai/providers", "admin/ai/providers"},
+		{"/v1/admin/ai/providers/", "admin/ai/providers"},
+		{"/v1//admin/ai/providers", "admin/ai/providers"},
+		{"/v1/admin//ai/providers", "admin/ai/providers"},
+		{"/v1/admin/ai/providers//", "admin/ai/providers"},
+		{"/v1/./admin/ai/providers", "admin/ai/providers"},
+		{"/v1/admin/../admin/ai/providers", "admin/ai/providers"},
+		{"/v1/admin/ai/providers/toggle/", "admin/ai/providers/toggle"},
+		{"/v1/admin/ai/providers/primary/", "admin/ai/providers/primary"},
 		// The provider CRUD moved to the namespaced REST surface; the gate keys on
 		// the same name as before because policyKey derives it from the resource
 		// table. These are the cases that would have opened the gate if the rename
@@ -312,9 +312,9 @@ func TestNormalizedControllerName_CollapsesVariants(t *testing.T) {
 		// The router leaves fiber's CaseSensitive false, so these dispatch to the
 		// same handler. A gate that reads them as some other name, or as not an API
 		// route at all, is a gate the caller chooses to skip by holding shift.
-		{"/V1/admin/providers", "admin/providers"},
-		{"/v1/ADMIN/providers", "admin/providers"},
-		{"/V1/ADMIN/PROVIDERS", "admin/providers"},
+		{"/V1/admin/ai/providers", "admin/ai/providers"},
+		{"/v1/ADMIN/AI/providers", "admin/ai/providers"},
+		{"/V1/ADMIN/AI/PROVIDERS", "admin/ai/providers"},
 		{"/V1/ai/providers", "get-providers"},
 	}
 	for _, c := range cases {
@@ -366,9 +366,9 @@ func TestAdminRoutesOrgAdminForbidden403_AllVariants(t *testing.T) {
 func TestAdminRoutesGlobalAdminPass_Canonical(t *testing.T) {
 	globalAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
 	for _, p := range []struct{ method, path string }{
-		{"GET", "/v1/admin/providers"},
-		{"POST", "/v1/admin/providers/toggle"},
-		{"POST", "/v1/admin/providers/primary"},
+		{"GET", "/v1/admin/ai/providers"},
+		{"POST", "/v1/admin/ai/providers/toggle"},
+		{"POST", "/v1/admin/ai/providers/primary"},
 	} {
 		q := asUser(t, p.method, p.path, globalAdmin)
 		q = q.through(permissionFilter)
@@ -478,9 +478,9 @@ func setupRoundTripRouter(t *testing.T) {
 		// absence rather than from an empty store.
 		app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 		app.Use(zip.H(AuthzFilter))
-		route(app, "/v1/admin/providers", "GET:GetAdminProviders")
-		route(app, "/v1/admin/providers/toggle", "POST:ToggleAdminProvider")
-		route(app, "/v1/admin/providers/primary", "POST:SetPrimaryAdminProvider")
+		route(app, "/v1/admin/ai/providers", "GET:GetAdminProviders")
+		route(app, "/v1/admin/ai/providers/toggle", "POST:ToggleAdminProvider")
+		route(app, "/v1/admin/ai/providers/primary", "POST:SetPrimaryAdminProvider")
 		roundTrip = app
 	})
 }
@@ -496,15 +496,15 @@ func TestRouterRoundTrip_BypassBlocked(t *testing.T) {
 	setupRoundTripRouter(t)
 
 	for _, v := range []struct{ method, path, note string }{
-		{"GET", "/v1/admin/providers", "canonical read"},
-		{"GET", "/v1/admin/providers/", "trailing slash"},
-		{"GET", "/v1//admin/providers", "double leading slash"},
-		{"GET", "/v1/./admin/providers", "dot segment"},
-		{"GET", "/v1/admin/../admin/providers", "dotdot segment"},
-		{"POST", "/v1/admin/providers/toggle", "canonical toggle"},
-		{"POST", "/v1/admin/providers/toggle/", "toggle trailing slash"},
-		{"POST", "/v1//admin/providers/toggle", "toggle double leading slash"},
-		{"POST", "/v1/admin/providers/primary/", "primary trailing slash"},
+		{"GET", "/v1/admin/ai/providers", "canonical read"},
+		{"GET", "/v1/admin/ai/providers/", "trailing slash"},
+		{"GET", "/v1//admin/ai/providers", "double leading slash"},
+		{"GET", "/v1/./admin/ai/providers", "dot segment"},
+		{"GET", "/v1/admin/../admin/ai/providers", "dotdot segment"},
+		{"POST", "/v1/admin/ai/providers/toggle", "canonical toggle"},
+		{"POST", "/v1/admin/ai/providers/toggle/", "toggle trailing slash"},
+		{"POST", "/v1//admin/ai/providers/toggle", "toggle double leading slash"},
+		{"POST", "/v1/admin/ai/providers/primary/", "primary trailing slash"},
 	} {
 		resp, err := roundTrip.Fiber().Test(httptest.NewRequest(v.method, "http://api.hanzo.ai"+v.path, nil))
 		if err != nil {

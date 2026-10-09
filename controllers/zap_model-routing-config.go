@@ -53,11 +53,11 @@ func init() {
 	// declines (errDecline) every path under it that is not {model}/access, which
 	// is what lets siblings like /v1/models/providers keep their own handler.
 	registerGatewayRoute("/v1/models/", zapModelAccessSelfHandler) // /v1/models/{model}/access
-	registerGatewayRoute("/v1/admin/model-access", zapAdminModelAccessHandler)
+	registerGatewayRoute("/v1/admin/ai/model-access", zapAdminModelAccessHandler)
 
 	// Config reload / pricing refresh (SuperAdmin).
-	registerGatewayRoute("/v1/admin/reload-model-config", zapModelConfigAdminHandler)
-	registerGatewayRoute("/v1/admin/refresh-model-pricing", zapModelConfigAdminHandler)
+	registerGatewayRoute("/v1/admin/ai/reload-model-config", zapModelConfigAdminHandler)
+	registerGatewayRoute("/v1/admin/ai/refresh-model-pricing", zapModelConfigAdminHandler)
 }
 
 // ── Response helpers: the SAME Response envelope the router path returns ────────
@@ -248,12 +248,12 @@ func zapModelConfigAdminHandler(ctx context.Context, method, path, query, auth s
 	}
 
 	switch {
-	case strings.HasPrefix(path, "/v1/admin/reload-model-config"):
+	case strings.HasPrefix(path, "/v1/admin/ai/reload-model-config"):
 		if err := cfg.Reload(); err != nil {
 			return zapGwError(200, "reload failed: "+err.Error())
 		}
 		return zapGwOk()
-	case strings.HasPrefix(path, "/v1/admin/refresh-model-pricing"):
+	case strings.HasPrefix(path, "/v1/admin/ai/refresh-model-pricing"):
 		cfg.fetchLivePricing()
 		return zapGwOk(struct {
 			LastPricingRefresh time.Time `json:"lastPricingRefresh"`

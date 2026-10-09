@@ -62,10 +62,10 @@ func init() {
 
 	// Gateway (MsgType 200) — /v1 path prefixes routing to the SAME handlers.
 	// lookupGatewayHandler resolves by longest matching prefix, so the shorter
-	// "/v1/admin/providers" never shadows "/v1/admin/providers/toggle".
-	registerGatewayPath("/v1/admin/providers/toggle", zapToggleAdminProviderHandler)
-	registerGatewayPath("/v1/admin/providers/primary", zapSetPrimaryAdminProviderHandler)
-	registerGatewayPath("/v1/admin/providers", zapGetAdminProvidersHandler)
+	// "/v1/admin/ai/providers" never shadows "/v1/admin/ai/providers/toggle".
+	registerGatewayPath("/v1/admin/ai/providers/toggle", zapToggleAdminProviderHandler)
+	registerGatewayPath("/v1/admin/ai/providers/primary", zapSetPrimaryAdminProviderHandler)
+	registerGatewayPath("/v1/admin/ai/providers", zapGetAdminProvidersHandler)
 	registerGatewayPath("/v1/models/providers", zapGetModelProvidersHandler)
 }
 

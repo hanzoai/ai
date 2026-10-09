@@ -212,7 +212,7 @@ var (
 
 // InvalidateProviderNameCache evicts a provider (by admin name) from the hot-path
 // resolution caches so a mutation — e.g. an admin enable/disable or set-primary
-// via /v1/admin/providers — takes effect IMMEDIATELY instead of after the 60s
+// via /v1/admin/ai/providers — takes effect IMMEDIATELY instead of after the 60s
 // TTL. The global (admin) entry is keyed by name; per-org BYOK entries are keyed
 // "org/name", so all org overrides of that provider name are dropped too. Passing
 // an empty name flushes everything (used when a bulk change touched many records).
@@ -242,7 +242,7 @@ func InvalidateProviderNameCache(name string) {
 // ModelProviderUsable reports whether a Model-category provider is currently
 // eligible to serve traffic. A Model provider is usable only when its admin
 // toggle (State) is "Active" — a "Disabled"/paused provider is treated as
-// unavailable so the /v1/admin/providers toggle actually takes effect on the
+// unavailable so the /v1/admin/ai/providers toggle actually takes effect on the
 // hot path. Non-Model providers (Storage, Embedding config records, etc.) are
 // governed by their own callers and are not affected by this gate.
 //

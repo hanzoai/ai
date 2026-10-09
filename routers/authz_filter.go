@@ -115,15 +115,15 @@ var superAdminEndpoints = map[string]struct{}{
 	// TrimPrefix(path,"/v1/"), so multi-segment paths appear verbatim. NOTE:
 	// "models/providers" is deliberately NOT here — it is the public, secret-free
 	// projection of the served catalog (a get-models-style public read).
-	"admin/providers": {}, "admin/providers/toggle": {}, "admin/providers/primary": {},
+	"admin/ai/providers": {}, "admin/ai/providers/toggle": {}, "admin/ai/providers/primary": {},
 	// Model routing config.
 	"get-model-routes": {}, "get-model-route": {},
 	"add-model-route": {}, "update-model-route": {}, "delete-model-route": {},
-	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
+	"admin/ai/reload-model-config": {}, "admin/ai/refresh-model-pricing": {},
 	// The free set with each model's last day and the accounts that served it.
 	"admin/ai/free": {},
 	// DO usage backfill — writes the platform-wide financial ledger (cloud_usage).
-	"admin/usage/backfill-do": {},
+	"admin/ai/usage/backfill-do": {},
 	// Per-org settings is served ZAP-native (/v1/ai/org/settings, super-admin gated in
 	// the handler) — no controller route, so no filter entry.
 	// Routing-decision + reward training exports are NOT hard super-admin-gated here:
@@ -290,10 +290,10 @@ func sessionOrBearerUser(c *zip.Ctx) *iam.User {
 // SAME normalized path the router dispatches to. the router path.Cleans the request path
 // before router matching (collapsing "//", "/./", "/../" and a trailing slash),
 // so a filter that keyed on the RAW path (strings.TrimPrefix of c.Path())
-// disagreed with the router: variants like "/v1/admin/providers/",
-// "/v1//admin/providers", "/v1/./admin/providers" and "/v1/admin/../admin/providers"
+// disagreed with the router: variants like "/v1/admin/ai/providers/",
+// "/v1//admin/ai/providers", "/v1/./admin/ai/providers" and "/v1/admin/../admin/ai/providers"
 // all dispatch to the gated controller yet, un-normalized, produced a controllerName
-// ("admin/providers/", …) that missed the superAdminEndpoints map — falling through
+// ("admin/ai/providers/", …) that missed the superAdminEndpoints map — falling through
 // to the fully-open default. Cleaning here makes the gate and the router agree on
 // ONE canonical name, closing the entire slash/dot variant set for every gated
 // endpoint (admin/providers*, the get-*/*-provider CRUD, topology reads).
@@ -310,8 +310,8 @@ func sessionOrBearerUser(c *zip.Ctx) *iam.User {
 // Returns ok=false only for non-/v1 paths (which the caller lets pass, unchanged).
 func normalizedControllerName(rawPath, method string) (name string, ok bool) {
 	// path.Clean resolves ".", ".." and duplicate slashes on the absolute request
-	// path exactly as the router does before dispatch. path.Clean("/v1/admin/providers/")
-	// == "/v1/admin/providers"; path.Clean("/v1//admin/providers") == "/v1/admin/providers".
+	// path exactly as the router does before dispatch. path.Clean("/v1/admin/ai/providers/")
+	// == "/v1/admin/ai/providers"; path.Clean("/v1//admin/ai/providers") == "/v1/admin/ai/providers".
 	// Folded because the ROUTER folds it. zip leaves fiber's CaseSensitive at its
 	// default of false, so /V1/... and /v1/... dispatch to the same handler while
 	// Ctx.Path() hands back whatever the caller sent — so a prefix test against a
