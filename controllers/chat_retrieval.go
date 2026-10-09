@@ -6,13 +6,13 @@
 package controllers
 
 import (
-	"encoding/json"
 	"strings"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/retrieval"
 )
 
 // retrievalOwner returns the IAM org whose search index should be queried: the
@@ -27,42 +27,18 @@ func retrievalOwner(authUser *iam.User) string {
 	return ""
 }
 
-// retrievalFlags is the retrieval ask as the BODY carries it. A browser
-// preflights custom headers and the edge's CORS allow-list names only the
-// standard ones, so a public page cannot send X-Retrieval — the body is how it
-// asks. The header form stays for server-side callers; either spelling works.
-type retrievalFlags struct {
-	Retrieval bool   `json:"retrieval"`
-	Store     string `json:"retrieval_store"`
-}
+// header reads one request header, the shape package retrieval asks for.
+func (c *ApiController) header(name string) string { return c.Header(name) }
 
-func (c *ApiController) bodyRetrieval() retrievalFlags {
-	var f retrievalFlags
-	_ = json.Unmarshal(c.Body(), &f)
-	return f
-}
-
-// retrievalStore names the store to search: the header if present, else the
-// body, else empty — which retrieveKnowledgeIfEnabled resolves to the default.
+// retrievalStore names the store to search (retrieval.Store).
 func (c *ApiController) retrievalStore() string {
-	if v := c.Header("X-Retrieval-Store"); v != "" {
-		return v
-	}
-	return c.bodyRetrieval().Store
+	return retrieval.Store(c.header, c.Body())
 }
 
-// retrievalEnabled decides whether to augment the prompt with retrieved docs.
+// retrievalEnabled decides whether to augment the prompt with retrieved docs
+// (retrieval.Asked — the one statement of it, which the host in front reads too).
 func (c *ApiController) retrievalEnabled() bool {
-	if v := c.Header("X-Retrieval"); v != "" {
-		return v == "1" || strings.EqualFold(v, "true")
-	}
-	if c.Header("X-Retrieval-Store") != "" {
-		return true
-	}
-	if f := c.bodyRetrieval(); f.Retrieval || f.Store != "" {
-		return true
-	}
-	return false
+	return retrieval.Asked(c.header, c.Body())
 }
 
 // retrieveKnowledgeIfEnabled pulls top-K relevant documents from the owner's

@@ -919,6 +919,18 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   foreign-aud token → 401. The OAuth code-exchange callback (`account.go`
   `Signin`) is NOT a request-auth path and is intentionally exempt.
 
+- **A delegated token is the HOST's to verify** — a token whose scope names
+  `ai:inference` (`iam.Confined`) is a person's credential IAM delegated for model
+  calls (iam LLM.md "Delegation"), signed by a key the public JWKS never carries.
+  `ParseAndValidateJWT` sends it to the verifier the host installed
+  (`object.SetConfinedVerifier` — hanzo-inc/cloud passes its identity boundary's
+  verdict on the exact token bytes) and reads its claims from the verified bytes
+  (`iam.ClaimsOf`); with no verifier installed it is refused (`ErrJWTConfined`).
+  Never a header: the module asks about the token it is about to believe.
+- **Retrieval is stated once** — `retrieval.Asked` / `retrieval.Store` (a leaf) is
+  when a model call searches the org's documents into its prompt; the controllers
+  and the host that refuses retrieval to a delegated token read the same function.
+
 - **Balance ledger — single-pod invariant** — `object.GlobalBalanceLedger` is
   in-pod memory. Reserve/Settle are correct ONLY at `replicas: 1`. Two pods
   double-spend (each reserves against its own cached Commerce balance). Enforced
