@@ -21,6 +21,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/hanzoai/ai/conf"
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -331,11 +332,45 @@ func TokenIsOwnBrand(token string) bool {
 	return iss == expectedJWTIssuer()
 }
 
+// confined is the host's verifier for a confined token (SetConfinedVerifier).
+var confined atomic.Pointer[func(token string) error]
+
+// SetConfinedVerifier installs the HOST's verifier for a token IAM delegated for
+// model calls (iam.Inference). The host that serves model calls — hanzo-inc/cloud
+// — already verified the token at its identity boundary, against IAM's delegation
+// key, which the public JWKS this module reads never carries; this hands that
+// verdict to the request's handlers, so there is ONE verifier for a delegated token
+// and not a second one that does not hold its key.
+//
+// It is a function of the TOKEN, never of the request: the module asks the host
+// about the exact bytes it is about to believe, so no header a client writes can
+// stand in for the answer.
+func SetConfinedVerifier(f func(token string) error) { confined.Store(&f) }
+
+// ErrJWTConfined refuses a confined token in a process whose host installed no
+// verifier for one: standalone, this module cannot verify it and does not guess.
+var ErrJWTConfined = errors.New("jwt: a token delegated for model calls, and no verifier for one is installed")
+
 // ParseAndValidateJWT verifies the token signature via IAM AND enforces the
 // cloud-api issuer/audience policy. This is the ONE JWT entry point for
 // cloud-api request auth — handlers and filters must never call
 // iam.ParseJwtToken directly, so iss/aud are checked on every JWT auth path.
+//
+// A CONFINED token (iam.Confined) goes to the host's verifier instead
+// (SetConfinedVerifier), which checks its signature under the delegation key, its
+// issuer, its audience and its actor; its claims are then read from the verified
+// bytes. With no verifier installed it is refused.
 func ParseAndValidateJWT(token string) (*iam.Claims, error) {
+	if iam.Confined(token) {
+		f := confined.Load()
+		if f == nil || *f == nil {
+			return nil, ErrJWTConfined
+		}
+		if err := (*f)(token); err != nil {
+			return nil, err
+		}
+		return iam.ClaimsOf(token)
+	}
 	claims, err := iam.ParseJwtToken(token)
 	if err != nil {
 		return nil, err
