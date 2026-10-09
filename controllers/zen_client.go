@@ -1431,15 +1431,20 @@ func withModel(body []byte, model string) []byte {
 // (provider, transforms, route), extra completions (n) and paid tools (plugins,
 // web_search_options), and each would be charged to our account at a price the SKU
 // never quoted. openrouterTerms writes its own provider field after this.
+//
+// The cache fields go on: prompt_cache_key names the conversation, so every turn is
+// sent to the machine that holds its prefix, and cache_control asks for the prompt
+// to be cached (the quote prices it as written).
 var familyFields = map[string]map[string]bool{
 	"chat/completions": fieldSet("model", "messages", "stream", "stream_options",
 		"max_tokens", "temperature", "top_p", "top_k", "min_p", "top_a",
 		"frequency_penalty", "presence_penalty", "repetition_penalty", "seed", "stop",
 		"logit_bias", "logprobs", "top_logprobs", "response_format", "tools", "tool_choice",
-		"parallel_tool_calls", "user", "reasoning_effort", "reasoning"),
+		"parallel_tool_calls", "user", "reasoning_effort", "reasoning",
+		"prompt_cache_key", "cache_control"),
 	"messages": fieldSet("model", "messages", "system", "max_tokens", "stream",
 		"temperature", "top_p", "top_k", "stop_sequences", "tools", "tool_choice",
-		"thinking", "metadata"),
+		"thinking", "metadata", "cache_control"),
 	"embeddings": fieldSet("model", "input", "encoding_format", "dimensions", "user"),
 }
 

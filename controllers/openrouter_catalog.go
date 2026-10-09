@@ -42,6 +42,7 @@ package controllers
 // free routes rather than a separate discovery.
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -607,11 +608,14 @@ func (f *modelFamily) collection(sku string) (word string, stated bool) {
 //
 // Written over the caller's own `provider` object rather than replacing it, so a
 // caller who states other vendor preferences keeps them.
+//
+// A Claude model is also asked to cache its prompt (claudeCache).
 func openrouterTerms(body []byte, free bool) []byte {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(body, &m); err != nil || m == nil {
 		return body
 	}
+	claudeCache(m, body)
 	prov := map[string]json.RawMessage{}
 	if raw, ok := m["provider"]; ok {
 		_ = json.Unmarshal(raw, &prov)
@@ -631,4 +635,27 @@ func openrouterTerms(body []byte, free bool) []byte {
 		return body
 	}
 	return out
+}
+
+// ephemeral is the cache Anthropic keeps for five minutes, renewed by every read.
+var ephemeral = json.RawMessage(`{"type":"ephemeral"}`)
+
+// claudeCache asks for a Claude prompt to be cached. Anthropic caches only a prompt
+// the request marks, where OpenAI and most others cache every long prefix on their
+// own. An agent resends its whole conversation every turn, so unmarked, each turn
+// paid the full input rate for everything before it. A top-level cache_control puts
+// the breakpoint on the last block the prompt can cache (OpenRouter's automatic
+// caching), and the next turn reads that prefix at the cache rate.
+//
+// A request that marks its own breakpoints keeps them alone: Anthropic takes at
+// most four, and the caller placed theirs on purpose.
+func claudeCache(m map[string]json.RawMessage, body []byte) {
+	var model string
+	if json.Unmarshal(m["model"], &model) != nil || !strings.HasPrefix(model, "anthropic/") {
+		return
+	}
+	if bytes.Contains(body, []byte(`"cache_control"`)) {
+		return
+	}
+	m["cache_control"] = ephemeral
 }

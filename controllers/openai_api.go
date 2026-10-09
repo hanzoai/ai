@@ -2710,12 +2710,15 @@ func (c *ApiController) proxyToolRequestAnthropic(
 		}
 	}
 
-	// Build Anthropic request
+	// Build Anthropic request. Anthropic caches only a prompt the request marks, so
+	// the top-level cache_control caches this one up to its last block (claudeCache):
+	// the next turn of the conversation reads that prefix at the cache rate.
 	anthropicReq := map[string]any{
-		"model":      request.Model,
-		"messages":   anthropicMessages,
-		"max_tokens": 4096,
-		"tools":      anthropicTools,
+		"model":         request.Model,
+		"messages":      anthropicMessages,
+		"max_tokens":    4096,
+		"tools":         anthropicTools,
+		"cache_control": ephemeral,
 	}
 	if systemPrompt != "" {
 		anthropicReq["system"] = systemPrompt

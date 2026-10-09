@@ -183,8 +183,9 @@ func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
 // carry puts into the chat body what go-openai's struct cannot hold, read from the
 // Responses body as the caller wrote it: a temperature or top_p of zero (omitempty
 // drops both, so a caller who asked for greedy sampling got the vendor's default),
-// the structured-output format (text.format, chat's response_format) and the
-// reasoning effort.
+// the prompt cache key (chat's own field of that name, which keeps a conversation's
+// turns on the cache that holds its prefix), the structured-output format
+// (text.format, chat's response_format) and the reasoning effort.
 //
 // previous_response_id asks for a stored conversation, and this gateway stores none.
 // It is refused rather than answered: an answer without the conversation it named
@@ -192,6 +193,7 @@ func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
 func carry(chat, body []byte) ([]byte, error) {
 	var in struct {
 		Previous    string          `json:"previous_response_id"`
+		CacheKey    json.RawMessage `json:"prompt_cache_key"`
 		Temperature json.RawMessage `json:"temperature"`
 		TopP        json.RawMessage `json:"top_p"`
 		Text        struct {
@@ -214,7 +216,7 @@ func carry(chat, body []byte) ([]byte, error) {
 	if err := json.Unmarshal(chat, &out); err != nil {
 		return nil, err
 	}
-	for k, v := range map[string]json.RawMessage{"temperature": in.Temperature, "top_p": in.TopP} {
+	for k, v := range map[string]json.RawMessage{"temperature": in.Temperature, "top_p": in.TopP, "prompt_cache_key": in.CacheKey} {
 		if len(v) > 0 && string(v) != "null" {
 			out[k] = v
 		}
@@ -673,6 +675,8 @@ type responsesStreamTranslator struct {
 	callOrder        []int
 	nextOutput       int
 	promptTokens     int
+	cachedTokens     int
+	writtenTokens    int
 	completionTokens int
 	totalTokens      int
 	sawFinishReason  bool
@@ -705,17 +709,7 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 		return err
 	}
 	if chunk.Usage != nil {
-		if chunk.Usage.PromptTokens > 0 {
-			t.promptTokens = chunk.Usage.PromptTokens
-		}
-		if chunk.Usage.CompletionTokens > 0 {
-			t.completionTokens = chunk.Usage.CompletionTokens
-		}
-		if chunk.Usage.TotalTokens > 0 {
-			t.totalTokens = chunk.Usage.TotalTokens
-		}
-	}
-	if chunk.Usage != nil {
+		t.count(chunk.Usage)
 		t.sawUsage = true
 		if t.sawFinishReason {
 			return t.finish()
@@ -924,11 +918,36 @@ func (t *responsesStreamTranslator) finish() error {
 	})
 }
 
+// count takes the usage a chunk or a whole answer reports. A count it leaves out
+// keeps what an earlier chunk said: a usage chunk need not repeat every part.
+func (t *responsesStreamTranslator) count(u *chatUsage) {
+	if u.PromptTokens > 0 {
+		t.promptTokens = u.PromptTokens
+	}
+	if u.CompletionTokens > 0 {
+		t.completionTokens = u.CompletionTokens
+	}
+	if u.TotalTokens > 0 {
+		t.totalTokens = u.TotalTokens
+	}
+	if d := u.PromptDetails; d != nil {
+		if d.Cached > 0 {
+			t.cachedTokens = d.Cached
+		}
+		if d.Written > 0 {
+			t.writtenTokens = d.Written
+		}
+	}
+}
+
 func (t *responsesStreamTranslator) resource(status string, output []any) responsesResource {
 	total := t.totalTokens
 	if total == 0 {
 		total = t.promptTokens + t.completionTokens
 	}
+	// Both are parts of the prompt, and never more than it.
+	cached := min(t.cachedTokens, t.promptTokens)
+	written := min(t.writtenTokens, t.promptTokens-cached)
 	return responsesResource{
 		ID: t.responseID, Object: "response", CreatedAt: t.createdAt, Status: status,
 		Model: t.request.Model, Output: output,
@@ -940,7 +959,7 @@ func (t *responsesStreamTranslator) resource(status string, output []any) respon
 		Tools: t.request.Tools, TopP: t.request.TopP,
 		Usage: responsesUsage{
 			InputTokens:   t.promptTokens,
-			InputDetails:  responsesInputDetails{},
+			InputDetails:  responsesInputDetails{CachedTokens: cached, CacheWriteTokens: written},
 			OutputTokens:  t.completionTokens,
 			OutputDetails: responsesOutputDetails{},
 			TotalTokens:   total,
@@ -992,8 +1011,26 @@ type responsesUsage struct {
 	TotalTokens   int                    `json:"total_tokens"`
 }
 
+// responsesInputDetails is the part of input_tokens the upstream's prompt cache
+// served (cached_tokens) and the part this call wrote to it (cache_write_tokens,
+// which Codex reads beside OpenAI's field).
 type responsesInputDetails struct {
-	CachedTokens int `json:"cached_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+}
+
+// chatUsage is a chat completion's usage. prompt_tokens is the whole prompt, and
+// prompt_tokens_details says how much of it the upstream's cache served
+// (cached_tokens) and, on OpenRouter, how much this call wrote to it
+// (cache_write_tokens).
+type chatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+	PromptDetails    *struct {
+		Cached  int `json:"cached_tokens"`
+		Written int `json:"cache_write_tokens"`
+	} `json:"prompt_tokens_details"`
 }
 
 type responsesOutputDetails struct {
@@ -1022,19 +1059,13 @@ func openAIChatResponseToResponses(body []byte, request *OpenAIResponsesRequest,
 				} `json:"tool_calls"`
 			} `json:"message"`
 		} `json:"choices"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		} `json:"usage"`
+		Usage chatUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("invalid upstream chat response: %w", err)
 	}
 	translator := newResponsesStreamTranslator(func(string, any) error { return nil }, request, toolKinds)
-	translator.promptTokens = response.Usage.PromptTokens
-	translator.completionTokens = response.Usage.CompletionTokens
-	translator.totalTokens = response.Usage.TotalTokens
+	translator.count(&response.Usage)
 	outputs := []any{}
 	if len(response.Choices) > 0 {
 		message := response.Choices[0].Message
