@@ -93,16 +93,26 @@ func (c Client) Decide(ctx context.Context, org, capabilities string, body []byt
 }
 
 func writeFrame(w io.Writer, payload []byte) error {
-    if len(payload) > int(^uint32(0)) {
+    if uint64(len(payload)) > uint64(^uint32(0)) {
         return errors.New("frame cannot fit u32 length")
     }
     var head [4]byte
     binary.LittleEndian.PutUint32(head[:], uint32(len(payload)))
-    if _, err := w.Write(head[:]); err != nil {
+    if err := writeAll(w, head[:]); err != nil {
         return err
     }
-    _, err := w.Write(payload)
-    return err
+    return writeAll(w, payload)
+}
+
+// io.Writer may return a short write without an error.
+func writeAll(w io.Writer, p []byte) error {
+    for len(p) > 0 {
+        n, err := w.Write(p)
+        if err != nil { return err }
+        if n == 0 { return io.ErrShortWrite }
+        p = p[n:]
+    }
+    return nil
 }
 
 func readFrame(r io.Reader, max uint32) ([]byte, error) {
