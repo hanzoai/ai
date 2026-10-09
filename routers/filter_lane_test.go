@@ -64,7 +64,7 @@ func TestTheLaneFollowsTheGatesGrant(t *testing.T) {
 		{"a subscriber whose prepaid pays past the plan", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "near"}, "paid"},
 		{"a wallet with no plan", &object.LimitGrant{Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "ok"}, "paid"},
 		{"a wallet on the free plan", &object.LimitGrant{Plan: "free", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "ok"}, "paid"},
-		{"granted credit with no plan", &object.LimitGrant{Plan: "free", Pays: object.PaysCredits, Class: object.ClassPremium, State: "ok"}, "paid"},
+		{"granted credit with no plan", &object.LimitGrant{Plan: "free", Pays: object.PaysCredits, Class: object.ClassPremium, State: "ok"}, "free"},
 		{"the free plan's own usage", &object.LimitGrant{Plan: "free", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Settle: func(int64) {}}, "free"},
 		{"a free model", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "ok", Settle: func(int64) {}}, "free"},
 		{"a caller the policy said nothing about", nil, "free"},

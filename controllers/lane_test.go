@@ -130,9 +130,9 @@ func onLane(t *testing.T, c *ApiController, h party) {
 }
 
 // THE LANE IS THE PLAN THAT PAYS. A paid plan's included usage puts a priced call on
-// the paid lane, and so does the payer's own credit past it; nothing else does — no
-// plan, the Free plan, a model's free daily cap, a free model, and a policy that said
-// nothing. With the platform's switch off nobody is on it, and the response says
+// the paid lane, and so does the payer's own credit, plan or none; nothing else does —
+// granted credit, the Free plan's own usage, a model's free daily cap, a free model,
+// and a policy that said nothing. With the platform's switch off nobody is on it, and the response says
 // nothing about lanes.
 func TestTheLaneIsThePlanThatPays(t *testing.T) {
 	cases := []struct {
@@ -145,14 +145,15 @@ func TestTheLaneIsThePlanThatPays(t *testing.T) {
 		{"the Free plan by name", planGrant("free", object.PaysFree, object.ClassOurs), false},
 		{"a wallet with no plan", planGrant("", object.PaysPrepaid, object.ClassPremium), true},
 		{"a wallet on the Free plan", planGrant("free", object.PaysPrepaid, object.ClassPremium), true},
-		{"granted credit with no plan", planGrant("", object.PaysCredits, object.ClassPremium), true},
+		{"granted credit with no plan", planGrant("", object.PaysCredits, object.ClassPremium), false},
+		{"granted credit with no plan, on Hanzo's own tier", planGrant("", object.PaysCredits, object.ClassOurs), false},
 		{"the Free plan's included usage", planGrant("free", object.PaysPlan, object.ClassPremium), false},
 		{"Pro's included usage", planGrant("dev", object.PaysPlan, object.ClassPremium), true},
 		{"Max 5x's included usage", planGrant("max-5x", object.PaysPlan, object.ClassOurs), true},
 		{"Max 20x's included usage", planGrant("max-20x", object.PaysPlan, object.ClassPremium), true},
 		{"a Team seat on the org's pool", planGrant("team", object.PaysPlan, object.ClassPremium), true},
 		{"Max 20x past its included usage, its prepaid credit", planGrant("max-20x", object.PaysPrepaid, object.ClassPremium), true},
-		{"Max 20x past its included usage, its granted credit", planGrant("max-20x", object.PaysCredits, object.ClassPremium), true},
+		{"Max 20x past its included usage, its granted credit", planGrant("max-20x", object.PaysCredits, object.ClassPremium), false},
 		{"Max 20x on a model's free daily cap", planGrant("max-20x", object.PaysFree, object.ClassPremium), false},
 		{"Max 20x in limited mode, on the free model", planGrant("max-20x", object.PaysPlan, object.ClassFree), false},
 	}
@@ -1278,5 +1279,32 @@ func TestTheOrgsOwnKeyIsServedWhenTheLaneIsFull(t *testing.T) {
 	}
 	if paidDay.spent != usd(1) || paidDay.held != 0 {
 		t.Fatalf("the day reads %d nano with %d held, want only the $1 spent before", paidDay.spent, paidDay.held)
+	}
+}
+
+// Free users get free models: promotional credit, which nobody paid for, never seats a
+// call on a paid tier of Enso, with a plan or without one; the payer's own money does.
+func TestGrantedCreditNeverSeatsAPaidEnsoTier(t *testing.T) {
+	lanes(t)
+	for _, c := range []struct {
+		name  string
+		grant *object.LimitGrant
+		want  Seating
+	}{
+		{"granted credit, no plan", &object.LimitGrant{Pays: object.PaysCredits, Class: object.ClassOurs, State: "ok", Settle: func(int64) {}}, SeatFree},
+		{"a paid plan past its usage, on granted credit", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysCredits, Class: object.ClassOurs, State: "near", Settle: func(int64) {}}, SeatFree},
+		{"the payer's own credit, no plan", &object.LimitGrant{Pays: object.PaysPrepaid, Class: object.ClassOurs, State: "ok", Settle: func(int64) {}}, SeatPaid},
+	} {
+		for _, model := range []string{"enso-flash", "enso-pro", "enso-ultra"} {
+			cx := visit(http.MethodPost, "/v1/chat/completions")
+			Cover(cx.Ctx, c.grant)
+			if got := Seat(cx.Ctx, c.grant, "acme", "acme/alice", model); got != c.want {
+				t.Errorf("%s on %s: seated %v, want %v", c.name, model, got, c.want)
+			}
+			if seated := !FreeOnlyFor(cx.Context()); seated != (c.want == SeatPaid) {
+				t.Errorf("%s on %s: on the paid lane %v", c.name, model, seated)
+			}
+			Unseat(cx.Ctx)
+		}
 	}
 }

@@ -22,12 +22,12 @@ package controllers
 //
 //   - PAID: something pays for this priced call — a paid plan's included usage
 //     (PaysPlan, LimitGrant.Plan an active subscription whose period was paid), or the
-//     payer's own cash or, where the host's policy lets it pay, granted credit, with a
-//     plan or without one (PaysPrepaid, PaysCredits) — and the call's worst case fits
-//     what the paid lane has left for it.
-//   - FREE: everyone else — a call nothing pays for, a free model, a payer whose call
-//     does not fit, and any request that reached a handler without passing the gate (a
-//     ZAP handler: the forward bridge is the ZAP route that runs the gate).
+//     payer's own cash or the org's credit line, with a plan or without one
+//     (PaysPrepaid) — and the call's worst case fits what the paid lane has left for it.
+//   - FREE: everyone else — a call nothing pays for, a call granted (promotional)
+//     credit pays for, a free model, a payer whose call does not fit, and any request
+//     that reached a handler without passing the gate (a ZAP handler: the forward
+//     bridge is the ZAP route that runs the gate).
 //
 // WHAT A SEAT HOLDS. A call on the paid lane holds its quote (quote.go: the most it can
 // cost, for every provider fast mode races it to) from admission until its answer is
@@ -262,17 +262,22 @@ func laneTokens(ctx context.Context, n int) int {
 }
 
 // pays reports whether a grant puts its request on the paid lane: the call is priced
-// and something pays for it — a paid plan's included usage, the payer's own cash, plan
-// or none, granted credit where the host's policy lets credit pay for the model, or the
-// program that made the call in this process (PaysCaller). Which of these a grant
-// names is the host's decision (cloud's never lets granted credit pay for a
-// third-party model unless its operator says so); the lane seats what it granted.
+// and money the payer bought pays for it — a paid plan's included usage, the payer's
+// own cash or the org's credit line (which the policy reports as prepaid), plan or
+// none, or the program that made the call in this process (PaysCaller), which asks
+// for its customer's plan before it seats (routers callerPays).
+//
+// GRANTED CREDIT NEVER SEATS. It is promotional: nobody paid for it, so a caller whose
+// call it would pay is a free user, and free users get free models, on every priced
+// model, Hanzo's own tiers and third-party ones alike, whatever the host's policy lets
+// credit pay for. A granted-credit caller stays on the free lane, where a Hanzo family
+// answers from its free models.
 func pays(g *object.LimitGrant) bool {
 	if g == nil || strings.EqualFold(g.Class, object.ClassFree) {
 		return false
 	}
 	switch g.Pays {
-	case object.PaysPrepaid, object.PaysCredits, object.PaysCaller:
+	case object.PaysPrepaid, object.PaysCaller:
 		return true
 	case object.PaysPlan:
 		plan := strings.TrimSpace(g.Plan)
