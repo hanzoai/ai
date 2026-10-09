@@ -84,6 +84,9 @@ func handleCloudOps(ctx context.Context, from string, msg *zap.Message) (*zap.Me
 	method := root.Text(object.CloudReqMethod)
 	auth := root.Text(object.CloudReqAuth)
 	body := root.Bytes(object.CloudReqBody)
+	if confinedIn(auth) {
+		return buildOpsResponse(401, nil, zapConfinedRefusal)
+	}
 
 	// The message carries an auth field because these opcodes act on a cluster.
 	// Reading it is what makes the field mean anything.

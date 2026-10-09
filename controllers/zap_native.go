@@ -86,6 +86,9 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (res
 	method := root.Text(object.CloudReqMethod)
 	auth := root.Text(object.CloudReqAuth)
 	body := root.Bytes(object.CloudReqBody)
+	if confinedIn(auth) {
+		return object.BuildCloudResponse(401, nil, zapConfinedRefusal)
+	}
 
 	switch method {
 	case "models.list":
@@ -137,6 +140,10 @@ func gateway(router http.Handler) zap.Handler {
 
 		// Extract auth from headers JSON: {"Authorization":"Bearer xxx", ...}
 		auth := extractAuthFromHeaders(root.Bytes(16))
+		if confinedIn(auth) || confinedHeaders(root.Bytes(16)) || confinedQuery(query) {
+			errBody, _ := json.Marshal(map[string]string{"error": zapConfinedRefusal})
+			return object.BuildGatewayResponse(401, errBody, nil)
+		}
 		// The request's headers travel with it, so a handler resolves who pays the way
 		// the HTTP surface does (X-Org-Id) and answers under the caller's X-Request-Id.
 		ctx = context.WithValue(ctx, gatewayHeaders{}, root.Bytes(16))
@@ -597,6 +604,9 @@ func zapResolveUser(auth string) (string, error) {
 	if auth == "" {
 		return "", fmt.Errorf("auth token required")
 	}
+	if confinedIn(auth) {
+		return "", errZapConfined
+	}
 	token := strings.TrimPrefix(auth, "Bearer ")
 
 	if isIAMApiKey(token) {
@@ -621,6 +631,9 @@ func zapResolveUser(auth string) (string, error) {
 }
 
 func zapResolveAuth(auth string, requestModel string) (*object.Provider, *iam.User, string, error) {
+	if confinedIn(auth) {
+		return nil, nil, "", errZapConfined
+	}
 	token := strings.TrimPrefix(auth, "Bearer ")
 
 	if isJwtToken(token) {

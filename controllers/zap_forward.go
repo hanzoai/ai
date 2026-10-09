@@ -67,6 +67,6 @@ func InitForwardBridge(h http.Handler) {
 	if node == nil || h == nil {
 		return
 	}
-	forward.Serve(node, target(h))
+	forward.Serve(node, target(unconfined(h)))
 	log.Info("forward_serve: ZAP HTTP terminal registered on node %s (msg_type=%d)", node.NodeID(), forward.MsgTypeForward)
 }

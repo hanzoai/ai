@@ -97,7 +97,7 @@ func zapGwError(status uint32, msg string) (*zap.Message, error) {
 // around a credential is not part of it.
 func zapPrincipal(auth string) *iam.User {
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	if token == "" {
+	if token == "" || confinedIn(auth) {
 		return nil
 	}
 	if isIAMApiKey(token) {

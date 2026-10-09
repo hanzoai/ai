@@ -927,6 +927,12 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   verdict on the exact token bytes) and reads its claims from the verified bytes
   (`iam.ClaimsOf`); with no verifier installed it is refused (`ErrJWTConfined`).
   Never a header: the module asks about the token it is about to believe.
+- **No ZAP door serves a delegated token** — the host's boundary, which keeps one
+  to model calls, stands in front of HTTP alone. The gateway (MsgType 200), the
+  native node (100), the ops node (110) and the forward bridge refuse one 401
+  before any verifier is asked, wherever in the request it rides, and so do the
+  identity seams they share (`zapResolveAuth`, `zapResolveUser`, `zapPrincipal`).
+  `controllers/zap_confined.go`; `TestNoZapDoorServesAConfinedToken`.
 - **Retrieval is stated once** — `retrieval.Asked` / `retrieval.Store` (a leaf) is
   when a model call searches the org's documents into its prompt; the controllers
   and the host that refuses retrieval to a delegated token read the same function.
