@@ -525,6 +525,22 @@ first answer frame commits it, and nothing after that moves it. `dial` is the
 seam the cascade tests script. Billing is by the SKU, with
 `prompt_tokens_details.cached_tokens` split out and priced as cached.
 
+**One prompt, on every path.** `usageRecord.PromptTokens` is EVERY input token;
+`CacheReadTokens` and `CacheWriteTokens` are parts of it, read from and written to the
+upstream's prompt cache. Each usage shape is read into that one split (`sniffZenUsage`
+into `tokens{fresh, cached, written}`, `AnthropicUsage.billed` into `tally.prompt()`):
+OpenAI counts `prompt_tokens_details.cached_tokens` inside `prompt_tokens`, OpenRouter
+its `cache_write_tokens` there too, Anthropic counts `cache_read_input_tokens` and
+`cache_creation_input_tokens` beside `input_tokens`. Pricing bills the input rate on the
+part read fresh (prompt less reads and writes), reads at the cache-read rate and writes at
+the cache-write rate: a family SKU's `cache_read` / `cache_write` (a resold model's
+`input_cache_read` / `input_cache_write` times the markup), else the input rate; the
+table path's `CacheReadPerMillion` / `cacheWriteRate`. Before, the family and relay
+paths recorded the fresh part as the prompt while the table path read the whole, so
+`cache_read > prompt` on most cached rows, and no path recorded a cache write: a write,
+priced above input, billed as a fresh read. Held by `TestEveryUsageShapeCountsThePromptWhole`
+and `TestACacheWriteBillsAtTheWriteRate`.
+
 **A relayed stream OWNS ITS HOLD.** The callback settles the real cost after the
 handler has returned, and `budgetHold.settle` is one-shot, so the handler's
 deferred release would win and the local ledger would never see a stream's spend.
@@ -551,7 +567,7 @@ forwards; the service owns which upstream answers. The contract, one address eac
   `hanzoai/zen` → `hanzo/zen`): routed, priced and gated as their SKU, sent upstream
   as the SKU, answered wearing the alias, never listed; one that spells a listed SKU
   is that SKU. Each `data` row: `id`, `owned_by`, `mode` (chat | embedding | rerank
-  | image | audio | video), `context_window`, `pricing` {input, output, cache_read}
+  | image | audio | video), `context_window`, `pricing` {input, output, cache_read, cache_write}
   as decimal strings (per 1M tokens; per unit for media), `pricing_tiers`,
   `access` (`waitlist`), `min_tier`, `funding` (`prepaid` where any path spends a
   prepaid balance), `plan`, `capabilities.vision`.

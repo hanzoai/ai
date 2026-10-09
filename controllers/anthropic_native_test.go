@@ -168,8 +168,10 @@ const nativeStream = "event: message_start\n" +
 	"event: message_stop\n" +
 	`data: {"type":"message_stop"}` + "\n\n"
 
-// nativeCost is what either reply must cost: the SKU's price, cache included.
-func nativeCost() int64 { return calculateCostCentsWithCache(nativeSKU, 1200, 340, 5000, 300) }
+// nativeCost is what either reply must cost: the SKU's price, cache included. The
+// prompt is every input token: 1,200 read fresh, 5,000 read from the cache and 300
+// written to it.
+func nativeCost() int64 { return calculateCostCentsWithCache(nativeSKU, 6500, 340, 5000, 300) }
 
 // payer is a signed-in member of acme with a funded ledger, calling a route whose
 // provider is a native upstream owned by owner: "admin" is the shared account,
@@ -702,7 +704,7 @@ func TestACutStreamBillsItsReservation(t *testing.T) {
 				t.Fatalf("status %d, %d deltas relayed", answered(c), strings.Count(body, "text_delta"))
 			}
 			floor := reservation([]byte(req), 2048)
-			want := calculateCostCentsWithCache(nativeSKU, max(1200, floor.InputTokens), 2048, 5000, 300)
+			want := calculateCostCentsWithCache(nativeSKU, max(1200, floor.InputTokens)+5300, 2048, 5000, 300)
 			spent, reserved := spentBy(p)
 			if spent != want || spent < holdCents(nativeSKU, floor) {
 				t.Errorf("a cut stream was billed %d cents; its reservation is %d, want %d", spent, holdCents(nativeSKU, floor), want)
@@ -739,7 +741,7 @@ func TestALongSSELineIsRelayedAndBilled(t *testing.T) {
 	if !strings.HasSuffix(body, "event: message_stop\n"+`data: {"type":"message_stop"}`+"\n\n") {
 		t.Error("the stream stopped at the long line")
 	}
-	if spent, _ := spentBy(p); spent != calculateCostCentsWithCache(nativeSKU, 400000, 9000, 5000, 300) {
+	if spent, _ := spentBy(p); spent != calculateCostCentsWithCache(nativeSKU, 405300, 9000, 5000, 300) {
 		t.Errorf("billed %d cents, want the count after the long line", spent)
 	}
 }
@@ -779,7 +781,7 @@ func TestEveryIterationIsBilled(t *testing.T) {
 
 // A cache write costs 1.25x input kept five minutes and 2x kept an hour.
 func TestCacheWritesArePricedByTTL(t *testing.T) {
-	if w, in := calculateCostCentsWithCache(nativeSKU, 0, 0, 0, 1_000_000), calculateCostCents(nativeSKU, 1_000_000, 0); w*100 != in*125 {
+	if w, in := calculateCostCentsWithCache(nativeSKU, 1_000_000, 0, 0, 1_000_000), calculateCostCents(nativeSKU, 1_000_000, 0); w*100 != in*125 {
 		t.Errorf("1M five-minute writes cost %d cents against %d of input", w, in)
 	}
 	reply := `{"id":"msg_x","type":"message","role":"assistant","model":"` + nativeID + `","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn",` +

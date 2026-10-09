@@ -163,8 +163,12 @@ func (p *AnthropicModelProvider) QueryText(question string, writer io.Writer, hi
 
 		switch eventVariant := event.AsAny().(type) {
 		case anthropic.MessageStartEvent:
-			inputTokens := int(eventVariant.Message.Usage.InputTokens)
-			modelResult.PromptTokenCount = inputTokens
+			// The prompt as every record counts it: input_tokens is the part read
+			// fresh, and the cache reads and writes are beside it, not inside it.
+			u := eventVariant.Message.Usage
+			modelResult.CacheReadTokenCount = int(u.CacheReadInputTokens)
+			modelResult.CacheWriteTokenCount = int(u.CacheCreationInputTokens)
+			modelResult.PromptTokenCount = int(u.InputTokens) + modelResult.CacheReadTokenCount + modelResult.CacheWriteTokenCount
 		case anthropic.ContentBlockDeltaEvent:
 			switch deltaVariant := eventVariant.Delta.AsAny().(type) {
 			case anthropic.ThinkingDelta:

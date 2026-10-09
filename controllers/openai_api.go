@@ -766,11 +766,14 @@ func keyHint(key string) string {
 
 // usageRecord mirrors IAM's UsageRecord for JSON serialization.
 type usageRecord struct {
-	Owner            string  `json:"owner"`
-	User             string  `json:"user"`
-	Organization     string  `json:"organization"`
-	Model            string  `json:"model"`
-	Provider         string  `json:"provider"`
+	Owner        string `json:"owner"`
+	User         string `json:"user"`
+	Organization string `json:"organization"`
+	Model        string `json:"model"`
+	Provider     string `json:"provider"`
+	// PromptTokens is EVERY input token on every path; CacheReadTokens and
+	// CacheWriteTokens are parts of it, read from and written to the upstream's
+	// prompt cache, each billed at its own rate (tokenNanoAt).
 	PromptTokens     int     `json:"promptTokens"`
 	CompletionTokens int     `json:"completionTokens"`
 	TotalTokens      int     `json:"totalTokens"`
@@ -2413,7 +2416,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			// Settle the reservation with the ACTUAL cost (this works identically for
 			// streaming and non-streaming non-tool responses — both have real token
 			// counts here from the QueryText pipeline).
-			own.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
+			own.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, modelResult.CacheReadTokenCount, modelResult.CacheWriteTokenCount))
 		}
 
 		// Handle response based on streaming mode
@@ -2752,16 +2755,16 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			Name  string          `json:"name,omitempty"`
 			Input json.RawMessage `json:"input,omitempty"`
 		} `json:"content"`
-		StopReason string `json:"stop_reason"`
-		Usage      struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
+		StopReason string         `json:"stop_reason"`
+		Usage      AnthropicUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
 		c.ResponseError(fmt.Sprintf("Failed to parse Anthropic response: %s", err.Error()))
 		return
 	}
+	// The prompt as every record counts it: read fresh, read from the cache and
+	// written to it, each part billed at its own rate.
+	used := anthropicResp.Usage.billed(sku)
 
 	// Convert Anthropic response to OpenAI format
 	var contentText strings.Builder
@@ -2809,9 +2812,10 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			},
 		},
 		Usage: openai.Usage{
-			PromptTokens:     anthropicResp.Usage.InputTokens,
-			CompletionTokens: anthropicResp.Usage.OutputTokens,
-			TotalTokens:      anthropicResp.Usage.InputTokens + anthropicResp.Usage.OutputTokens,
+			PromptTokens:        used.prompt(),
+			CompletionTokens:    used.out,
+			TotalTokens:         used.prompt() + used.out,
+			PromptTokensDetails: &openai.PromptTokensDetails{CachedTokens: used.read},
 		},
 	}
 
@@ -2823,9 +2827,11 @@ func (c *ApiController) proxyToolRequestAnthropic(
 			Model:            sku,
 			Provider:         provider.Name,
 			Origin:           provider.Origin(),
-			PromptTokens:     anthropicResp.Usage.InputTokens,
-			CompletionTokens: anthropicResp.Usage.OutputTokens,
-			TotalTokens:      anthropicResp.Usage.InputTokens + anthropicResp.Usage.OutputTokens,
+			PromptTokens:     used.prompt(),
+			CacheReadTokens:  used.read,
+			CacheWriteTokens: used.write,
+			CompletionTokens: used.out,
+			TotalTokens:      used.prompt() + used.out,
 			Currency:         "USD",
 			Premium:          isPremium,
 			Stream:           false,
@@ -2841,7 +2847,7 @@ func (c *ApiController) proxyToolRequestAnthropic(
 	// The same model the usage row above is priced from. recordUsage debits what
 	// usageCostCents makes of record.Model, so a hold settled against a different
 	// model would hold one number and bill another.
-	hold.settle(calculateCostCentsWithCache(sku, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, 0, 0))
+	hold.settle(calculateCostCentsWithCache(sku, used.prompt(), used.out, used.read, used.write))
 
 	jsonResponse, err := json.Marshal(openaiResp)
 	if err != nil {

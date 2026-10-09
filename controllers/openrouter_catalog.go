@@ -170,6 +170,7 @@ type openrouterPricing struct {
 	Prompt     decimal.Decimal
 	Completion decimal.Decimal
 	CacheRead  decimal.Decimal // input_cache_read
+	CacheWrite decimal.Decimal // input_cache_write
 	// Larger are the rates past a prompt size, ascending by it: the overrides that
 	// state min_prompt_tokens. An override bounded by hours of the day is a discount
 	// on the base rates, so billing never reads one and never bills below the base.
@@ -181,8 +182,8 @@ type openrouterPricing struct {
 // openrouterOverride is the rates from a prompt of Min tokens on; a rate it does not
 // state is the base rate.
 type openrouterOverride struct {
-	Min                           int
-	Prompt, Completion, CacheRead decimal.Decimal
+	Min                                       int
+	Prompt, Completion, CacheRead, CacheWrite decimal.Decimal
 }
 
 func (p *openrouterPricing) UnmarshalJSON(b []byte) error {
@@ -210,6 +211,9 @@ func (p *openrouterPricing) UnmarshalJSON(b []byte) error {
 	if p.CacheRead, err = rate(all, "input_cache_read", decimal.Zero()); err != nil {
 		return err
 	}
+	if p.CacheWrite, err = rate(all, "input_cache_write", decimal.Zero()); err != nil {
+		return err
+	}
 	var overrides []map[string]json.RawMessage
 	if raw, ok := all["overrides"]; ok {
 		if err := json.Unmarshal(raw, &overrides); err != nil {
@@ -232,6 +236,9 @@ func (p *openrouterPricing) UnmarshalJSON(b []byte) error {
 			return err
 		}
 		if v.CacheRead, err = rate(o, "input_cache_read", p.CacheRead); err != nil {
+			return err
+		}
+		if v.CacheWrite, err = rate(o, "input_cache_write", p.CacheWrite); err != nil {
 			return err
 		}
 		p.Larger = append(p.Larger, v)
@@ -369,21 +376,22 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 // prompts up to its MaxCtx (tierFor), so the prompt that reaches an override's size
 // bills at the override, the dearer side of the line.
 func (w openrouterWireModel) tiers(margin decimal.Decimal) []zenTier {
-	tier := func(in, out, cache decimal.Decimal, max int) zenTier {
+	tier := func(in, out, read, write decimal.Decimal, max int) zenTier {
 		return zenTier{
-			MaxCtx:    max,
-			In:        in.Mul(openrouterTokensPerMillion).Mul(margin),
-			Out:       out.Mul(openrouterTokensPerMillion).Mul(margin),
-			CacheRead: cache.Mul(openrouterTokensPerMillion).Mul(margin),
+			MaxCtx:     max,
+			In:         in.Mul(openrouterTokensPerMillion).Mul(margin),
+			Out:        out.Mul(openrouterTokensPerMillion).Mul(margin),
+			CacheRead:  read.Mul(openrouterTokensPerMillion).Mul(margin),
+			CacheWrite: write.Mul(openrouterTokensPerMillion).Mul(margin),
 		}
 	}
 	p := w.Pricing
-	last := tier(p.Prompt, p.Completion, p.CacheRead, w.ContextLength)
+	last := tier(p.Prompt, p.Completion, p.CacheRead, p.CacheWrite, w.ContextLength)
 	var out []zenTier
 	for _, o := range p.Larger {
 		last.MaxCtx = o.Min - 1
 		out = append(out, last)
-		last = tier(o.Prompt, o.Completion, o.CacheRead, max(w.ContextLength, o.Min))
+		last = tier(o.Prompt, o.Completion, o.CacheRead, o.CacheWrite, max(w.ContextLength, o.Min))
 	}
 	return append(out, last)
 }

@@ -94,23 +94,23 @@ func TestSniffZenUsageReadsReasoning(t *testing.T) {
 	}
 }
 
-// A served usage counts its prompt whole, with the cached part inside it; the
-// record counts the fresh part and the cached part beside each other.
+// A served usage counts its prompt whole, with the cached part inside it, and so
+// does the record.
 func TestServedRecordCountsThePromptAsTheFamilyPathDoes(t *testing.T) {
 	rec := servedRecord(ServedUsage{
 		Owner: "acme", Model: "zen5", Provider: "zen", Status: "success",
 		PromptTokens: 214, CachedTokens: 14, CompletionTokens: 20, ReasoningTokens: 20,
 		Served: "z-ai/glm-5.3", Vendor: "digitalocean", Failover: "a (b): c", First: 900 * time.Millisecond,
 	})
-	if rec.PromptTokens != 200 || rec.CacheReadTokens != 14 || rec.TotalTokens != 234 {
-		t.Errorf("prompt=%d cached=%d total=%d, want 200/14/234", rec.PromptTokens, rec.CacheReadTokens, rec.TotalTokens)
+	if rec.PromptTokens != 214 || rec.CacheReadTokens != 14 || rec.TotalTokens != 234 {
+		t.Errorf("prompt=%d cached=%d total=%d, want 214/14/234", rec.PromptTokens, rec.CacheReadTokens, rec.TotalTokens)
 	}
 	if rec.Served != "z-ai/glm-5.3" || rec.Vendor != "digitalocean" || rec.Failover != "a (b): c" ||
 		rec.ReasoningTokens != 20 || rec.First != 900*time.Millisecond {
 		t.Errorf("served facts lost: %+v", rec)
 	}
-	// A cached count larger than the prompt is clamped to it, never negative fresh.
-	if r := servedRecord(ServedUsage{PromptTokens: 5, CachedTokens: 9}); r.PromptTokens != 0 || r.CacheReadTokens != 5 {
+	// A cached count larger than the prompt is clamped to it, never past the prompt.
+	if r := servedRecord(ServedUsage{PromptTokens: 5, CachedTokens: 9}); r.PromptTokens != 5 || r.CacheReadTokens != 5 {
 		t.Errorf("clamp: prompt=%d cached=%d", r.PromptTokens, r.CacheReadTokens)
 	}
 }

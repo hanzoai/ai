@@ -188,6 +188,10 @@ func (a *AnthropicUsage) merge(u AnthropicUsage) {
 // from the cache, and cache writes in five-minute-write units.
 type tally struct{ in, out, read, write int }
 
+// prompt is every input token, as a usage record counts it: read fresh, read from
+// the cache and written to it.
+func (t tally) prompt() int { return t.in + t.read + t.write }
+
 // billed is u as it is priced for model.
 //
 // Every iteration is summed, and no count is billed below what the top level
@@ -928,7 +932,7 @@ func (c *ApiController) AnthropicMessages() {
 			successRecord.BYO, successRecord.Account = providerBYO(actualProvider.row, authUser)
 			recordUsage(successRecord)
 			recordTrace(snap.ctx, successRecord, requestStartTime)
-			hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
+			hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, modelResult.CacheReadTokenCount, modelResult.CacheWriteTokenCount))
 		}
 
 		// ── Build response ──────────────────────────────────────────────────
@@ -1721,12 +1725,12 @@ func recordAnthropicToolUsage(
 		b.in = max(b.in, floor.InputTokens)
 		b.out = max(b.out, floor.OutputTokens)
 	}
-	actualCents := calculateCostCentsWithCache(request.Model, b.in, b.out, b.read, b.write)
+	actualCents := calculateCostCentsWithCache(request.Model, b.prompt(), b.out, b.read, b.write)
 	if authUser != nil {
 		rec := &usageRecord{
 			Owner: snap.org, Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 			Origin:       provider.Origin(),
-			PromptTokens: b.in, CompletionTokens: b.out, TotalTokens: b.in + b.out,
+			PromptTokens: b.prompt(), CompletionTokens: b.out, TotalTokens: b.prompt() + b.out,
 			CacheReadTokens: b.read, CacheWriteTokens: b.write,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",
 			ClientIP: snap.ip, RequestID: requestId,

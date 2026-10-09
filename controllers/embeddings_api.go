@@ -109,7 +109,7 @@ func (c *ApiController) Embeddings() {
 			subject := authUser.PayerSubject(ledger)
 			est := int64(1)
 			if zm, ok := fam.lookup(head.Model); ok {
-				est = centsUp(zm.retailNano(coarseTokenEstimate(c.Body()), 0, 0))
+				est = centsUp(zm.retailNano(tokens{fresh: coarseTokenEstimate(c.Body())}))
 			}
 			var ok2 bool
 			if hold, ok2 = reserveFor(c.Context(), subject, est); !ok2 {

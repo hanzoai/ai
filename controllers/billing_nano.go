@@ -46,15 +46,24 @@ func nanoPerToken(perMillion float64) int64 {
 // declares none, cache-write = cacheWriteRate). It is the ONE place the token→nano arithmetic
 // lives: both the billed-price path (tokenCostNano) and the provider-COGS path
 // (tokenProviderCostNano) call it, so their cache math can never drift.
+//
+// promptTokens is EVERY input token, the cache reads and writes among them (one
+// convention on every path: usageRecord.PromptTokens). The input rate bills the part
+// read fresh, prompt less reads and writes; each cache part bills at its own rate.
 func tokenNanoAt(inPerM, outPerM, cacheReadPerM, cacheWritePerM float64, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
 	if cacheReadPerM == 0 && inPerM > 0 {
 		cacheReadPerM = inPerM * 0.10
 	}
 	cacheWritePerM = cacheWriteRate(inPerM, cacheWritePerM)
-	return int64(promptTokens)*nanoPerToken(inPerM) +
+	return int64(fresh(promptTokens, cacheReadTokens, cacheWriteTokens))*nanoPerToken(inPerM) +
 		int64(completionTokens)*nanoPerToken(outPerM) +
 		int64(cacheReadTokens)*nanoPerToken(cacheReadPerM) +
 		int64(cacheWriteTokens)*nanoPerToken(cacheWritePerM)
+}
+
+// fresh is the part of a prompt read neither from the cache nor written to it.
+func fresh(promptTokens, cacheReadTokens, cacheWriteTokens int) int {
+	return max(promptTokens-max(cacheReadTokens, 0)-max(cacheWriteTokens, 0), 0)
 }
 
 // tokenCostNano is the exact BILLED (customer-price) token cost in nano-USD, mirroring

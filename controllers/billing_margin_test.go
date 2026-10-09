@@ -108,13 +108,14 @@ func TestUsageMargin(t *testing.T) {
 			wantMargin: new(int64(250_000)),
 		},
 		{
-			// Cache COGS is not separately configured: cache-read defaults to 10% of the
+			// The prompt is every input token: 1000 read fresh, 2000 read from the cache
+			// and 100 written to it. Cache COGS is not separately configured: cache-read defaults to 10% of the
 			// COGS input rate (2·0.10=0.2 ⇒ 200 nano/tok), cache-write to 1.25× it
 			// (cacheWriteRate: 2.5 ⇒ 2500), as the price does (12.5 ⇒ 12500).
 			// billed 25,000,000 + 2000·1000 + 100·12500 = 28,250,000 ;
 			// cost   5,000,000  + 2000·200  + 100·2500  = 5,650,000.
 			name:       "served, cache tokens ⇒ COGS cache defaulting",
-			rec:        usageRecord{Model: "marginmodel", PromptTokens: 1000, CompletionTokens: 500, CacheReadTokens: 2000, CacheWriteTokens: 100},
+			rec:        usageRecord{Model: "marginmodel", PromptTokens: 3100, CompletionTokens: 500, CacheReadTokens: 2000, CacheWriteTokens: 100},
 			wantCost:   new(int64(5_650_000)),
 			wantBilled: 28_250_000,
 			wantMargin: new(int64(22_600_000)),

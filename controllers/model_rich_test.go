@@ -307,7 +307,7 @@ func TestVariableRouterBillsStatedCost(t *testing.T) {
 	}{
 		{"a $0.50 call", new(int64(500_000_000)), 600_000_000, "0.6"},
 		{"a $0.001 call", new(int64(1_000_000)), 1_200_000, "0.0012"},
-		{"a call that states no cost", nil, zm.retailNano(1000, 0, 1000), "0.03"},
+		{"a call that states no cost", nil, zm.retailNano(tokens{fresh: 1000, cached: 0, completion: 1000}), "0.03"},
 	} {
 		*debits = (*debits)[:0]
 		if nano := recordFamilyUsage(w, openrouterFam, "openrouter/auto", "", nil, &mark{cost: tc.cost}, alice, true, false, "r", use, serving{}, time.Now(), nil, "success", ""); nano != tc.nano {

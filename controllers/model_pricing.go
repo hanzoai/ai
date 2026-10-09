@@ -610,6 +610,8 @@ func cacheWriteRate(inputPerM, writePerM float64) float64 {
 }
 
 // modelCostBreakdown computes the per-component dollar cost of a token-billed call.
+// promptTokens is every input token, cache reads and writes among them; Input prices
+// the part read fresh.
 // Cache-read defaults to 10% of input price (Anthropic parity) and cache-write to
 // cacheWriteRate when the model declares no explicit cache rate. Pure: a pricing
 // lookup and arithmetic, no I/O, no globals mutated — safe to call from the span
@@ -625,7 +627,7 @@ func modelCostBreakdown(model string, promptTokens, completionTokens, cacheReadT
 	cacheWriteRate := cacheWriteRate(price.InputPerMillion, price.CacheWritePerMillion)
 
 	b := costBreakdown{
-		Input:      float64(promptTokens) * price.InputPerMillion / 1_000_000.0,
+		Input:      float64(fresh(promptTokens, cacheReadTokens, cacheWriteTokens)) * price.InputPerMillion / 1_000_000.0,
 		Output:     float64(completionTokens) * price.OutputPerMillion / 1_000_000.0,
 		CacheRead:  float64(cacheReadTokens) * cacheReadRate / 1_000_000.0,
 		CacheWrite: float64(cacheWriteTokens) * cacheWriteRate / 1_000_000.0,

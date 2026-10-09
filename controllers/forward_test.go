@@ -620,7 +620,7 @@ func TestARelayedStreamSettlesAtTheSkuPrice(t *testing.T) {
 		t.Errorf("stream_options = %s, want include_usage asked of the vendor", fields["stream_options"])
 	}
 
-	want := calculateCostCentsWithCache(relaySku, prompt-cached, completion, cached, 0)
+	want := calculateCostCentsWithCache(relaySku, prompt, completion, cached, 0)
 	if uncached := calculateCostCentsWithCache(relaySku, prompt, completion, 0, 0); uncached == want {
 		t.Fatal("the cached and uncached prices agree; this test cannot tell them apart")
 	}
@@ -631,7 +631,7 @@ func TestARelayedStreamSettlesAtTheSkuPrice(t *testing.T) {
 	if debit.Model != relaySku {
 		t.Errorf("billed as %q, want the SKU", debit.Model)
 	}
-	if bill := usageBilledUSD(&usageRecord{Model: relaySku, PromptTokens: prompt - cached, CacheReadTokens: cached, CompletionTokens: completion}); debit.USD != bill {
+	if bill := usageBilledUSD(&usageRecord{Model: relaySku, PromptTokens: prompt, CacheReadTokens: cached, CompletionTokens: completion}); debit.USD != bill {
 		t.Errorf("debit %s, want %s — the cached prompt priced as cached", debit.USD, bill)
 	}
 }
@@ -704,8 +704,8 @@ func TestABufferedAnswerIsBilledAsTheSkuWithItsCache(t *testing.T) {
 	if answered(c) != http.StatusOK {
 		t.Fatalf("status %d: %s", answered(c), sent(c))
 	}
-	want := calculateCostCentsWithCache(relaySku, prompt-cached, completion, cached, 0)
-	if upstream := calculateCostCentsWithCache("a-up", prompt-cached, completion, cached, 0); upstream == want {
+	want := calculateCostCentsWithCache(relaySku, prompt, completion, cached, 0)
+	if upstream := calculateCostCentsWithCache("a-up", prompt, completion, cached, 0); upstream == want {
 		t.Fatal("the SKU and the upstream id price the same; this test cannot tell them apart")
 	}
 	if got := w.spent(t); got != want {
@@ -715,7 +715,7 @@ func TestABufferedAnswerIsBilledAsTheSkuWithItsCache(t *testing.T) {
 	if debit.Model != relaySku {
 		t.Errorf("billed as %q, want the SKU the caller asked for", debit.Model)
 	}
-	if bill := usageBilledUSD(&usageRecord{Model: relaySku, PromptTokens: prompt - cached, CacheReadTokens: cached, CompletionTokens: completion}); debit.USD != bill {
+	if bill := usageBilledUSD(&usageRecord{Model: relaySku, PromptTokens: prompt, CacheReadTokens: cached, CompletionTokens: completion}); debit.USD != bill {
 		t.Errorf("debit %s, want %s", debit.USD, bill)
 	}
 	// The id the caller holds is the one the ledger and the routing event carry.

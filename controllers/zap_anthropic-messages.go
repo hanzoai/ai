@@ -288,7 +288,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 		successRecord.BYO, successRecord.Account = providerBYO(provider, authUser)
 		recordUsage(successRecord)
 		recordTrace(ctx, successRecord, requestStartTime)
-		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, 0, 0))
+		hold.settle(calculateCostCentsWithCache(request.Model, modelResult.PromptTokenCount, modelResult.ResponseTokenCount, modelResult.CacheReadTokenCount, modelResult.CacheWriteTokenCount))
 	}
 
 	// STEP 7 — encode the SAME response struct the HTTP path returns.
@@ -439,7 +439,7 @@ func zapMeterAnthropic(
 		b.in = max(b.in, floor.InputTokens)
 		b.out = max(b.out, floor.OutputTokens)
 	}
-	prompt, completion := b.in, b.out
+	prompt, completion := b.prompt(), b.out
 	if authUser != nil {
 		rec := &usageRecord{
 			Owner:            authUser.Owner,

@@ -342,13 +342,13 @@ func TestAnOverrideBillsTheDearerTier(t *testing.T) {
 	if len(m.Tiers) != 2 || m.Tiers[0].MaxCtx != 99999 {
 		t.Fatalf("tiers %+v", m.Tiers)
 	}
-	if got := m.bill(nil, 99999, 0, 0); got != nanoUp(decimal.MustParse("0.00000012").Mul(decimal.New(99999, 0))) {
+	if got := m.bill(nil, tokens{fresh: 99999, cached: 0, completion: 0}); got != nanoUp(decimal.MustParse("0.00000012").Mul(decimal.New(99999, 0))) {
 		t.Errorf("a prompt under the line billed %d", got)
 	}
-	if got := m.bill(nil, 100000, 0, 0); got != nanoUp(decimal.MustParse("0.0000006").Mul(decimal.New(100000, 0))) {
+	if got := m.bill(nil, tokens{fresh: 100000, cached: 0, completion: 0}); got != nanoUp(decimal.MustParse("0.0000006").Mul(decimal.New(100000, 0))) {
 		t.Errorf("a prompt at the line billed %d", got)
 	}
-	if got := m.bill(nil, 0, 1000, 0); got != nanoUp(decimal.MustParse("0.000000012").Mul(decimal.New(1000, 0))) {
+	if got := m.bill(nil, tokens{fresh: 0, cached: 1000, completion: 0}); got != nanoUp(decimal.MustParse("0.000000012").Mul(decimal.New(1000, 0))) {
 		t.Errorf("a thousand cached tokens billed %d", got)
 	}
 }

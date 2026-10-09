@@ -575,6 +575,10 @@ type zenTier struct {
 	// CacheRead is what one input token served from the upstream's prompt cache
 	// bills at. Zero means the family states none, and such a token bills at In.
 	CacheRead decimal.Decimal
+	// CacheWrite is what one input token written to the upstream's prompt cache
+	// bills at, which a vendor may price above In. Zero means the family states none,
+	// and such a token bills at In.
+	CacheWrite decimal.Decimal
 }
 
 // cacheRate is what one cached input token bills at: the stated cache price, else
@@ -586,18 +590,28 @@ func (t zenTier) cacheRate() decimal.Decimal {
 	return t.In
 }
 
-// tokens is one answer's usage as it is billed: prompt tokens read fresh (a cache
-// write among them), prompt tokens served from the upstream's cache, and completion
-// tokens — of which reasoning is the part the model spent thinking.
+// writeRate is what one input token written to the cache bills at: the stated write
+// price, else the full input rate.
+func (t zenTier) writeRate() decimal.Decimal {
+	if t.CacheWrite.Sign() > 0 {
+		return t.CacheWrite
+	}
+	return t.In
+}
+
+// tokens is one answer's usage as it is billed: prompt tokens read fresh, prompt
+// tokens served from the upstream's cache, prompt tokens written to it, and
+// completion tokens — of which reasoning is the part the model spent thinking. The
+// three prompt parts are disjoint and sum to the prompt.
 type tokens struct {
-	fresh, cached, completion, reasoning int
+	fresh, cached, written, completion, reasoning int
 	// reported says the upstream stated what the answer's output cost: a usage
 	// object carried its completion. Without it the counts are partial or estimated.
 	reported bool
 }
 
-// prompt is every prompt token, fresh or cached.
-func (t tokens) prompt() int { return t.fresh + t.cached }
+// prompt is every prompt token: fresh, read from the cache or written to it.
+func (t tokens) prompt() int { return t.fresh + t.cached + t.written }
 
 // zenModel is a discovered SKU: what ai needs to list, route, and bill it — the SKU's
 // public contract (id, context, price ladder, vision). Not its upstream, which the
@@ -683,8 +697,8 @@ func (m zenModel) variable() bool { return m.Variable }
 // cannot absorb. A variable SKU bills that stated cost alone, or its tokens at the
 // ceiling its hold reserved when the answer states none. A stated cost of zero or
 // less is no statement, never a credit.
-func (m zenModel) bill(cost *int64, promptTokens, cachedTokens, completionTokens int) int64 {
-	retail := m.retailNano(promptTokens, cachedTokens, completionTokens)
+func (m zenModel) bill(cost *int64, t tokens) int64 {
+	retail := m.retailNano(t)
 	if m.Margin.Sign() <= 0 || cost == nil || *cost <= 0 {
 		return retail
 	}
@@ -699,8 +713,8 @@ func (m zenModel) bill(cost *int64, promptTokens, cachedTokens, completionTokens
 // ledger debits and the usage row and its span read. Rounded up, so a priced answer
 // never bills nothing; never floored to a cent, so a call worth a thousandth of one
 // bills a thousandth of one.
-func (m zenModel) retailNano(promptTokens, cachedTokens, completionTokens int) int64 {
-	return nanoUp(m.retailUSD(promptTokens, cachedTokens, completionTokens))
+func (m zenModel) retailNano(t tokens) int64 {
+	return nanoUp(m.retailUSD(t))
 }
 
 // unitNano is what units of a media SKU (images, calls) bill at its per-unit price,
@@ -763,12 +777,13 @@ var zenMillion = decimal.New(1_000_000, 0)
 
 // retailUSD is what the tokens cost at the tier their prompt reaches, in exact dollars
 // to 18 places — identical to the family's own arithmetic.
-func (m zenModel) retailUSD(promptTokens, cachedTokens, completionTokens int) decimal.Decimal {
-	t := m.tierFor(promptTokens + cachedTokens)
-	in := t.In.Mul(decimal.New(int64(promptTokens), 0))
-	out := t.Out.Mul(decimal.New(int64(completionTokens), 0))
-	cached := t.cacheRate().Mul(decimal.New(int64(cachedTokens), 0))
-	return in.Add(cached).Add(out).Quo(zenMillion, 18)
+func (m zenModel) retailUSD(u tokens) decimal.Decimal {
+	t := m.tierFor(u.prompt())
+	in := t.In.Mul(decimal.New(int64(u.fresh), 0))
+	out := t.Out.Mul(decimal.New(int64(u.completion), 0))
+	read := t.cacheRate().Mul(decimal.New(int64(u.cached), 0))
+	write := t.writeRate().Mul(decimal.New(int64(u.written), 0))
+	return in.Add(read).Add(write).Add(out).Quo(zenMillion, 18)
 }
 
 // centsUp is nano-dollars as the whole cents a hold reserves (the ledger reserves in
@@ -815,15 +830,17 @@ type zenWireModel struct {
 	Plan          bool   `json:"plan"`     // the family opens plan rungs for this SKU to a host that reads its cost trailer
 	ContextWindow int    `json:"context_window"`
 	Pricing       struct {
-		Input     decimal.Decimal `json:"input"`
-		Output    decimal.Decimal `json:"output"`
-		CacheRead decimal.Decimal `json:"cache_read"`
+		Input      decimal.Decimal `json:"input"`
+		Output     decimal.Decimal `json:"output"`
+		CacheRead  decimal.Decimal `json:"cache_read"`
+		CacheWrite decimal.Decimal `json:"cache_write"`
 	} `json:"pricing"`
 	PricingTiers []struct {
 		MaxContext int             `json:"max_context"`
 		Input      decimal.Decimal `json:"input"`
 		Output     decimal.Decimal `json:"output"`
 		CacheRead  decimal.Decimal `json:"cache_read"`
+		CacheWrite decimal.Decimal `json:"cache_write"`
 	} `json:"pricing_tiers"`
 	Capabilities struct {
 		Vision bool `json:"vision"`
@@ -835,10 +852,10 @@ func (w zenWireModel) model() zenModel {
 		ID: w.ID, OwnedBy: w.OwnedBy, Description: strings.TrimSpace(w.Description), MaxCtx: w.ContextWindow, Vision: w.Capabilities.Vision,
 		Outputs: modeOutputs[strings.ToLower(strings.TrimSpace(w.Mode))],
 		Access:  w.Access, MinTier: w.MinTier, Funding: w.Funding, Plan: w.Plan,
-		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output, CacheRead: w.Pricing.CacheRead},
+		Base: zenTier{MaxCtx: w.ContextWindow, In: w.Pricing.Input, Out: w.Pricing.Output, CacheRead: w.Pricing.CacheRead, CacheWrite: w.Pricing.CacheWrite},
 	}
 	for _, t := range w.PricingTiers {
-		zm.Tiers = append(zm.Tiers, zenTier{MaxCtx: t.MaxContext, In: t.Input, Out: t.Output, CacheRead: t.CacheRead})
+		zm.Tiers = append(zm.Tiers, zenTier{MaxCtx: t.MaxContext, In: t.Input, Out: t.Output, CacheRead: t.CacheRead, CacheWrite: t.CacheWrite})
 	}
 	if len(zm.Tiers) == 0 {
 		zm.Tiers = []zenTier{zm.Base}
@@ -2687,10 +2704,11 @@ func sniffZenId(payload []byte) string {
 // the running counts; absent ones leave them, so Anthropic's message_start (input) and
 // message_delta (output) accumulate across events.
 //
-// The two dialects count a cached prompt differently, and both are read into the one
-// split: OpenAI's prompt_tokens INCLUDES prompt_tokens_details.cached_tokens, while
-// Anthropic's cache_read_input_tokens is IN ADDITION to input_tokens (as is
-// cache_creation_input_tokens, a fresh read billed at the input rate).
+// The dialects count a cached prompt differently, and all are read into the one
+// split: OpenAI's prompt_tokens INCLUDES prompt_tokens_details.cached_tokens (and
+// OpenRouter's, its cache_write_tokens beside them), while Anthropic's
+// cache_read_input_tokens and cache_creation_input_tokens are IN ADDITION to
+// input_tokens.
 func sniffZenUsage(payload []byte, t *tokens) {
 	type usage struct {
 		InputTokens      int `json:"input_tokens"`
@@ -2700,7 +2718,8 @@ func sniffZenUsage(payload []byte, t *tokens) {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		PromptDetails    *struct {
-			Cached int `json:"cached_tokens"`
+			Cached  int `json:"cached_tokens"`
+			Written int `json:"cache_write_tokens"`
 		} `json:"prompt_tokens_details"`
 		CompletionDetails *struct {
 			Reasoning int `json:"reasoning_tokens"`
@@ -2719,18 +2738,22 @@ func sniffZenUsage(payload []byte, t *tokens) {
 		if u == nil {
 			return
 		}
-		if u.InputTokens > 0 || u.CacheWrite > 0 {
-			t.fresh = u.InputTokens + u.CacheWrite
+		if u.InputTokens > 0 {
+			t.fresh = u.InputTokens
+		}
+		if u.CacheWrite > 0 {
+			t.written = u.CacheWrite
 		}
 		if u.CacheRead > 0 {
 			t.cached = u.CacheRead
 		}
 		if u.PromptTokens > 0 {
-			cached := 0
+			cached, written := 0, 0
 			if u.PromptDetails != nil {
 				cached = min(max(u.PromptDetails.Cached, 0), u.PromptTokens)
+				written = min(max(u.PromptDetails.Written, 0), u.PromptTokens-cached)
 			}
-			t.fresh, t.cached = u.PromptTokens-cached, cached
+			t.fresh, t.cached, t.written = u.PromptTokens-cached-written, cached, written
 		}
 		if u.OutputTokens > 0 {
 			t.completion, t.reported = u.OutputTokens, true
@@ -2799,16 +2822,16 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	var exact *int64 // the charge the ledger, row and span read
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
-			nano = zm.bill(mk.cogs(), t.fresh, t.cached, t.completion)
+			nano = zm.bill(mk.cogs(), t)
 		} else {
-			nano = tokenCostNano(model, t.fresh, t.completion, t.cached, 0)
+			nano = tokenCostNano(model, t.prompt(), t.completion, t.cached, t.written)
 		}
 		// A model that stood in for the one named costs no more than the named one
 		// would have for the same tokens: the caller pays for an answer, never for
 		// our outage.
 		if requested != "" && w.asked != nil {
 			if zm, ok := w.asked.lookup(requested); ok && zm.priced() {
-				nano = min(nano, zm.retailNano(t.fresh, t.cached, t.completion))
+				nano = min(nano, zm.retailNano(t))
 			}
 		}
 		exact = &nano
@@ -2828,7 +2851,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	rec := &usageRecord{
 		Owner: w.ledger, Organization: authUser.Owner,
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: originOf(prov, mk),
-		PromptTokens: t.fresh, CacheReadTokens: t.cached, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
+		PromptTokens: t.prompt(), CacheReadTokens: t.cached, CacheWriteTokens: t.written, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
 		Cost: float64(nano) / 1e9, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,

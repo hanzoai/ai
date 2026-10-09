@@ -559,8 +559,9 @@ func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, re
 				Provider:         cand.provider,
 				Origin:           originOf(row, mk),
 				CostNanoExact:    mk.cogs(),
-				PromptTokens:     t.fresh,
+				PromptTokens:     t.prompt(),
 				CacheReadTokens:  t.cached,
+				CacheWriteTokens: t.written,
 				CompletionTokens: t.completion,
 				TotalTokens:      t.prompt() + t.completion,
 				ReasoningTokens:  t.reasoning,
@@ -580,7 +581,7 @@ func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, re
 		}
 		// The same model and the same split the row above is priced from, so the
 		// hold settles what the ledger debits.
-		p.hold.settle(calculateCostCentsWithCache(sku, t.fresh, t.completion, t.cached, 0))
+		p.hold.settle(calculateCostCentsWithCache(sku, t.prompt(), t.completion, t.cached, t.written))
 		if p.judge != nil {
 			p.judge(text)
 		}

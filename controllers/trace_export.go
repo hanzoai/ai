@@ -45,6 +45,7 @@ type ServedUsage struct {
 	Vendor          string        // the provider that ran that arm (gen_ai.provider.name)
 	Failover        string        // the arms that failed before it, with why
 	CachedTokens    int           // of PromptTokens: served from the upstream's prompt cache
+	WrittenTokens   int           // of PromptTokens: written to the upstream's prompt cache
 	ReasoningTokens int           // of CompletionTokens: spent reasoning
 	First           time.Duration // time from StartTime to the first token of the answer
 }
@@ -67,17 +68,20 @@ func TraceServedUsage(ctx context.Context, in ServedUsage) {
 
 // servedRecord projects a ServedUsage onto the usage record recordTrace writes.
 func servedRecord(in ServedUsage) *usageRecord {
-	// The record counts the prompt the way the family path does: PromptTokens is
-	// the part read fresh and CacheReadTokens the cached part beside it.
+	// The record counts the prompt as every path does: PromptTokens is the whole
+	// prompt, and CacheReadTokens and CacheWriteTokens the parts of it read from and
+	// written to the upstream's cache.
 	cached := min(max(in.CachedTokens, 0), max(in.PromptTokens, 0))
+	written := min(max(in.WrittenTokens, 0), max(in.PromptTokens, 0)-cached)
 	return &usageRecord{
 		Owner:            in.Owner,
 		Organization:     in.Owner,
 		User:             in.User,
 		Model:            in.Model,
 		Provider:         in.Provider,
-		PromptTokens:     max(in.PromptTokens-cached, 0),
+		PromptTokens:     max(in.PromptTokens, 0),
 		CacheReadTokens:  cached,
+		CacheWriteTokens: written,
 		CompletionTokens: in.CompletionTokens,
 		TotalTokens:      in.PromptTokens + in.CompletionTokens,
 		Served:           in.Served,
