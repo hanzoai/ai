@@ -923,7 +923,8 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   in-pod memory. Reserve/Settle are correct ONLY at `replicas: 1`. Two pods
   double-spend (each reserves against its own cached Commerce balance). Enforced
   by deploy `strategy: Recreate` + HPA `min=max=1` AND a boot assertion
-  (`bootstrap.go` panics if `CLOUD_API_REPLICAS > 1`). To scale out you MUST first
+  (`bootstrap.go` panics if `CLOUD_REPLICAS > 1`, the count the cloud chart injects).
+  The paid lane's plan holds (`controllers/lane.go`) are in-pod too. To scale out you MUST first
   move Reserve/Settle behind a Commerce-atomic conditional reserve.
 
 - **Address lanes** (`address.Buckets`) — IPv4 whole; IPv6 its /64, then its /48 at
@@ -1225,38 +1226,36 @@ PDF, a remote document or a stored file as a whole 1M-token context (or the mode
 declared window when larger); a prompt with `cache_control` at the hour-long cache-write
 rate; the completion ceiling the handler sends (`reserveCompletionTokens`) × `n`, plus a
 predicted output at the completion rate — at the most of list price and cost, the
-platform's and the org's, ×2 for fast mode; media at unit price. It holds against:
-`PAID_LANE_DAILY` (USD, default $10, 0 or anything not a finite amount in (0, 1e9]
-closes; the lane is also closed unless `CLOUD_API_REPLICAS=1` says this process is the
-only replica), the paying org's share `PAID_LANE_ORG_SHARE` (default 0.25; an org with
-nothing in flight and share left may seat one call larger than it, up to the day's
-room), for a plan-paid call the plan class's `LimitGrant.Spend` less the payer's holds,
-and at most 8 seats per payer. A chat that does not fit at the ceiling it asked for is
+platform's and the org's, ×2 for fast mode; media at unit price.
+
+**The paid lane has no ceiling of its own** (owner, 2026-10-09: no paid on free; no
+ceiling but what people prepay, or their usage). Nothing caps what paid-lane calls spend
+together or what one org's calls spend; there is no platform day and no org share. A
+seat holds, for a plan-paid call, against the plan class's `LimitGrant.Spend` less the
+payer's calls in flight; a wallet-paid call (prepaid cash, the org's credit line) is
+held against the wallet by its handler (`reserveFor`); one payer holds at most 8 seats
+(`paidLaneCalls`). A plan-paid chat that does not fit at the ceiling it asked for is
 sent with the highest one that fits (never below 4,096), named in
-`X-Hanzo-Lane-Max-Tokens` (`laneTokens` in the handlers). Wallet-paid calls are held
-against the wallet by their handler (`reserveFor`). A family is sent `X-Hanzo-Spend` only
-on a seat, capped at what it holds. A seat closes exactly once, when its answer is
-counted (`recordUsage` → `seat.settle(laneSpend)`, after the plan's settle); a fast
-mode loser adds its cost and gives nothing back (`seat.lost`; `ask.race` holds the seat
-until every loser is counted); `Unseat` closes one that recorded nothing after its
-handler; a stream whose client takes nothing for 2 minutes (`seat.paced`, applied in
+`X-Hanzo-Lane-Max-Tokens` (`laneTokens` in the handlers). A family is sent
+`X-Hanzo-Spend` only on a seat, capped at what it holds. A seat closes exactly once,
+when its answer is counted (`recordUsage` → `seat.settle`, after the plan's settle); a
+fast mode loser gives nothing back (`seat.lost`; `ask.race` holds the seat until every
+loser is counted); `Unseat` closes one that recorded nothing after its handler; a stream
+whose client takes nothing for 2 minutes (`seat.paced`, applied in
 `ApiController.SendStreamWriter`) and any seat after 30 minutes lapse. Race losers and a
 video's later poll bill the creating request's context only on a seat (`billing`); off
-it they bill as before. The day lives in memory, only moves forward, carries holds over
-midnight, and is written to the store off the request path (`object.PaidDay`, table
-`paid_day`, one atomic upsert per row, retried until it lands, drained by
-`controllers.Settled`), read back on the day's first ask. Provider-side loops — web
-fetch, tool search, compaction — are not served on the shared Anthropic account. A payer
-the lane had no room for gets `X-Hanzo-Lane-Reason: paid_lane_ceiling`; a chat for a
-third-party model is handed to the free model in limited mode (never one on the org's
-own key, `OwnKey`), and any other call only the paid lane serves is refused
-`paid_lane_full` (`laneOff`): 429 "full right now", 429 "after 00:00 UTC" when the day or
-the org's share is spent, 429 "closed", 413 when no day can hold the call. Responses
-carry `X-Hanzo-Lane: paid|free` only while the switch is on. The enso/zen service's own
-paid lane (zen lib: the catalog's `paid`, or the `ZEN_SWITCH` file's) spends what a
-fronted request's `X-Hanzo-Spend` allows, which this day counts; what zen spends for
-callers that reach it directly is bounded only by the host's plan limiter (cloud
-`apps/zen` `planSpend`), not by `PAID_LANE_DAILY`.
+it they bill as before. The holds live in this process, as the wallet ledger's do, under
+the same single-replica invariant (`bootstrap.go` refuses to start at `CLOUD_REPLICAS >
+1`). Provider-side loops — web fetch, tool search, compaction — are not served on the
+shared Anthropic account. A payer the lane had no room for gets `X-Hanzo-Lane-Reason:
+paid_lane_full`; a chat for a third-party model is handed to the free model in limited
+mode (never one on the org's own key, `OwnKey`), and any other call only the paid lane
+serves is refused `paid_lane_full` (`laneOff`): 413 when the plan has less left than the
+call's least, 429 when the payer's calls in flight hold the rest or it holds 8 seats.
+Responses carry `X-Hanzo-Lane: paid|free` only while the switch is on. The enso/zen
+service's own paid lane (zen lib: the catalog's `paid`, or the `ZEN_SWITCH` file's)
+spends what a fronted request's `X-Hanzo-Spend` allows; what zen spends for callers that
+reach it directly is bounded by the host's plan limiter (cloud `apps/zen` `planSpend`).
 
 On the free lane no chat request reaches a priced route, and the routes that stand in
 for it answer, named as what they are; a tool or media request for one, and every

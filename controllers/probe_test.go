@@ -55,8 +55,8 @@ func visit(method, target string) *ApiController {
 
 // paidSeat puts ctx on the paid lane, as every request in this package's tests is:
 // they exercise what the paid lane serves. Its seat holds without bound on a book of
-// its own, so nothing a test spends reaches the platform's day. A test of the lanes
-// seats its request itself (Seat), which gives this seat back first.
+// its own, so nothing a test holds reaches the paid lane's. A test of the lanes seats
+// its request itself (Seat), which gives this seat back first.
 func paidSeat(ctx context.Context) context.Context {
 	return context.WithValue(ctx, laneKey{}, &laneState{seat: &seat{book: &laneBook{}, held: math.MaxInt64}})
 }

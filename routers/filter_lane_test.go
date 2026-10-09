@@ -31,11 +31,9 @@ import (
 	"github.com/zap-proto/zip"
 )
 
-// paidSwitch turns the platform's paid lane on for one test, in a process that is
-// the only replica, as the lane's day requires.
+// paidSwitch turns the platform's paid lane on for one test.
 func paidSwitch(t *testing.T) {
 	t.Helper()
-	t.Setenv("CLOUD_API_REPLICAS", "1")
 	saved := controllers.FreeOnly
 	controllers.FreeOnly = func() bool { return false }
 	t.Cleanup(func() { controllers.FreeOnly = saved })
@@ -135,13 +133,13 @@ func TestWithTheSwitchOnAPaidPlanPastItsUsageIsAnsweredOnAnyClient(t *testing.T)
 	}
 }
 
-// PAST THE PLATFORM'S DAY A SUBSCRIBER IS ANSWERED, NOT REFUSED. A chat for a model
-// only the paid lane serves is handed to the free model in limited mode, saying why,
-// and what admitting the first model took is given back; a Hanzo SKU keeps its model
-// and is served on the free lane by what stands in for it.
-func TestPastThePlatformsDayASubscriberIsAnsweredInLimitedMode(t *testing.T) {
+// A SUBSCRIBER WHOSE PLAN HAS NO ROOM IS ANSWERED, NOT REFUSED. A chat for a model
+// only the paid lane serves, from a payer whose plan has nothing left for it, is
+// handed to the free model in limited mode, saying why, and what admitting the first
+// model took is given back; a Hanzo SKU keeps its model and is served on the free lane
+// by what stands in for it.
+func TestASubscriberWhosePlanHasNoRoomIsAnsweredInLimitedMode(t *testing.T) {
 	paidSwitch(t)
-	t.Setenv("PAID_LANE_DAILY", "0")
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel)
 	released, ended := 0, 0
@@ -149,7 +147,7 @@ func TestPastThePlatformsDayASubscriberIsAnsweredInLimitedMode(t *testing.T) {
 		if q.Model == controllers.FreeModel {
 			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
 		}
-		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 5_000_000_000,
+		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 0,
 			Settle: func(n int64) {
 				if n == 0 {
 					ended++
@@ -164,10 +162,10 @@ func TestPastThePlatformsDayASubscriberIsAnsweredInLimitedMode(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"X-Hanzo-Fallback":           controllers.FreeModel,
-		"X-Hanzo-Usage-Reason":       controllers.ReasonCeiling,
+		"X-Hanzo-Usage-Reason":       controllers.ReasonFull,
 		"X-Hanzo-Usage":              "limited",
 		controllers.LaneHeader:       "free",
-		controllers.LaneReasonHeader: controllers.ReasonCeiling,
+		controllers.LaneReasonHeader: controllers.ReasonFull,
 	} {
 		if got := p.replied(name); got != want {
 			t.Errorf("%s = %q, want %q", name, got, want)
@@ -181,8 +179,8 @@ func TestPastThePlatformsDayASubscriberIsAnsweredInLimitedMode(t *testing.T) {
 	if p.status() != http.StatusOK || !strings.Contains(p.handed(), `"model":"enso-pro"`) {
 		t.Fatalf("status %d handed %s: want enso-pro kept", p.status(), p.handed())
 	}
-	if p.replied(controllers.LaneHeader) != "free" || p.replied(controllers.LaneReasonHeader) != controllers.ReasonCeiling {
-		t.Errorf("lane %q reason %q, want free and %s", p.replied(controllers.LaneHeader), p.replied(controllers.LaneReasonHeader), controllers.ReasonCeiling)
+	if p.replied(controllers.LaneHeader) != "free" || p.replied(controllers.LaneReasonHeader) != controllers.ReasonFull {
+		t.Errorf("lane %q reason %q, want free and %s", p.replied(controllers.LaneHeader), p.replied(controllers.LaneReasonHeader), controllers.ReasonFull)
 	}
 }
 

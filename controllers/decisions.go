@@ -1308,22 +1308,22 @@ func settle(j settleJob) {
 }
 
 // Settled waits until every debit filed after its reply has been handed to the
-// ledger, and the paid lane's day is written to the store (laneBook.drain), or ctx
-// ends. A stopping process calls it once it has stopped taking requests, with at least
-// SettleBudget.
+// ledger, or ctx ends. A stopping process calls it once it has stopped taking
+// requests, with at least SettleBudget.
 func Settled(ctx context.Context) error {
 	settling.mu.Lock()
 	idle := settling.idle
 	n := settling.n
 	settling.mu.Unlock()
-	if n > 0 {
-		select {
-		case <-idle:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	if n == 0 {
+		return nil
 	}
-	return paidDay.drain(ctx)
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // DecisionPath reports whether path is /v1/decisions, whose answers Restate words,

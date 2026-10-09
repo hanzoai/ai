@@ -148,7 +148,7 @@ func (j *videoJob) markFailed(status string) (first bool) {
 		return false
 	}
 	j.hold.settle(0) // release the reservation; nothing is billed for a failed job
-	j.seat.settle(0)
+	j.seat.settle()
 	j.billed = true
 	j.done = true
 	j.terminalAt = time.Now()
@@ -200,7 +200,7 @@ func (s *videoJobStore) reap(now time.Time) {
 			// Abandoned / wedged: release the held budget and evict. markFailed's
 			// invariants are simple enough to inline here under both locks.
 			j.hold.settle(0)
-			j.seat.settle(0)
+			j.seat.settle()
 			j.done = true
 			j.billed = true
 			j.status = "failed"

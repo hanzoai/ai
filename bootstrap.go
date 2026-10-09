@@ -164,12 +164,12 @@ func doBootstrap() (err error) {
 
 	// The in-pod balance ledger (object.GlobalBalanceLedger) reserves/settles in
 	// process memory — correct ONLY at a SINGLE replica (deploy strategy=Recreate
-	// + HPA min=max=1). If the operator stamped CLOUD_API_REPLICAS > 1, refuse to
+	// + HPA min=max=1). If the deployment states CLOUD_REPLICAS > 1, refuse to
 	// start rather than silently double-spend across pods; scaling out requires a
 	// Commerce-atomic conditional reserve first.
 	if n, ok := object.SinglePodReplicaHint(); ok && n > 1 {
-		log.Error("FATAL: CLOUD_API_REPLICAS=%d — the in-pod balance ledger double-spends across pods. Refusing to start; implement a Commerce-atomic reserve before scaling out.", n)
-		panic("cloud-api: in-pod balance ledger requires a single replica (CLOUD_API_REPLICAS>1)")
+		log.Error("FATAL: CLOUD_REPLICAS=%d — the in-pod balance ledger double-spends across pods. Refusing to start; implement a Commerce-atomic reserve before scaling out.", n)
+		panic("cloud-api: in-pod balance ledger requires a single replica (CLOUD_REPLICAS>1)")
 	}
 	log.Info("balance ledger: single-pod invariant active (reservation ledger requires replicas=1, strategy=Recreate, HPA min=max=1)")
 

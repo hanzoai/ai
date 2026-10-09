@@ -1398,11 +1398,10 @@ func recordUsage(record *usageRecord) error {
 	if record.plan != nil {
 		record.plan.Settle(planUse(record))
 	}
-	// A call on the paid lane settles its seat at what it spent, whoever paid: the
-	// hold taken at admission is given back and the spend counted against the
-	// platform's day and its org's share. After the plan's settle, so the payer's next
-	// call reads the host's figure with this one in it before this hold is gone.
-	record.seat.settle(laneSpend(record))
+	// A call on the paid lane settles its seat, whoever paid: the hold taken at
+	// admission is given back. After the plan's settle, so the payer's next call reads
+	// the host's figure with this one in it before this hold is gone.
+	record.seat.settle()
 	// The public lane keeps its own count in this process, by the visitor's address
 	// and the site it shares, so its ceiling holds while the host is unreachable. It
 	// rises on an answer; the host's count was taken when the lane admitted the call.

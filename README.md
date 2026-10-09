@@ -131,7 +131,7 @@ them at run time from a single `HANZO_API_KEY` GitHub secret, with Universal Aut
 fallback.
 
 > `ai` runs single-replica: its balance ledger is an in-pod invariant. Deploy with
-> `strategy: Recreate` and `min=max=1` — a boot assertion panics if `CLOUD_API_REPLICAS > 1`.
+> `strategy: Recreate` and `min=max=1` — a boot assertion panics if `CLOUD_REPLICAS > 1`.
 > [`LLM.md`](LLM.md) has the scale-out path.
 
 ## Development

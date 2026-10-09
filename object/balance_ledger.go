@@ -69,20 +69,21 @@ type BalanceLedger struct {
 // SINGLE-POD INVARIANT: this ledger is in-pod (per-process) memory. Reserve/Settle
 // are correct ONLY when cloud-api runs as a SINGLE replica — two pods each reserve
 // against their own cached Commerce balance and would double-spend. The deployment
-// enforces this with strategy=Recreate AND HPA min=max=1 (universe
-// services.hanzo.ai/cloud-api CR); SinglePodReplicaHint lets the process ALSO
-// assert it at boot. Scaling out REQUIRES a Commerce-atomic conditional reserve
-// (move Reserve/Settle behind a Commerce endpoint) — until then, do not raise
-// replicas. See LLM.md "Balance ledger — single-pod invariant".
+// enforces this with strategy=Recreate and one replica (universe
+// charts/app/values/hanzo/cloud.yaml); SinglePodReplicaHint lets the process ALSO
+// assert it at boot. The paid lane's plan holds (controllers' lane.go) are in-pod
+// too and rest on the same invariant. Scaling out REQUIRES a Commerce-atomic
+// conditional reserve (move Reserve/Settle behind a Commerce endpoint) — until
+// then, do not raise replicas. See LLM.md "Balance ledger — single-pod invariant".
 var GlobalBalanceLedger = NewBalanceLedger(BalanceLedgerTTL)
 
-// SinglePodReplicaHint parses the optional CLOUD_API_REPLICAS deployment hint,
-// which the operator stamps with the replica count it deploys. ok=false when the
-// hint is unset or unparseable (the invariant is then logged, not enforced). A
+// SinglePodReplicaHint parses the CLOUD_REPLICAS deployment hint, the replica count
+// the cloud chart injects into every pod it deploys (writers.replicasEnv). ok=false
+// when the hint is unset or unparseable (the invariant is then logged, not enforced). A
 // returned count > 1 means the in-pod ledger is unsafe and the process must refuse
 // to start — the boot path (bootstrap.go) treats >1 as fatal.
 func SinglePodReplicaHint() (count int, ok bool) {
-	raw := strings.TrimSpace(os.Getenv("CLOUD_API_REPLICAS"))
+	raw := strings.TrimSpace(os.Getenv("CLOUD_REPLICAS"))
 	if raw == "" {
 		return 0, false
 	}

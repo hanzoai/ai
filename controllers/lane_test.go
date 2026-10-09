@@ -44,11 +44,11 @@ func fixed(n int64) quote { return quote{fixed: n, width: 1} }
 
 // party is who a request comes from, as the balance gate leaves them on it: the
 // grant the host's usage policy answered with (nil when it said nothing), and whether
-// the platform's paid-lane day is spent when they ask.
+// they are owed the paid lane and find no room on it.
 type party struct {
 	name  string
 	grant *object.LimitGrant
-	spent bool
+	full  bool
 	paid  bool // the lane they are owed
 }
 
@@ -58,51 +58,57 @@ func planGrant(plan, pays, class string) *object.LimitGrant {
 	return &object.LimitGrant{Plan: plan, Pays: pays, Class: class, State: "ok", Spend: usd(5), Settle: func(int64) {}}
 }
 
+// drained is a grant whose plan pays and has nothing of its class left.
+func drained() *object.LimitGrant {
+	g := planGrant("max-20x", object.PaysPlan, object.ClassPremium)
+	g.Spend = 0
+	return g
+}
+
 // parties are the callers every site is asked about: a Max 20x subscriber whose plan
 // pays, a wallet with no plan, a guest the policy said nothing about, and the same
-// subscriber on a day the platform's paid lane is spent.
+// subscriber with nothing of the plan left.
 func parties() []party {
 	return []party{
 		{name: "subscriber", grant: planGrant("max-20x", object.PaysPlan, object.ClassPremium), paid: true},
 		{name: "wallet without a plan", grant: planGrant("", object.PaysPrepaid, object.ClassPremium), paid: true},
 		{name: "a free cap", grant: planGrant("", object.PaysFree, object.ClassOurs)},
 		{name: "guest"},
-		{name: "subscriber past the platform's day", grant: planGrant("max-20x", object.PaysPlan, object.ClassPremium), spent: true},
+		{name: "subscriber with nothing of the plan left", grant: drained(), full: true},
 	}
 }
 
-// lanes makes the lanes real for one test: the platform's switch on and a day of its
-// own, kept in no store, with nothing spent on it.
+// lanes makes the lanes real for one test: the platform's switch on and a book of
+// its own, holding nothing.
 func lanes(t *testing.T) {
 	t.Helper()
-	day := paidDay
-	paidDay = &laneBook{}
-	t.Cleanup(func() { paidDay = day })
+	was := paidLane
+	paidLane = &laneBook{}
+	t.Cleanup(func() { paidLane = was })
 }
 
-// spendDay counts n nano-dollars of org's spend against today's paid-lane day.
-func spendDay(org string, n int64) {
-	paidDay.mu.Lock()
-	defer paidDay.mu.Unlock()
-	paidDay.turn(paidDay.now())
-	paidDay.count(org, n)
+// book is what every open seat on the paid lane holds.
+func book() int64 {
+	paidLane.mu.Lock()
+	defer paidLane.mu.Unlock()
+	var n int64
+	for s := range paidLane.open {
+		n += s.held
+	}
+	return n
 }
 
-// book reads the day's spend and holds.
-func book() (spent, held int64) {
-	paidDay.mu.Lock()
-	defer paidDay.mu.Unlock()
-	return paidDay.spent, paidDay.held
+// planHeld is what plan's calls in flight hold.
+func planHeld(plan string) int64 {
+	paidLane.mu.Lock()
+	defer paidLane.mu.Unlock()
+	return paidLane.plans[plan]
 }
 
 // seatAs puts c's caller on their lane as the gate does: it leaves its grant, and the
 // lane is decided from it, once.
 func seatAs(t *testing.T, c *ApiController, h party) *ApiController {
 	t.Helper()
-	if h.spent {
-		t.Setenv("PAID_LANE_DAILY", "1")
-		spendDay("other", usd(1))
-	}
 	if h.grant != nil {
 		Cover(c.Ctx, h.grant)
 	}
@@ -121,8 +127,8 @@ func onLane(t *testing.T, c *ApiController, h party) {
 		t.Errorf("%s = %q, want %q", LaneHeader, got, want)
 	}
 	reason := ""
-	if h.spent {
-		reason = ReasonCeiling
+	if h.full {
+		reason = ReasonFull
 	}
 	if got := header(c, LaneReasonHeader); got != reason {
 		t.Errorf("%s = %q, want %q", LaneReasonHeader, got, reason)
@@ -192,112 +198,44 @@ func TestARequestNobodySeatedIsOnTheFreeLane(t *testing.T) {
 	}
 }
 
-// THE PLATFORM'S DAY IS THE SECOND GUARD. A subscriber is seated only while the day has
-// room for the call's quote; past it they are on the free lane, told why; the next UTC
-// day the lane is theirs again. 0, or a value that is not a finite amount between 0
-// and $1,000,000,000, closes the lane; unset it is $10. A process not known to be the
-// only replica seats nobody.
-func TestThePlatformsDayMovesSubscribersToTheFreeLane(t *testing.T) {
+// THE PAID LANE HAS NO CEILING OF ITS OWN. What a payer's own wallet pays for is held
+// against the wallet by its handler, never by the lane: a hundred orgs' $1,000 calls
+// are all seated at once, at the ceiling each asked for, whatever the deployment says
+// of its replicas. A call the plan pays is seated while the plan has room, and past
+// it its payer is on the free lane, told why; a call only the paid lane serves is
+// refused 413, saying the plan has less left than the call can cost. A caller never
+// owed the paid lane is not told it was full.
+func TestThePaidLaneHasNoCeilingOfItsOwn(t *testing.T) {
 	lanes(t)
-	t.Setenv("PAID_LANE_DAILY", "1")
-	t.Setenv("PAID_LANE_ORG_SHARE", "1")
-	sub := party{grant: planGrant("max-20x", object.PaysPlan, object.ClassPremium), paid: true}
-	now := time.Now()
+	t.Setenv("CLOUD_REPLICAS", "")
+	for i := range 100 {
+		org := fmt.Sprintf("org%d", i)
+		s, why := paidLane.reserve(org+"\x00"+org, "", fixed(usd(1000)), math.MaxInt64)
+		if s == nil {
+			t.Fatalf("a wallet's $1,000 call from the %dth org was refused (%q): the paid lane caps nobody's own money", i+1, why)
+		}
+	}
+	if held := book(); held != usd(100_000) {
+		t.Fatalf("the paid lane holds %d nano for a hundred $1,000 calls, want all of it", held)
+	}
 
-	spendDay("other", usd(0.5))
+	sub := party{grant: planGrant("max-20x", object.PaysPlan, object.ClassPremium), paid: true}
 	if c := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), sub); FreeOnlyFor(c.Context()) {
-		t.Fatal("a subscriber whose call fits the day was put on the free lane")
+		t.Fatal("a subscriber whose plan has room was put on the free lane")
 	}
-	spendDay("other", usd(0.5))
-	c := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), sub)
+	c := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), party{grant: drained(), full: true})
 	if !FreeOnlyFor(c.Context()) {
-		t.Fatal("a subscriber past the day's ceiling stayed on the paid lane")
+		t.Fatal("a subscriber whose plan has nothing left stayed on the paid lane")
 	}
-	onLane(t, c, party{spent: true})
+	onLane(t, c, party{full: true})
 	err := laneOff(c.Context(), "vendor/x")
-	if statusOf(err) != http.StatusTooManyRequests || codeOf(err) != codeLaneFull || !strings.Contains(err.Error(), "00:00 UTC") {
-		t.Fatalf("a call only the paid lane serves is refused %d %q %q, want 429 %s naming the next day", statusOf(err), codeOf(err), err, codeLaneFull)
+	if statusOf(err) != http.StatusRequestEntityTooLarge || codeOf(err) != ReasonFull || !strings.Contains(err.Error(), "your plan has left") {
+		t.Fatalf("a call only the paid lane serves is refused %d %q %q, want 413 %s naming the plan", statusOf(err), codeOf(err), err, ReasonFull)
 	}
-	// A caller who was never owed the paid lane is not told it was full.
 	free := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), party{grant: planGrant("", object.PaysFree, object.ClassOurs)})
 	onLane(t, free, party{})
 	if err := laneOff(free.Context(), "vendor/x"); statusOf(err) != http.StatusServiceUnavailable {
 		t.Fatalf("a caller never owed the lane is refused %d, want the switch's 503", statusOf(err))
-	}
-
-	paidDay.clock = func() time.Time { return now.Add(24 * time.Hour) }
-	if s, _ := paidDay.reserve("acme", "acme", "", fixed(1), math.MaxInt64); s == nil {
-		t.Fatal("tomorrow's paid lane is spent by today's calls")
-	}
-	paidDay.clock = nil
-
-	for value, want := range map[string]int64{
-		"": paidLaneDefault, "0": 0, "-3": 0, "ten": 0, "2.5": usd(2.5), "1e9": usd(1e9),
-		"Inf": 0, "+Inf": 0, "NaN": 0, "1e10": 0, "9223372037": 0,
-	} {
-		t.Setenv("PAID_LANE_DAILY", value)
-		if got := paidLaneDaily(); got != want {
-			t.Errorf("PAID_LANE_DAILY=%q reads %d nano, want %d", value, got, want)
-		}
-	}
-	for value, want := range map[string]int64{"": usd(2.5), "0.5": usd(5), "1": usd(10), "0": 0, "1.5": 0, "half": 0, "NaN": 0} {
-		t.Setenv("PAID_LANE_ORG_SHARE", value)
-		if got := orgShare(usd(10)); got != want {
-			t.Errorf("PAID_LANE_ORG_SHARE=%q gives an org %d nano of $10, want %d", value, got, want)
-		}
-	}
-	t.Setenv("PAID_LANE_ORG_SHARE", "1")
-	t.Setenv("PAID_LANE_DAILY", "")
-	for _, replicas := range []string{"", "2", "0", "one"} {
-		t.Setenv("CLOUD_API_REPLICAS", replicas)
-		c := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), sub)
-		if !FreeOnlyFor(c.Context()) || !strings.Contains(laneOff(c.Context(), "vendor/x").Error(), "closed") {
-			t.Fatalf("CLOUD_API_REPLICAS=%q seated a subscriber; the lane is closed unless this is the only replica", replicas)
-		}
-	}
-	t.Setenv("CLOUD_API_REPLICAS", "1")
-	t.Setenv("PAID_LANE_DAILY", "0")
-	if c := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), sub); !FreeOnlyFor(c.Context()) {
-		t.Fatal("PAID_LANE_DAILY=0 left the paid lane open")
-	}
-}
-
-// ONE ORG HOLDS AT MOST ITS SHARE, AND ONE CALL MORE. With the platform's day at $10 and
-// the default share, one org's calls hold and spend at most $2.50 of it while it has
-// more than one in flight; another org is seated beside it. An org with nothing in
-// flight and some of its share left may seat one call larger than its share, up to
-// what the day has left; an org that has spent its share is seated for nothing more
-// that day.
-func TestOneOrgHoldsAtMostItsShareOfTheDay(t *testing.T) {
-	lanes(t)
-	t.Setenv("PAID_LANE_DAILY", "10")
-	var held []*seat
-	for {
-		s, _ := paidDay.reserve("acme", "acme", "", fixed(usd(1)), math.MaxInt64)
-		if s == nil {
-			break
-		}
-		if held = append(held, s); len(held) > 10 {
-			t.Fatal("one org was seated past its share")
-		}
-	}
-	if len(held) != 2 {
-		t.Fatalf("acme was seated for %d $1 calls, want 2 within its $2.50", len(held))
-	}
-	if s, _ := paidDay.reserve("globex", "globex", "", fixed(usd(1)), math.MaxInt64); s == nil {
-		t.Fatal("another org was refused while the day had room for it")
-	}
-
-	big, _ := paidDay.reserve("initech", "initech", "", fixed(usd(4)), math.MaxInt64)
-	if big == nil {
-		t.Fatal("an org with nothing in flight was refused a $4 call the day had room for")
-	}
-	if s, why := paidDay.reserve("initech", "initech", "", fixed(usd(0.01)), math.MaxInt64); s != nil || why != whyBusy {
-		t.Fatalf("an org holding past its share was seated again (%q)", why)
-	}
-	big.settle(usd(3))
-	if s, why := paidDay.reserve("initech", "initech", "", fixed(usd(0.01)), math.MaxInt64); s != nil || why != whySpent {
-		t.Fatalf("an org that spent its share was seated again (%q), want it told the day is used", why)
 	}
 }
 
@@ -307,37 +245,36 @@ func TestAPayerHoldsAtMostItsCallsAtOnce(t *testing.T) {
 	lanes(t)
 	var seats []*seat
 	for range paidLaneCalls + 3 {
-		if s, _ := paidDay.reserve("acme", "acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s != nil {
+		if s, _ := paidLane.reserve("acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s != nil {
 			seats = append(seats, s)
 		}
 	}
 	if len(seats) != paidLaneCalls {
 		t.Fatalf("one payer holds %d seats at once, want %d", len(seats), paidLaneCalls)
 	}
-	if s, _ := paidDay.reserve("acme", "acme\x00bob", "", fixed(usd(0.01)), math.MaxInt64); s == nil {
+	if s, why := paidLane.reserve("acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s != nil || why != whyBusy {
+		t.Fatalf("a payer holding its seats was seated again (%q)", why)
+	}
+	if s, _ := paidLane.reserve("acme\x00bob", "", fixed(usd(0.01)), math.MaxInt64); s == nil {
 		t.Fatal("another payer was refused while the first held its seats")
 	}
 	seats[0].end()
-	if s, _ := paidDay.reserve("acme", "acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s == nil {
+	if s, _ := paidLane.reserve("acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s == nil {
 		t.Fatal("a payer whose call ended was not seated again")
 	}
 }
 
-// NEITHER THE DAY NOR THE PLAN IS PASSED BY CALLS IN FLIGHT. Fifty concurrent
-// 600 KB prompts at a premium model, from a payer whose plan has $0.01 of its class
-// left: none fits, so none is seated and nothing is held. Then many concurrent calls
-// from payers whose plans have room, under a $10 day: every one seated held its quote
-// before it was served, and what was seated and what was spent never pass the day, an
-// org's share, or a plan's figure — each call spending what it was quoted.
-func TestCallsInFlightNeverPassTheDayOrThePlan(t *testing.T) {
+// A PLAN IS NEVER PASSED BY CALLS IN FLIGHT. Fifty concurrent 600 KB prompts at a
+// premium model, from a payer whose plan has $0.01 of its class left: none fits, so
+// none is seated and nothing is held. Then many concurrent calls from payers whose
+// plans each have $3 left: every one seated held its quote before it was served, and
+// what a plan's calls hold never passes its figure. Settled, nothing is held.
+func TestCallsInFlightNeverPassThePlan(t *testing.T) {
 	lanes(t)
-	t.Setenv("PAID_LANE_DAILY", "10")
-	t.Setenv("PAID_LANE_ORG_SHARE", "1")
 	premium := strings.Repeat("x", 600_000)
 	body := []byte(`{"model":"anthropic/claude-opus-5.5","max_tokens":32000,"messages":[{"role":"user","content":"` + premium + `"}]}`)
 	low := planGrant("max-20x", object.PaysPlan, object.ClassPremium)
 	low.Spend = usd(0.01)
-
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	seated := 0
@@ -354,7 +291,7 @@ func TestCallsInFlightNeverPassTheDayOrThePlan(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if _, held := book(); seated != 0 || held != 0 {
+	if held := book(); seated != 0 || held != 0 {
 		t.Fatalf("%d calls seated holding %d nano for a payer with $0.01 left, want none", seated, held)
 	}
 
@@ -366,63 +303,55 @@ func TestCallsInFlightNeverPassTheDayOrThePlan(t *testing.T) {
 	for range 100 {
 		for _, org := range orgs {
 			wg.Go(func() {
-				g := planGrant("max-20x", object.PaysPlan, object.ClassPremium)
-				g.Spend = usd(3)
-				s, _ := paidDay.reserve(org, org+"\x00"+org, org+"\x00"+org+"\x00"+g.Class, fixed(est), g.Spend)
+				plan := org + "\x00" + org + "\x00" + object.ClassPremium
+				s, _ := paidLane.reserve(org+"\x00"+org, plan, fixed(est), usd(3))
 				if s == nil {
 					return
 				}
-				spent, held := book()
+				n := planHeld(plan)
 				mu.Lock()
 				seats = append(seats, s)
-				peak = max(peak, spent+held)
+				peak = max(peak, n)
 				mu.Unlock()
 			})
 		}
 	}
 	wg.Wait()
-	if len(seats) != 25 {
-		t.Fatalf("%d $0.40 calls seated under a $10 day, want 25", len(seats))
+	if len(seats) != 4*7 {
+		t.Fatalf("%d $0.40 calls seated for four plans with $3 left, want 7 each", len(seats))
 	}
-	if _, held := book(); held > usd(10) || peak > usd(10) {
-		t.Fatalf("calls in flight hold %d nano (peak %d), past the $10 day", held, peak)
-	}
-	per := map[string]int64{}
-	for _, s := range seats {
-		per[s.org] += s.held
-	}
-	for org, n := range per {
-		if n > usd(3) {
-			t.Fatalf("%s's calls in flight hold %d nano, past the $3 its plan has left", org, n)
-		}
+	if peak > usd(3) {
+		t.Fatalf("a plan's calls in flight held %d nano at their peak, past the $3 it has left", peak)
 	}
 	for _, s := range seats {
-		wg.Go(func() { s.settle(est) })
+		wg.Go(s.settle)
 	}
 	wg.Wait()
-	if spent, held := book(); spent > usd(10) || held != 0 {
-		t.Fatalf("the day spent %d nano with %d still held, want at most $10 and nothing held", spent, held)
-	}
-	if s, _ := paidDay.reserve("e", "e", "", fixed(est), math.MaxInt64); s != nil {
-		t.Fatal("a call was seated on a spent day")
+	if held := book(); held != 0 {
+		t.Fatalf("every call settled and %d nano is still held", held)
 	}
 }
 
 // A RACE'S SEAT HOLDS UNTIL ITS ANSWER IS COUNTED. Fast mode races two providers; the
 // loser is stopped at the winner's first byte and billed while the winner still
-// streams. What it spent is added to the day and nothing is given back: the seat holds
-// the whole race until the winner's own usage settles it, once. Many such streams at
-// once never let a call be seated on room a loser gave back, and when every answer is
-// counted nothing is held and every provider's cost is on the day.
+// streams, and gives nothing back: the seat holds the whole race until the winner's
+// own usage settles it, once. Many such streams from one payer whose plan has room
+// for four never let a fifth be seated on room a loser gave back, and when every
+// answer is counted nothing is held.
 func TestARacesSeatHoldsUntilItsAnswerIsCounted(t *testing.T) {
 	lanes(t)
 	cooled.forget()
 	t.Cleanup(cooled.forget)
 	quick(t)
-	t.Setenv("PAID_LANE_DAILY", "1")
-	t.Setenv("PAID_LANE_ORG_SHARE", "1")
+	var mu sync.Mutex
+	billed := 0
 	prev := object.UsageRecorder()
-	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { return nil })
+	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error {
+		mu.Lock()
+		billed++
+		mu.Unlock()
+		return nil
+	})
 	t.Cleanup(func() { object.SetUsageRecorder(prev) })
 	r := &racers{
 		after: map[string]time.Duration{"enso": 0, "do-ai": 40 * time.Millisecond},
@@ -434,26 +363,24 @@ func TestARacesSeatHoldsUntilItsAnswerIsCounted(t *testing.T) {
 	r.install(t)
 
 	payload := []byte(`{"model":"gpt-4o","max_tokens":4096,"fast":true,"messages":[{"role":"user","content":"hi"}]}`)
-	open := func(payer string) *ApiController {
+	open := func(g *object.LimitGrant) *ApiController {
 		c := visit(http.MethodPost, "/v1/chat/completions")
 		c.Fiber().Request().SetBody(payload)
-		Seat(c.Ctx, planGrant("max-20x", object.PaysPrepaid, object.ClassPremium), "acme", payer, "gpt-4o")
+		Seat(c.Ctx, g, "acme", "ann", "gpt-4o")
 		return c
 	}
-	probe := open("probe")
+	probe := open(planGrant("max-20x", object.PaysPrepaid, object.ClassPremium))
 	est := seatOf(probe.Context()).held
 	seatOf(probe.Context()).end()
-	room := int(usd(1) / est)
-	if room < 4 {
-		t.Fatalf("a fast gpt-4o call is quoted %d nano; the test wants several in a $1 day", est)
-	}
+	const room = 4
+	plan := planGrant("max-20x", object.PaysPlan, object.ClassPremium)
+	plan.Spend = room*est + est/2
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 	var streams []*ApiController
-	for i := range 2 * room {
+	for range 2 * room {
 		wg.Go(func() {
-			if c := open(fmt.Sprintf("p%d", i)); !FreeOnlyFor(c.Context()) {
+			if c := open(plan); !FreeOnlyFor(c.Context()) {
 				mu.Lock()
 				streams = append(streams, c)
 				mu.Unlock()
@@ -462,7 +389,7 @@ func TestARacesSeatHoldsUntilItsAnswerIsCounted(t *testing.T) {
 	}
 	wg.Wait()
 	if len(streams) != room {
-		t.Fatalf("%d fast calls seated under a $1 day, want %d at %d nano each", len(streams), room, est)
+		t.Fatalf("%d fast calls seated for a plan with room for %d at %d nano each", len(streams), room, est)
 	}
 
 	user := &iam.User{Owner: "acme", Name: "ann"}
@@ -483,12 +410,12 @@ func TestARacesSeatHoldsUntilItsAnswerIsCounted(t *testing.T) {
 	wg.Wait()
 	// Every loser is billed from its own goroutine after its race returned.
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-		paidDay.mu.Lock()
+		paidLane.mu.Lock()
 		waiting := 0
 		for _, c := range streams {
 			waiting += seatOf(c.Context()).racing
 		}
-		paidDay.mu.Unlock()
+		paidLane.mu.Unlock()
 		if waiting == 0 {
 			break
 		}
@@ -497,29 +424,30 @@ func TestARacesSeatHoldsUntilItsAnswerIsCounted(t *testing.T) {
 		}
 	}
 
-	losers, held := book()
-	if losers <= 0 {
-		t.Fatal("the losers' cost was not counted on the day")
+	mu.Lock()
+	losers := billed
+	mu.Unlock()
+	if losers < room {
+		t.Fatalf("%d losers billed, want each race's", losers)
 	}
-	if held != int64(room)*est {
-		t.Fatalf("with every winner still streaming the day holds %d nano, want all %d seats' %d: a loser gave its seat back", held, room, int64(room)*est)
+	if held := book(); held != int64(room)*est {
+		t.Fatalf("with every winner still streaming the lane holds %d nano, want all %d seats' %d: a loser gave its seat back", held, room, int64(room)*est)
 	}
-	if late := open("late"); !FreeOnlyFor(late.Context()) {
+	if late := open(plan); !FreeOnlyFor(late.Context()) {
 		t.Fatal("a call was seated on room the streaming winners still hold")
 	}
 
-	const answer = 5_000_000
 	for _, c := range streams {
 		wg.Go(func() {
 			s := seatOf(c.Context())
-			s.settle(answer)
-			s.settle(0)
+			s.settle()
+			s.settle()
 			s.end()
 		})
 	}
 	wg.Wait()
-	if spent, held := book(); held != 0 || spent != losers+int64(room)*answer {
-		t.Fatalf("every answer counted: %d nano spent with %d held, want %d and nothing held", spent, held, losers+int64(room)*answer)
+	if held := book(); held != 0 {
+		t.Fatalf("every answer counted and %d nano is still held", held)
 	}
 }
 
@@ -530,36 +458,36 @@ func TestARacesSeatHoldsUntilItsAnswerIsCounted(t *testing.T) {
 func TestASeatNothingSettlesGivesItsHoldBack(t *testing.T) {
 	lanes(t)
 	now := time.Now()
-	paidDay.clock = func() time.Time { return now }
-	s, _ := paidDay.reserve("acme", "acme", "", fixed(usd(1)), math.MaxInt64)
+	paidLane.clock = func() time.Time { return now }
+	s, _ := paidLane.reserve("acme\x00acme", "", fixed(usd(1)), math.MaxInt64)
 	s.end()
-	if _, held := book(); held != 0 {
+	if held := book(); held != 0 {
 		t.Fatalf("an ended seat still holds %d nano", held)
 	}
-	k, _ := paidDay.reserve("acme", "acme", "", fixed(usd(1)), math.MaxInt64)
+	k, _ := paidLane.reserve("acme\x00acme", "", fixed(usd(1)), math.MaxInt64)
 	k.keep()
 	k.end()
-	if _, held := book(); held != usd(1) {
+	if held := book(); held != usd(1) {
 		t.Fatalf("a kept seat holds %d nano after its handler, want its $1", held)
 	}
-	paidDay.mu.Lock()
-	paidDay.lapse(now.Add(seatLapse + time.Second))
-	paidDay.mu.Unlock()
-	if _, held := book(); held != 0 {
+	paidLane.mu.Lock()
+	paidLane.lapse(now.Add(seatLapse + time.Second))
+	paidLane.mu.Unlock()
+	if held := book(); held != 0 {
 		t.Fatalf("a seat past its lapse still holds %d nano", held)
 	}
 
-	read, _ := paidDay.reserve("acme", "acme", "", fixed(usd(1)), math.MaxInt64)
-	stalled, _ := paidDay.reserve("acme", "acme", "", fixed(usd(1)), math.MaxInt64)
+	read, _ := paidLane.reserve("acme\x00acme", "", fixed(usd(1)), math.MaxInt64)
+	stalled, _ := paidLane.reserve("acme\x00acme", "", fixed(usd(1)), math.MaxInt64)
 	var client bytes.Buffer
 	chunk := func(w *bufio.Writer) { _, _ = w.WriteString("data: {}\n\n"); _ = w.Flush() }
 	stalled.paced(chunk)(bufio.NewWriter(&client))
 	for range 5 {
 		now = now.Add(streamIdle / 2)
 		read.paced(chunk)(bufio.NewWriter(&client))
-		paidDay.mu.Lock()
-		paidDay.lapse(now)
-		paidDay.mu.Unlock()
+		paidLane.mu.Lock()
+		paidLane.lapse(now)
+		paidLane.mu.Unlock()
 	}
 	if !read.open || stalled.open {
 		t.Fatalf("a stream its client reads is open %v, one it stopped reading is open %v; want only the first held", read.open, stalled.open)
@@ -567,108 +495,16 @@ func TestASeatNothingSettlesGivesItsHoldBack(t *testing.T) {
 	if client.Len() == 0 {
 		t.Fatal("a paced stream wrote nothing to its client")
 	}
-	if _, held := book(); held != usd(1) {
-		t.Fatalf("the day holds %d nano, want the read stream's $1", held)
+	if held := book(); held != usd(1) {
+		t.Fatalf("the lane holds %d nano, want the read stream's $1", held)
 	}
 }
 
-// THE DAY ONLY MOVES FORWARD AND CARRIES WHAT IS IN FLIGHT. A call seated a second
-// before midnight holds on the new day, which starts with nothing spent; its answer
-// counts on the day it is counted; a clock read late, or set back, never takes the
-// book back to the day before; nothing held is ever below zero.
-func TestTheDayMovesForwardAndCarriesWhatIsInFlight(t *testing.T) {
-	lanes(t)
-	t.Setenv("PAID_LANE_DAILY", "10")
-	t.Setenv("PAID_LANE_ORG_SHARE", "1")
-	night := time.Date(2026, 10, 8, 23, 59, 59, 0, time.UTC)
-	clock := night
-	paidDay.clock = func() time.Time { return clock }
-	spendDay("acme", usd(9))
-	s, _ := paidDay.reserve("acme", "acme", "", fixed(usd(0.5)), math.MaxInt64)
-	if s == nil {
-		t.Fatal("a call that fits was refused")
-	}
-	clock = night.Add(2 * time.Second)
-	late, _ := paidDay.reserve("acme", "acme", "", fixed(usd(9.4)), math.MaxInt64)
-	if late == nil {
-		t.Fatal("the new day did not start with nothing spent")
-	}
-	late.end()
-	if spent, held := book(); spent != 0 || held != usd(0.5) {
-		t.Fatalf("the new day reads %d spent, %d held; want nothing spent and the call in flight carried", spent, held)
-	}
-	clock = night
-	if s, _ := paidDay.reserve("acme", "acme", "", fixed(usd(9.6)), math.MaxInt64); s != nil {
-		t.Fatal("a clock set back took the book to the day before")
-	}
-	if paidDay.day != "2026-10-09" {
-		t.Fatalf("the book is on %s, want the new day", paidDay.day)
-	}
-	clock = night.Add(time.Hour)
-	s.settle(usd(0.4))
-	s.settle(usd(0.1))
-	if spent, held := book(); spent != usd(0.5) || held != 0 {
-		t.Fatalf("the carried call counted %d with %d held, want its $0.50 on the new day and nothing held", spent, held)
-	}
-	paidDay.mu.Lock()
-	defer paidDay.mu.Unlock()
-	for org, u := range paidDay.orgs {
-		if u.held < 0 {
-			t.Fatalf("%s holds %d nano", org, u.held)
-		}
-	}
-}
-
-// THE DAY OUTLIVES THE PROCESS. What was spent is written to the store off the request
-// path, and a new process reads it back the first time it is asked about the day.
-// Each write is one statement: many at once lose nothing.
-func TestThePaidLaneDaySurvivesARestart(t *testing.T) {
-	withStore(t)
-	t.Setenv("PAID_LANE_DAILY", "1")
-	t.Setenv("PAID_LANE_ORG_SHARE", "1")
-	first := &laneBook{store: true}
-	s, _ := first.reserve("acme", "acme", "", fixed(usd(0.5)), math.MaxInt64)
-	if s == nil {
-		t.Fatal("an empty day refused a call")
-	}
-	s.settle(usd(0.75))
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := first.drain(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	restarted := &laneBook{store: true}
-	if s, _ := restarted.reserve("acme", "acme", "", fixed(usd(0.5)), math.MaxInt64); s != nil {
-		t.Fatal("after a restart the day forgot $0.75 of spend and seated a $0.50 call under $1")
-	}
-	if restarted.spent != usd(0.75) || restarted.use("acme").spent != usd(0.75) {
-		t.Fatalf("after a restart the day reads %d nano, acme %d, want $0.75", restarted.spent, restarted.use("acme").spent)
-	}
-	if s, _ := restarted.reserve("acme", "acme", "", fixed(usd(0.25)), math.MaxInt64); s == nil {
-		t.Fatal("after a restart a call that fits what is left was refused")
-	}
-
-	var wg sync.WaitGroup
-	for range 50 {
-		wg.Go(func() {
-			if err := object.CountPaidDay("2026-01-01", "globex", 7); err != nil {
-				t.Error(err)
-			}
-		})
-	}
-	wg.Wait()
-	if kept, err := object.PaidDays("2026-01-01"); err != nil || kept["globex"] != 350 {
-		t.Fatalf("fifty writes at once kept %v (%v), want 350", kept, err)
-	}
-}
-
-// A PAID-LANE CALL IS BILLED, ATTRIBUTED AND COUNTED. Two members of a Team org draw
+// A PAID-LANE CALL IS BILLED, ATTRIBUTED AND SETTLED. Two members of a Team org draw
 // on the org's one pool — one subject, the plan's — and each call names the member
 // who made it; a call past the plan is the wallet's. Every one carries its price, and
-// its seat counts the most of its price and its cost against the day. A call on the
-// free lane counts nothing, and neither does one on the org's own key.
-func TestAPaidLaneCallIsBilledAttributedAndCounted(t *testing.T) {
+// its usage settles its seat: nothing is held once it is counted.
+func TestAPaidLaneCallIsBilledAttributedAndSettled(t *testing.T) {
 	lanes(t)
 	var mu sync.Mutex
 	var events []object.UsageEvent
@@ -690,7 +526,7 @@ func TestAPaidLaneCallIsBilledAttributedAndCounted(t *testing.T) {
 		t.Helper()
 		l := &laneState{}
 		if paid {
-			l.seat, _ = paidDay.reserve("acme", "acme", "", fixed(usd(0.01)), math.MaxInt64)
+			l.seat, _ = paidLane.reserve("acme\x00"+member, "", fixed(usd(0.01)), math.MaxInt64)
 		}
 		ctx := context.WithValue(context.WithValue(context.Background(), planKey{}, grant), laneKey{}, l)
 		billed, cost := int64(3_000_000), int64(4_000_000)
@@ -705,13 +541,10 @@ func TestAPaidLaneCallIsBilledAttributedAndCounted(t *testing.T) {
 	call(team, "ann", true, false)
 	call(team, "bob", true, false)
 	call(past, "ann", true, false)
-	if spent, held := book(); spent != 12_000_000 || held != 0 {
-		t.Fatalf("the day counted %d nano with %d held, want three calls at their 4,000,000 nano cost and nothing held", spent, held)
-	}
 	call(team, "cat", false, false)
 	call(team, "dan", true, true)
-	if spent, held := book(); spent != 12_000_000 || held != 0 {
-		t.Fatalf("a free-lane call or the org's own key counted against the paid lane's day: %d, %d held", spent, held)
+	if held := book(); held != 0 {
+		t.Fatalf("every call was counted and the paid lane still holds %d nano", held)
 	}
 
 	mu.Lock()
@@ -741,13 +574,15 @@ func TestAPaidLaneCallIsBilledAttributedAndCounted(t *testing.T) {
 }
 
 // A FAST REQUEST'S LOSERS AND A VIDEO JOB COUNT ON THEIR REQUEST'S SEAT. A provider
-// beaten in a race is billed after its request is over and adds what it spent without
-// giving the seat back; a video is billed when a later poll sees it done: both count
-// on the seat their request was admitted on, never a poll's or a background's.
+// beaten in a race is billed after its request is over without giving the seat back;
+// a video is billed when a later poll sees it done, and that settles the seat its
+// create was admitted on, never a poll's or a background's.
 func TestRaceLosersAndVideoJobsCountOnTheirRequestsSeat(t *testing.T) {
 	lanes(t)
+	var mu sync.Mutex
+	billed := 0
 	prev := object.UsageRecorder()
-	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { return nil })
+	object.SetUsageRecorder(func(context.Context, object.UsageEvent) error { mu.Lock(); billed++; mu.Unlock(); return nil })
 	t.Cleanup(func() { object.SetUsageRecorder(prev) })
 
 	c := visit(http.MethodPost, "/v1/chat/completions")
@@ -760,29 +595,31 @@ func TestRaceLosersAndVideoJobsCountOnTheirRequestsSeat(t *testing.T) {
 	s.race(1)
 	bill := c.billRaced("anthropic/claude-x", &iam.User{Owner: "acme", Name: "ann"}, true, false, "r1", time.Now())
 	bill(attempt{provider: "relay-b", prompt: 1000, completion: 100, err: fmt.Errorf("beaten")})
-	if spent, held := book(); spent <= 0 || held != s.held {
-		t.Fatalf("the race's loser counted %d nano with %d held, want its cost counted and the seat's %d still held", spent, held, s.held)
+	mu.Lock()
+	losers := billed
+	mu.Unlock()
+	if held := book(); losers != 1 || held != s.held {
+		t.Fatalf("the race's loser billed %d time(s) with %d held, want it billed and the seat's %d still held", losers, held, s.held)
 	}
-	s.settle(1)
-	if _, held := book(); held != 0 {
+	s.settle()
+	if held := book(); held != 0 {
 		t.Fatalf("the answer was counted and %d nano is still held", held)
 	}
 
-	before, _ := book()
 	v := visit(http.MethodPost, "/v1/videos/generations")
 	Seat(v.Ctx, planGrant("max-20x", object.PaysPrepaid, object.ClassPremium), "acme", "acme", "wan2-2-t2v-a14b")
 	job := &videoJob{id: "video_lane", userModel: "wan2-2-t2v-a14b", hold: &budgetHold{}, bill: billing(v.Context()), seat: seatOf(v.Context()), createdAt: time.Now()}
 	job.seat.keep()
 	Unseat(v.Ctx)
-	if _, held := book(); held != usd(0.4) {
+	if held := book(); held != usd(0.4) {
 		t.Fatalf("a video job's seat holds %d nano after its create, want its $0.40", held)
 	}
 	poll := visit(http.MethodGet, "/v1/videos/video_lane")
 	if job.markCompleted(videoCostCents(job.userModel, 1)) {
 		poll.recordVideoUsage(job.bill, &iam.User{Owner: "acme", Name: "ann"}, &object.Provider{Owner: "admin", Name: "do-ai"}, job.userModel, false, 1, "success", "", time.Now())
 	}
-	if spent, held := book(); spent-before != usd(0.4) || held != 0 {
-		t.Fatalf("the finished video counted %d nano with %d held, want its $0.40 on the create's seat", spent-before, held)
+	if held := book(); held != 0 || job.seat.open {
+		t.Fatalf("the finished video left %d nano held, want the create's seat settled", held)
 	}
 }
 
@@ -823,43 +660,61 @@ func TestWithTheSwitchOffLateBillsAreAsBefore(t *testing.T) {
 	}
 }
 
-// A CALL THE DAY CAN HOLD IS SERVED, SIZED TO WHAT IS LEFT, AND A REFUSAL SAYS WHY. A
-// Claude-Code-shaped call to a $15/$75 model — max_tokens 32,000 and a 100 KB prompt —
-// is more than an org's $2.50 share; alone it is seated on an empty $10 day at the
-// ceiling it asked for. With the day busy it is sent with the highest ceiling that
-// fits, saying so, and its handler sends no more. When even the least it is sent with
-// does not fit it is told the lane is full right now; past the day, to try after
-// 00:00 UTC; a call no day can hold, to send less.
-func TestACallTheDayCanHoldIsServedSizedToWhatIsLeft(t *testing.T) {
+// A CALL IS SERVED, SIZED TO WHAT ITS PLAN HAS LEFT, AND A REFUSAL SAYS WHY. A
+// Claude-Code-shaped call to a $15/$75 model — max_tokens 32,000 — paid from the
+// payer's own wallet is seated whole, at the ceiling it asked for, however large and
+// however many are in flight beside it, up to the payer's seats: the wallet bounds it.
+// Paid by a plan, it is seated whole while the plan has room for that; with less room
+// it is sent with the highest ceiling that fits, saying so, and its handler sends no
+// more. When even the least it is sent with does not fit what the payer's calls in
+// flight leave, it is told so, 429; a call whose least is more than the plan has left,
+// to send less, 413. A settled call gives its room back.
+func TestACallIsServedSizedToWhatItsPlanHasLeft(t *testing.T) {
 	lanes(t)
-	t.Setenv("PAID_LANE_DAILY", "10")
-	sub := planGrant("max-20x", object.PaysPrepaid, object.ClassPremium)
-	call := func(org string, prompt int) *ApiController {
+	body := func(prompt int) []byte {
+		return []byte(`{"model":"claude-opus-4","max_tokens":32000,"messages":[{"role":"user","content":"` + strings.Repeat("x", prompt) + `"}]}`)
+	}
+	call := func(g *object.LimitGrant, payer string, prompt int) *ApiController {
 		c := visit(http.MethodPost, "/v1/messages")
-		c.Fiber().Request().SetBody([]byte(`{"model":"claude-opus-4","max_tokens":32000,"messages":[{"role":"user","content":"` + strings.Repeat("x", prompt) + `"}]}`))
-		Seat(c.Ctx, sub, org, org, "claude-opus-4")
+		c.Fiber().Request().SetBody(body(prompt))
+		Seat(c.Ctx, g, "acme", payer, "claude-opus-4")
 		return c
 	}
-	refused := func(c *ApiController, says string) {
+	refused := func(c *ApiController, status int, says string) {
 		t.Helper()
 		err := laneOff(c.Context(), "claude-opus-4")
-		if !FreeOnlyFor(c.Context()) || codeOf(err) != codeLaneFull || !strings.Contains(err.Error(), says) {
-			t.Fatalf("refused %q, want %s saying %q", err, codeLaneFull, says)
+		if !FreeOnlyFor(c.Context()) || statusOf(err) != status || codeOf(err) != ReasonFull || !strings.Contains(err.Error(), says) {
+			t.Fatalf("refused %d %q, want %d %s saying %q", statusOf(err), err, status, ReasonFull, says)
 		}
 	}
 
-	first := call("acme", 100_000)
-	s := seatOf(first.Context())
-	if s == nil || s.held <= orgShare(usd(10)) || s.tokens != 32000 || header(first, LaneTokensHeader) != "" {
-		t.Fatalf("a Claude-Code-shaped call on an empty day: seat %+v, header %q; want it seated whole past the share", s, header(first, LaneTokensHeader))
+	wallet := planGrant("max-20x", object.PaysPrepaid, object.ClassPremium)
+	for range paidLaneCalls {
+		c := call(wallet, "ann", 1_000_000)
+		if s := seatOf(c.Context()); s == nil || s.tokens != 32000 || header(c, LaneTokensHeader) != "" {
+			t.Fatalf("a wallet's call with a 1 MB prompt: seat %+v, header %q; want it seated whole", s, header(c, LaneTokensHeader))
+		}
 	}
-	refused(call("acme", 100_000), "full right now")
+	refused(call(wallet, "ann", 100), http.StatusTooManyRequests, fmt.Sprintf("%d calls in flight", paidLaneCalls))
 
-	spendDay("globex", usd(4))
-	sized := call("initech", 100_000)
+	probe := visit(http.MethodPost, "/v1/messages")
+	probe.Fiber().Request().SetBody(body(100_000))
+	q := quoteOf(probe.Ctx, "acme", "claude-opus-4")
+	whole, least := q.at(q.ceiling), q.at(q.floor)
+	if least >= whole {
+		t.Fatalf("the call is quoted %d at its least and %d whole; the test wants room between them", least, whole)
+	}
+	plan := planGrant("max-20x", object.PaysPlan, object.ClassPremium)
+	plan.Spend = whole + (least+whole)/2
+
+	first := call(plan, "bob", 100_000)
+	if s := seatOf(first.Context()); s == nil || s.tokens != 32000 || header(first, LaneTokensHeader) != "" {
+		t.Fatalf("a plan's call with room for it whole: seat %+v, header %q", s, header(first, LaneTokensHeader))
+	}
+	sized := call(plan, "bob", 100_000)
 	ss := seatOf(sized.Context())
 	if ss == nil || ss.tokens >= 32000 || ss.tokens < reserveCompletionFloor {
-		t.Fatalf("a call on a busy day: seat %+v, want it sized below 32,000 and at least the floor", ss)
+		t.Fatalf("a call with less room than it asked for: seat %+v, want it sized below 32,000 and at least the floor", ss)
 	}
 	if got := header(sized, LaneTokensHeader); got != fmt.Sprint(ss.tokens) {
 		t.Fatalf("%s = %q, want %d", LaneTokensHeader, got, ss.tokens)
@@ -867,21 +722,16 @@ func TestACallTheDayCanHoldIsServedSizedToWhatIsLeft(t *testing.T) {
 	if n := laneTokens(sized.Context(), clampMaxTokens("", 32000)); n != ss.tokens {
 		t.Fatalf("the handler sends max_tokens %d, want the seat's %d", n, ss.tokens)
 	}
-	if spent, held := book(); spent+held > usd(10) {
-		t.Fatalf("the day reads %d spent and %d held, past $10", spent, held)
+	key := "acme\x00bob\x00" + object.ClassPremium
+	if n := planHeld(key); n > plan.Spend {
+		t.Fatalf("the plan's calls hold %d nano, past the %d it has left", n, plan.Spend)
 	}
-	busy := call("hooli", 100_000)
-	refused(busy, "full right now")
-	if strings.Contains(laneOff(busy.Context(), "x").Error(), "00:00") {
-		t.Fatal("a lane full of calls in flight told the caller to wait for the next day")
-	}
+	refused(call(plan, "bob", 100_000), http.StatusTooManyRequests, "your calls in flight hold what your plan has left")
+	refused(call(plan, "cat", 1_000_000), http.StatusRequestEntityTooLarge, "shorter prompt")
 
-	spendDay("globex", usd(5))
-	refused(call("hooli", 100_000), "00:00 UTC")
-	huge := call("umbrella", 1_000_000)
-	refused(huge, "shorter prompt")
-	if statusOf(laneOff(huge.Context(), "x")) != http.StatusRequestEntityTooLarge {
-		t.Fatal("a call no day can hold was told to retry")
+	seatOf(first.Context()).settle()
+	if again := call(plan, "bob", 100_000); FreeOnlyFor(again.Context()) {
+		t.Fatal("a settled call did not give its plan's room back")
 	}
 }
 
@@ -973,8 +823,8 @@ func TestTheQuoteIsNeverBelowWhatAVendorCanBill(t *testing.T) {
 }
 
 // THE ORG'S OWN KEY IS NOT THE PLATFORM'S SPEND. While the switch is on, a call to a
-// row the org holds for itself is served off the paid lane and counts nothing against
-// the day; with the switch off it is refused, as every priced call is.
+// row the org holds for itself is served off the paid lane; with the switch off it is
+// refused, as every priced call is.
 func TestTheOrgsOwnKeyIsNotThePlatformsSpend(t *testing.T) {
 	ctx := context.Background()
 	mine := &object.Provider{Owner: "acme", Name: "openai", Type: "OpenAI"}
@@ -984,9 +834,6 @@ func TestTheOrgsOwnKeyIsNotThePlatformsSpend(t *testing.T) {
 	}
 	if shut(paidSeat(ctx), ours) {
 		t.Fatal("a seated request was refused the platform's provider")
-	}
-	if laneSpend(&usageRecord{BYO: true, PromptTokens: 1000, CompletionTokens: 1000, Model: "gpt-4o"}) != 0 {
-		t.Fatal("a call on the org's own key counted against the platform's day")
 	}
 	FreeOnly = func() bool { return true }
 	t.Cleanup(func() { FreeOnly = func() bool { return false } })
@@ -1012,8 +859,9 @@ func (w *relayWorld) chatAs(t *testing.T, h party, body string, strict bool) *Ap
 // The relay — a third-party route's own vendors (candidates, forward), its tool and
 // image requests, and a strict request taking the route's first row — serves the paid
 // lane to a payer, a subscriber or a wallet, and to nobody else: the vendor is never
-// asked for anyone else, and the payer's answer is billed, to the plan or the wallet. A subscriber the lane had no room for is told
-// so, 429, rather than that nothing is served.
+// asked for anyone else, and the payer's answer is billed, to the plan or the wallet,
+// and settles its seat. A subscriber whose plan has nothing left is told so, 413,
+// rather than that nothing is served.
 func TestTheRelayServesThePaidLaneToSubscribersOnly(t *testing.T) {
 	for _, site := range []struct {
 		name, body string
@@ -1031,8 +879,8 @@ func TestTheRelayServesThePaidLaneToSubscribersOnly(t *testing.T) {
 				onLane(t, c, h)
 				if !h.paid {
 					want := http.StatusServiceUnavailable
-					if h.spent {
-						want = http.StatusTooManyRequests
+					if h.full {
+						want = http.StatusRequestEntityTooLarge
 					}
 					if answered(c) != want || !strings.Contains(sent(c), "not being served") {
 						t.Fatalf("status %d, want the free lane's plain %d: %s", answered(c), want, sent(c))
@@ -1050,8 +898,8 @@ func TestTheRelayServesThePaidLaneToSubscribersOnly(t *testing.T) {
 				if ev := w.paid(t); ev.Plan != byPlan || ev.USD == "" || ev.USD == "0" {
 					t.Fatalf("%s's answer was filed %+v, want it billed (to the plan: %v)", h.name, ev, byPlan)
 				}
-				if paidDay.held != 0 || paidDay.spent <= 0 {
-					t.Fatalf("the subscriber's answer left %d nano held and %d counted, want its seat settled at what it cost", paidDay.held, paidDay.spent)
+				if held := book(); held != 0 {
+					t.Fatalf("the subscriber's answer left %d nano held, want its seat settled", held)
 				}
 			})
 		}
@@ -1160,7 +1008,7 @@ func TestAFamilysPricedThirdPartyRouteIsSentForSubscribersOnly(t *testing.T) {
 }
 
 // A priced Hanzo SKU is sent to its own paid route for a subscriber; for anyone else —
-// the subscriber past the platform's day included — the free routes that stand in for
+// the subscriber with nothing of the plan left included — the free routes that stand in for
 // it answer, as an answer and not an error, and carry no spend.
 func TestAPricedHanzoSKUFallsToTheFreeLaneAsAnAnswer(t *testing.T) {
 	const free = "vendor/big:free"
@@ -1255,10 +1103,10 @@ func TestAVendorsMediaSpendsForSubscribersOnly(t *testing.T) {
 }
 
 // THE ORG'S OWN KEY IS SERVED WHEN THE LANE IS FULL. A subscriber whose org connected
-// its own key for a route is served by that key with the platform's day spent; the
-// platform's vendors on the route are not asked, and nothing is counted against the
-// day. The gate knows such a call by its route (OwnKey) and never hands it to the
-// free model.
+// its own key for a route is served by that key with nothing of the plan left; the
+// platform's vendors on the route are not asked, and nothing is held on the paid lane.
+// The gate knows such a call by its route (OwnKey) and never hands it to the free
+// model.
 func TestTheOrgsOwnKeyIsServedWhenTheLaneIsFull(t *testing.T) {
 	lanes(t)
 	w := newRelayWorld(t, never(t), never(t))
@@ -1273,12 +1121,12 @@ func TestTheOrgsOwnKeyIsServedWhenTheLaneIsFull(t *testing.T) {
 	if !OwnKey("relayco", relaySku) || OwnKey("globex", relaySku) {
 		t.Fatalf("OwnKey relayco %v globex %v: want only the org that holds the row", OwnKey("relayco", relaySku), OwnKey("globex", relaySku))
 	}
-	c := w.chatAs(t, party{grant: planGrant("max-20x", object.PaysPlan, object.ClassPremium), spent: true}, `{"model":"relay-sku","messages":[{"role":"user","content":"hi"}]}`, false)
+	c := w.chatAs(t, party{grant: drained(), full: true}, `{"model":"relay-sku","messages":[{"role":"user","content":"hi"}]}`, false)
 	if answered(c) != http.StatusOK || mine.asked() != 1 || w.a.asked() != 0 || w.b.asked() != 0 {
 		t.Fatalf("status %d, own key asked %d, platform asked %d/%d: want the org's own key to answer (%s)", answered(c), mine.asked(), w.a.asked(), w.b.asked(), sent(c))
 	}
-	if paidDay.spent != usd(1) || paidDay.held != 0 {
-		t.Fatalf("the day reads %d nano with %d held, want only the $1 spent before", paidDay.spent, paidDay.held)
+	if held := book(); held != 0 {
+		t.Fatalf("the paid lane holds %d nano for a call on the org's own key", held)
 	}
 }
 

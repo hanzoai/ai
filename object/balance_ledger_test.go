@@ -22,23 +22,23 @@ import (
 )
 
 // TestSinglePodReplicaHint documents/asserts the in-pod ledger's single-pod
-// invariant: the optional CLOUD_API_REPLICAS hint is parsed so the boot path can
+// invariant: the CLOUD_REPLICAS hint is parsed so the boot path can
 // refuse to start at >1 replica (the in-pod reservation ledger double-spends
 // across pods). Unset/garbage => ok=false (invariant logged, not enforced).
 func TestSinglePodReplicaHint(t *testing.T) {
-	t.Setenv("CLOUD_API_REPLICAS", "")
+	t.Setenv("CLOUD_REPLICAS", "")
 	if _, ok := SinglePodReplicaHint(); ok {
 		t.Error("unset hint must be ok=false (invariant logged, not hard-enforced)")
 	}
-	t.Setenv("CLOUD_API_REPLICAS", "1")
+	t.Setenv("CLOUD_REPLICAS", "1")
 	if n, ok := SinglePodReplicaHint(); !ok || n != 1 {
-		t.Errorf("CLOUD_API_REPLICAS=1 => (1,true), got (%d,%v)", n, ok)
+		t.Errorf("CLOUD_REPLICAS=1 => (1,true), got (%d,%v)", n, ok)
 	}
-	t.Setenv("CLOUD_API_REPLICAS", "2")
+	t.Setenv("CLOUD_REPLICAS", "2")
 	if n, ok := SinglePodReplicaHint(); !ok || n != 2 {
-		t.Errorf("CLOUD_API_REPLICAS=2 => (2,true) so boot can refuse, got (%d,%v)", n, ok)
+		t.Errorf("CLOUD_REPLICAS=2 => (2,true) so boot can refuse, got (%d,%v)", n, ok)
 	}
-	t.Setenv("CLOUD_API_REPLICAS", "garbage")
+	t.Setenv("CLOUD_REPLICAS", "garbage")
 	if _, ok := SinglePodReplicaHint(); ok {
 		t.Error("unparseable hint must be ok=false")
 	}

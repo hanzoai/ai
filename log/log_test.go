@@ -61,7 +61,7 @@ func TestFormatMatchesUpstream(t *testing.T) {
 		{"no verb two args", []any{"a", 2}},
 		{"literal percent %% only", []any{err}},
 		{"mixed %% and %v", []any{err}},
-		{"CLOUD_API_REPLICAS=%d refusing", []any{3}},
+		{"CLOUD_REPLICAS=%d refusing", []any{3}},
 		{"", []any{err}},
 		{"", nil},
 		{errors.New("error as leading value"), nil},

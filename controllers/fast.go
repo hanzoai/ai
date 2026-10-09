@@ -127,14 +127,10 @@ func (c *ApiController) billRaced(model string, user *iam.User, premium, stream 
 		rec.BYO, rec.Account = providerBYO(a.row, user)
 		// A vendor that refused before producing anything spent nothing, and the
 		// row still goes to the trace so the refusal is visible.
-		spent := int64(0)
 		if a.prompt > 0 || a.completion > 0 {
 			recordUsage(rec)
-			if place != nil {
-				spent = laneSpend(rec)
-			}
 		}
-		place.lost(spent)
+		place.lost()
 		recordTrace(ctx, rec, start)
 	}
 }

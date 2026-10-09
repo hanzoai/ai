@@ -251,7 +251,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	sku, lift := depthRoute(model, c.Body())
 	_, stated := object.CallerOf(c.Context())
 	funded := lift && object.Limits() == nil && balanceGate.funds(c, subject, namespace, userKey)
-	tentative := lift && object.Limits() != nil && !stated && controllers.PaidLaneOpen()
+	tentative := lift && object.Limits() != nil && !stated && !controllers.FreeOnly()
 	asked, before := model, c.Body()
 	lifted := false
 	route := func(funded bool) {
@@ -362,7 +362,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			if seat == controllers.SeatFull &&
 				priced && controllers.FamilyOf(model) == "" && !strings.EqualFold(model, controllers.FreeModel) &&
 				controllers.ChatPath(path) && !controllers.OwnKey(namespace, model) &&
-				fallBack(c, controllers.FreeModel, controllers.ReasonCeiling, namespace, "") {
+				fallBack(c, controllers.FreeModel, controllers.ReasonFull, namespace, "") {
 				giveBack(grant)
 				model = controllers.FreeModel
 				continue
