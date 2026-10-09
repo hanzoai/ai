@@ -547,15 +547,18 @@ func TestTheFamilyIsToldWhoPays(t *testing.T) {
 		{"a program's call for a customer", deployment, "", &object.Caller{Org: "globex", Person: "globex/ada"}, "globex", "globex"},
 	}
 	for _, tc := range cases {
-		body := []byte(`{"model":"zen6","messages":[{"role":"user","content":"hi"}]}`)
-		c := visit(http.MethodPost, "/v1/chat/completions")
+		// An embedding: its answer and its debit are whole when the pipe returns. A
+		// chat asked whole is assembled in the response writer, which runs after the
+		// test has moved on and files its debit into the next test's ledger.
+		body := []byte(`{"model":"zen-embedding","input":"hello"}`)
+		c := visit(http.MethodPost, "/v1/embeddings")
 		ctx := c.Context()
 		if tc.caller != nil {
 			ctx = object.WithCaller(ctx, *tc.caller)
 		}
 		c.SetContext(object.WithGenAIAttribution(ctx, object.GenAIAttribution{User: tc.said}))
 		c.Fiber().Request().SetBody(body)
-		if out := c.pipeToFamily(zenFam, "chat/completions", "openai", "zen6", body, false, 0, tc.user.Owner, tc.user, true, nil, time.Now()); out != nil {
+		if out := c.pipeToFamily(zenFam, "embeddings", "openai", "zen-embedding", body, false, 0, tc.user.Owner, tc.user, true, nil, time.Now()); out != nil {
 			t.Fatalf("%s: refused %+v", tc.name, out)
 		}
 		z.mu.Lock()
