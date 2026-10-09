@@ -716,7 +716,7 @@ million input tokens — the same row in `model_pricing.go`,
   is listed where billing has none.
 - **OpenRouter's routers are variable** (priced `-1`, e.g. `openrouter/auto`,
   `typesafe/jev-router`): premium, paid-floored, held at the catalog's dearest rate
-  on each side, and billed at the answer's `usage.cost` × margin (the ceiling when no
+  on each side, and billed at the answer's `usage.cost` × the markup (the ceiling when no
   cost is stated). `/v1/models` lists that ceiling with `"variable": true` in the
   pricing block: the most a token bills, never unpriced or $0. A catalog with
   nothing priced drops them.
@@ -1274,12 +1274,18 @@ rows, and the free lane reads the same rows.
 - **Billing a resold SKU** (`zenModel.bill`): tokens at the tier the prompt reaches
   (`min_prompt_tokens` overrides are tiers, the dearer side of the line; an hours-of-day
   override is a discount and is never billed), cached tokens at `input_cache_read`,
-  all × `OPENROUTER_MARGIN`; and never below the answer's stated `usage.cost` ×
-  margin, which covers what tokens do not price (cache writes, web search, a dearer
+  all × the markup; and never below the answer's stated `usage.cost` × the markup,
+  which covers what tokens do not price (cache writes, web search, a dearer
   provider). A variable router bills the stated cost alone.
+- **The markup** is 1 + the vendor's fee, a percent the host's operator sets
+  (`object.SetFees`; cloud reads it from admin.hanzo.ai's usage policy, seeded at
+  OpenRouter's 5.5%). ai keeps no fee of its own: with none set a resold model bills
+  at its vendor's price, and a fee that is not a percent of 0 or more fails the
+  catalog's refresh, which keeps the prices it had. Zen and Enso SKUs carry Hanzo's
+  margin in their own catalogs; a resold model carries only the vendor's fee.
 - **Listed**: `/v1/models` rows carry `free`, `expires`, `max_output_tokens`, and
-  `pricing.rates` (every vendor rate × margin, exact, in the vendor's names and units)
-  and `pricing.overrides` (each condition with its rates × margin).
+  `pricing.rates` (every vendor rate × the markup, exact, in the vendor's names and
+  units) and `pricing.overrides` (each condition with its rates × the markup).
 - **Read**: `GET /v1/models/vendors/openrouter[?free=1]` (anonymous) answers
   `{vendor, synced, data:[the vendor's entries]}`, the shape the free lane parses;
   `GET /v1/models/vendors/openrouter/events[?id=&limit=]` the history; SuperAdmin

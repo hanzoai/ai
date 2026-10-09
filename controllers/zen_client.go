@@ -651,9 +651,10 @@ type zenModel struct {
 	CostIn  decimal.Decimal
 	CostOut decimal.Decimal
 
-	// Margin is the retail multiple of a SKU we resell (OpenRouter's): its rates are
-	// the vendor's times Margin, and a call never bills less than the cost the vendor
-	// states for it times Margin (bill). Zero for a family that prices its own SKUs.
+	// Margin is the multiple a SKU we resell (OpenRouter's) bills over its vendor's
+	// price, 1 + the vendor's fee: its rates are the vendor's times Margin, and a call
+	// never bills less than the cost the vendor states for it times Margin (bill).
+	// Zero for a family that prices its own SKUs.
 	Margin decimal.Decimal
 	// Variable is a SKU the vendor prices per call by whatever served it (OpenRouter's
 	// routers, which it lists at a price of -1). No rate describes such a call, so it
@@ -666,7 +667,7 @@ type zenModel struct {
 }
 
 // rateCard is a resold SKU's price list as billed: every rate its vendor states, in
-// the vendor's names and units, times our margin, and its conditional rates the same.
+// the vendor's names and units, times the markup, and its conditional rates the same.
 type rateCard struct {
 	Rates     map[string]string
 	Overrides []map[string]any

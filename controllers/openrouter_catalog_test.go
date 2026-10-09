@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/decimal"
 )
 
@@ -140,11 +141,23 @@ func TestOpenRouterUnconfiguredExposesNothing(t *testing.T) {
 	}
 }
 
-// Retail is the upstream price times the margin — strictly ABOVE cost, never below it —
-// and the upstream price travels with the SKU as COGS so the margin ledger books the
-// real spread instead of assuming one.
-func TestOpenRouterPricingDerivesAboveCost(t *testing.T) {
-	t.Setenv("OPENROUTER_MARGIN", "1.20")
+// fee installs the host's OpenRouter fee, in percent, for one test.
+func fee(t *testing.T, pct string) {
+	t.Helper()
+	object.SetFees(func(vendor string) string {
+		if vendor == "openrouter" {
+			return pct
+		}
+		return ""
+	})
+	t.Cleanup(func() { object.SetFees(nil) })
+}
+
+// Retail is the vendor's price plus the fee the host's operator sets (5.5%, what
+// OpenRouter charges on the credit it sells), and the vendor's price travels with the
+// SKU as COGS so the margin ledger books the real spread instead of assuming one.
+func TestOpenRouterPricingIsTheVendorsPricePlusItsFee(t *testing.T) {
+	fee(t, "5.5")
 	withOpenRouter(t, orBody)
 	openrouterFam.fresh()
 
@@ -152,16 +165,16 @@ func TestOpenRouterPricingDerivesAboveCost(t *testing.T) {
 	if !ok {
 		t.Fatal("discovered model missing")
 	}
-	// $0.000003/token upstream = $3.00/MTok cost; at 1.20x retail is $3.60/MTok.
-	wantCost, wantRetail := decimal.New(300, 2), decimal.New(360, 2)
+	// $0.000003/token upstream = $3.00/MTok cost; at a 5.5% fee retail is $3.165/MTok.
+	wantCost, wantRetail := decimal.New(300, 2), decimal.MustParse("3.165")
 	if m.CostIn.Cmp(wantCost) != 0 {
 		t.Errorf("input COGS = %s, want %s ($/MTok from $/token)", m.CostIn, wantCost)
 	}
 	if m.Base.In.Cmp(wantRetail) != 0 {
-		t.Errorf("input retail = %s, want %s (cost x margin)", m.Base.In, wantRetail)
+		t.Errorf("input retail = %s, want %s (the vendor's price plus 5.5%%)", m.Base.In, wantRetail)
 	}
 	if m.Base.In.Cmp(m.CostIn) <= 0 || m.Base.Out.Cmp(m.CostOut) <= 0 {
-		t.Error("retail must be strictly above cost — resale at a loss drains the prepaid balance")
+		t.Error("retail must be above cost while a fee is set: the fee is what the vendor charges us on top")
 	}
 
 	p, ok := m.price()
@@ -173,20 +186,24 @@ func TestOpenRouterPricingDerivesAboveCost(t *testing.T) {
 	}
 }
 
-// A mis-set or hostile margin can never publish retail below cost: the multiple is
-// clamped at 1, so the worst case is a zero spread, never a negative one.
-func TestOpenRouterMarginNeverBelowCost(t *testing.T) {
-	for _, raw := range []string{"0.5", "0", "-3", "not-a-number"} {
+// With no fee set a resold model bills at its vendor's price. A fee that is not a
+// percent of 0 or more is refused, so the catalog keeps the prices it had rather than
+// publish one below cost.
+func TestAnOpenRouterFeeIsAPercentOfZeroOrMore(t *testing.T) {
+	models, err := openrouterCatalog([]byte(orBody))
+	if err != nil {
+		t.Fatalf("decode with no fee: %v", err)
+	}
+	for _, m := range models {
+		if m.Base.In.Cmp(m.CostIn) != 0 || m.Base.Out.Cmp(m.CostOut) != 0 {
+			t.Errorf("with no fee %s lists %s/%s over a cost of %s/%s", m.ID, m.Base.In, m.Base.Out, m.CostIn, m.CostOut)
+		}
+	}
+	for _, raw := range []string{"-3", "not-a-number", "1.2x"} {
 		t.Run(raw, func(t *testing.T) {
-			t.Setenv("OPENROUTER_MARGIN", raw)
-			models, err := openrouterCatalog([]byte(orBody))
-			if err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			for _, m := range models {
-				if m.Base.In.Cmp(m.CostIn) < 0 || m.Base.Out.Cmp(m.CostOut) < 0 {
-					t.Errorf("margin %q published %s below cost", raw, m.ID)
-				}
+			fee(t, raw)
+			if _, err := openrouterCatalog([]byte(orBody)); err == nil {
+				t.Fatalf("fee %q decoded a catalog", raw)
 			}
 		})
 	}

@@ -44,10 +44,10 @@ package controllers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/decimal"
 )
@@ -99,10 +99,6 @@ func openrouterCredits(b []byte) (float64, error) {
 
 var errNoCredits = errors.New("credits answer carries no data")
 
-// openrouterMarginDefault is the retail multiple applied to the upstream price when
-// the deployment configures none: a 20% spread over what OpenRouter charges us.
-const openrouterMarginDefault = "1.20"
-
 // openrouterAuto is the id OpenRouter gives its own free router: one request to it
 // is served by whichever free route the vendor has up at that moment.
 //
@@ -119,21 +115,22 @@ const openrouterAuto = "openrouter/free"
 
 var openrouterTokensPerMillion = decimal.New(1_000_000, 0)
 
-// openrouterMargin is the configured retail multiple (OPENROUTER_MARGIN), clamped to
-// at least 1 so a mis-set or hostile value can never publish retail BELOW cost. That
-// clamp is the whole invariant: resale at a loss drains the prepaid balance and takes
-// the catalog down for every paying customer.
-func openrouterMargin() decimal.Decimal {
+// openrouterMarkup is the multiple a model resold from OpenRouter bills over the price
+// OpenRouter states: 1 + OpenRouter's fee, a percent the host's operator sets
+// (object.Fee; 5.5 is what OpenRouter charges on the credit it sells). A fee that is
+// not a percent of 0 or more is an error, and the catalog stays as it was: a resold
+// model is never priced below what its vendor charges.
+func openrouterMarkup() (decimal.Decimal, error) {
 	one := decimal.New(1, 0)
-	raw := strings.TrimSpace(conf.GetConfigString("OPENROUTER_MARGIN"))
+	raw := strings.TrimSpace(object.Fee("openrouter"))
 	if raw == "" {
-		raw = openrouterMarginDefault
+		return one, nil
 	}
-	m, err := decimal.Parse(raw)
-	if err != nil || m.Cmp(one) < 0 {
-		return one
+	pct, err := decimal.Parse(raw)
+	if err != nil || pct.Sign() < 0 {
+		return decimal.Decimal{}, fmt.Errorf("openrouter fee %q is not a percent of 0 or more", raw)
 	}
-	return m
+	return one.Add(pct.Mul(decimal.New(1, 2))), nil
 }
 
 // openrouterWireModel is the subset of OpenRouter's /v1/models item ai needs to list,
@@ -243,7 +240,7 @@ func (p *openrouterPricing) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// card is the price list as it bills to a caller: each rate times margin, exact, and
+// card is the price list as it bills to a caller: each rate times the markup, exact, and
 // each override's rates the same with its condition kept. A value that is not a
 // decimal string (a condition, a list of days) is carried as listed.
 func (p openrouterPricing) card(margin decimal.Decimal) *rateCard {
@@ -273,7 +270,7 @@ func (p openrouterPricing) card(margin decimal.Decimal) *rateCard {
 	return c
 }
 
-// retailRate is a listed rate (a decimal string) times margin, or false for a value
+// retailRate is a listed rate (a decimal string) times the markup, or false for a value
 // that is no rate.
 func retailRate(raw json.RawMessage, margin decimal.Decimal) (string, bool) {
 	var s string
@@ -477,7 +474,10 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	margin := openrouterMargin()
+	margin, err := openrouterMarkup()
+	if err != nil {
+		return nil, err
+	}
 	models := make([]zenModel, 0, len(wire))
 	var ceiling zenTier
 	for _, w := range wire {

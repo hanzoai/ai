@@ -89,7 +89,7 @@ type modelPricingInfo struct {
 	// Rates is every rate the model's vendor states, in the vendor's names and units
 	// (USD per token for prompt, completion, input_cache_read, input_cache_write,
 	// internal_reasoning, image, audio; per request for request; per search for
-	// web_search), as billed: the vendor's rate times our margin, exact. Present for a
+	// web_search), as billed: the vendor's rate plus the vendor's fee, exact. Present for a
 	// model we resell.
 	Rates map[string]string `json:"rates,omitempty"`
 	// Overrides are the vendor's conditional rates as billed: each states its

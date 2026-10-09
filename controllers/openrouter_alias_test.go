@@ -39,6 +39,7 @@ func (v *aliasVendor) models() []string {
 // static route table (no catalog file loaded), and discovers it once.
 func withAliasVendor(t *testing.T) *aliasVendor {
 	t.Helper()
+	fee(t, "20")
 	cooled.forget()
 	forgetKeys()
 	t.Cleanup(cooled.forget)

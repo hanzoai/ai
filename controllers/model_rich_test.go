@@ -223,6 +223,7 @@ const orCatalog = `{"data":[
 
 func withListing(t *testing.T) map[string]modelInfo {
 	t.Helper()
+	fee(t, "20")
 	path := filepath.Join(t.TempDir(), "models.yaml")
 	if err := os.WriteFile(path, []byte(catalogYAML), 0o600); err != nil {
 		t.Fatal(err)

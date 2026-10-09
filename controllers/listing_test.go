@@ -95,10 +95,10 @@ func listOf(items ...string) string { return `{"data":[` + strings.Join(items, "
 
 // A sync keeps every model the vendor lists, each entry exactly as listed, and the
 // family serves the store's list: what OpenRouter lists is what we list, priced at
-// its rates times the margin, its free models marked free.
+// its rates plus the host's fee, its free models marked free.
 func TestASyncKeepsEveryModelAsListed(t *testing.T) {
 	_, told := listingVendor(t, listOf(haiku, gemma, laguna))
-	t.Setenv("OPENROUTER_MARGIN", "1.2")
+	fee(t, "20")
 	s := syncNow(t)
 	if s.listed != 3 || s.count(object.ListingNew) != 3 {
 		t.Fatalf("synced %d with %d new, want 3 and 3", s.listed, s.count(object.ListingNew))
@@ -300,10 +300,10 @@ func fetched(t *testing.T, pattern, target string, h func(*ApiController)) (int,
 }
 
 // /v1/models lists a resold model with every rate its vendor states, each times the
-// margin exactly, its conditional rates beside them, and says whether it is free.
+// fee exactly, its conditional rates beside them, and says whether it is free.
 func TestTheCatalogPublishesEveryRateExactly(t *testing.T) {
 	listingVendor(t, listOf(haiku, gemma))
-	t.Setenv("OPENROUTER_MARGIN", "1.2")
+	fee(t, "20")
 	syncNow(t)
 	openrouterFam.mu.Lock()
 	openrouterFam.loaded = false
