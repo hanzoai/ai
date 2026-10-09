@@ -25,7 +25,7 @@ package controllers
 //
 // The family reads its catalog from the store and never from the vendor, so every
 // process lists, routes and bills from the same rows, and the free lane reads the
-// same rows (GET /v1/listings/openrouter?free=1). A model the vendor stops listing
+// same rows (GET /v1/models/vendors/openrouter?free=1). A model the vendor stops listing
 // leaves the catalog at the next sync and is served no longer; its row and its
 // history stay.
 

@@ -161,10 +161,10 @@ var anonymousEndpoints = map[string]struct{}{
 	"models":           {}, // the catalogue a client reads before it has a key
 	"models/providers": {},
 	// The vendor's model list as synced, and its history: the vendor publishes both.
-	"listings/openrouter":        {},
-	"listings/openrouter/events": {},
-	"health":                     {}, // probes
-	"voice/health":               {},
+	"models/vendors/openrouter":        {},
+	"models/vendors/openrouter/events": {},
+	"health":                           {}, // probes
+	"voice/health":                     {},
 	// The talk socket. A browser cannot put a header on a WebSocket, so its
 	// credential is the one-use ticket POST /v1/voice/session minted from a
 	// bearer, and the voice handler refuses any upgrade without a live one.

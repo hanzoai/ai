@@ -124,8 +124,8 @@ func registerAPI(app *zip.App) {
 	// it lists now, each entry as listed, and every change a sync read. Public, as the
 	// vendor's own list is. The free set with what the last day did with it is the
 	// SuperAdmin's.
-	route(app, "/v1/listings/:vendor", "GET:ListListing")
-	route(app, "/v1/listings/:vendor/events", "GET:ListListingEvents")
+	route(app, "/v1/models/vendors/:vendor", "GET:ListListing")
+	route(app, "/v1/models/vendors/:vendor/events", "GET:ListListingEvents")
 	route(app, "/v1/admin/free", "GET:AdminFree")
 
 	// OpenAI-compatible embeddings and Cohere/Jina-compatible rerank. Both ride

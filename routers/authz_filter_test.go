@@ -172,6 +172,8 @@ func TestBenignPathsNotCredentialGated(t *testing.T) {
 	for _, p := range []struct{ method, path string }{
 		{"GET", "/v1/health"},
 		{"GET", "/v1/metrics"},
+		{"GET", "/v1/models/vendors/openrouter"},
+		{"GET", "/v1/models/vendors/openrouter/events"},
 	} {
 		q := asUser(t, p.method, p.path, nil)
 		q = q.through(permissionFilter)
@@ -585,4 +587,20 @@ func toHost(host string) probe {
 	p := ask(http.MethodPost, "/v1/chat/completions")
 	p.Fiber().Request().URI().SetHost(host)
 	return p
+}
+
+// The free set and what each account did is the SuperAdmin's: an anonymous caller
+// and a signed-in one who is not are both refused at the filter.
+func TestTheFreeViewIsTheSuperAdmins(t *testing.T) {
+	orgAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
+	globalAdmin := &iam.User{Owner: "admin", Name: "root"}
+	if q := asUser(t, "GET", "/v1/admin/free", nil).through(permissionFilter); q.status() != http.StatusUnauthorized {
+		t.Errorf("anonymous GET /v1/admin/free = %d, want 401", q.status())
+	}
+	if q := asUser(t, "GET", "/v1/admin/free", orgAdmin).through(permissionFilter); q.status() != http.StatusForbidden {
+		t.Errorf("an org admin's GET /v1/admin/free = %d, want 403", q.status())
+	}
+	if q := asUser(t, "GET", "/v1/admin/free", globalAdmin).through(permissionFilter); q.status() != http.StatusOK {
+		t.Errorf("the SuperAdmin's GET /v1/admin/free = %d, want through", q.status())
+	}
 }

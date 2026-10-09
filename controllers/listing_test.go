@@ -256,7 +256,7 @@ func TestTheListingIsServedAsTheVendorListsIt(t *testing.T) {
 	listingVendor(t, listOf(haiku, gemma, laguna))
 	syncNow(t)
 
-	status, body := fetched(t, "/v1/listings/:vendor", "/v1/listings/openrouter?free=1", (*ApiController).ListListing)
+	status, body := fetched(t, "/v1/models/vendors/:vendor", "/v1/models/vendors/openrouter?free=1", (*ApiController).ListListing)
 	var got struct {
 		Vendor string            `json:"vendor"`
 		Synced string            `json:"synced"`
@@ -269,7 +269,7 @@ func TestTheListingIsServedAsTheVendorListsIt(t *testing.T) {
 		t.Errorf("free listing %+v", got)
 	}
 
-	_, body = fetched(t, "/v1/listings/:vendor/events", "/v1/listings/openrouter/events", (*ApiController).ListListingEvents)
+	_, body = fetched(t, "/v1/models/vendors/:vendor/events", "/v1/models/vendors/openrouter/events", (*ApiController).ListListingEvents)
 	var evs struct {
 		Data []object.ListingEvent `json:"data"`
 	}
@@ -277,7 +277,7 @@ func TestTheListingIsServedAsTheVendorListsIt(t *testing.T) {
 		t.Errorf("history answered %s", body)
 	}
 
-	if status, _ := fetched(t, "/v1/listings/:vendor", "/v1/listings/nobody", (*ApiController).ListListing); status != http.StatusNotFound {
+	if status, _ := fetched(t, "/v1/models/vendors/:vendor", "/v1/models/vendors/nobody", (*ApiController).ListListing); status != http.StatusNotFound {
 		t.Errorf("an unlisted vendor answered %d", status)
 	}
 }

@@ -1229,9 +1229,9 @@ rows, and the free lane reads the same rows.
 - **Listed**: `/v1/models` rows carry `free`, `expires`, `max_output_tokens`, and
   `pricing.rates` (every vendor rate × margin, exact, in the vendor's names and units)
   and `pricing.overrides` (each condition with its rates × margin).
-- **Read**: `GET /v1/listings/openrouter[?free=1]` (anonymous) answers
+- **Read**: `GET /v1/models/vendors/openrouter[?free=1]` (anonymous) answers
   `{vendor, synced, data:[the vendor's entries]}`, the shape the free lane parses;
-  `GET /v1/listings/openrouter/events[?id=&limit=]` the history; SuperAdmin
+  `GET /v1/models/vendors/openrouter/events[?id=&limit=]` the history; SuperAdmin
   `GET /v1/admin/free` the free set with the last 24 h per model (answered, failed,
   rate) and per account. Counts are `object.Served` (vendor, model, account name,
   UTC hour; 48 h kept): each free request ai sends on its ring (`counting`), each
