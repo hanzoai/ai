@@ -114,3 +114,15 @@ func TestServedRecordCountsThePromptAsTheFamilyPathDoes(t *testing.T) {
 		t.Errorf("clamp: prompt=%d cached=%d", r.PromptTokens, r.CacheReadTokens)
 	}
 }
+
+// A family stream that breaks off before it states its usage — cut, or out of its
+// time — bills the text it relayed, as a client that left does.
+func TestAStreamCutBeforeItsUsageBillsWhatItSaid(t *testing.T) {
+	to := toStream()
+	body := `data: {"id":"gen-1","choices":[{"delta":{"content":"0123456789abcdef"}}]}` + "\n\n" +
+		`data: {"id":"gen-1","choices":[{"delta":{"reasoning":"01234567"}}]}` + "\n\n"
+	used, _, _, _ := relayZenStream(to.w, strings.NewReader(body), nil, nil)
+	if used.completion != 24/4+1 || used.reported {
+		t.Errorf("tokens = %+v, want the 24 characters relayed billed as %d", used, 24/4+1)
+	}
+}

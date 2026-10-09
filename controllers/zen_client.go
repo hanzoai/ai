@@ -2588,9 +2588,15 @@ wait:
 // running to max_tokens for nobody. The request's context cannot say this — a
 // fasthttp request's context does not end when its client leaves — so the failed
 // write is the only signal there is. The usage a family states arrives last, so an
-// answer cut before it is billed for the text that was relayed.
+// answer whose usage never arrived — its client left, or the family's stream broke
+// off or ran out its time before stating it — is billed for the text relayed.
 func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t tokens, served, respID string, first time.Time) {
 	said := 0 // characters of answer relayed
+	defer func() {
+		if !t.reported && said > 0 {
+			t.completion = said/4 + 1
+		}
+	}()
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
@@ -2622,9 +2628,6 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t t
 		_, _ = w.Write(line)
 		_, _ = w.Write(zenNewline)
 		if w.Flush() != nil {
-			if !t.reported && said > 0 {
-				t.completion = said/4 + 1
-			}
 			return
 		}
 		if first.IsZero() && bytes.HasPrefix(line, zenDataPrefix) {
