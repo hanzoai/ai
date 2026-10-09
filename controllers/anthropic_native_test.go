@@ -394,7 +394,7 @@ func TestNativeMaxTokensIsTheReservedCeiling(t *testing.T) {
 	p.post(t, req)
 
 	_, _, sentBody, _ := got.get()
-	want := strings.Replace(addressed(t, req), `"max_tokens":   640000`, `"max_tokens":   4096`, 1)
+	want := strings.Replace(addressed(t, req), `"max_tokens":   640000`, fmt.Sprintf(`"max_tokens":   %d`, maxReserveCompletionTokens), 1)
 	if sentBody != want {
 		t.Errorf("max_tokens was not held to the reserved ceiling.\n got: %s\nwant: %s", sentBody, want)
 	}

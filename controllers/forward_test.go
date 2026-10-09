@@ -484,15 +484,16 @@ func TestTheReservedCeilingGoesUnderTheKeyTheVendorReads(t *testing.T) {
 		t.Errorf("max_completion_tokens = %s, want the reserved %d", got, reserveCompletionFloor)
 	}
 
-	// A ceiling above what was reserved is lowered, under the caller's own key.
+	// A ceiling above the most a hold covers is lowered to it, under the caller's own
+	// key.
 	c = w.chat(`{"model":"relay-sku","max_completion_tokens":999999,"messages":[{"role":"user","content":"hi"}]}`)
 	if answered(c) != http.StatusOK {
 		t.Fatalf("status %d: %s", answered(c), sent(c))
 	}
 	var lowered map[string]json.RawMessage
 	_ = json.Unmarshal(w.a.sent(t, 1), &lowered)
-	if got := string(lowered["max_completion_tokens"]); got != strconv.Itoa(reserveCompletionFloor) {
-		t.Errorf("max_completion_tokens = %s, want it lowered to the reserved %d", got, reserveCompletionFloor)
+	if got := string(lowered["max_completion_tokens"]); got != strconv.Itoa(maxReserveCompletionTokens) {
+		t.Errorf("max_completion_tokens = %s, want it lowered to the reserved %d", got, maxReserveCompletionTokens)
 	}
 	if _, ok := lowered["max_tokens"]; ok {
 		t.Errorf("a key the caller did not use was added: %s", w.a.sent(t, 1))
