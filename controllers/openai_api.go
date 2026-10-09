@@ -2075,7 +2075,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			request.MaxTokens = request.MaxCompletionTokens
 		}
 		// On the paid lane the ceiling is never above the one its seat was sized for.
-		request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.MaxTokens))
+		request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.Model, request.MaxTokens))
 		// The vendor bills the whole body — tools, schemas and call arguments as well
 		// as message text — so the hold is never priced on less than its size.
 		est := estimateRequestCostCents(request.Model, max(measured, len(c.Body())/4), request.MaxTokens)
@@ -2111,7 +2111,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		if fam == freeFamily() && strings.EqualFold(strings.TrimSpace(sku), freeID) {
 			fam, sku = freeDoor()
 		}
-		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", sku, c.Body(), request.Stream, clampMaxTokens(request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
+		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", sku, c.Body(), request.Stream, clampMaxTokens(sku, request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
 			if request.Stream {
 				hold = nil // a family's stream settles its own hold, from its writer

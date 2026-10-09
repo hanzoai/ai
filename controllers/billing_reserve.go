@@ -148,16 +148,32 @@ const (
 	maxReserveCompletionTokens = 32768
 )
 
-// clampMaxTokens is the upstream completion ceiling enforced on a request. A
-// normal client cap (0 < mt <= maxReserveCompletionTokens) is preserved as-is; an
-// UNCAPPED (<=0) or absurd (> max) request is clamped to reserveCompletionFloor so
-// the proxied (tool/stream) upstream can never emit an unbounded completion. The
-// caller MUST assign this back to request.MaxTokens before the upstream call.
-func clampMaxTokens(maxTokens int) int {
-	if maxTokens > 0 && maxTokens <= maxReserveCompletionTokens {
+// clampMaxTokens is the upstream completion ceiling enforced on a request for model.
+// A normal client cap (0 < mt <= maxReserveCompletionTokens) is preserved as-is, and
+// a larger one is lowered to maxReserveCompletionTokens, so the proxied (tool/stream)
+// upstream can never emit an unbounded completion. A request that names no cap gets
+// reserveCompletionFloor — except on a paid Hanzo tier (thinks), whose models think
+// before they answer and spend the ceiling on it: there a request that names none
+// gets maxReserveCompletionTokens, or the answer is all reasoning, cut at `length`,
+// and billed. The caller MUST assign this back to request.MaxTokens before the
+// upstream call.
+func clampMaxTokens(model string, maxTokens int) int {
+	switch {
+	case maxTokens > maxReserveCompletionTokens:
+		return maxReserveCompletionTokens
+	case maxTokens > 0:
 		return maxTokens
+	case thinks(model):
+		return maxReserveCompletionTokens
 	}
 	return reserveCompletionFloor
+}
+
+// thinks reports whether model is a paid tier of a Hanzo family: priced, so served
+// by models that always reason. Read from the discovery snapshot, never a refresh.
+func thinks(model string) bool {
+	m, ok := familyLookup(model)
+	return ok && m.priced()
 }
 
 // reserveCompletionTokens is the completion-token count to RESERVE for: the larger
@@ -165,8 +181,8 @@ func clampMaxTokens(maxTokens int) int {
 // QueryText pipeline does NOT thread the request's max_tokens (it caps at
 // reserveCompletionFloor itself), so the reservation must cover that floor even
 // when the client capped lower — guaranteeing actual <= reserve on EVERY path.
-func reserveCompletionTokens(maxTokens int) int {
-	if c := clampMaxTokens(maxTokens); c > reserveCompletionFloor {
+func reserveCompletionTokens(model string, maxTokens int) int {
+	if c := clampMaxTokens(model, maxTokens); c > reserveCompletionFloor {
 		return c
 	}
 	return reserveCompletionFloor
@@ -267,5 +283,5 @@ func estimateRequestCostCents(modelName string, promptTokens, maxTokens int) int
 	if costsNothing(modelName, "") {
 		return 0
 	}
-	return calculateCostCents(modelName, promptTokens, reserveCompletionTokens(maxTokens))
+	return calculateCostCents(modelName, promptTokens, reserveCompletionTokens(modelName, maxTokens))
 }

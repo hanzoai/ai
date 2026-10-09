@@ -165,21 +165,42 @@ func TestOverdrawnWalletStillRefused(t *testing.T) {
 	}
 }
 
-// TestClampMaxTokens locks the upstream completion ceiling: uncapped/absurd →
-// reserveCompletionFloor; a normal client cap is preserved unchanged (R1b).
+// TestClampMaxTokens locks the upstream completion ceiling: uncapped →
+// reserveCompletionFloor, absurd → maxReserveCompletionTokens; a normal client cap
+// is preserved unchanged (R1b).
 func TestClampMaxTokens(t *testing.T) {
 	cases := []struct{ in, want int }{
-		{0, reserveCompletionFloor},                              // uncapped
-		{-5, reserveCompletionFloor},                             // negative
-		{500, 500},                                               // normal cap preserved
-		{reserveCompletionFloor, reserveCompletionFloor},         // at floor
-		{maxReserveCompletionTokens, maxReserveCompletionTokens}, // at max boundary
-		{maxReserveCompletionTokens + 1, reserveCompletionFloor}, // absurd => floor
+		{0, reserveCompletionFloor},                                  // uncapped
+		{-5, reserveCompletionFloor},                                 // negative
+		{500, 500},                                                   // normal cap preserved
+		{reserveCompletionFloor, reserveCompletionFloor},             // at floor
+		{maxReserveCompletionTokens, maxReserveCompletionTokens},     // at max boundary
+		{maxReserveCompletionTokens + 1, maxReserveCompletionTokens}, // absurd => max, never below the floor of what was asked
+		{100_000_000, maxReserveCompletionTokens},                    // far past it
 	}
 	for _, c := range cases {
-		if got := clampMaxTokens(c.in); got != c.want {
+		if got := clampMaxTokens("gpt-4o-mini", c.in); got != c.want {
 			t.Errorf("clampMaxTokens(%d)=%d, want %d", c.in, got, c.want)
 		}
+	}
+}
+
+// A paid Hanzo tier's models always reason, and reasoning spends the ceiling before
+// the answer begins: a request that names no ceiling gets the most a hold covers,
+// not the floor, or a reasoning model returns `length` with no text and is billed.
+// A free tier keeps the floor.
+func TestAPaidTierThatReasonsGetsRoomToAnswer(t *testing.T) {
+	zenServiceAt(t, true)
+	for model, want := range map[string]int{"zen5-pro": maxReserveCompletionTokens, "zen6": reserveCompletionFloor} {
+		if got := clampMaxTokens(model, 0); got != want {
+			t.Errorf("clampMaxTokens(%q, 0) = %d, want %d", model, got, want)
+		}
+		if got := reserveCompletionTokens(model, 0); got != want {
+			t.Errorf("reserveCompletionTokens(%q, 0) = %d, want %d", model, got, want)
+		}
+	}
+	if got := clampMaxTokens("zen5-pro", 2_000); got != 2_000 {
+		t.Errorf("a ceiling the caller named is kept: %d", got)
 	}
 }
 
@@ -187,7 +208,7 @@ func TestClampMaxTokens(t *testing.T) {
 // reserveCompletionFloor regardless of a low client cap, so the reservation MUST
 // cover that ceiling even when the client capped lower.
 func TestReserveCoversModelLayerCeiling(t *testing.T) {
-	if got := reserveCompletionTokens(100); got < reserveCompletionFloor {
+	if got := reserveCompletionTokens("gpt-4o-mini", 100); got < reserveCompletionFloor {
 		t.Fatalf("reserveCompletionTokens(100)=%d must be >= floor %d (QueryText emits up to the floor)", got, reserveCompletionFloor)
 	}
 	estLowCap := estimateRequestCostCents("gpt-4o-mini", 100, 100)
@@ -209,7 +230,7 @@ func TestUncappedRequestCannotOverdraft(t *testing.T) {
 	promptTokens := 100
 
 	// Controller flow: clamp the uncapped max_tokens, then reserve the estimate.
-	clamped := clampMaxTokens(0) // uncapped
+	clamped := clampMaxTokens(model, 0) // uncapped
 	if clamped != reserveCompletionFloor {
 		t.Fatalf("uncapped clamp=%d, want reserveCompletionFloor=%d", clamped, reserveCompletionFloor)
 	}

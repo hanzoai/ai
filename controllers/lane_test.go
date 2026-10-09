@@ -863,7 +863,7 @@ func TestACallTheDayCanHoldIsServedSizedToWhatIsLeft(t *testing.T) {
 	if got := header(sized, LaneTokensHeader); got != fmt.Sprint(ss.tokens) {
 		t.Fatalf("%s = %q, want %d", LaneTokensHeader, got, ss.tokens)
 	}
-	if n := laneTokens(sized.Context(), clampMaxTokens(32000)); n != ss.tokens {
+	if n := laneTokens(sized.Context(), clampMaxTokens("", 32000)); n != ss.tokens {
 		t.Fatalf("the handler sends max_tokens %d, want the seat's %d", n, ss.tokens)
 	}
 	if spent, held := book(); spent+held > usd(10) {

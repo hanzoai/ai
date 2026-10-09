@@ -46,7 +46,7 @@ func decoded(t *testing.T, b []byte) map[string]json.RawMessage {
 // A family is sent the fields that shape the answer and the reserved token ceiling,
 // in every dialect.
 func TestAFamilyIsSentOnlyWhatWasPriced(t *testing.T) {
-	ceiling := clampMaxTokens(100000000)
+	ceiling := clampMaxTokens("", 100000000)
 	got := decoded(t, familyBody([]byte(steeringChat), "chat/completions", ceiling))
 	for _, k := range append(steering, "provider") {
 		if _, ok := got[k]; ok {
@@ -107,7 +107,7 @@ func TestTheResellerIsSentOnlyWhatWasPriced(t *testing.T) {
 	body := []byte(steeringChat)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	if out := c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, clampMaxTokens(100000000), "acme", nil, false, nil, time.Now()); out != nil {
+	if out := c.pipeToFamily(fam, "chat/completions", "openai", paid, body, false, clampMaxTokens("", 100000000), "acme", nil, false, nil, time.Now()); out != nil {
 		t.Fatalf("attempts %+v", out)
 	}
 	a.mu.Lock()
@@ -127,7 +127,7 @@ func TestTheResellerIsSentOnlyWhatWasPriced(t *testing.T) {
 	if _, ok := prov["data_collection"]; !ok || len(prov) != 1 {
 		t.Errorf("provider = %s, want only the terms ai states", got["provider"])
 	}
-	if string(got["max_tokens"]) != jsonInt(clampMaxTokens(100000000)) {
+	if string(got["max_tokens"]) != jsonInt(clampMaxTokens("", 100000000)) {
 		t.Errorf("max_tokens = %s", got["max_tokens"])
 	}
 
@@ -152,7 +152,7 @@ func TestAnAliasIsSentOnlyWhatWasPriced(t *testing.T) {
 	body := []byte(strings.Replace(steeringChat, `"vendor/paid-a"`, `"gpt-4o"`, 1))
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	if refused := c.pipeToFamily(openrouterFam, "chat/completions", "openai", "gpt-4o", body, false, clampMaxTokens(100000000), "acme", nil, false, nil, time.Now()); refused != nil {
+	if refused := c.pipeToFamily(openrouterFam, "chat/completions", "openai", "gpt-4o", body, false, clampMaxTokens("", 100000000), "acme", nil, false, nil, time.Now()); refused != nil {
 		t.Fatalf("refused: %+v", refused)
 	}
 	vendor.mu.Lock()

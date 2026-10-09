@@ -178,7 +178,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 
 	// STEP 4 — policy gate: budget reservation, shared with the HTTP path. The
 	// prepaid balance gate already ran inside zapResolveAuth (enforceBalanceGate).
-	request.MaxTokens = clampMaxTokens(request.MaxTokens)
+	request.MaxTokens = clampMaxTokens(request.Model, request.MaxTokens)
 	var hold *budgetHold
 	if authUser != nil {
 		subject := authUser.PayerSubject("")

@@ -138,7 +138,7 @@ func quoteOf(c *zip.Ctx, org, model string) quote {
 		_ = json.Unmarshal(body, &h)
 		q.fixed = p.nanos(r, windowOf(model)) + int64(len(h.Prediction))*r.out
 		q.per = r.out * int64(min(max(h.N, 1), maxChoices))
-		q.ceiling = reserveCompletionTokens(cmp.Or(h.MaxTokens, h.MaxCompletionTokens, h.MaxOutputTokens))
+		q.ceiling = reserveCompletionTokens(model, cmp.Or(h.MaxTokens, h.MaxCompletionTokens, h.MaxOutputTokens))
 		q.floor = min(q.ceiling, max(reserveCompletionFloor, h.Thinking.Budget+1))
 		if (&ApiController{Ctx: c}).wantsFast() {
 			q.width = fastWidth

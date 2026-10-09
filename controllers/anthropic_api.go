@@ -286,7 +286,7 @@ func holdCents(model string, u AnthropicUsage) int64 {
 // upstream that does not speak this API.
 func completionCeiling(provider *object.Provider, request *AnthropicRequest) int {
 	if model.Upstream(provider.Type) != model.Anthropic && len(request.Tools) == 0 && !requestHasMediaAnthropic(request) {
-		return reserveCompletionTokens(request.MaxTokens)
+		return reserveCompletionTokens(request.Model, request.MaxTokens)
 	}
 	return request.MaxTokens
 }
@@ -670,7 +670,7 @@ func (c *ApiController) AnthropicMessages() {
 
 	// ── Balance reservation (shared by the proxies and the QueryText path) ──
 	// On the paid lane the ceiling is never above the one its seat was sized for.
-	request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.MaxTokens))
+	request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.Model, request.MaxTokens))
 	var hold *budgetHold
 	if authUser != nil {
 		ledger := c.billingOrg(authUser)
