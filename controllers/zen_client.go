@@ -2412,6 +2412,9 @@ func streamed(body []byte) []byte {
 //
 // A beat that cannot be written means the client is gone: body is closed then, which
 // hangs up on the family so its model stops, and what was read so far is returned.
+// An answer whose usage never arrived — its client left, or the family's stream
+// broke off or ran out its time before stating it — is billed for what it said: its
+// text, reasoning and tool arguments, about four characters a token.
 func assembleZenStream(w *bufio.Writer, body io.ReadCloser, mk *mark, beat time.Duration, paid func()) (t tokens, served, respID string, first time.Time) {
 	type call struct {
 		ID       string `json:"id,omitempty"`
@@ -2431,6 +2434,16 @@ func assembleZenStream(w *bufio.Writer, body io.ReadCloser, mk *mark, beat time.
 		failure            json.RawMessage
 	)
 	done := make(chan struct{})
+	// Runs once the reader below is done: every return waits on done first.
+	defer func() {
+		said := content.Len() + reasoning.Len()
+		for _, c := range calls {
+			said += len(c.Function.Arguments)
+		}
+		if !t.reported && said > 0 {
+			t.completion = said/4 + 1
+		}
+	}()
 	go func() {
 		defer close(done)
 		sc := bufio.NewScanner(body)
@@ -2529,9 +2542,6 @@ wait:
 			if w.Flush() != nil {
 				_ = body.Close()
 				<-done
-				if said := content.Len() + reasoning.Len(); !t.reported && said > 0 {
-					t.completion = said/4 + 1
-				}
 				return
 			}
 		}

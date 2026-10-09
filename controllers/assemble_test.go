@@ -102,3 +102,24 @@ func TestAWholeAnswerIsAskedOfTheFamilyAsAStream(t *testing.T) {
 		t.Fatalf("answer %v %s", err, s.String())
 	}
 }
+
+// A stream asked whole that breaks off before it states its usage — cut, or out of
+// its time — bills what it said, as the relay of a stream does: its text, its
+// reasoning and its tool arguments.
+func TestAnAssembledStreamCutBeforeItsUsageBillsWhatItSaid(t *testing.T) {
+	body := "data: " + `{"id":"gen-1","choices":[{"delta":{"content":"0123456789abcdef"}}]}` + "\n\n" +
+		"data: " + `{"id":"gen-1","choices":[{"delta":{"reasoning":"01234567"}}]}` + "\n\n" +
+		"data: " + `{"id":"gen-1","choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"shell","arguments":"{\"cmd\":1}"}}]}}]}` + "\n\n"
+	var out bytes.Buffer
+	w := bufio.NewWriter(&out)
+	tk, _, _, _ := assembleZenStream(w, io.NopCloser(strings.NewReader(body)), nil, time.Hour, nil)
+	said := 16 + 8 + len(`{"cmd":1}`)
+	if tk.completion != said/4+1 || tk.reported {
+		t.Errorf("tokens = %+v, want the %d characters said billed as %d", tk, said, said/4+1)
+	}
+	// One that states its usage is billed as it states it.
+	tk, _, _, _ = assembleZenStream(bufio.NewWriter(io.Discard), io.NopCloser(strings.NewReader(body+"data: "+`{"id":"gen-1","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":3}}`+"\n\n")), nil, time.Hour, nil)
+	if tk.completion != 3 {
+		t.Errorf("a stated usage was replaced: %+v", tk)
+	}
+}
