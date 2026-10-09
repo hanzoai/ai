@@ -923,7 +923,7 @@ var zenDiscoveryClient = &http.Client{Timeout: listWait, Transport: reaching(&ht
 // plugin registered under that name (package plugin), every other address by t.
 // The address decides; the code that relays is the same either way.
 func reaching(t *http.Transport) *http.Transport {
-	t.RegisterProtocol(plugin.Scheme, plugin.Transport{})
+	t.RegisterProtocol(plugin.Scheme, plugin.Transport{Head: t.ResponseHeaderTimeout})
 	return t
 }
 

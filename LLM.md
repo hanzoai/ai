@@ -585,29 +585,27 @@ same request id, billed nothing (`failoverRows`), as the in-process zen filed th
 A test that drives this whole contract stands up `zenService` in
 `family_service_test.go`.
 
-## A family in process: wasm2go plugins (`plugin/`)
+## A family in process (`plugin/`)
 
-A family service may instead run in this process: its Rust core built for
-wasm32-wasip1, translated to a Go package by wasm2go (github.com/hanzoai/wasm2go), and
-registered with `plugin.Register(plugin.Plugin{Name, New, Config, Keys, Reply, Client})`.
-The address decides: `ZEN_URL=plugin://zen` is the plugin registered as `zen`, any http(s)
-address the service over the network. ai's family, discovery and decision clients carry
-the scheme (`reaching`), so relay, billing, failover rows, caching and attribution are the
-HTTP path's, unchanged. One transport per hop: there is no third.
+A family service may run in this process instead: its engine linked as a Go package
+(hanzo-inc/zen `lib/zen` and `lib/enso`: the Rust engine compiled to wasm32-wasip1,
+translated by wasm2go, behind an `http.Handler` that pumps the module, makes its upstream
+calls with the keys it is opened with, and writes its answers) and registered with
+`plugin.Register(name, handler)`, once per family per process (one instance holds the
+family's key pool, lane health and sessions). The address decides: `ZEN_URL=plugin://zen`
+is the handler registered as `zen`, any http(s) address the service over the network.
+ai's family, discovery and decision clients carry the scheme (`reaching`), so relay,
+tells, billing, failover rows, caching and attribution are the HTTP path's, unchanged.
+One transport per hop.
 
-- **ABI** (`plugin/plugin.go`): exports `hz_alloc`, `hz_free`, `hz_init`, `hz_begin`,
-  `hz_poll`, `hz_cancel`; imports (module `hanzo`) `hz_open`, `hz_head`, `hz_read`,
-  `hz_close`, `hz_reply`, `hz_write`, `hz_end`, `hz_now`. Metas are JSON: `Ask` (method,
-  path, org, request id, capabilities, capture, spend, fronted, headers), `Reply` (status,
-  headers, tells, declared trailers), `End` (tells, cogs, cost), `Open`, `Head`.
-- **The host makes every upstream request** (`hz_open`) and resolves the key the plugin
-  names (`Keys`, KMS-fed); no key enters plugin memory, and `Sandbox` gives its WASI no
-  environment, files, sockets or processes. One instance answers every call; a trap ends
-  the calls in flight and the next request gets a fresh instance.
-- **Back-pressure**: a 64 KiB window each side, so a caller that stops reading stops the
-  plugin and its upstream. A reply not given within `Reply` ends the call.
-- **Tells** cross as the X-Hanzo-* headers a service sends; `End` arrives as trailers.
-- Tested against `internal/stub` (no_std Rust, built the way every plugin is).
+- **`plugin.Transport`** serves the request on the registered handler under the caller's
+  context, which also ends when the caller closes the body early, so the engine hangs up
+  on its upstream when its caller leaves. The body crosses through a pipe (a caller that
+  stops reading stops the handler's writes); the head is handed over at the first
+  `WriteHeader`, `Write` or `Flush`; declared trailers (and `http.TrailerPrefix` ones)
+  arrive once the body ends; a handler that has not begun within `Head` (the family
+  client's `ResponseHeaderTimeout`) is ended; a panic fails the call or breaks the body.
+- The host that registers the engines (cloud) holds the keys (KMS) and the catalog.
 
 **Acceptance bar before a plugin serves production** (owner review): (1) it answers as the
 native Rust service on the whole conformance set (the zen suite's 25 scripted cases byte
