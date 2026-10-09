@@ -2027,8 +2027,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// Our own family refusing our credential is OUR outage: the caller's own
 			// credential was checked at our edge. It moves like a family that is down,
 			// to the free pool, and never reaches the caller as their auth failure.
-			log.Error("family=%s refused ai's credential for %s (401: %s): is %s at KMS hanzo/prod:/ai, has cloud rolled since, and does no admin provider row named %q carry a secret of its own?",
-				by.name, model, said, by.keyKey, by.name)
+			barred(by, model, said, time.Now())
 			status, said = http.StatusServiceUnavailable, fmt.Sprintf("model %q is temporarily unavailable", model)
 			b = nil
 		}
@@ -2584,6 +2583,26 @@ wait:
 	_, _ = w.Write(out)
 	_ = w.Flush()
 	return
+}
+
+// barredSaid is when each family's refusal of our key was last logged, in Unix seconds.
+var barredSaid sync.Map // family name → *atomic.Int64
+
+// barred files one refusal of our credential by our own family fam: every one counts
+// in cloud_supply_refused{provider=fam, reason=credential}, which an alert reads, and
+// a storm of them is one error line a minute per family, naming what to check.
+// Whether this one was logged.
+func barred(fam *modelFamily, model, said string, now time.Time) bool {
+	supplyRefused.WithLabelValues(fam.name, reasonCredential).Inc()
+	v, _ := barredSaid.LoadOrStore(fam.name, new(atomic.Int64))
+	last := v.(*atomic.Int64)
+	prev := last.Load()
+	if prev != 0 && now.Unix()-prev < 60 || !last.CompareAndSwap(prev, now.Unix()) {
+		return false
+	}
+	log.Error("family=%s refused ai's credential for %s (401: %s): is %s at KMS hanzo/prod:/ai, has cloud rolled since, and does no admin provider row named %q carry a secret of its own? Every refusal counts in cloud_supply_refused{reason=credential}; this line repeats at most once a minute.",
+		fam.name, model, said, fam.keyKey, fam.name)
+	return true
 }
 
 // relayZenStream copies a family's SSE response to the client and captures the final

@@ -682,3 +682,21 @@ func TestOurFamilyRefusingOurKeyIsOurOutage(t *testing.T) {
 		t.Errorf("a refused call was debited: %+v", got())
 	}
 }
+
+// A storm of refusals of our key is counted every time and logged once a minute.
+func TestARefusalStormIsCountedAndLoggedOnceAMinute(t *testing.T) {
+	fam := &modelFamily{name: "storm-test", keyKey: "STORM_API_KEY"}
+	count := supplyRefused.WithLabelValues(fam.name, reasonCredential)
+	before := count.Get()
+	at := time.Unix(1_800_000_000, 0)
+	var logged []bool
+	for _, d := range []time.Duration{0, time.Second, 59 * time.Second, 61 * time.Second, 62 * time.Second} {
+		logged = append(logged, barred(fam, "enso-pro", "authentication required", at.Add(d)))
+	}
+	if want := []bool{true, false, false, true, false}; fmt.Sprint(logged) != fmt.Sprint(want) {
+		t.Errorf("logged %v, want %v", logged, want)
+	}
+	if got := count.Get() - before; got != 5 {
+		t.Errorf("counted %v refusals, want 5", got)
+	}
+}
