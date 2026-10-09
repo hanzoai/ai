@@ -269,10 +269,12 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 	route(funded || lifted)
-	// unlift puts a refused lift back: the free id, as the caller sent it.
+	// unlift puts a refused lift back: the free id, as the caller sent it, saying
+	// nothing of the lane the lift was refused a seat on.
 	unlift := func() {
 		c.Fiber().Request().SetBody(before)
 		c.Fiber().Response().Header.Del(controllers.RoutedModelHeader)
+		c.Fiber().Response().Header.Del(controllers.LaneReasonHeader)
 		model, lifted = asked, false
 		route(false)
 	}

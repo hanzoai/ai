@@ -148,6 +148,32 @@ func TestTheDefaultIdTakesThePaidLadderOnlyWhenTheCallerFundsIt(t *testing.T) {
 		}
 	}
 
+	// A paid plan the lane has no room for keeps the free id: its grant is given back,
+	// and the answer says nothing of the paid lane it was not seated on.
+	t.Setenv("PAID_LANE_DAILY", "0.000000001")
+	{
+		bg.ledger.SetBalance("acme", 500)
+		var asked []string
+		released := 0
+		object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+			asked = append(asked, q.Model)
+			if q.Model != "vendor/priced" {
+				return free.grant, nil, nil
+			}
+			gr := g("max-20x", object.PaysPlan)
+			gr.Release = func() { released++ }
+			return gr, nil, nil
+		})
+		p := post()
+		if p.status() != http.StatusOK || servedAs(p) != "enso-free" || p.replied(controllers.RoutedModelHeader) != "" {
+			t.Errorf("a full lane: status %d served %q (%s)", p.status(), servedAs(p), p.said())
+		}
+		if len(asked) != 2 || released != 1 || p.replied(controllers.LaneReasonHeader) != "" {
+			t.Errorf("a full lane: asked %v, gave back %d, lane reason %q", asked, released, p.replied(controllers.LaneReasonHeader))
+		}
+	}
+	t.Setenv("PAID_LANE_DAILY", "")
+
 	// With the paid lane closed nothing is lifted, and the policy is asked about the
 	// free id alone.
 	t.Setenv("CLOUD_API_REPLICAS", "")
