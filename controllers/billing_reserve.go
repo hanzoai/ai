@@ -176,14 +176,26 @@ func clampMaxTokens(model string, maxTokens int) int {
 }
 
 // mostOut is the most completion tokens one answer of model may hold, where it is
-// stated: a family's catalog (OpenRouter's top_provider.max_completion_tokens), else
-// a configured route's models.yaml max_output_tokens. 0 when nothing states it.
+// stated: a family's catalog (OpenRouter's top_provider.max_completion_tokens) or a
+// configured route's models.yaml max_output_tokens, following the configuration's
+// aliases and each route's upstream model, however many steps, into a family's
+// catalog where one ends there. 0 when nothing on the way states it.
 func mostOut(model string) int {
-	if m, ok := familyLookup(model); ok && m.MaxOut > 0 {
-		return m.MaxOut
-	}
-	if mc := GetModelConfig(); mc != nil {
-		return mc.MaxOutput(model)
+	mc := GetModelConfig()
+	seen := map[string]bool{}
+	for m := strings.ToLower(strings.TrimSpace(model)); m != "" && !seen[m]; {
+		seen[m] = true
+		if f, ok := familyLookup(m); ok && f.MaxOut > 0 {
+			return f.MaxOut
+		}
+		if mc == nil {
+			return 0
+		}
+		n, next := mc.outStep(m)
+		if n > 0 {
+			return n
+		}
+		m = next
 	}
 	return 0
 }

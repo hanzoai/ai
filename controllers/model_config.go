@@ -532,6 +532,22 @@ func (mc *ModelConfig) MaxOutput(model string) int {
 	return 0
 }
 
+// outStep is one step of the walk mostOut takes: the max_output_tokens model's own
+// route declares, and the id it stands for — its route's upstream model, else the
+// alias it is — to read next when it declares none.
+func (mc *ModelConfig) outStep(model string) (int, string) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	key := strings.ToLower(model)
+	if route, ok := mc.routes[key]; ok {
+		if route.maxOutput > 0 {
+			return route.maxOutput, ""
+		}
+		return 0, strings.ToLower(route.upstreamModel)
+	}
+	return 0, strings.ToLower(mc.aliases[key])
+}
+
 // RouteForContext picks a route for `model` that can actually serve a prompt of
 // `tokens`, returning the provider and upstream to call.
 //

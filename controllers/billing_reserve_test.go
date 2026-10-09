@@ -291,15 +291,30 @@ func TestUncappedRequestCannotOverdraft(t *testing.T) {
 }
 
 // A configured route's models.yaml max_output_tokens bounds the ceiling as a family
-// catalog's does, its alias's included.
+// catalog's does, however many aliases and upstream models lead to it, and a route
+// whose upstream is a family's model is bounded by that model's catalog.
 func TestAConfiguredRouteKeepsItsOwnMost(t *testing.T) {
+	gpt4o := `{"id":"openai/gpt-4o","context_length":128000,` +
+		`"architecture":{"input_modalities":["text"],"output_modalities":["text"]},` +
+		`"pricing":{"prompt":"0.0000025","completion":"0.00001"},"top_provider":{"max_completion_tokens":16384}}`
+	listingVendor(t, listOf(gpt4o))
+	syncNow(t)
+	openrouterFam.mu.Lock()
+	openrouterFam.loaded = false
+	openrouterFam.mu.Unlock()
+	openrouterFam.serves("openai/gpt-4o")
 	prev := globalModelConfig
 	t.Cleanup(func() { globalModelConfig = prev })
 	globalModelConfig = &ModelConfig{
 		routes: map[string]modelRoute{
 			"vendor/small": {maxOutput: 8_192},
 			"small":        {upstreamModel: "vendor/small"},
+			"smaller":      {upstreamModel: "small"},
+			"four":         {upstreamModel: "openai/gpt-4o"},
+			"loop-a":       {upstreamModel: "loop-b"},
+			"loop-b":       {upstreamModel: "loop-a"},
 		},
+		aliases: map[string]string{"tiny": "smaller"},
 		pricing: map[string]modelPrice{},
 		stopCh:  make(chan struct{}),
 	}
@@ -310,6 +325,10 @@ func TestAConfiguredRouteKeepsItsOwnMost(t *testing.T) {
 		{"vendor/small", 30_000, 8_192},
 		{"small", 100_000_000, 8_192},
 		{"small", 2_000, 2_000},
+		{"smaller", 30_000, 8_192},
+		{"tiny", 30_000, 8_192},
+		{"four", 30_000, 16_384},
+		{"loop-a", 30_000, 30_000},
 		{"vendor/unbounded", 30_000, 30_000},
 	} {
 		if got := clampMaxTokens(c.model, c.in); got != c.want {
