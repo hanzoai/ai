@@ -36,6 +36,9 @@ type zenService struct {
 	catalog string
 	asked   []string // the model each inference call named
 	orgs    []string // the X-Org-Id each inference call carried
+	// barred refuses every inference call 401, as a family does a credential it
+	// does not hold.
+	barred bool
 	payers  []string // the X-Hanzo-Payer each inference call carried
 }
 
@@ -93,6 +96,15 @@ func (z *zenService) serve(w http.ResponseWriter, r *http.Request) {
 	b, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(b, &in)
 	z.mu.Lock()
+	if z.barred {
+		z.asked = append(z.asked, in.Model)
+		z.mu.Unlock()
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"type":"about:blank","title":"Unauthorized","status":401,"detail":"authentication required: send Authorization: Bearer <API key>"}`)
+		return
+	}
 	z.asked = append(z.asked, in.Model)
 	z.orgs = append(z.orgs, r.Header.Get("X-Org-Id"))
 	z.payers = append(z.payers, r.Header.Get(payerHeader))
@@ -635,5 +647,38 @@ func TestAFreeCallerNeverReachesAPaidTier(t *testing.T) {
 		if e.USD != "0" && e.USD != "" {
 			t.Errorf("a free caller was debited %+v", e)
 		}
+	}
+}
+
+// A family of ours refusing our credential is our outage, not the caller's: the
+// request moves on as from a family that is down, and the caller is never told to
+// send a bearer it already sent.
+func TestOurFamilyRefusingOurKeyIsOurOutage(t *testing.T) {
+	z := zenServiceAt(t, true)
+	z.mu.Lock()
+	z.barred = true
+	z.mu.Unlock()
+	got := ledger(t)
+	alice := &iam.User{Owner: "acme", Name: "alice"}
+	for _, stream := range []bool{false, true} {
+		body := []byte(fmt.Sprintf(`{"model":"zen6","stream":%t,"messages":[{"role":"user","content":"hi"}]}`, stream))
+		c := visit(http.MethodPost, "/v1/chat/completions")
+		c.Fiber().Request().SetBody(body)
+		out := c.pipeToFamily(zenFam, "chat/completions", "openai", "zen6", body, stream, 0, "acme", alice, true, nil, time.Now())
+		_ = drain(t, c)
+		if answered(c) == http.StatusUnauthorized || strings.Contains(sent(c), "Authorization") {
+			t.Fatalf("stream %v: the caller was told of our credential: %d %s", stream, answered(c), sent(c))
+		}
+		if out == nil && answered(c) < 500 {
+			t.Fatalf("stream %v: answered %d %s, want a 5xx or a refusal the route moves on from", stream, answered(c), sent(c))
+		}
+		for _, a := range out {
+			if a.status == http.StatusUnauthorized || strings.Contains(a.err.Error(), "Authorization") {
+				t.Fatalf("stream %v: the refusal carries the family's auth failure: %+v", stream, a)
+			}
+		}
+	}
+	if len(got()) != 0 {
+		t.Errorf("a refused call was debited: %+v", got())
 	}
 }

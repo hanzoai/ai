@@ -2022,7 +2022,17 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// stream's status here is what its opening frames said (dispatch → opening).
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		err := &apiError{status: resp.StatusCode, msg: upstreamErrorMessage(b)}
+		status, said := resp.StatusCode, upstreamErrorMessage(b)
+		if status == http.StatusUnauthorized && by.ours() {
+			// Our own family refusing our credential is OUR outage: the caller's own
+			// credential was checked at our edge. It moves like a family that is down,
+			// to the free pool, and never reaches the caller as their auth failure.
+			log.Error("family=%s refused ai's credential for %s (401: %s): is %s at KMS hanzo/prod:/ai, has cloud rolled since, and does no admin provider row named %q carry a secret of its own?",
+				by.name, model, said, by.keyKey, by.name)
+			status, said = http.StatusServiceUnavailable, fmt.Sprintf("model %q is temporarily unavailable", model)
+			b = nil
+		}
+		err := &apiError{status: status, msg: said}
 		// Each arm the family asked before it gave up is on the books beside
 		// whatever answers next, as it would be beside an answer.
 		failed(w, by, sku, servingOf(resp.Header).failover, authUser, isPremium, stream, reqID, start)
@@ -2037,7 +2047,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			if faultOf(err) == faultProvider {
 				return refused(err)
 			}
-			c.zenError(dialect, upstreamErrorMessage(b), resp.StatusCode)
+			c.zenError(dialect, said, status)
 			return done()
 		}
 		// The vendor could not serve — its account is empty, it is down, or a free
