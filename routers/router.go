@@ -120,6 +120,13 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/admin/model-access", "GET:AdminListModelAccess;POST:AdminGrantModelAccess")
 	route(app, "/v1/admin/reload-model-config", "POST:ReloadModelConfig")
 	route(app, "/v1/admin/refresh-model-pricing", "POST:RefreshModelPricing")
+	// A vendor's model list as the store keeps it (controllers/listing.go): every model
+	// it lists now, each entry as listed, and every change a sync read. Public, as the
+	// vendor's own list is. The free set with what the last day did with it is the
+	// SuperAdmin's.
+	route(app, "/v1/listings/:vendor", "GET:ListListing")
+	route(app, "/v1/listings/:vendor/events", "GET:ListListingEvents")
+	route(app, "/v1/admin/free", "GET:AdminFree")
 
 	// OpenAI-compatible embeddings and Cohere/Jina-compatible rerank. Both ride
 	// the same auth + provider routing as /v1/chat/completions.

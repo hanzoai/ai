@@ -41,6 +41,8 @@ type modelPrice struct {
 	// Variable: each call bills at the cost its answer states (zenModel.variable), and
 	// the rates above are only the ceiling a hold reserves, never a price.
 	Variable bool
+	// Card is the exact price list of a SKU we resell (zenModel.Card); nil otherwise.
+	Card *rateCard
 }
 
 // costed reports whether this model states what it costs us to serve.
@@ -84,6 +86,16 @@ type modelPricingInfo struct {
 	InputPerMillion  float64 `json:"input_per_million"`  // USD per 1M input tokens
 	OutputPerMillion float64 `json:"output_per_million"` // USD per 1M output tokens
 	Variable         bool    `json:"variable,omitempty"` // the rates are a ceiling; each call bills what served it
+	// Rates is every rate the model's vendor states, in the vendor's names and units
+	// (USD per token for prompt, completion, input_cache_read, input_cache_write,
+	// internal_reasoning, image, audio; per request for request; per search for
+	// web_search), as billed: the vendor's rate times our margin, exact. Present for a
+	// model we resell.
+	Rates map[string]string `json:"rates,omitempty"`
+	// Overrides are the vendor's conditional rates as billed: each states its
+	// condition (min_prompt_tokens, or utc_start, utc_end and utc_days for hours of
+	// the day) beside the rates that apply under it.
+	Overrides []map[string]any `json:"overrides,omitempty"`
 }
 
 // pricingInfo projects an internal modelPrice into the public pricing block, or
@@ -97,13 +109,24 @@ func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
 	if !ok || !finite(p.InputPerMillion) || !finite(p.OutputPerMillion) {
 		return nil
 	}
-	return &modelPricingInfo{
+	info := &modelPricingInfo{
 		Prompt:           perToken(p.InputPerMillion),
 		Completion:       perToken(p.OutputPerMillion),
 		InputPerMillion:  p.InputPerMillion,
 		OutputPerMillion: p.OutputPerMillion,
 		Variable:         p.Variable,
 	}
+	// A resold SKU's rates are stated exactly, never through the float above.
+	if c := p.Card; c != nil {
+		if r, ok := c.Rates["prompt"]; ok {
+			info.Prompt = r
+		}
+		if r, ok := c.Rates["completion"]; ok {
+			info.Completion = r
+		}
+		info.Rates, info.Overrides = c.Rates, c.Overrides
+	}
+	return info
 }
 
 // perToken is a per-million rate as US dollars per token, exactly: the rate is read

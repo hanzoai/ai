@@ -343,7 +343,41 @@ func (f *modelFamily) send(r *http.Request, p *object.Provider, free, stream boo
 	if len(keys) == 0 {
 		return do(r)
 	}
+	if free {
+		do = f.counting(r, do)
+	}
 	return sendKeyed(r, p, keys, free, do)
+}
+
+// counting is do that counts each request it makes for the store's served hours
+// (listing.go): the model, the account it went on, and whether the vendor took it.
+func (f *modelFamily) counting(r *http.Request, do func(*http.Request) (*http.Response, error)) func(*http.Request) (*http.Response, error) {
+	model := requestModel(r)
+	return func(rr *http.Request) (*http.Response, error) {
+		resp, err := do(rr)
+		key := strings.TrimPrefix(rr.Header.Get("Authorization"), "Bearer ")
+		f.served(model, object.AccountOf(f.keyNames, key), err == nil && resp.StatusCode/100 == 2)
+		return resp, err
+	}
+}
+
+// requestModel is the model a request's JSON body names, or "".
+func requestModel(r *http.Request) string {
+	if r.GetBody == nil {
+		return ""
+	}
+	b, err := r.GetBody()
+	if err != nil {
+		return ""
+	}
+	defer b.Close()
+	var body struct {
+		Model string `json:"model"`
+	}
+	if json.NewDecoder(io.LimitReader(b, 64<<20)).Decode(&body) != nil {
+		return ""
+	}
+	return body.Model
 }
 
 // order is the sequence one request tries the keys in, leaving out every account

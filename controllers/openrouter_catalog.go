@@ -74,6 +74,10 @@ var openrouterFam = &modelFamily{
 	aliases:     openrouterAliases,
 }
 
+// The catalog is read from the store the sync keeps (listing.go); assigned here
+// because the sync reads the family.
+func init() { openrouterFam.load = openrouterFam.listed }
+
 // openrouterCredits reads GET /v1/credits: {"data":{"total_credits":20,
 // "total_usage":20.21}}, lifetime totals whose difference is what the account has
 // left. It goes below zero when usage overruns what was bought.
@@ -142,12 +146,16 @@ type openrouterWireModel struct {
 	Description string `json:"description"`
 	// Created is when OpenRouter listed the model (Unix seconds): the release time the
 	// catalog knows, which /v1/models reports as `created`.
-	Created       int64 `json:"created"`
-	ContextLength int   `json:"context_length"`
-	Pricing       struct {
-		Prompt     decimal.Decimal `json:"prompt"`
-		Completion decimal.Decimal `json:"completion"`
-	} `json:"pricing"`
+	Created       int64             `json:"created"`
+	ContextLength int               `json:"context_length"`
+	Pricing       openrouterPricing `json:"pricing"`
+	TopProvider   struct {
+		// MaxCompletionTokens is the most one answer may hold; 0 when unstated.
+		MaxCompletionTokens int `json:"max_completion_tokens"`
+	} `json:"top_provider"`
+	// Expiration is the day OpenRouter stops serving the SKU (2026-10-31); empty when
+	// it states none.
+	Expiration   string `json:"expiration_date"`
 	Architecture struct {
 		InputModalities  []string `json:"input_modalities"`
 		OutputModalities []string `json:"output_modalities"`
@@ -155,6 +163,128 @@ type openrouterWireModel struct {
 	// SupportedParameters are the request fields the SKU honours ("tools",
 	// "reasoning", …): what it can be asked to do.
 	SupportedParameters []string `json:"supported_parameters"`
+}
+
+// openrouterPricing is a SKU's price list: every rate OpenRouter states, in its own
+// names and units (USD per token, per request, per image, per search), and the
+// conditional rates it lists under overrides. The rates billing reads by name are
+// decoded exactly; the whole list is kept so every rate can be published.
+type openrouterPricing struct {
+	Prompt     decimal.Decimal
+	Completion decimal.Decimal
+	CacheRead  decimal.Decimal // input_cache_read
+	// Larger are the rates past a prompt size, ascending by it: the overrides that
+	// state min_prompt_tokens. An override bounded by hours of the day is a discount
+	// on the base rates, so billing never reads one and never bills below the base.
+	Larger []openrouterOverride
+	// All is the price list as listed, each value as the vendor wrote it.
+	All map[string]json.RawMessage
+}
+
+// openrouterOverride is the rates from a prompt of Min tokens on; a rate it does not
+// state is the base rate.
+type openrouterOverride struct {
+	Min                           int
+	Prompt, Completion, CacheRead decimal.Decimal
+}
+
+func (p *openrouterPricing) UnmarshalJSON(b []byte) error {
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(b, &all); err != nil {
+		return err
+	}
+	rate := func(m map[string]json.RawMessage, k string, or decimal.Decimal) (decimal.Decimal, error) {
+		raw, ok := m[k]
+		if !ok {
+			return or, nil
+		}
+		var d decimal.Decimal
+		err := d.UnmarshalJSON(raw)
+		return d, err
+	}
+	var err error
+	*p = openrouterPricing{All: all}
+	if p.Prompt, err = rate(all, "prompt", decimal.Zero()); err != nil {
+		return err
+	}
+	if p.Completion, err = rate(all, "completion", decimal.Zero()); err != nil {
+		return err
+	}
+	if p.CacheRead, err = rate(all, "input_cache_read", decimal.Zero()); err != nil {
+		return err
+	}
+	var overrides []map[string]json.RawMessage
+	if raw, ok := all["overrides"]; ok {
+		if err := json.Unmarshal(raw, &overrides); err != nil {
+			return err
+		}
+	}
+	for _, o := range overrides {
+		var min int
+		if raw, ok := o["min_prompt_tokens"]; !ok || json.Unmarshal(raw, &min) != nil || min <= 0 {
+			continue
+		}
+		if _, timed := o["utc_start"]; timed {
+			continue
+		}
+		v := openrouterOverride{Min: min}
+		if v.Prompt, err = rate(o, "prompt", p.Prompt); err != nil {
+			return err
+		}
+		if v.Completion, err = rate(o, "completion", p.Completion); err != nil {
+			return err
+		}
+		if v.CacheRead, err = rate(o, "input_cache_read", p.CacheRead); err != nil {
+			return err
+		}
+		p.Larger = append(p.Larger, v)
+	}
+	sort.Slice(p.Larger, func(i, j int) bool { return p.Larger[i].Min < p.Larger[j].Min })
+	return nil
+}
+
+// card is the price list as it bills to a caller: each rate times margin, exact, and
+// each override's rates the same with its condition kept. A value that is not a
+// decimal string (a condition, a list of days) is carried as listed.
+func (p openrouterPricing) card(margin decimal.Decimal) *rateCard {
+	c := &rateCard{Rates: map[string]string{}}
+	for k, raw := range p.All {
+		if k == "overrides" {
+			continue
+		}
+		if r, ok := retailRate(raw, margin); ok {
+			c.Rates[k] = r
+		}
+	}
+	var overrides []map[string]json.RawMessage
+	if raw, ok := p.All["overrides"]; ok && json.Unmarshal(raw, &overrides) == nil {
+		for _, o := range overrides {
+			out := make(map[string]any, len(o))
+			for k, raw := range o {
+				if r, ok := retailRate(raw, margin); ok {
+					out[k] = r
+				} else {
+					out[k] = raw
+				}
+			}
+			c.Overrides = append(c.Overrides, out)
+		}
+	}
+	return c
+}
+
+// retailRate is a listed rate (a decimal string) times margin, or false for a value
+// that is no rate.
+func retailRate(raw json.RawMessage, margin decimal.Decimal) (string, bool) {
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return "", false
+	}
+	d, err := decimal.Parse(s)
+	if err != nil {
+		return "", false
+	}
+	return d.Mul(margin).String(), true
 }
 
 // title is the display name without its vendor lead: "Anthropic: Claude Sonnet 4" is
@@ -204,11 +334,6 @@ func (w openrouterWireModel) vision() bool {
 func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 	costIn := w.Pricing.Prompt.Mul(openrouterTokensPerMillion)
 	costOut := w.Pricing.Completion.Mul(openrouterTokensPerMillion)
-	retail := zenTier{
-		MaxCtx: w.ContextLength,
-		In:     costIn.Mul(margin),
-		Out:    costOut.Mul(margin),
-	}
 	m := zenModel{
 		ID:          w.ID,
 		Created:     w.Created,
@@ -216,16 +341,20 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 		Name:        w.title(),
 		Description: strings.TrimSpace(w.Description),
 		MaxCtx:      w.ContextLength,
+		MaxOut:      w.TopProvider.MaxCompletionTokens,
+		Expires:     strings.TrimSpace(w.Expiration),
 		Vision:      w.vision(),
 		Tools:       w.takes("tools"),
 		Reasoning:   w.takes("reasoning", "include_reasoning"),
 		Inputs:      w.Architecture.InputModalities,
 		Outputs:     w.Architecture.OutputModalities,
-		Base:        retail,
-		Tiers:       []zenTier{retail},
 		CostIn:      costIn,
 		CostOut:     costOut,
+		Margin:      margin,
+		Card:        w.Pricing.card(margin),
 	}
+	m.Tiers = w.tiers(margin)
+	m.Base = m.Tiers[0]
 	if !w.free() {
 		m.MinTier = "paid"    // subscription floor: not reachable by free/trial
 		m.Funding = "prepaid" // funding floor: real cash, so the fail-closed gate applies
@@ -233,9 +362,33 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 	if w.variable() {
 		// Billed per call at its stated cost; openrouterCatalog sets the ceiling. The
 		// -1 is a marker, not a cost, so no COGS is derived from it.
-		m.Margin, m.CostIn, m.CostOut = margin, decimal.Zero(), decimal.Zero()
+		m.Variable, m.CostIn, m.CostOut, m.Card = true, decimal.Zero(), decimal.Zero(), nil
 	}
 	return m
+}
+
+// tiers is the SKU's retail ladder: the base rates up to the first override's prompt
+// size, each override's from its own, the last to the context window. A tier holds
+// prompts up to its MaxCtx (tierFor), so the prompt that reaches an override's size
+// bills at the override, the dearer side of the line.
+func (w openrouterWireModel) tiers(margin decimal.Decimal) []zenTier {
+	tier := func(in, out, cache decimal.Decimal, max int) zenTier {
+		return zenTier{
+			MaxCtx:    max,
+			In:        in.Mul(openrouterTokensPerMillion).Mul(margin),
+			Out:       out.Mul(openrouterTokensPerMillion).Mul(margin),
+			CacheRead: cache.Mul(openrouterTokensPerMillion).Mul(margin),
+		}
+	}
+	p := w.Pricing
+	last := tier(p.Prompt, p.Completion, p.CacheRead, w.ContextLength)
+	var out []zenTier
+	for _, o := range p.Larger {
+		last.MaxCtx = o.Min - 1
+		out = append(out, last)
+		last = tier(o.Prompt, o.Completion, o.CacheRead, max(w.ContextLength, o.Min))
+	}
+	return append(out, last)
 }
 
 // variable reports a SKU OpenRouter prices by whatever serves each call — its routers,
@@ -330,8 +483,10 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 	for _, w := range wire {
 		m := w.model(margin)
 		if !m.variable() {
-			ceiling.In = maxDecimal(ceiling.In, m.Base.In)
-			ceiling.Out = maxDecimal(ceiling.Out, m.Base.Out)
+			for _, t := range m.Tiers {
+				ceiling.In = maxDecimal(ceiling.In, t.In)
+				ceiling.Out = maxDecimal(ceiling.Out, t.Out)
+			}
 		}
 		models = append(models, m)
 	}

@@ -25,6 +25,7 @@ func BenchmarkListWithFamily(b *testing.B) {
 
 	b.Setenv("OPENROUTER_URL", srv.URL)
 	b.Setenv("OPENROUTER_API_KEY", "bench")
+	withStore(b)
 
 	// CATALOG points at the catalog to measure. Set it to a dump of the live
 	// ConfigMap to benchmark exactly what production renders.

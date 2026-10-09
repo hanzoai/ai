@@ -357,6 +357,10 @@ type modelInfo struct {
 	Created int64  `json:"created"`
 	OwnedBy string `json:"owned_by"`
 	Premium bool   `json:"premium"`
+	// Free is whether a call to the model bills nothing: its pricing states zero for
+	// prompt and completion and bills no call by what served it. Free models are
+	// bounded by the free allowances instead of a balance.
+	Free bool `json:"free"`
 
 	// Additive enrichment (omitempty — present only when ai has the datum).
 	CanonicalSlug     string            `json:"canonical_slug,omitempty"`     // the id qualified by its maker, OpenRouter's field and form ("hanzo/kai", "anthropic/claude-sonnet-4"); see canonicalSlug
@@ -367,6 +371,7 @@ type modelInfo struct {
 	Provider          string            `json:"provider,omitempty"`           // serving provider, surfaced for unbranded passthroughs; omitted for branded models (owned_by already carries the public owner — see hip-00NN)
 	ContextWindow     int               `json:"context_window,omitempty"`     // max tokens the SKU is served at; surfaced from family discovery and pinned for the flagship SKUs (enso/zen5 = 1,000,000) so clients (Codex, Claude Code) size context honestly
 	MaxOutputTokens   int               `json:"max_output_tokens,omitempty"`  // max completion tokens (upstream catalog); lets clients cap output honestly
+	Expires           string            `json:"expires,omitempty"`            // the day the model's vendor stops serving it (2006-01-02), where it states one
 	Inputs            []string          `json:"inputs,omitempty"`             // kinds of input the model takes, in OpenRouter's words ("text", "image", "audio", "file", "video"); absent ⇒ not advertised
 	Outputs           []string          `json:"outputs,omitempty"`            // kinds of answer the model produces ("text", "audio", "image", "embeddings", "rerank"); absent ⇒ not advertised. A caller choosing a model for a chat turn needs it: the free lineup carries music models and a classifier beside the chat models, and a price alone cannot tell them apart
 	SupportsVision    bool              `json:"supports_vision,omitempty"`    // model accepts image input, as its family or a live probe states; absent ⇒ not advertised, never a fabricated yes
@@ -530,6 +535,7 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 	for i := range models {
 		m := &models[i]
 		m.Pricing = pricingInfo(getModelPriceForOrgOK(m.ID, ""))
+		m.Free = m.Pricing != nil && !m.Pricing.Variable && m.Pricing.InputPerMillion == 0 && m.Pricing.OutputPerMillion == 0
 		slug := canonicalSlug(*m)
 		key := strings.ToLower(slug)
 		switch {

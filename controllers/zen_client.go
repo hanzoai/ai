@@ -38,6 +38,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -135,6 +136,13 @@ type modelFamily struct {
 	// it serves it, its price, its floors, its terms — answers for the alias exactly
 	// as for the SKU, and sku is what goes upstream.
 	aliases map[string]string
+
+	// load is where the family's catalog body comes from when it is not the family's
+	// own GET /v1/models: a vendor whose list is synced into the store (listing.go)
+	// reads it from there. nil asks the family's address.
+	load func(context.Context, *object.Provider) ([]byte, error)
+	// started is whether this process has read the family's catalog once.
+	started atomic.Bool
 
 	// discovered catalog — a read-mostly snapshot; discovery failure keeps the last
 	// good snapshot so a transient blip never empties ai's model list.
@@ -605,7 +613,13 @@ type zenModel struct {
 	Name        string
 	Description string
 	MaxCtx      int
-	Vision      bool
+	// MaxOut is the most one answer may hold, where the catalog states it; 0 is
+	// unstated.
+	MaxOut int
+	// Expires is the day the vendor stops serving the SKU (2006-01-02), where its
+	// catalog states one.
+	Expires string
+	Vision  bool
 	// Tools and Reasoning are whether the SKU takes tool calls and a reasoning
 	// request, as the family's catalog states; false where it states nothing.
 	Tools     bool
@@ -637,27 +651,47 @@ type zenModel struct {
 	CostIn  decimal.Decimal
 	CostOut decimal.Decimal
 
-	// Margin is set only for a SKU the vendor prices per call by whatever served it
-	// (OpenRouter's routers, which it lists at a price of -1). No rate describes such
-	// a call, so it bills at the cost its answer states times Margin, and Base and
-	// Tiers hold the ceiling a hold reserves: the dearest SKU it could be routed to.
+	// Margin is the retail multiple of a SKU we resell (OpenRouter's): its rates are
+	// the vendor's times Margin, and a call never bills less than the cost the vendor
+	// states for it times Margin (bill). Zero for a family that prices its own SKUs.
 	Margin decimal.Decimal
+	// Variable is a SKU the vendor prices per call by whatever served it (OpenRouter's
+	// routers, which it lists at a price of -1). No rate describes such a call, so it
+	// bills at the cost its answer states times Margin, and Base and Tiers hold the
+	// ceiling a hold reserves: the dearest SKU it could be routed to.
+	Variable bool
+	// Card is the vendor's whole price list as it bills to a caller, for a SKU we
+	// resell: what /v1/models publishes as the SKU's pricing, exactly.
+	Card *rateCard
+}
+
+// rateCard is a resold SKU's price list as billed: every rate its vendor states, in
+// the vendor's names and units, times our margin, and its conditional rates the same.
+type rateCard struct {
+	Rates     map[string]string
+	Overrides []map[string]any
 }
 
 // variable reports that this SKU bills each call at the cost its answer states.
-func (m zenModel) variable() bool { return m.Margin.Sign() > 0 }
+func (m zenModel) variable() bool { return m.Variable }
 
-// resale is what a variable SKU's call bills, in nano-dollars: the cost its answer
-// stated times the SKU's margin, or its tokens at the ceiling the hold reserved when
-// the answer stated no cost — the router could have served it from any SKU up to
-// that, and billing below what a call cost is the one error resale cannot absorb.
-func (m zenModel) resale(cost *int64, promptTokens, cachedTokens, completionTokens int) int64 {
-	// A stated cost of zero or less is no statement: it bills at the ceiling, never a
-	// credit to the caller.
-	if cost != nil && *cost > 0 {
-		return nanoUp(decimal.New(*cost, 9).Mul(m.Margin))
+// bill is what one call to this SKU charges, in nano-dollars: its tokens at the tier
+// their prompt reaches. A SKU we resell never bills less than the cost its answer
+// states times its margin: a cache write, a web search or a dearer provider behind
+// the vendor costs what it costs, and billing below cost is the one error resale
+// cannot absorb. A variable SKU bills that stated cost alone, or its tokens at the
+// ceiling its hold reserved when the answer states none. A stated cost of zero or
+// less is no statement, never a credit.
+func (m zenModel) bill(cost *int64, promptTokens, cachedTokens, completionTokens int) int64 {
+	retail := m.retailNano(promptTokens, cachedTokens, completionTokens)
+	if m.Margin.Sign() <= 0 || cost == nil || *cost <= 0 {
+		return retail
 	}
-	return m.retailNano(promptTokens, cachedTokens, completionTokens)
+	stated := nanoUp(decimal.New(*cost, 9).Mul(m.Margin))
+	if m.Variable {
+		return stated
+	}
+	return max(retail, stated)
 }
 
 // retailNano is retailUSD in nano-dollars: the exact charge the hold settles, the
@@ -762,7 +796,7 @@ func (m zenModel) price() (modelPrice, bool) {
 	return modelPrice{
 		InputPerMillion: in, OutputPerMillion: out, CacheReadPerMillion: cache,
 		CostInPerMillion: costIn, CostOutPerMillion: costOut,
-		Variable: m.variable(),
+		Variable: m.variable(), Card: m.Card,
 	}, true
 }
 
@@ -882,7 +916,7 @@ const engineModel = "default"
 // property of a constant here rather than of a catalogue an operator does not own.
 const spareTries = 3
 
-var zenDiscoveryClient = &http.Client{Timeout: 15 * time.Second, Transport: reaching(&http.Transport{Proxy: http.ProxyFromEnvironment})}
+var zenDiscoveryClient = &http.Client{Timeout: listWait, Transport: reaching(&http.Transport{Proxy: http.ProxyFromEnvironment})}
 
 // reaching is t with the plugin scheme registered on it: a family or decision
 // service whose address is plugin://<name> is answered in this process by the
@@ -900,23 +934,13 @@ func (f *modelFamily) refresh() error {
 	if p == nil {
 		return nil
 	}
-	base := strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	read := f.list
+	if f.load != nil {
+		read = f.load
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), listWait)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
-	if err != nil {
-		return err
-	}
-	upstream.Authorize(req, p)
-	resp, err := zenDiscoveryClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s /v1/models: status %d", f.name, resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := read(ctx, p)
 	if err != nil {
 		return err
 	}
@@ -948,6 +972,28 @@ func (f *modelFamily) refresh() error {
 	f.loaded = true
 	f.mu.Unlock()
 	return nil
+}
+
+// listWait bounds one read of a family's catalog.
+const listWait = 30 * time.Second
+
+// list reads the family's GET /v1/models from its address.
+func (f *modelFamily) list(ctx context.Context, p *object.Provider) ([]byte, error) {
+	base := strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	upstream.Authorize(req, p)
+	resp, err := zenDiscoveryClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s /v1/models: status %d", f.name, resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 }
 
 // open reports whether the family's catalog, as last discovered, opens the paid lane.
@@ -1044,6 +1090,9 @@ func WarmFamilies() {
 		for _, f := range modelFamilies {
 			if f.credits != nil {
 				go f.watchCredits()
+			}
+			if f.load != nil {
+				go f.keepListed()
 			}
 		}
 	})
@@ -1251,7 +1300,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			// for is not. A free route reported as premium reads to a client as a
 			// SKU their plan cannot afford, which is the opposite of true.
 			ID: z.ID, Object: "model", Created: z.releasedOr(now), OwnedBy: owner, Premium: z.priced(),
-			Name: z.Name, Description: z.Description, ContextWindow: window,
+			Name: z.Name, Description: z.Description, ContextWindow: window, MaxOutputTokens: z.MaxOut, Expires: z.Expires,
 			Inputs: z.Inputs, Outputs: z.Outputs,
 			SupportsVision: z.Vision, SupportsTools: z.Tools, SupportsReasoning: z.Reasoning,
 		}
@@ -2151,15 +2200,19 @@ const (
 	// whole answer, a trailer on a stream (its cost is known at its end). It is the
 	// usage row's COGS; the family's answer body never carries ours.
 	cogsHeader = "X-Hanzo-Cogs"
+	// keyHeader names the vendor account the arm that answered ran on, by its name
+	// (OPENROUTER_API_KEY_3), never its key: the free view's which-account
+	// (listing.go). A header, or a trailer on a stream.
+	keyHeader = "X-Hanzo-Key"
 )
 
 // serving is what a family said about an answer beyond its body: the arm that
 // wrote it, the vendor that ran that arm, the arms that failed first, the time to
 // its first token, and whether that arm bills nothing.
 type serving struct {
-	arm, vendor, failover string
-	first                 time.Duration
-	free                  bool
+	arm, vendor, failover, account string
+	first                          time.Duration
+	free                           bool
 	// cost is what a committed answer's paid upstream cost, nano-dollars, as its
 	// family stated it at the end (costHeader); nil when none was stated.
 	cost *int64
@@ -2174,7 +2227,7 @@ func (sv *serving) merge(tr http.Header) {
 	if len(tr) == 0 {
 		return
 	}
-	for dst, k := range map[*string]string{&sv.arm: armHeader, &sv.vendor: providerHeader} {
+	for dst, k := range map[*string]string{&sv.arm: armHeader, &sv.vendor: providerHeader, &sv.account: keyHeader} {
 		if v := tr.Get(k); v != "" {
 			*dst = v
 		}
@@ -2202,7 +2255,7 @@ func servingOf(h http.Header) serving {
 	if arm == "" {
 		arm = h.Get(servedHeader)
 	}
-	sv := serving{arm: arm, vendor: h.Get(providerHeader), failover: strings.Join(h.Values(failoverHeader), "; "), free: h.Get(freeHeader) == "true"}
+	sv := serving{arm: arm, vendor: h.Get(providerHeader), account: h.Get(keyHeader), failover: strings.Join(h.Values(failoverHeader), "; "), free: h.Get(freeHeader) == "true"}
 	if n, ok := usdNanos(h.Get(cogsHeader)); ok {
 		sv.cogs = &n
 	}
@@ -2240,6 +2293,11 @@ func arms(chain string) []miss {
 // SKU asked of fam, the arm and its vendor, and why, billed nothing. What the arm cost
 // upstream is in the request's COGS (cogsHeader), on the row of whatever answered.
 func failed(w whence, fam *modelFamily, sku, chain string, u *iam.User, premium, stream bool, reqID string, start time.Time) {
+	for _, a := range arms(chain) {
+		if f := listedFamily(a.provider); f != nil && f.free(a.upstream) {
+			f.served(a.upstream, "", false)
+		}
+	}
 	for _, rec := range failoverRows(w, fam, sku, chain, u, premium, stream, reqID) {
 		recordTrace(w.ctx, rec, start)
 	}
@@ -2731,14 +2789,16 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	// row and the span all read the same zero (see usageCostNano). A priced SKU the
 	// family says it answered from a free rung costs the caller what that rung costs.
 	free := fam.isSpare(model) || inPool(model) || sv.free
+	// A free model a family ran on a listed vendor's account counts toward the free
+	// view (listing.go); what ai sent on its own accounts counted as it was sent.
+	if lf := listedFamily(sv.vendor); lf != nil && sv.arm != "" && lf.free(sv.arm) {
+		lf.served(sv.arm, sv.account, status == "success")
+	}
 	var nano int64
 	var exact *int64 // the charge the ledger, row and span read
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
-			nano = zm.retailNano(t.fresh, t.cached, t.completion)
-			if zm.variable() {
-				nano = zm.resale(mk.cogs(), t.fresh, t.cached, t.completion)
-			}
+			nano = zm.bill(mk.cogs(), t.fresh, t.cached, t.completion)
 		} else {
 			nano = tokenCostNano(model, t.fresh, t.completion, t.cached, 0)
 		}

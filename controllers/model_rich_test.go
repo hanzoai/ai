@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -149,12 +150,12 @@ func TestPricingInfoPublishesWhatWasFound(t *testing.T) {
 		t.Error("absent pricing must project to nil")
 	}
 	free := pricingInfo(modelPrice{InputPerMillion: 0, OutputPerMillion: 0}, true)
-	if free == nil || *free != (modelPricingInfo{Prompt: "0", Completion: "0"}) {
+	if free == nil || !reflect.DeepEqual(*free, modelPricingInfo{Prompt: "0", Completion: "0"}) {
 		t.Errorf("a stated price of zero must project as zero, got %+v", free)
 	}
 	got := pricingInfo(modelPrice{InputPerMillion: 1.25, OutputPerMillion: 5.00}, true)
 	want := modelPricingInfo{Prompt: "0.00000125", Completion: "0.000005", InputPerMillion: 1.25, OutputPerMillion: 5.00}
-	if got == nil || *got != want {
+	if got == nil || !reflect.DeepEqual(*got, want) {
 		t.Errorf("real pricing must project faithfully, got %+v, want %+v", got, want)
 	}
 	if pricingInfo(modelPrice{InputPerMillion: math.Inf(1)}, true) != nil {
@@ -241,7 +242,7 @@ func TestListedPriceIsBilledPrice(t *testing.T) {
 	}
 	for id, m := range byID {
 		want := pricingInfo(getModelPriceForOrgOK(id, ""))
-		if (want == nil) != (m.Pricing == nil) || want != nil && *want != *m.Pricing {
+		if (want == nil) != (m.Pricing == nil) || want != nil && !reflect.DeepEqual(*want, *m.Pricing) {
 			t.Errorf("%s lists %+v, billing charges %+v", id, m.Pricing, want)
 		}
 	}
@@ -269,7 +270,7 @@ func TestVariableRouterBillsStatedCost(t *testing.T) {
 		t.Fatal("openrouter/auto is not listed")
 	}
 	want := modelPricingInfo{Prompt: "0.000006", Completion: "0.000024", InputPerMillion: 6, OutputPerMillion: 24, Variable: true}
-	if !router.Premium || router.Pricing == nil || *router.Pricing != want {
+	if !router.Premium || router.Pricing == nil || !reflect.DeepEqual(*router.Pricing, want) {
 		t.Errorf("openrouter/auto lists premium=%v pricing=%+v, want premium and the ceiling %+v marked variable", router.Premium, router.Pricing, want)
 	}
 

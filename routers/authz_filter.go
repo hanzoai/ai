@@ -120,6 +120,8 @@ var superAdminEndpoints = map[string]struct{}{
 	"get-model-routes": {}, "get-model-route": {},
 	"add-model-route": {}, "update-model-route": {}, "delete-model-route": {},
 	"admin/reload-model-config": {}, "admin/refresh-model-pricing": {},
+	// The free set with each model's last day and the accounts that served it.
+	"admin/free": {},
 	// DO usage backfill — writes the platform-wide financial ledger (cloud_usage).
 	"admin/usage/backfill-do": {},
 	// Per-org settings is served ZAP-native (/v1/ai/org/settings, super-admin gated in
@@ -158,8 +160,11 @@ func requiresSuperAdmin(controllerName string) bool {
 var anonymousEndpoints = map[string]struct{}{
 	"models":           {}, // the catalogue a client reads before it has a key
 	"models/providers": {},
-	"health":           {}, // probes
-	"voice/health":     {},
+	// The vendor's model list as synced, and its history: the vendor publishes both.
+	"listings/openrouter":        {},
+	"listings/openrouter/events": {},
+	"health":                     {}, // probes
+	"voice/health":               {},
 	// The talk socket. A browser cannot put a header on a WebSocket, so its
 	// credential is the one-use ticket POST /v1/voice/session minted from a
 	// bearer, and the voice handler refuses any upgrade without a live one.

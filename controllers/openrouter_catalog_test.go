@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -46,6 +47,11 @@ func withFamily(t *testing.T, f *modelFamily, body string) *int32 {
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv(f.urlKey, srv.URL)
+	// A family whose list the store keeps is read from a store of its own, which its
+	// first read fills from the stub (listing.go).
+	if f.load != nil {
+		withStore(t)
+	}
 
 	savedByID, savedIDs := f.byID, f.ids
 	savedLoaded, savedAt := f.loaded, f.fetchedAt
@@ -62,9 +68,11 @@ func withFamily(t *testing.T, f *modelFamily, body string) *int32 {
 	return &hits
 }
 
-// The catalog is DISCOVERED and cached on the shared family TTL: a cold family fetches
-// once, subsequent reads are served from the snapshot, and a snapshot older than the
-// TTL refetches. No model id is written down anywhere in ai.
+// The catalog is DISCOVERED, kept in the store and cached on the shared family TTL: a
+// cold family syncs the vendor's list once, subsequent reads are served from the
+// snapshot, a snapshot older than the TTL is read again from the store, and the vendor
+// is asked again when the sync's interval has passed. No model id is written down
+// anywhere in ai.
 func TestOpenRouterCatalogIsDiscoveredAndCachedOnTTL(t *testing.T) {
 	hits := withOpenRouter(t, orBody)
 
@@ -96,13 +104,24 @@ func TestOpenRouterCatalogIsDiscoveredAndCachedOnTTL(t *testing.T) {
 		t.Errorf("a warm catalog must be served from cache within the TTL, refetched %d times", got-1)
 	}
 
-	// Aged past the TTL: the family refreshes rather than serving a stale catalog.
+	// Aged past the TTL: the family reads the store again, which the sync of this
+	// interval already filled, so the vendor is not asked.
 	openrouterFam.mu.Lock()
 	openrouterFam.fetchedAt = time.Now().Add(-zenCatalogTTL - time.Second)
 	openrouterFam.mu.Unlock()
 	openrouterFam.fresh()
+	if got := atomic.LoadInt32(hits); got != 1 {
+		t.Errorf("a catalog older than the TTL is read from the store, yet the vendor was asked %d times", got)
+	}
+	if !openrouterFam.serves("meta/muse-spark-1.1") {
+		t.Error("the store's catalog lost a model")
+	}
+	// Once the interval has passed, the next read syncs.
+	if _, err := openrouterFam.syncEvery(context.Background(), openrouterFam.provider(), 0, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	if got := atomic.LoadInt32(hits); got != 2 {
-		t.Errorf("a catalog older than the TTL must refetch, total fetches %d", got)
+		t.Errorf("a sync past its interval must ask the vendor, total fetches %d", got)
 	}
 }
 

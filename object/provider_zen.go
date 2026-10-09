@@ -150,6 +150,21 @@ func FamilyKeys(family string, names []string) []string {
 	return out
 }
 
+// AccountOf is the name among names whose key is key — the account a request was
+// sent on, said without its key — or "" when none resolves to it.
+func AccountOf(names []string, key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	for _, n := range names {
+		if strings.TrimSpace(resolveKey(n)) == key {
+			return n
+		}
+	}
+	return ""
+}
+
 // familyProviderFns is the ONE list of model families known to provider
 // resolution, keyed by the family's provider name. GetModelProviderByName reads
 // it instead of hand-writing the names, so a family added here is resolvable

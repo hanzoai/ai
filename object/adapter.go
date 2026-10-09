@@ -194,6 +194,10 @@ func (a *Adapter) createTable() {
 		&ModelAccess{},        // per-(org,user,model) grants for gated SKUs (enso limited preview)
 		&RoutingVersion{},     // applied Zen/Enso routing catalogs, one row per edit (routing.go)
 		&PaidDay{},            // each org's paid-lane spend per UTC day (controllers' lane.go)
+		&Listing{},            // every model a vendor lists, as the last sync read it (controllers' listing.go)
+		&ListingEvent{},       // each change a sync read: new, gone, back, repriced
+		&Lease{},              // jobs the fleet runs once an interval
+		&Served{},             // what each vendor account did with each model, by hour
 	}
 	for _, m := range models {
 		if err := a.db.Sync(m); err != nil {

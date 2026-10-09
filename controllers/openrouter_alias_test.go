@@ -96,6 +96,7 @@ func withAliasVendor(t *testing.T) *aliasVendor {
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv(openrouterFam.urlKey, srv.URL)
+	withStore(t)
 	for _, k := range object.OpenRouterKeys {
 		t.Setenv(k, "")
 	}

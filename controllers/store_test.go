@@ -30,7 +30,7 @@ import (
 // can be read back, which is the only version of the claim worth making. SQLite
 // is what a single instance runs anyway, so the dialect under test is one in use
 // rather than one chosen for tests.
-func withStore(t *testing.T) {
+func withStore(t testing.TB) {
 	t.Helper()
 	t.Setenv("driverName", "sqlite")
 	t.Setenv("dataSourceName", filepath.Join(t.TempDir(), "store.db"))

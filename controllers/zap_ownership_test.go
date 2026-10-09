@@ -141,6 +141,8 @@ func TestEveryHttpWriteSaysWhoseRowItIs(t *testing.T) {
 		// Internal helpers, reached only from a handler that has already decided.
 		"finetune.go:refreshFinetuneJob":      "helper; its caller resolved the job",
 		"graph_chat.go:generateChatGraphData": "helper; its caller resolved the graph",
+		// The vendor's model list is the platform's; no caller asks for a sync.
+		"listing.go:sync": "writes the platform's copy of a vendor's public list",
 	}
 
 	fset := token.NewFileSet()

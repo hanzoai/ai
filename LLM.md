@@ -1197,6 +1197,46 @@ embeddings, rerank, image, audio and video call to a provider that is not a fami
 service (`paying`), is refused, and so is a decision that names Jev. Only zen and enso,
 whose catalogs decide for themselves, serve.
 
+## OpenRouter's list, kept in the store (`controllers/listing.go`, `object/listing.go`)
+
+OpenRouter's `/v1/models` is synced into the store and the family reads its catalog
+from there, never from the vendor: every process lists, routes and bills from the same
+rows, and the free lane reads the same rows.
+
+- **When**: a process's first read syncs unless any process did within 5 minutes
+  (`listingStart`); then once an hour (`listingEvery`), fleet-wide. `object.TakeLease`
+  is a compare-and-set on the `lease` table, so one process runs an interval's sync;
+  a failed sync gives the interval back. `keepListed` reads the family every TTL so
+  the schedule does not wait on traffic.
+- **What**: `object.Listing` per model, `Item` the vendor's entry verbatim (every
+  price, `context_length`, `top_provider.max_completion_tokens`, modalities,
+  `supported_parameters`, `created`, `expiration_date`), `Pricing` canonical (keys
+  sorted, exact decimals: a respelled number is no change), `Free` (prompt and
+  completion zero, not a `-1` router), `Seen`, `Synced`, `Gone`. A list of nothing is
+  refused, never synced as every model gone.
+- **Changes**: `object.ListingEvent` rows `new`, `back`, `gone`, `price`, `free`
+  (priced → free), `paid` (free → priced), with `Was`/`Now` price lists, then
+  `object.PublishListing` (the host installs `SetListingPublisher`: cloud puts them on
+  its bus). A gone model leaves the catalog and is served no longer; its row and
+  history stay.
+- **Billing a resold SKU** (`zenModel.bill`): tokens at the tier the prompt reaches
+  (`min_prompt_tokens` overrides are tiers, the dearer side of the line; an hours-of-day
+  override is a discount and is never billed), cached tokens at `input_cache_read`,
+  all × `OPENROUTER_MARGIN`; and never below the answer's stated `usage.cost` ×
+  margin, which covers what tokens do not price (cache writes, web search, a dearer
+  provider). A variable router bills the stated cost alone.
+- **Listed**: `/v1/models` rows carry `free`, `expires`, `max_output_tokens`, and
+  `pricing.rates` (every vendor rate × margin, exact, in the vendor's names and units)
+  and `pricing.overrides` (each condition with its rates × margin).
+- **Read**: `GET /v1/listings/openrouter[?free=1]` (anonymous) answers
+  `{vendor, synced, data:[the vendor's entries]}`, the shape the free lane parses;
+  `GET /v1/listings/openrouter/events[?id=&limit=]` the history; SuperAdmin
+  `GET /v1/admin/free` the free set with the last 24 h per model (answered, failed,
+  rate) and per account. Counts are `object.Served` (vendor, model, account name,
+  UTC hour; 48 h kept): each free request ai sends on its ring (`counting`), each
+  free arm a family ran on a listed vendor (`X-Hanzo-Key` names the account), and
+  each failed free arm of a failover chain (no account).
+
 ## The free pool — every OpenRouter account, spent as one
 
 The Free plan is limited usage from ONE pool every free user shares: the
