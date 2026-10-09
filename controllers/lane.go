@@ -43,8 +43,9 @@ package controllers
 //
 // A conversation the plan pays whose quote at the completion ceiling it asked for does
 // not fit is sent with a lower ceiling that does (X-Hanzo-Lane-Max-Tokens), never
-// below the least its handler sends; one that fits at no ceiling is not seated. One
-// payer holds at most paidLaneCalls seats at once.
+// below the least its handler sends; one that fits at no ceiling is not seated. A
+// payer's plan pays for at most paidLaneCalls of its calls at once. A call the payer's
+// own money pays is never refused a seat: its wallet is what bounds it.
 //
 // A seat is given back exactly once, when its answer is counted (recordUsage, after
 // the plan's own settle). A provider fast mode raced and beat gives nothing back
@@ -102,8 +103,8 @@ const (
 const (
 	// whyLarge: the call's least worst case is more than the plan's class has left.
 	whyLarge = "large"
-	// whyBusy: the payer's calls in flight hold what the plan's class has left, or the
-	// payer holds paidLaneCalls seats.
+	// whyBusy: the payer's calls in flight hold what the plan's class has left, or its
+	// plan pays for paidLaneCalls of them.
 	whyBusy = "busy"
 )
 
@@ -276,7 +277,7 @@ func laneOff(ctx context.Context, model string) error {
 		status = http.StatusRequestEntityTooLarge
 		said = "this call can cost more than your plan has left. Send a shorter prompt or a lower max_tokens, or choose an Enso or Zen model."
 	default:
-		said = fmt.Sprintf("your calls in flight hold what your plan has left, or you have %d calls in flight. Choose an Enso or Zen model, or try again when one of them is answered.", paidLaneCalls)
+		said = fmt.Sprintf("your calls in flight hold what your plan has left, or your plan is paying for %d calls in flight. Choose an Enso or Zen model, or try again when one of them is answered.", paidLaneCalls)
 	}
 	return &apiError{status: status, code: ReasonFull, msg: fmt.Sprintf("model %q is not being served: %s", model, said)}
 }
@@ -306,7 +307,7 @@ func OwnKey(org, model string) bool {
 // ── the book ─────────────────────────────────────────────────────────────────
 
 const (
-	// paidLaneCalls is the most seats one payer holds at once.
+	// paidLaneCalls is the most of one payer's calls its plan pays for at once.
 	paidLaneCalls = 8
 	// seatLapse is the longest a seat holds when nothing settles it: a whole answer
 	// whose handler never finished, a job nobody polled to its end.
@@ -316,8 +317,8 @@ const (
 	streamIdle = 2 * time.Minute
 )
 
-// laneBook is what the paid lane holds: each plan payer's holds, each payer's seats
-// and every open seat. mu guards every field below it.
+// laneBook is what the paid lane holds: each plan payer's holds, how many of each
+// payer's calls its plan pays for, and every open seat. mu guards every field below it.
 type laneBook struct {
 	clock func() time.Time // the time; time.Now when nil
 	mu    sync.Mutex
@@ -329,11 +330,11 @@ type laneBook struct {
 // paidLane is the paid lane's book.
 var paidLane = &laneBook{}
 
-// seat is one call's place on the paid lane: what it holds, against which payer's
-// seats and which plan payer, since when. Every field but last is guarded by book.mu.
+// seat is one call's place on the paid lane: what it holds, for which payer and
+// against which plan payer, since when. Every field but last is guarded by book.mu.
 type seat struct {
 	book   *laneBook
-	caller string // the payer whose seats it counts against: org and subject
+	caller string // the payer: org and subject
 	plan   string // the plan payer whose allowance it holds against, "" when the plan does not pay
 	held   int64
 	tokens int // the completion ceiling it was sized for; 0 for a call with none
@@ -355,11 +356,12 @@ func (b *laneBook) now() time.Time {
 	return time.Now()
 }
 
-// reserve seats a call quoted q for caller — the payer whose seats it counts against —
-// and, for a call a plan pays, against plan's allow less what its calls in flight
-// hold; a conversation is sized down to the highest completion ceiling that fits
-// (quote.fit). A call no plan pays holds nothing against a plan: its wallet is held by
-// its handler. Nil and why when it does not fit.
+// reserve seats a call quoted q for caller, the payer, and, for a call a plan pays,
+// against plan's allow less what its calls in flight hold and as one of the
+// paidLaneCalls the plan pays for at once; a conversation is sized down to the highest
+// completion ceiling that fits (quote.fit). A call no plan pays — the payer's own cash,
+// the org's credit line — is always seated: its wallet is held by its handler
+// (reserveFor), and that is its only bound. Nil and why when it does not fit.
 func (b *laneBook) reserve(caller, plan string, q quote, allow int64) (*seat, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -376,7 +378,7 @@ func (b *laneBook) reserve(caller, plan string, q quote, allow int64) (*seat, st
 		room = allow - b.plans[plan]
 	}
 	tokens, ok := q.fit(room)
-	if !ok || b.calls[caller] >= paidLaneCalls {
+	if !ok || plan != "" && b.calls[caller] >= paidLaneCalls {
 		return nil, whyBusy
 	}
 	s := &seat{book: b, caller: caller, plan: plan, held: q.at(tokens), at: now, open: true}
@@ -385,8 +387,8 @@ func (b *laneBook) reserve(caller, plan string, q quote, allow int64) (*seat, st
 	}
 	if plan != "" {
 		b.plans[plan] += s.held
+		b.calls[caller]++
 	}
-	b.calls[caller]++
 	b.open[s] = struct{}{}
 	return s, ""
 }
@@ -402,9 +404,9 @@ func (b *laneBook) close(s *seat) {
 		if b.plans[s.plan] -= s.held; b.plans[s.plan] <= 0 {
 			delete(b.plans, s.plan)
 		}
-	}
-	if b.calls[s.caller]--; b.calls[s.caller] <= 0 {
-		delete(b.calls, s.caller)
+		if b.calls[s.caller]--; b.calls[s.caller] <= 0 {
+			delete(b.calls, s.caller)
+		}
 	}
 }
 

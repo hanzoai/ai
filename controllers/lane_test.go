@@ -239,28 +239,37 @@ func TestThePaidLaneHasNoCeilingOfItsOwn(t *testing.T) {
 	}
 }
 
-// A PAYER HOLDS AT MOST paidLaneCalls SEATS AT ONCE, so one payer cannot pin the lane
-// with many small calls; another payer of the same org is seated beside it.
-func TestAPayerHoldsAtMostItsCallsAtOnce(t *testing.T) {
+// A PAYER'S PLAN PAYS FOR AT MOST paidLaneCalls OF ITS CALLS AT ONCE; another payer of
+// the same org is seated beside it. A CALL THE PAYER'S OWN MONEY PAYS IS NEVER REFUSED A
+// SEAT (owner, 2026-10-09: paying with a cash balance can use paid): however many are in
+// flight, each is seated, its wallet the only bound, and none counts against what the
+// plan pays for.
+func TestAPlanPaysForAtMostItsCallsAtOnce(t *testing.T) {
 	lanes(t)
+	ann, bob := "acme\x00ann\x00"+object.ClassPremium, "acme\x00bob\x00"+object.ClassPremium
 	var seats []*seat
 	for range paidLaneCalls + 3 {
-		if s, _ := paidLane.reserve("acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s != nil {
+		if s, _ := paidLane.reserve("acme\x00ann", ann, fixed(usd(0.01)), usd(100)); s != nil {
 			seats = append(seats, s)
 		}
 	}
 	if len(seats) != paidLaneCalls {
-		t.Fatalf("one payer holds %d seats at once, want %d", len(seats), paidLaneCalls)
+		t.Fatalf("one payer's plan pays for %d calls at once, want %d", len(seats), paidLaneCalls)
 	}
-	if s, why := paidLane.reserve("acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s != nil || why != whyBusy {
-		t.Fatalf("a payer holding its seats was seated again (%q)", why)
+	if s, why := paidLane.reserve("acme\x00ann", ann, fixed(usd(0.01)), usd(100)); s != nil || why != whyBusy {
+		t.Fatalf("a plan paying for all its calls was seated again (%q)", why)
 	}
-	if s, _ := paidLane.reserve("acme\x00bob", "", fixed(usd(0.01)), math.MaxInt64); s == nil {
-		t.Fatal("another payer was refused while the first held its seats")
+	for i := range 10 * paidLaneCalls {
+		if s, why := paidLane.reserve("acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s == nil {
+			t.Fatalf("the payer's own money was refused its call %d in flight (%q): a wallet-paid call is never refused a seat", i+1, why)
+		}
+	}
+	if s, _ := paidLane.reserve("acme\x00bob", bob, fixed(usd(0.01)), usd(100)); s == nil {
+		t.Fatal("another payer was refused while the first's plan paid for all its calls")
 	}
 	seats[0].end()
-	if s, _ := paidLane.reserve("acme\x00ann", "", fixed(usd(0.01)), math.MaxInt64); s == nil {
-		t.Fatal("a payer whose call ended was not seated again")
+	if s, why := paidLane.reserve("acme\x00ann", ann, fixed(usd(0.01)), usd(100)); s == nil {
+		t.Fatalf("a payer whose plan-paid call ended was not seated again (%q): its wallet-paid calls counted against its plan", why)
 	}
 }
 
@@ -662,8 +671,8 @@ func TestWithTheSwitchOffLateBillsAreAsBefore(t *testing.T) {
 
 // A CALL IS SERVED, SIZED TO WHAT ITS PLAN HAS LEFT, AND A REFUSAL SAYS WHY. A
 // Claude-Code-shaped call to a $15/$75 model — max_tokens 32,000 — paid from the
-// payer's own wallet is seated whole, at the ceiling it asked for, however large and
-// however many are in flight beside it, up to the payer's seats: the wallet bounds it.
+// payer's own wallet is seated whole, on the paid lane, at the ceiling it asked for,
+// however large and however many are in flight beside it: the wallet bounds it.
 // Paid by a plan, it is seated whole while the plan has room for that; with less room
 // it is sent with the highest ceiling that fits, saying so, and its handler sends no
 // more. When even the least it is sent with does not fit what the payer's calls in
@@ -689,13 +698,12 @@ func TestACallIsServedSizedToWhatItsPlanHasLeft(t *testing.T) {
 	}
 
 	wallet := planGrant("max-20x", object.PaysPrepaid, object.ClassPremium)
-	for range paidLaneCalls {
+	for range 4 * paidLaneCalls {
 		c := call(wallet, "ann", 1_000_000)
-		if s := seatOf(c.Context()); s == nil || s.tokens != 32000 || header(c, LaneTokensHeader) != "" {
-			t.Fatalf("a wallet's call with a 1 MB prompt: seat %+v, header %q; want it seated whole", s, header(c, LaneTokensHeader))
+		if s := seatOf(c.Context()); s == nil || s.tokens != 32000 || header(c, LaneTokensHeader) != "" || header(c, LaneHeader) != "paid" || header(c, LaneReasonHeader) != "" {
+			t.Fatalf("a wallet's call with a 1 MB prompt: seat %+v, lane %q %q, ceiling header %q; want it seated whole on the paid lane", s, header(c, LaneHeader), header(c, LaneReasonHeader), header(c, LaneTokensHeader))
 		}
 	}
-	refused(call(wallet, "ann", 100), http.StatusTooManyRequests, fmt.Sprintf("%d calls in flight", paidLaneCalls))
 
 	probe := visit(http.MethodPost, "/v1/messages")
 	probe.Fiber().Request().SetBody(body(100_000))
