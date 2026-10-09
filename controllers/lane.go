@@ -20,14 +20,13 @@ package controllers
 // request is served on one of two lanes, decided once, by the balance gate, from the
 // grant the host's usage policy admitted it with (Seat):
 //
-//   - PAID: a paid plan stands behind the payer (LimitGrant.Plan — an active
-//     subscription whose period was paid), something pays for this priced call — the
-//     plan's included usage (PaysPlan), then the payer's prepaid or granted credit
-//     (PaysPrepaid, PaysCredits) — and the call's worst case fits what the paid lane
-//     has left for it.
-//   - FREE: everyone else — no plan, a call nothing pays for, a free model, a payer
-//     whose call does not fit, and any request that reached a handler without passing
-//     the gate (a ZAP handler: the forward bridge is the ZAP route that runs the gate).
+//   - PAID: something real pays for this priced call — a paid plan's included usage
+//     (PaysPlan, LimitGrant.Plan an active subscription whose period was paid), or the
+//     payer's prepaid or granted credit, with a plan or without one (PaysPrepaid,
+//     PaysCredits) — and the call's worst case fits what the paid lane has left for it.
+//   - FREE: everyone else — a call nothing pays for, a free model, a payer whose call
+//     does not fit, and any request that reached a handler without passing the gate (a
+//     ZAP handler: the forward bridge is the ZAP route that runs the gate).
 //
 // WHAT A SEAT HOLDS. A call on the paid lane holds its quote (quote.go: the most it can
 // cost, for every provider fast mode races it to) from admission until its answer is
@@ -183,7 +182,7 @@ func Seat(c *zip.Ctx, g *object.LimitGrant, org, payer, model string) Seating {
 	c.Fiber().Response().Header.Del(LaneTokensHeader)
 	l, out := &laneState{}, SeatFree
 	var q quote
-	if planPays(g) {
+	if pays(g) {
 		allow, plan := int64(math.MaxInt64), ""
 		if g.Pays == object.PaysPlan {
 			allow, plan = g.Spend, org+"\x00"+payer+"\x00"+g.Class
@@ -254,19 +253,21 @@ func laneTokens(ctx context.Context, n int) int {
 	return n
 }
 
-// planPays reports whether a grant puts its request on the paid lane: it names a paid
-// plan, the call is priced, and the plan's included usage or the payer's credit pays.
-func planPays(g *object.LimitGrant) bool {
-	if g == nil {
-		return false
-	}
-	plan := strings.TrimSpace(g.Plan)
-	if plan == "" || strings.EqualFold(plan, "free") || strings.EqualFold(g.Class, object.ClassFree) {
+// pays reports whether a grant puts its request on the paid lane: the call is priced
+// and something real pays for it — a paid plan's included usage, or the payer's own
+// prepaid or granted credit, plan or none (a payer with no plan pays prepaid, and the
+// host's policy decides where credit may pay), or the program that made the call in
+// this process (PaysCaller).
+func pays(g *object.LimitGrant) bool {
+	if g == nil || strings.EqualFold(g.Class, object.ClassFree) {
 		return false
 	}
 	switch g.Pays {
-	case object.PaysPlan, object.PaysPrepaid, object.PaysCredits, object.PaysCaller:
+	case object.PaysPrepaid, object.PaysCredits, object.PaysCaller:
 		return true
+	case object.PaysPlan:
+		plan := strings.TrimSpace(g.Plan)
+		return plan != "" && !strings.EqualFold(plan, "free")
 	}
 	return false
 }

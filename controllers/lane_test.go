@@ -64,7 +64,8 @@ func planGrant(plan, pays, class string) *object.LimitGrant {
 func parties() []party {
 	return []party{
 		{name: "subscriber", grant: planGrant("max-20x", object.PaysPlan, object.ClassPremium), paid: true},
-		{name: "wallet without a plan", grant: planGrant("", object.PaysPrepaid, object.ClassPremium)},
+		{name: "wallet without a plan", grant: planGrant("", object.PaysPrepaid, object.ClassPremium), paid: true},
+		{name: "a free cap", grant: planGrant("", object.PaysFree, object.ClassOurs)},
 		{name: "guest"},
 		{name: "subscriber past the platform's day", grant: planGrant("max-20x", object.PaysPlan, object.ClassPremium), spent: true},
 	}
@@ -142,8 +143,10 @@ func TestTheLaneIsThePlanThatPays(t *testing.T) {
 		{"the policy said nothing: a guest, a key nobody can name", nil, false},
 		{"a free signup on the Free plan's allowance", planGrant("", object.PaysFree, object.ClassOurs), false},
 		{"the Free plan by name", planGrant("free", object.PaysFree, object.ClassOurs), false},
-		{"a wallet with no plan", planGrant("", object.PaysPrepaid, object.ClassPremium), false},
-		{"granted credit with no plan", planGrant("", object.PaysCredits, object.ClassPremium), false},
+		{"a wallet with no plan", planGrant("", object.PaysPrepaid, object.ClassPremium), true},
+		{"a wallet on the Free plan", planGrant("free", object.PaysPrepaid, object.ClassPremium), true},
+		{"granted credit with no plan", planGrant("", object.PaysCredits, object.ClassPremium), true},
+		{"the Free plan's included usage", planGrant("free", object.PaysPlan, object.ClassPremium), false},
 		{"Pro's included usage", planGrant("dev", object.PaysPlan, object.ClassPremium), true},
 		{"Max 5x's included usage", planGrant("max-5x", object.PaysPlan, object.ClassOurs), true},
 		{"Max 20x's included usage", planGrant("max-20x", object.PaysPlan, object.ClassPremium), true},
@@ -215,7 +218,7 @@ func TestThePlatformsDayMovesSubscribersToTheFreeLane(t *testing.T) {
 		t.Fatalf("a call only the paid lane serves is refused %d %q %q, want 429 %s naming the next day", statusOf(err), codeOf(err), err, codeLaneFull)
 	}
 	// A caller who was never owed the paid lane is not told it was full.
-	free := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), party{grant: planGrant("", object.PaysPrepaid, object.ClassPremium)})
+	free := seatAs(t, visit(http.MethodPost, "/v1/chat/completions"), party{grant: planGrant("", object.PaysFree, object.ClassOurs)})
 	onLane(t, free, party{})
 	if err := laneOff(free.Context(), "vendor/x"); statusOf(err) != http.StatusServiceUnavailable {
 		t.Fatalf("a caller never owed the lane is refused %d, want the switch's 503", statusOf(err))
@@ -1007,8 +1010,8 @@ func (w *relayWorld) chatAs(t *testing.T, h party, body string, strict bool) *Ap
 
 // The relay — a third-party route's own vendors (candidates, forward), its tool and
 // image requests, and a strict request taking the route's first row — serves the paid
-// lane to a subscriber and to nobody else: the vendor is never asked for anyone else,
-// and the subscriber's answer is billed. A subscriber the lane had no room for is told
+// lane to a payer, a subscriber or a wallet, and to nobody else: the vendor is never
+// asked for anyone else, and the payer's answer is billed, to the plan or the wallet. A subscriber the lane had no room for is told
 // so, 429, rather than that nothing is served.
 func TestTheRelayServesThePaidLaneToSubscribersOnly(t *testing.T) {
 	for _, site := range []struct {
@@ -1041,8 +1044,10 @@ func TestTheRelayServesThePaidLaneToSubscribersOnly(t *testing.T) {
 				if answered(c) != http.StatusOK || w.a.asked() != 1 {
 					t.Fatalf("status %d, vendor asked %d: want the subscriber served by the route's vendor: %s", answered(c), w.a.asked(), sent(c))
 				}
-				if ev := w.paid(t); !ev.Plan || ev.USD == "" || ev.USD == "0" {
-					t.Fatalf("the subscriber's answer was filed %+v, want it billed to the plan", ev)
+				// The plan's usage is the plan's; a wallet's call debits the wallet.
+				byPlan := h.grant.Pays == object.PaysPlan
+				if ev := w.paid(t); ev.Plan != byPlan || ev.USD == "" || ev.USD == "0" {
+					t.Fatalf("%s's answer was filed %+v, want it billed (to the plan: %v)", h.name, ev, byPlan)
 				}
 				if paidDay.held != 0 || paidDay.spent <= 0 {
 					t.Fatalf("the subscriber's answer left %d nano held and %d counted, want its seat settled at what it cost", paidDay.held, paidDay.spent)

@@ -49,9 +49,10 @@ func chatThrough(model string) probe {
 		through(BalanceGateFilter, LaneFilter)
 }
 
-// THE LANE FOLLOWS THE GATE'S GRANT. A subscriber whose plan pays is on the paid lane
-// and told so; a payer with no plan, and a caller the policy said nothing about, are
-// on the free lane. A path no policy governs carries no lane.
+// THE LANE FOLLOWS THE GATE'S GRANT. A subscriber whose plan pays, and a payer whose
+// own prepaid or granted credit pays, plan or none, are on the paid lane and told so;
+// a free model and a caller the policy said nothing about are on the free lane. A
+// path no policy governs carries no lane.
 func TestTheLaneFollowsTheGatesGrant(t *testing.T) {
 	paidSwitch(t)
 	for _, tc := range []struct {
@@ -61,7 +62,11 @@ func TestTheLaneFollowsTheGatesGrant(t *testing.T) {
 	}{
 		{"a subscriber whose plan pays", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 5_000_000_000, Settle: func(int64) {}}, "paid"},
 		{"a subscriber whose prepaid pays past the plan", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "near"}, "paid"},
-		{"a wallet with no plan", &object.LimitGrant{Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "ok"}, "free"},
+		{"a wallet with no plan", &object.LimitGrant{Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "ok"}, "paid"},
+		{"a wallet on the free plan", &object.LimitGrant{Plan: "free", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "ok"}, "paid"},
+		{"granted credit with no plan", &object.LimitGrant{Plan: "free", Pays: object.PaysCredits, Class: object.ClassPremium, State: "ok"}, "paid"},
+		{"the free plan's own usage", &object.LimitGrant{Plan: "free", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Settle: func(int64) {}}, "free"},
+		{"a free model", &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "ok", Settle: func(int64) {}}, "free"},
 		{"a caller the policy said nothing about", nil, "free"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
