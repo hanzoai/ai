@@ -156,7 +156,7 @@ const (
 // models think before they answer and spend the ceiling on it: there a request that
 // names none gets maxReserveCompletionTokens, or the answer is all reasoning, cut at
 // `length`, and billed. Whatever the ceiling, it is never above the most one answer
-// of model may hold where its catalog states it (gpt-4o: 16,384), which its vendor
+// of model may hold where it is stated (mostOut; gpt-4o: 16,384), which its vendor
 // would refuse. The caller MUST assign this back to request.MaxTokens before the
 // upstream call.
 func clampMaxTokens(model string, maxTokens int) int {
@@ -169,10 +169,23 @@ func clampMaxTokens(model string, maxTokens int) int {
 	case thinks(model):
 		c = maxReserveCompletionTokens
 	}
-	if m, ok := familyLookup(model); ok && m.MaxOut > 0 && c > m.MaxOut {
-		c = m.MaxOut
+	if most := mostOut(model); most > 0 && c > most {
+		c = most
 	}
 	return c
+}
+
+// mostOut is the most completion tokens one answer of model may hold, where it is
+// stated: a family's catalog (OpenRouter's top_provider.max_completion_tokens), else
+// a configured route's models.yaml max_output_tokens. 0 when nothing states it.
+func mostOut(model string) int {
+	if m, ok := familyLookup(model); ok && m.MaxOut > 0 {
+		return m.MaxOut
+	}
+	if mc := GetModelConfig(); mc != nil {
+		return mc.MaxOutput(model)
+	}
+	return 0
 }
 
 // thinks reports whether model is a paid tier of Zen or Enso: priced, so served by

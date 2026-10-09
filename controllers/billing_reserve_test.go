@@ -289,3 +289,31 @@ func TestUncappedRequestCannotOverdraft(t *testing.T) {
 		t.Fatalf("balance went NEGATIVE within one request: %d (worstActual=%d est=%d)", avail, worstActual, est)
 	}
 }
+
+// A configured route's models.yaml max_output_tokens bounds the ceiling as a family
+// catalog's does, its alias's included.
+func TestAConfiguredRouteKeepsItsOwnMost(t *testing.T) {
+	prev := globalModelConfig
+	t.Cleanup(func() { globalModelConfig = prev })
+	globalModelConfig = &ModelConfig{
+		routes: map[string]modelRoute{
+			"vendor/small": {maxOutput: 8_192},
+			"small":        {upstreamModel: "vendor/small"},
+		},
+		pricing: map[string]modelPrice{},
+		stopCh:  make(chan struct{}),
+	}
+	for _, c := range []struct {
+		model    string
+		in, want int
+	}{
+		{"vendor/small", 30_000, 8_192},
+		{"small", 100_000_000, 8_192},
+		{"small", 2_000, 2_000},
+		{"vendor/unbounded", 30_000, 30_000},
+	} {
+		if got := clampMaxTokens(c.model, c.in); got != c.want {
+			t.Errorf("clampMaxTokens(%q, %d) = %d, want %d", c.model, c.in, got, c.want)
+		}
+	}
+}
