@@ -274,18 +274,11 @@ func (r *ResponsesCall) Whole(chat []byte) ([]byte, error) {
 }
 
 // responsesAnswer is the Responses shape of a chat completion: a stream is
-// decorated as it is produced, a whole body is handed over entire.
+// decorated as it is produced, a whole body is translated entire.
 func (c *ApiController) responsesAnswer(call *ResponsesCall) *sink {
 	return &sink{
-		wrap: func(w io.Writer) io.Writer { return call.Stream(w) },
-		body: func(chat []byte) error {
-			out, err := call.Whole(chat)
-			if err != nil {
-				return err
-			}
-			c.SetHeader("Content-Type", "application/json")
-			return c.Bytes(http.StatusOK, out)
-		},
+		wrap:  func(w io.Writer) io.Writer { return call.Stream(w) },
+		whole: call.Whole,
 	}
 }
 
@@ -1136,12 +1129,22 @@ func (c *ApiController) SendStreamWriter(fn func(*bufio.Writer)) error {
 // for: the chat completion as is, or translated by the sink. It is the
 // non-streaming half of SendStreamWriter's rule, for the same reason.
 func (c *ApiController) answerBody(chat []byte) {
-	if to := c.answer; to != nil && to.body != nil {
-		if err := to.body(chat); err != nil {
-			c.ResponseError(err.Error())
-		}
+	out, err := c.answer.shape(chat)
+	if err != nil {
+		c.ResponseError(err.Error())
 		return
 	}
 	c.SetHeader("Content-Type", "application/json")
-	c.Bytes(http.StatusOK, chat)
+	c.Bytes(http.StatusOK, out)
+}
+
+// sendWhole writes ONE whole answer over time, paced by the request's seat as a
+// stream is: the spaces that keep its connection open while it is assembled, then
+// the answer. It is never decorated as a stream. Through SendStreamWriter a
+// /v1/responses request asked whole had its assembled chat completion read by the
+// Responses event bridge, which found no event in it and answered
+// response.created and response.completed with nothing in between, under
+// application/json. The writer shapes the answer itself (sink.shape).
+func (c *ApiController) sendWhole(fn func(*bufio.Writer)) error {
+	return c.Ctx.SendStreamWriter(seatOf(c.Context()).paced(fn))
 }

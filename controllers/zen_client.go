@@ -2193,12 +2193,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		upstream := resp.Body
 		resp = nil
 		bill = hand(hold)
-		_ = c.SendStreamWriter(func(w *bufio.Writer) {
+		// The answer is whole, so it takes the request's whole shape (a Responses
+		// object for /v1/responses), never its stream's.
+		shape := c.answer.shape
+		_ = c.sendWhole(func(w *bufio.Writer) {
 			defer bill.settle(0)
 			defer upstream.Close()
 			defer hold.settle(0)
 			defer unsettled()
-			settle(assembleZenStream(w, upstream, mk, heartbeat, pm.paid))
+			settle(assembleZenStream(w, upstream, mk, heartbeat, pm.paid, shape))
 		})
 		return nil
 	}
@@ -2410,16 +2413,17 @@ func streamed(body []byte) []byte {
 }
 
 // assembleZenStream reads a family's chat stream to its end and writes it as one
-// chat completion, stamped by mk. Until the answer is whole it writes a space every
-// beat, which a JSON reader skips as leading whitespace. An error frame after the
-// first becomes the answer's error object.
+// chat completion, stamped by mk and put in the request's dialect by shape (nil: as
+// it is). Until the answer is whole it writes a space every beat, which a JSON reader
+// skips as leading whitespace. An error frame after the first becomes the answer's
+// error object, which every dialect reads alike.
 //
 // A beat that cannot be written means the client is gone: body is closed then, which
 // hangs up on the family so its model stops, and what was read so far is returned.
 // An answer whose usage never arrived — its client left, or the family's stream
 // broke off or ran out its time before stating it — is billed for what it said: its
 // text, reasoning and tool arguments, about four characters a token.
-func assembleZenStream(w *bufio.Writer, body io.ReadCloser, mk *mark, beat time.Duration, paid func()) (t tokens, served, respID string, first time.Time) {
+func assembleZenStream(w *bufio.Writer, body io.ReadCloser, mk *mark, beat time.Duration, paid func(), shape func([]byte) ([]byte, error)) (t tokens, served, respID string, first time.Time) {
 	type call struct {
 		ID       string `json:"id,omitempty"`
 		Type     string `json:"type"`
@@ -2584,6 +2588,13 @@ wait:
 	out, _ = json.Marshal(whole)
 	if mk != nil {
 		out = mk.stamp(out)
+	}
+	if shape != nil {
+		shaped, err := shape(out)
+		if err != nil {
+			shaped, _ = json.Marshal(map[string]any{"error": map[string]string{"message": err.Error(), "type": "server_error"}})
+		}
+		out = shaped
 	}
 	_, _ = w.Write(out)
 	_ = w.Flush()

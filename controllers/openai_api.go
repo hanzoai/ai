@@ -1805,11 +1805,21 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 //
 // Two functions, because a stream and a whole body are two different things and
 // collapsing them is what made the old version need a status machine. `wrap`
-// decorates the stream's destination as it is produced; `body` takes the
-// non-streaming answer entire.
+// decorates the stream's destination as it is produced; `whole` translates the
+// non-streaming answer entire, wherever it is written — answerBody, or the writer
+// that assembles a whole answer from a family's stream (assembleZenStream).
 type sink struct {
-	wrap func(io.Writer) io.Writer
-	body func([]byte) error
+	wrap  func(io.Writer) io.Writer
+	whole func([]byte) ([]byte, error)
+}
+
+// shape is one whole chat completion in the dialect the request asked for: as it
+// is with no sink, or translated by it.
+func (s *sink) shape(chat []byte) ([]byte, error) {
+	if s == nil || s.whole == nil {
+		return chat, nil
+	}
+	return s.whole(chat)
 }
 
 // ChatCompletions implements the OpenAI-compatible chat completions API

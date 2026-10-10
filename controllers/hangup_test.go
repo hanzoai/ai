@@ -81,7 +81,7 @@ func TestAnAssemblyWhoseClientLeftHangsUpOnTheFamily(t *testing.T) {
 	}
 	go func() {
 		defer resp.Body.Close()
-		assembleZenStream(bufio.NewWriterSize(&hungUp{left: 1}, 1), resp.Body, nil, 20*time.Millisecond, nil)
+		assembleZenStream(bufio.NewWriterSize(&hungUp{left: 1}, 1), resp.Body, nil, 20*time.Millisecond, nil, nil)
 	}()
 	hungUpOn(t, gone, 2*time.Second)
 }
