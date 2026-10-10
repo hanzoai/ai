@@ -366,11 +366,17 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				unlift()
 				continue
 			}
-			if seat == controllers.SeatFull && !controllers.OwnKey(namespace, model) {
+			// A PAID PLAN'S CALL IS SERVED AS ASKED OR NOT AT ALL. One the paid lane has
+			// no room for on the plan, or a chat its grant would leave on the free lane —
+			// granted credit or a free cap past the plan, which the lane never seats, so a
+			// free route would stand in for the model — is asked past the plan: the
+			// payer's own cash serves it, else the plan waits or buys credits.
+			off := seat == controllers.SeatFree && paidPlan(grant) && priced && controllers.ChatPath(path) && !controllers.FreeOnly()
+			if (seat == controllers.SeatFull || off) && !controllers.OwnKey(namespace, model) {
 				cash, past := pastPlan(c, limits, ask)
 				giveBack(grant)
 				if cash == nil {
-					return planFull(c, grant, past, namespace)
+					return planFull(c, grant, past, namespace, seat == controllers.SeatFull)
 				}
 				grant = cash
 				seat = controllers.Seat(c, grant, namespace, subject, model)
@@ -481,20 +487,28 @@ func pastPlan(c *zip.Ctx, limits object.LimitFunc, ask object.LimitAsk) (*object
 // does at once is told to wait: a seat is given back the moment its answer is counted.
 const busyRetry = 10 * time.Second
 
-// planFull answers a call a paid plan has no room for and nothing past the plan pays:
-// the plan's calls in flight hold its room, so it waits seconds (paid_lane_full);
-// or the call is more than the plan has left, so it waits for the plan's usage to
-// reopen (the host's refusal past the plan, plan_allowance_used). Either way it may buy
-// usage credits and go on now. Never another model.
-func planFull(c *zip.Ctx, g *object.LimitGrant, past *object.LimitHit, org string) error {
+// planFull answers a paid plan's call that nothing past the plan pays for, never with
+// another model: the plan's calls in flight hold its room, so it waits seconds
+// (paid_lane_full); the call can cost more than the plan has left (full), so it is
+// sent smaller or waits for the plan's usage to reopen; or the plan's usage is used.
+// The last two are the host's refusal past the plan (plan_allowance_used, naming
+// when it reopens). Each may buy usage credits and go on now.
+func planFull(c *zip.Ctx, g *object.LimitGrant, past *object.LimitHit, org string, full bool) error {
 	if controllers.Busy(c) {
 		return limitReached(c, &object.LimitHit{Code: controllers.ReasonFull, Class: g.Class, ResetsAt: time.Now().Add(busyRetry),
 			Message: "Your plan is paying for as many of your calls as it does at once. Wait for one of them to be answered, or buy usage credits to go on now."}, org)
 	}
-	if past == nil {
-		past = &object.LimitHit{Code: object.CodePlanAllowance, Class: g.Class}
+	// The plan's usage is the reason, not the lane's room.
+	c.Fiber().Response().Header.Del(controllers.LaneHeader)
+	c.Fiber().Response().Header.Del(controllers.LaneReasonHeader)
+	hit := object.LimitHit{Code: object.CodePlanAllowance, Class: g.Class}
+	if past != nil {
+		hit = *past
 	}
-	return limitReached(c, past, org)
+	if full {
+		hit.Message = "This call can cost more than your plan has left. Send a shorter prompt or a lower max_tokens."
+	}
+	return limitReached(c, &hit, org)
 }
 
 // callerPays serves a call a program in this process made for who, covered by that

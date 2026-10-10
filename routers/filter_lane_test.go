@@ -231,8 +231,12 @@ func TestAPlanWithNoRoomIsPaidByCashOrWaits(t *testing.T) {
 			t.Fatalf("%s, no cash: %d handed %q fallback %q (%s), want 429 and no model", who, p.status(), p.handed(), p.replied("X-Hanzo-Fallback"), p.said())
 		}
 		if r := refusalOf(t, p.said()); r.Error.Code != object.CodePlanAllowance || r.Error.ResetsAt != reset.Format(time.RFC3339) ||
+			!strings.Contains(r.Error.Message, "Send a shorter prompt") || !strings.Contains(r.Error.Message, "Wait until "+reset.Format(time.RFC3339)) ||
 			p.replied("Retry-After") == "" || p.replied("X-Hanzo-Topup-Url") == "" {
 			t.Errorf("%s, no cash: refusal %s retry-after %q", who, p.said(), p.replied("Retry-After"))
+		}
+		if p.replied(controllers.LaneReasonHeader) != "" {
+			t.Errorf("%s, no cash: the plan's refusal names the lane's reason %q", who, p.replied(controllers.LaneReasonHeader))
 		}
 		if pasts != 1 || released != 1 || ended < 1 {
 			t.Errorf("%s, no cash: asked past the plan %d time(s); the plan's grant released %d, ended %d", who, pasts, released, ended)
@@ -287,6 +291,41 @@ func held(p probe) (model string, paid bool, status int, said string) {
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	return model, paid, resp.StatusCode, string(raw)
+}
+
+// A PAID PLAN PAST ITS USAGE IS NEVER STOOD IN FOR. Granted credit it chose to spend
+// past the plan, or a model's free daily cap, would leave a chat on the free lane, where
+// a free route answers for a Hanzo SKU: the plan is asked past it instead, and its cash
+// serves the SKU asked for on the paid lane, or it waits or buys credits (429).
+func TestAPaidPlanOnGrantedCreditIsNeverStoodIn(t *testing.T) {
+	paidSwitch(t)
+	reset := time.Now().Add(96 * time.Hour).UTC().Truncate(time.Second)
+	for _, pays := range []string{object.PaysCredits, object.PaysFree} {
+		cash := false
+		object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+			switch {
+			case q.Past && cash:
+				return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPrepaid, Class: object.ClassOurs, State: "near"}, nil, nil
+			case q.Past:
+				return nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassOurs, ResetsAt: reset}, nil
+			}
+			return &object.LimitGrant{Plan: "max-20x", Pays: pays, Class: object.ClassOurs, State: "near", Settle: func(int64) {}}, nil, nil
+		})
+		for who, credential := range map[string]string{"an API key": "Bearer tok", "an app": inApp(t)} {
+			gateWith(t, 0)
+			p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", credential).
+				body([]byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter, LaneFilter)
+			if p.status() != http.StatusTooManyRequests || p.handed() != "" || refusalOf(t, p.said()).Error.ResetsAt != reset.Format(time.RFC3339) {
+				t.Fatalf("%s, %s past the plan: %d handed %q (%s), want 429 until %s", pays, who, p.status(), p.handed(), p.said(), reset)
+			}
+		}
+		cash = true
+		gateWith(t, 500)
+		p := chatThrough("enso-pro")
+		if p.status() != http.StatusOK || !strings.Contains(p.handed(), `"model":"enso-pro"`) || p.replied(controllers.LaneHeader) != "paid" {
+			t.Fatalf("%s with cash past the plan: %d handed %s lane %q, want enso-pro on the paid lane", pays, p.status(), p.handed(), p.replied(controllers.LaneHeader))
+		}
+	}
 }
 
 // CALLS IN FLIGHT NEVER PASS THE PLAN. Fifty concurrent 600 KB prompts at a premium
