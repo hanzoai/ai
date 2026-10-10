@@ -131,6 +131,12 @@ type LimitAsk struct {
 	// close of a live transcript whose open was asked — so the host decides who pays
 	// and counts nothing.
 	Session bool
+	// Past says the plan cannot pay for this request though its included usage is not
+	// used: the plan's grant had no room on the paid lane (its worst case is more than
+	// the class has left, or the plan pays for as many of the payer's calls as it does
+	// at once). The host decides what pays past the plan, exactly as for a plan whose
+	// included usage is used, and counts nothing against the plan.
+	Past bool
 }
 
 // The classes a model is sold in. A plan includes usage of the first two, measured

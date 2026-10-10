@@ -64,6 +64,22 @@ func gateWith(t *testing.T, cents int64) {
 	t.Cleanup(func() { object.SetLimits(nil); object.SetSpent(nil) })
 }
 
+// inApp is the credential of acme/ann signed in to a registered app (hanzo-app): a
+// token minted for it, the one credential a refused conversation goes on in limited
+// mode for. It pays from acme, as "tok" does.
+func inApp(t *testing.T) string {
+	t.Helper()
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"owner": "acme", "name": "ann", "billing_account": "org:acme",
+		"iss": "https://hanzo.id", "aud": "hanzo-app",
+		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(),
+	}).SignedString(authtest.Signing(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "Bearer " + tok
+}
+
 func chatWith(model, path string) probe {
 	return ask(http.MethodPost, path).
 		with("Authorization", "Bearer tok").
@@ -194,7 +210,8 @@ func TestAFailedCallIsReleased(t *testing.T) {
 }
 
 // A spent window on a priced model refuses with 429 usage_cap_exceeded naming the
-// window, its reset, Retry-After and the plan that raises it — never credit.
+// window, its reset, Retry-After, the plan that raises it and where to buy usage
+// credits — never granted credit.
 func TestASpentWindowIs429WithTheUpgrade(t *testing.T) {
 	gateWith(t, 0)
 	reset := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second)
@@ -212,8 +229,8 @@ func TestASpentWindowIs429WithTheUpgrade(t *testing.T) {
 	if !strings.HasSuffix(r.Error.UpgradeURL, "/cart?plan=max-20x") {
 		t.Errorf("upgrade_url %q, want the next plan's cart", r.Error.UpgradeURL)
 	}
-	if strings.Contains(strings.ToLower(r.Error.Message), "credit") {
-		t.Errorf("a plan's refusal points at credit: %q", r.Error.Message)
+	if !strings.Contains(r.Error.Message, "Wait until "+reset.Format(time.RFC3339)+", or buy usage credits") || strings.Contains(p.said(), `"kind":"credits"`) {
+		t.Errorf("a spent window's refusal: %q", p.said())
 	}
 	if p.replied("Retry-After") == "" {
 		t.Error("429 carries no Retry-After")

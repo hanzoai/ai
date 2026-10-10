@@ -164,6 +164,7 @@ func Seat(c *zip.Ctx, g *object.LimitGrant, org, payer, model string) Seating {
 	}
 	seatOf(c.Context()).settle()
 	c.Fiber().Response().Header.Del(LaneTokensHeader)
+	c.Fiber().Response().Header.Del(LaneReasonHeader)
 	l, out := &laneState{}, SeatFree
 	var q quote
 	if pays(g) {
@@ -192,6 +193,15 @@ func Seat(c *zip.Ctx, g *object.LimitGrant, org, payer, model string) Seating {
 		c.SetHeader(LaneHeader, "free")
 	}
 	return out
+}
+
+// Busy reports whether the paid lane had no room for the request on c because of its
+// payer's calls in flight — what they hold of the plan, or how many of them the plan
+// pays for — rather than because the call is more than its plan has left. An answer
+// counted gives its room back, so such a payer waits seconds, not a billing period.
+func Busy(c *zip.Ctx) bool {
+	l := laneOf(c.Context())
+	return l != nil && l.why == whyBusy
 }
 
 // Lane says on the response that a request the gate did not seat — no policy, a policy

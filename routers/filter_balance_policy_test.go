@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
@@ -70,10 +71,11 @@ func TestPrepaidPaysPastTheAllowanceThroughTheWallet(t *testing.T) {
 	}
 }
 
-// Limited mode: a conversation the plan can no longer pay for is answered by the free
-// model when the client allows it, saying so; a program that did not ask gets 402
-// plan_allowance_used, naming the class and the ways on, and no figure.
-func TestLimitedModeFallsBackOrRefusesWithoutAFigure(t *testing.T) {
+// A paid plan the policy can no longer pay for is never answered by another model: a
+// person in a signed-in app and a program alike — one asking for fallback included —
+// get 429 plan_allowance_used, naming the class, the wait and the top-up page, and no
+// figure. The free model is not asked for.
+func TestAPaidPlanPastItsAllowanceIsRefusedWithoutAFigure(t *testing.T) {
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel)
 	var asked []object.LimitAsk
@@ -82,33 +84,65 @@ func TestLimitedModeFallsBackOrRefusesWithoutAFigure(t *testing.T) {
 		if q.Model == controllers.FreeModel {
 			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
 		}
-		return nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassPremium, Upgrade: "max-20x",
+		return nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassPremium, Upgrade: "max-20x", ResetsAt: time.Now().Add(48 * time.Hour),
 			Message: "Your plan's included usage for premium models is used for now. Add prepaid credit or upgrade:"}, nil
 	})
+	for who, p := range map[string]probe{
+		"an app":                         ask(http.MethodPost, "/v1/chat/completions").with("Authorization", inApp(t)),
+		"an API key asking for fallback": ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow"),
+	} {
+		asked = nil
+		p = p.body([]byte(`{"model":"anthropic/claude-opus-5.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
+		if p.status() != http.StatusTooManyRequests || p.replied("X-Hanzo-Fallback") != "" || p.handed() != "" {
+			t.Fatalf("%s past its plan: %d fallback %q handed %q (%s), want 429", who, p.status(), p.replied("X-Hanzo-Fallback"), p.handed(), p.said())
+		}
+		if len(asked) != 1 {
+			t.Errorf("%s: asked %+v, want the asked model alone", who, asked)
+		}
+		r := refusalOf(t, p.said())
+		if r.Error.Code != object.CodePlanAllowance || !strings.Contains(p.said(), `"class":"premium"`) || !strings.Contains(p.said(), `"kind":"topup"`) ||
+			!strings.Contains(p.said(), `"kind":"wait"`) || !strings.Contains(p.said(), `"url":"`+object.PayURL("", "acme")) {
+			t.Errorf("%s: refusal %s", who, p.said())
+		}
+		if regexp.MustCompile(`\$\d|\d+ ?(cents|requests)|\d+\.\d\d`).MatchString(r.Error.Message) {
+			t.Errorf("%s: the refusal names a figure: %q", who, r.Error.Message)
+		}
+	}
+}
 
-	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+// The free plan keeps a conversation going in a signed-in app: a model that needs a
+// paid plan is answered by the free model there, labelled so, and asked of the
+// policy in turn. A program gets 402 paid_plan_required and the top-up page.
+func TestTheFreePlanInAnAppIsAnsweredByTheFreeModel(t *testing.T) {
+	gateWith(t, 0)
+	freeModels(t, controllers.FreeModel)
+	var asked []object.LimitAsk
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		asked = append(asked, q)
+		if q.Model == controllers.FreeModel {
+			return nil, nil, nil
+		}
+		return nil, &object.LimitHit{Code: object.CodePaidPlan, Class: object.ClassPremium, Upgrade: "pro",
+			Message: "Claude is paid by a paid plan or by funds you add; granted credit does not pay for it. Upgrade or add funds:"}, nil
+	})
+	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", inApp(t)).
 		body([]byte(`{"model":"anthropic/claude-opus-5.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
-	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != controllers.FreeModel || p.replied("X-Hanzo-Usage-Reason") != object.CodePlanAllowance {
-		t.Fatalf("limited mode with fallback: %d fallback %q reason %q (%s)", p.status(), p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.said())
+	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != controllers.FreeModel ||
+		p.replied("X-Hanzo-Usage-Reason") != object.CodePaidPlan || p.replied("X-Hanzo-Usage") != "limited" {
+		t.Fatalf("the free plan in an app: %d fallback %q reason %q (%s)", p.status(), p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.said())
 	}
 	if !strings.Contains(p.handed(), `"model":"`+controllers.FreeModel+`"`) {
 		t.Errorf("the handler was handed %s, want the free model", p.handed())
 	}
 	if len(asked) != 2 || asked[1].Model != controllers.FreeModel || asked[1].Priced {
-		t.Errorf("the free model was not asked of the plan's windows: %+v", asked)
+		t.Errorf("the free model was not asked of the policy: %+v", asked)
 	}
 
-	asked = nil
-	p = chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
-	if p.status() != http.StatusPaymentRequired {
-		t.Fatalf("limited mode, no fallback asked: %d (%s)", p.status(), p.said())
-	}
-	r := refusalOf(t, p.said())
-	if r.Error.Code != object.CodePlanAllowance || !strings.Contains(p.said(), `"class":"premium"`) || !strings.Contains(p.said(), `"kind":"topup"`) {
-		t.Errorf("refusal %s", p.said())
-	}
-	if regexp.MustCompile(`\$\d|\d+ ?(cents|requests)|\d+\.\d\d`).MatchString(r.Error.Message) {
-		t.Errorf("the refusal names a figure: %q", r.Error.Message)
+	p = ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+		body([]byte(`{"model":"anthropic/claude-opus-5.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
+	if p.status() != http.StatusPaymentRequired || p.replied("X-Hanzo-Fallback") != "" || p.replied("X-Hanzo-Topup-Url") == "" ||
+		refusalOf(t, p.said()).Error.Code != object.CodePaidPlan || !strings.Contains(p.said(), `"kind":"topup"`) {
+		t.Fatalf("an API key with no plan: %d fallback %q topup %q (%s), want 402 paid_plan_required", p.status(), p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Topup-Url"), p.said())
 	}
 }
 
@@ -141,11 +175,10 @@ func TestACoveredDecisionReachesItsHandlerAtAnEmptyWallet(t *testing.T) {
 	}
 }
 
-// A model that has used its share of the plan hands a conversation to its Hanzo
-// fallback, which the policy is asked about in turn; other premium models are
-// untouched. A program that did not ask for fallback gets 402 model_cap, naming the
-// model and the fallback, offering the switch, and no figure.
-func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
+// A model that has used its share of the plan is refused on every surface — 429 model_cap, naming the model and offering
+// its Hanzo fallback as a switch the caller may make, never one made for it — and
+// other premium models are untouched.
+func TestAModelPastItsShareIsRefusedOfferingItsFallback(t *testing.T) {
 	gateWith(t, 0)
 	freeModels(t, "enso", controllers.FreeModel)
 	var asked []object.LimitAsk
@@ -162,16 +195,13 @@ func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
 		}
 	})
 
-	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", inApp(t)).
 		body([]byte(`{"model":"anthropic/claude-opus-4.7","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
-	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != "enso" || p.replied("X-Hanzo-Usage-Reason") != object.CodeModelCap {
-		t.Fatalf("opus past its cap: %d fallback %q reason %q (%s)", p.status(), p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.said())
+	if p.status() != http.StatusTooManyRequests || p.replied("X-Hanzo-Fallback") != "" || p.replied("X-Hanzo-Usage-Reason") != object.CodeModelCap || p.handed() != "" {
+		t.Fatalf("opus past its cap in an app: %d fallback %q reason %q handed %q (%s)", p.status(), p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.handed(), p.said())
 	}
-	if !strings.Contains(p.handed(), `"model":"enso"`) {
-		t.Errorf("the handler was handed %s, want enso", p.handed())
-	}
-	if len(asked) != 2 || asked[1].Model != "enso" {
-		t.Errorf("enso was not asked of the policy: %+v", asked)
+	if len(asked) != 1 {
+		t.Errorf("enso was asked for in opus's place: %+v", asked)
 	}
 
 	// Another premium model still runs on the plan.
@@ -180,8 +210,8 @@ func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
 	}
 
 	p = chatWith("anthropic/claude-opus-4.7", "/v1/chat/completions")
-	if p.status() != http.StatusPaymentRequired {
-		t.Fatalf("opus past its cap, no fallback asked: %d (%s)", p.status(), p.said())
+	if p.status() != http.StatusTooManyRequests || p.handed() != "" {
+		t.Fatalf("opus past its cap on an API key: %d (%s)", p.status(), p.said())
 	}
 	r := refusalOf(t, p.said())
 	if r.Error.Code != object.CodeModelCap || !strings.Contains(p.said(), `"fallback":"enso"`) ||
@@ -193,32 +223,32 @@ func TestAModelCapHandsAConversationToItsFallback(t *testing.T) {
 	}
 }
 
-// A payer who holds credit and has not chosen to spend it past the plan is offered
-// that choice instead of a top-up.
+// A payer who holds granted credit and has not chosen to spend it past the plan is
+// offered that choice beside buying usage credits.
 func TestARefusalOffersCreditsToAPayerWhoHoldsThem(t *testing.T) {
 	gateWith(t, 0)
 	policy(t, nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassPremium, Credits: true,
 		Message: "Your plan's included usage of premium models is used for now. Continue with credits or upgrade:"})
 	p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
-	if p.status() != http.StatusPaymentRequired || !strings.Contains(p.said(), `"kind":"credits"`) || !strings.Contains(p.said(), `"label":"Continue with credits"`) {
+	if p.status() != http.StatusTooManyRequests || !strings.Contains(p.said(), `"kind":"credits"`) || !strings.Contains(p.said(), `"label":"Continue with credits"`) {
 		t.Fatalf("credits action: %d %s", p.status(), p.said())
 	}
-	if strings.Contains(p.said(), `"kind":"topup"`) {
-		t.Errorf("a payer with credits was asked to top up: %s", p.said())
+	if !strings.Contains(p.said(), `"kind":"topup"`) {
+		t.Errorf("a payer holding granted credit was not shown where to buy usage credits: %s", p.said())
 	}
 }
 
 // A conversation the WALLET cannot pay for goes on in limited mode exactly as one the
-// plan cannot: free plan, $0, a premium model in chat — the free model answers, the
-// reason is insufficient_balance, and the response names the ways out. A program that
-// did not ask still gets its 402.
+// plan cannot: free plan, $0, a premium model in chat in a signed-in app — the free
+// model answers, the reason is insufficient_balance, and the response names the ways
+// out. A program gets its 402, whatever it asks for.
 func TestAnEmptyWalletInChatFallsBackToTheFreeModel(t *testing.T) {
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel)
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		return nil, nil, nil // no plan: the wallet decides
 	})
-	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", inApp(t)).
 		body([]byte(`{"model":"anthropic/claude-haiku-4.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
 	if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != controllers.FreeModel ||
 		p.replied("X-Hanzo-Usage-Reason") != object.CodeInsufficientBalance || p.replied("X-Hanzo-Usage") != "limited" {
@@ -232,12 +262,28 @@ func TestAnEmptyWalletInChatFallsBackToTheFreeModel(t *testing.T) {
 		t.Errorf("topup %q upgrade %q, want both ways out named", p.replied("X-Hanzo-Topup-Url"), p.replied("X-Hanzo-Upgrade-Url"))
 	}
 
-	if p := chatWith("anthropic/claude-haiku-4.5", "/v1/chat/completions"); p.status() != http.StatusPaymentRequired ||
+	if p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+		body([]byte(`{"model":"anthropic/claude-haiku-4.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter); p.status() != http.StatusPaymentRequired ||
 		!strings.Contains(p.said(), object.CodeInsufficientBalance) {
-		t.Fatalf("a program that did not ask: %d, want its 402 insufficient_balance (%s)", p.status(), p.said())
+		t.Fatalf("a program: %d, want its 402 insufficient_balance (%s)", p.status(), p.said())
 	}
-	if p := ask(http.MethodPost, "/v1/embeddings").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
+	if p := ask(http.MethodPost, "/v1/embeddings").with("Authorization", inApp(t)).
 		body([]byte(`{"model":"anthropic/claude-haiku-4.5","input":"hi"}`)).through(BalanceGateFilter); p.status() != http.StatusPaymentRequired {
 		t.Fatalf("a non-chat call: %d, want its 402 (%s)", p.status(), p.said())
+	}
+}
+
+// A paid plan whose credits the wallet cannot cover is told so, in an app too: the
+// host named the plan behind the prepaid grant, so the wallet's 402 stands and no
+// other model answers.
+func TestAPaidPlanTheWalletCannotCoverIsNeverHandedOn(t *testing.T) {
+	gateWith(t, 0)
+	freeModels(t, controllers.FreeModel)
+	policy(t, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "limited", Cash: true}, nil)
+	p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", inApp(t)).
+		body([]byte(`{"model":"anthropic/claude-opus-5.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
+	if p.status() != http.StatusPaymentRequired || p.replied("X-Hanzo-Fallback") != "" || p.handed() != "" ||
+		!strings.Contains(p.said(), object.CodeInsufficientBalance) {
+		t.Fatalf("a paid plan at an empty wallet in an app: %d fallback %q handed %q (%s), want the wallet's 402", p.status(), p.replied("X-Hanzo-Fallback"), p.handed(), p.said())
 	}
 }

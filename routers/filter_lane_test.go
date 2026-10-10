@@ -18,8 +18,10 @@ import (
 	"bytes"
 	stdcontext "context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -90,8 +92,8 @@ func TestTheLaneFollowsTheGatesGrant(t *testing.T) {
 	}
 }
 
-// WITH THE SWITCH OFF NOTHING CHANGES. No lane is named on any answer, and a program
-// whose plan's included usage is used still gets its 402 unless it asked for fallback.
+// WITH THE SWITCH OFF NO LANE IS NAMED. A paid plan whose included usage is used
+// waits or buys credits, as it does with the switch on: 429, never another model.
 func TestWithTheSwitchOffTheGateIsAsBefore(t *testing.T) {
 	gateWith(t, 500)
 	policy(t, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 5_000_000_000, Settle: func(int64) {}}, nil)
@@ -103,49 +105,114 @@ func TestWithTheSwitchOffTheGateIsAsBefore(t *testing.T) {
 		gateWith(t, 0)
 		freeModels(t, controllers.FreeModel, "enso")
 		policy(t, nil, &object.LimitHit{Code: code, Class: object.ClassPremium, Fallback: "enso"})
-		if p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions"); p.status() != http.StatusPaymentRequired {
-			t.Fatalf("%s for a program, switch off: %d (%s), want 402", code, p.status(), p.said())
+		if p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions"); p.status() != http.StatusTooManyRequests || p.replied("X-Hanzo-Fallback") != "" {
+			t.Fatalf("%s for a program, switch off: %d fallback %q (%s), want 429", code, p.status(), p.replied("X-Hanzo-Fallback"), p.said())
 		}
 	}
 }
 
-// WITH THE SWITCH ON, A PAID PLAN PAST ITS INCLUDED USAGE IS ANSWERED ON ANY CLIENT.
-// Limited free usage past the included usage is part of every paid plan, so a program
-// is answered by the free model, or a capped model's fallback, saying so.
-func TestWithTheSwitchOnAPaidPlanPastItsUsageIsAnsweredOnAnyClient(t *testing.T) {
+// A PAID PLAN PAST ITS INCLUDED USAGE WAITS OR BUYS CREDITS, ON EVERY SURFACE. An API
+// key and a person signed in to an app alike get 429 with the plan's own code, when it
+// reopens (Retry-After, X-Hanzo-Usage-Resets, resets_at) and where to buy usage
+// credits (X-Hanzo-Topup-Url, topup_url) — in the headers and in the body — and are
+// never handed another model, a capped model's Hanzo fallback included.
+func TestAPaidPlanPastItsUsageWaitsOrBuysCreditsOnEverySurface(t *testing.T) {
 	paidSwitch(t)
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel, "enso")
-	for code, to := range map[string]string{object.CodePlanAllowance: controllers.FreeModel, object.CodeModelCap: "enso"} {
+	reset := time.Now().Add(72 * time.Hour).UTC().Truncate(time.Second)
+	for _, code := range []string{object.CodePlanAllowance, object.CodeModelCap} {
 		object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-			if q.Model == to {
+			if q.Model == controllers.FreeModel || q.Model == "enso" {
 				return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
 			}
-			return nil, &object.LimitHit{Code: code, Class: object.ClassPremium, Fallback: "enso"}, nil
+			return nil, &object.LimitHit{Code: code, Class: object.ClassPremium, Fallback: "enso", ResetsAt: reset, Upgrade: "max-20x"}, nil
 		})
-		p := chatWith("anthropic/claude-opus-5.5", "/v1/chat/completions")
-		if p.status() != http.StatusOK || p.replied("X-Hanzo-Fallback") != to || !strings.Contains(p.handed(), `"model":"`+to+`"`) {
-			t.Fatalf("%s for a program, switch on: %d fallback %q (%s), want %s", code, p.status(), p.replied("X-Hanzo-Fallback"), p.said(), to)
+		for who, credential := range map[string]string{"an API key": "Bearer tok", "an app": inApp(t)} {
+			p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", credential).
+				body([]byte(`{"model":"anthropic/claude-opus-5.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter)
+			if p.status() != http.StatusTooManyRequests || p.replied("X-Hanzo-Fallback") != "" || p.handed() != "" {
+				t.Fatalf("%s, %s: %d fallback %q handed %q (%s), want 429 and no model", code, who, p.status(), p.replied("X-Hanzo-Fallback"), p.handed(), p.said())
+			}
+			pay := object.PayURL("", "acme")
+			for name, want := range map[string]string{
+				"X-Hanzo-Usage-Reason": code, "X-Hanzo-Usage-Resets": reset.Format(time.RFC3339), "X-Hanzo-Topup-Url": pay, "X-Hanzo-Usage": "limited",
+			} {
+				if got := p.replied(name); got != want {
+					t.Errorf("%s, %s: %s = %q, want %q", code, who, name, got, want)
+				}
+			}
+			if after, err := strconv.Atoi(p.replied("Retry-After")); err != nil || after < 71*3600 || after > 72*3600 {
+				t.Errorf("%s, %s: Retry-After %q, want the seconds until %s", code, who, p.replied("Retry-After"), reset)
+			}
+			var r struct {
+				Error struct {
+					Message  string `json:"message"`
+					Code     string `json:"code"`
+					ResetsAt string `json:"resets_at"`
+					TopupURL string `json:"topup_url"`
+					Actions  []struct {
+						Kind string `json:"kind"`
+					} `json:"actions"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal([]byte(p.said()), &r); err != nil {
+				t.Fatal(err)
+			}
+			e := r.Error
+			if e.Code != code || e.ResetsAt != reset.Format(time.RFC3339) || e.TopupURL != pay ||
+				!strings.Contains(e.Message, "Wait until "+reset.Format(time.RFC3339)) || !strings.Contains(e.Message, "buy usage credits") || !strings.Contains(e.Message, pay) {
+				t.Errorf("%s, %s: body %s", code, who, p.said())
+			}
+			kinds := map[string]bool{}
+			for _, a := range e.Actions {
+				kinds[a.Kind] = true
+			}
+			if !kinds["wait"] || !kinds["topup"] || !kinds["upgrade"] {
+				t.Errorf("%s, %s: actions %+v, want wait, topup and upgrade", code, who, e.Actions)
+			}
 		}
-		if p := chatWith("anthropic/claude-opus-5.5", "/v1/embeddings"); p.status() != http.StatusPaymentRequired {
-			t.Fatalf("%s outside chat: %d (%s), want 402", code, p.status(), p.said())
+		if p := chatWith("anthropic/claude-opus-5.5", "/v1/embeddings"); p.status() != http.StatusTooManyRequests {
+			t.Fatalf("%s outside chat: %d (%s), want 429", code, p.status(), p.said())
 		}
 	}
 }
 
-// A SUBSCRIBER WHOSE PLAN HAS NO ROOM IS ANSWERED, NOT REFUSED. A chat for a model
-// only the paid lane serves, from a payer whose plan has nothing left for it, is
-// handed to the free model in limited mode, saying why, and what admitting the first
-// model took is given back; a Hanzo SKU keeps its model and is served on the free lane
-// by what stands in for it.
-func TestASubscriberWhosePlanHasNoRoomIsAnsweredInLimitedMode(t *testing.T) {
+// CREDITS A PAID PLAN BOUGHT PAY THE MODEL IT ASKED FOR. Past its included usage the
+// host names the payer's cash (prepaid): the call is served as asked, on the paid
+// lane, by the wallet, saying credits paid — no limit answer and no other model.
+func TestBoughtCreditsPayPastThePlanWithNoInterruption(t *testing.T) {
+	paidSwitch(t)
+	gateWith(t, 500)
+	policy(t, &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "near", Cash: true}, nil)
+	p := chatThrough("anthropic/claude-opus-5.5")
+	if p.status() != http.StatusOK || !strings.Contains(p.handed(), `"model":"anthropic/claude-opus-5.5"`) {
+		t.Fatalf("status %d handed %s: want the asked model", p.status(), p.handed())
+	}
+	if p.replied("X-Hanzo-Paid-By") != object.PaysCredits || p.replied(controllers.LaneHeader) != "paid" || p.replied("X-Hanzo-Fallback") != "" {
+		t.Errorf("paid-by %q lane %q fallback %q, want credits on the paid lane", p.replied("X-Hanzo-Paid-By"), p.replied(controllers.LaneHeader), p.replied("X-Hanzo-Fallback"))
+	}
+}
+
+// A PLAN WITH NO ROOM FOR THE CALL IS PAST WHAT IT CAN PAY. The host is asked what pays
+// past it (LimitAsk.Past): the payer's own cash serves the asked model on the paid lane
+// and the plan's grant is given back; with nothing past the plan, the payer waits until
+// the plan's usage reopens or buys credits — 429 with the host's code, on every
+// surface, never another model.
+func TestAPlanWithNoRoomIsPaidByCashOrWaits(t *testing.T) {
 	paidSwitch(t)
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel)
-	released, ended := 0, 0
+	reset := time.Now().Add(240 * time.Hour).UTC().Truncate(time.Second)
+	var released, ended, pasts int
+	cash := false
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-		if q.Model == controllers.FreeModel {
-			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
+		if q.Past {
+			pasts++
+			if cash {
+				return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "near", Cash: true}, nil, nil
+			}
+			return nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassPremium, ResetsAt: reset, Upgrade: "max-20x"}, nil
 		}
 		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: 0,
 			Settle: func(n int64) {
@@ -156,39 +223,49 @@ func TestASubscriberWhosePlanHasNoRoomIsAnsweredInLimitedMode(t *testing.T) {
 			Release: func() { released++ }}, nil, nil
 	})
 
-	p := chatThrough("anthropic/claude-opus-5.5")
-	if p.status() != http.StatusOK || !strings.Contains(p.handed(), `"model":"`+controllers.FreeModel+`"`) {
-		t.Fatalf("status %d handed %s: want the free model to answer", p.status(), p.handed())
-	}
-	for name, want := range map[string]string{
-		"X-Hanzo-Fallback":           controllers.FreeModel,
-		"X-Hanzo-Usage-Reason":       controllers.ReasonFull,
-		"X-Hanzo-Usage":              "limited",
-		controllers.LaneHeader:       "free",
-		controllers.LaneReasonHeader: controllers.ReasonFull,
-	} {
-		if got := p.replied(name); got != want {
-			t.Errorf("%s = %q, want %q", name, got, want)
+	for who, credential := range map[string]string{"an API key": "Bearer tok", "an app": inApp(t)} {
+		released, ended, pasts = 0, 0, 0
+		p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", credential).
+			body([]byte(`{"model":"anthropic/claude-opus-5.5","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter, LaneFilter)
+		if p.status() != http.StatusTooManyRequests || p.handed() != "" || p.replied("X-Hanzo-Fallback") != "" {
+			t.Fatalf("%s, no cash: %d handed %q fallback %q (%s), want 429 and no model", who, p.status(), p.handed(), p.replied("X-Hanzo-Fallback"), p.said())
+		}
+		if r := refusalOf(t, p.said()); r.Error.Code != object.CodePlanAllowance || r.Error.ResetsAt != reset.Format(time.RFC3339) ||
+			p.replied("Retry-After") == "" || p.replied("X-Hanzo-Topup-Url") == "" {
+			t.Errorf("%s, no cash: refusal %s retry-after %q", who, p.said(), p.replied("Retry-After"))
+		}
+		if pasts != 1 || released != 1 || ended < 1 {
+			t.Errorf("%s, no cash: asked past the plan %d time(s); the plan's grant released %d, ended %d", who, pasts, released, ended)
 		}
 	}
-	if released != 1 || ended < 1 {
-		t.Errorf("the first grant was released %d time(s) and ended %d, want it given back", released, ended)
+
+	cash = true
+	gateWith(t, 500)
+	released, ended, pasts = 0, 0, 0
+	p := chatThrough("anthropic/claude-opus-5.5")
+	if p.status() != http.StatusOK || !strings.Contains(p.handed(), `"model":"anthropic/claude-opus-5.5"`) {
+		t.Fatalf("cash past the plan: %d handed %s, want the asked model", p.status(), p.handed())
+	}
+	if p.replied(controllers.LaneHeader) != "paid" || p.replied(controllers.LaneReasonHeader) != "" || p.replied("X-Hanzo-Paid-By") != object.PaysCredits {
+		t.Errorf("lane %q reason %q paid-by %q, want the paid lane, paid by credits", p.replied(controllers.LaneHeader), p.replied(controllers.LaneReasonHeader), p.replied("X-Hanzo-Paid-By"))
+	}
+	if pasts != 1 || released != 1 || ended < 1 {
+		t.Errorf("asked past the plan %d time(s); the plan's grant released %d, ended %d, want it given back", pasts, released, ended)
 	}
 
-	p = chatThrough("enso-pro")
-	if p.status() != http.StatusOK || !strings.Contains(p.handed(), `"model":"enso-pro"`) {
-		t.Fatalf("status %d handed %s: want enso-pro kept", p.status(), p.handed())
-	}
-	if p.replied(controllers.LaneHeader) != "free" || p.replied(controllers.LaneReasonHeader) != controllers.ReasonFull {
-		t.Errorf("lane %q reason %q, want free and %s", p.replied(controllers.LaneHeader), p.replied(controllers.LaneReasonHeader), controllers.ReasonFull)
+	// A Hanzo SKU the plan has no room for waits too: no free rung stands in for it.
+	cash = false
+	gateWith(t, 0)
+	if p := chatThrough("enso-pro"); p.status() != http.StatusTooManyRequests || p.handed() != "" {
+		t.Fatalf("enso-pro with no room: %d handed %q (%s), want 429", p.status(), p.handed(), p.said())
 	}
 }
 
 // held runs p through the gate and the lane filter to a handler that answers with a
 // stream, so what the request holds on the paid lane stays held, as a stream's does
-// until its writer settles it. It reports the model the handler was handed and
-// whether the request was on the paid lane.
-func held(p probe) (model string, paid bool) {
+// until its writer settles it. It reports the model the handler was handed ("" when
+// the gate answered), whether the request was on the paid lane, and the answer.
+func held(p probe) (model string, paid bool, status int, said string) {
 	app := zip.New(zip.Config{DisableStartupMessage: true, ReadBufferSize: 32 << 10})
 	app.Use(zip.H(BalanceGateFilter))
 	app.Use(zip.H(LaneFilter))
@@ -203,17 +280,21 @@ func held(p probe) (model string, paid bool) {
 	})
 	req := httptest.NewRequest(p.Method(), p.Path(), bytes.NewReader(p.Fiber().Request().Body()))
 	p.Fiber().Request().Header.VisitAll(func(k, v []byte) { req.Header.Set(string(k), string(v)) })
-	if _, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second}); err != nil {
+	resp, err := app.Fiber().Test(req, fiber.TestConfig{Timeout: 30 * time.Second})
+	if err != nil {
 		panic("held: " + err.Error())
 	}
-	return model, paid
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return model, paid, resp.StatusCode, string(raw)
 }
 
 // CALLS IN FLIGHT NEVER PASS THE PLAN. Fifty concurrent 600 KB prompts at a premium
 // model, from a payer whose plan has $2 of its class left: each holds its quote (a
 // token per byte at the model's $1 per million, about $0.62) while it streams, so
-// three are seated on the paid lane and every other one is answered by the free model,
-// saying why. A payer with $0.01 left is seated for none.
+// three are seated on the paid lane and every other one is told to wait seconds or
+// buy credits (429 paid_lane_full), never answered by another model. A payer with
+// $0.01 left is seated for none and waits for the plan to reopen (plan_allowance_used).
 func TestCallsInFlightNeverPassThePlan(t *testing.T) {
 	paidSwitch(t)
 	gateWith(t, 0)
@@ -222,11 +303,12 @@ func TestCallsInFlightNeverPassThePlan(t *testing.T) {
 		org    string
 		left   int64
 		seated int
-	}{{"bigco", 2_000_000_000, 3}, {"lowco", 10_000_000, 0}} {
+		code   string
+	}{{"bigco", 2_000_000_000, 3, controllers.ReasonFull}, {"lowco", 10_000_000, 0, object.CodePlanAllowance}} {
 		balanceGate.setUserKeyCache("tok-"+tc.org, "", tc.org, tc.org, tc.org+"/bo")
 		object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
-			if q.Model == controllers.FreeModel {
-				return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassFree, State: "limited", Settle: func(int64) {}}, nil, nil
+			if q.Past {
+				return nil, &object.LimitHit{Code: object.CodePlanAllowance, Class: object.ClassPremium, ResetsAt: time.Now().Add(time.Hour)}, nil
 			}
 			return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassPremium, State: "ok", Spend: tc.left, Settle: func(int64) {}}, nil, nil
 		})
@@ -234,24 +316,53 @@ func TestCallsInFlightNeverPassThePlan(t *testing.T) {
 		body := []byte(`{"model":"anthropic/claude-opus-5.5","max_tokens":4096,"messages":[{"role":"user","content":"` + prompt + `"}]}`)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		seated, free := 0, 0
+		seated, waited := 0, 0
 		for range 50 {
 			wg.Go(func() {
-				model, paid := held(ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok-"+tc.org).body(body))
+				model, paid, status, said := held(ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok-"+tc.org).body(body))
 				mu.Lock()
 				defer mu.Unlock()
 				switch {
 				case paid && model == "anthropic/claude-opus-5.5":
 					seated++
-				case !paid && model == controllers.FreeModel:
-					free++
+				case model == "" && status == http.StatusTooManyRequests && strings.Contains(said, `"code":"`+tc.code+`"`):
+					waited++
 				}
 			})
 		}
 		wg.Wait()
-		if seated != tc.seated || free != 50-tc.seated {
-			t.Fatalf("%s with %d nano left: %d seated, %d answered by the free model; want %d and %d", tc.org, tc.left, seated, free, tc.seated, 50-tc.seated)
+		if seated != tc.seated || waited != 50-tc.seated {
+			t.Fatalf("%s with %d nano left: %d seated, %d told to wait (%s); want %d and %d", tc.org, tc.left, seated, waited, tc.code, tc.seated, 50-tc.seated)
 		}
+	}
+}
+
+// A CASH PAYER HAS NO CEILING ON CALLS IN FLIGHT. Fifty concurrent calls a payer's own
+// prepaid cash pays are all seated on the paid lane at once: the wallet each handler
+// holds is the only bound.
+func TestACashPayerHasNoCeilingOnCallsInFlight(t *testing.T) {
+	paidSwitch(t)
+	gateWith(t, 0)
+	balanceGate.setUserKeyCache("tok-cashco", "", "cashco", "cashco", "cashco/bo")
+	balanceGate.ledger.SetBalance("cashco", 1_000_000)
+	policy(t, &object.LimitGrant{Pays: object.PaysPrepaid, Class: object.ClassPremium, State: "ok", Cash: true}, nil)
+	body := []byte(`{"model":"anthropic/claude-opus-5.5","max_tokens":4096,"messages":[{"role":"user","content":"hi"}]}`)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	seated := 0
+	for range 50 {
+		wg.Go(func() {
+			model, paid, _, _ := held(ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok-cashco").body(body))
+			mu.Lock()
+			defer mu.Unlock()
+			if paid && model == "anthropic/claude-opus-5.5" {
+				seated++
+			}
+		})
+	}
+	wg.Wait()
+	if seated != 50 {
+		t.Fatalf("%d of 50 cash-paid calls seated at once, want every one", seated)
 	}
 }
 

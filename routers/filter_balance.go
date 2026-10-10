@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -254,6 +255,9 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	tentative := lift && object.Limits() != nil && !stated && !controllers.FreeOnly()
 	asked, before := model, c.Body()
 	lifted := false
+	// paidPlanned: the host named a paid plan behind the grant that went on to the
+	// wallet. Such a payer is never handed to the free model when the wallet refuses.
+	paidPlanned := false
 	route := func(funded bool) {
 		if r := controllers.DepthRouting(asked, before, funded); r != nil {
 			controllers.SetRouting(c, r)
@@ -281,22 +285,28 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// WHO PAYS IS THE HOST'S CALL. Its usage policy puts every model in a class and
 	// spends, in order: the plan's included usage for that class, then prepaid cash,
 	// then granted credit where the model takes it, then a model's daily cap on a plan
-	// that cannot pay; past all of them the caller is in limited mode. A covered request
-	// — the plan or a free cap pays — meets no wallet below; one the wallet pays goes on
-	// to it carrying what may pay; a refused one is answered here.
+	// that cannot pay; past all of them the request is refused. A covered request — the
+	// plan or a free cap pays — meets no wallet below; one the wallet pays goes on to it
+	// carrying what may pay; a refused one is answered here.
 	//
-	// LIMITED MODE KEEPS A CONVERSATION GOING. A chat request the plan can no longer
-	// pay for is answered by the free model instead, saying so in X-Hanzo-Fallback, for
-	// the clients fallback names; the free model is still held to the plan's request
-	// windows, so the free lane is not a way around them.
+	// A PAID PLAN THAT USED ITS USAGE WAITS OR BUYS CREDITS. It is never answered by
+	// another model, on any surface: it is told when its window reopens and where to buy
+	// usage credits (limitReached: 429, Retry-After). Credits it bought pay the model it
+	// asked for, with nothing in between.
+	//
+	// THE FREE PLAN KEEPS A CONVERSATION GOING in a signed-in app: a chat no paid plan
+	// or cash pays for is answered by the free model instead, saying so in
+	// X-Hanzo-Fallback (fallback); the free model is still held to the plan's request
+	// windows, so the free lane is not a way around them. A program is refused (402).
 	//
 	// THE LANE IS DECIDED HERE, ONCE (controllers.Seat), from the grant: a payer owed
-	// the paid lane holds the call's estimate on it, or is told it had no room. A chat
-	// request for a model only the paid lane serves is then answered by the free model,
-	// as one its plan cannot pay for is — never one on the org's own key, which spends
-	// nothing of the platform's (controllers.OwnKey). What admitting it took is given
-	// back first. The seat is given back once the handler is done, unless a stream's
-	// writer settles it (controllers.Unseat).
+	// the paid lane holds the call's estimate on it, or is told it had no room. A plan
+	// with no room for the call cannot pay for it, so the host is asked what pays past
+	// the plan (LimitAsk.Past): the payer's own cash, where it may, pays the call it asked
+	// for (pastPlan); else the plan waits or buys credits (planFull). A call on the org's
+	// own key spends nothing of the platform's and is served on it (controllers.OwnKey).
+	// What admitting it took is given back first. The seat is given back once the handler
+	// is done, unless a stream's writer settles it (controllers.Unseat).
 	//
 	// A policy that cannot be read decides nothing: the wallet and the free allowance
 	// below gate the request exactly as they would with no plans at all.
@@ -310,11 +320,12 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	if limits := object.Limits(); limits != nil && model != "" && controllers.Entitled(path) {
 		for try := 0; try < 4; try++ {
 			priced := !costsNothing(model, namespace)
-			grant, hit, err := limits(c.Context(), object.LimitAsk{
+			ask := object.LimitAsk{
 				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
 				Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: priced,
 				Apps: controllers.Apps(c), Spend: controllers.ChatPath(path), Session: session,
-			})
+			}
+			grant, hit, err := limits(c.Context(), ask)
 			if err != nil {
 				log.Warning("limits: unreadable, refusing subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
 				return denied(c, object.UsageUnavailable(), subject, namespace, 0, path)
@@ -325,15 +336,11 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			}
 			if hit != nil {
 				log.Info("limits: %s %s subject=%s namespace=%s actor=%s path=%s model=%s", hit.Code, hit.Name, subject, namespace, userKey, path, model)
-				// A capped model hands the conversation to its Hanzo fallback; a plan
-				// that cannot pay at all hands it to the free model. Each hand-off is
-				// asked again, so the model that answers is still the policy's to admit.
-				to := controllers.FreeModel
-				if hit.Code == object.CodeModelCap && hit.Fallback != "" {
-					to = hit.Fallback
-				}
-				if priced && !strings.EqualFold(to, model) && fallback(c, path, hit.Code) && fallBack(c, to, hit.Code, namespace, hit.Upgrade) {
-					model = to
+				// The free plan hands a conversation in an app to the free model, asked
+				// again, so the model that answers is still the policy's to admit.
+				if priced && !strings.EqualFold(controllers.FreeModel, model) && fallback(c, path, hit.Code) &&
+					fallBack(c, controllers.FreeModel, hit.Code, namespace, hit.Upgrade) {
+					model = controllers.FreeModel
 					continue
 				}
 				return limitReached(c, hit, namespace)
@@ -359,14 +366,16 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				unlift()
 				continue
 			}
-			if seat == controllers.SeatFull &&
-				priced && controllers.FamilyOf(model) == "" && !strings.EqualFold(model, controllers.FreeModel) &&
-				controllers.ChatPath(path) && !controllers.OwnKey(namespace, model) &&
-				fallBack(c, controllers.FreeModel, controllers.ReasonFull, namespace, "") {
+			if seat == controllers.SeatFull && !controllers.OwnKey(namespace, model) {
+				cash, past := pastPlan(c, limits, ask)
 				giveBack(grant)
-				model = controllers.FreeModel
-				continue
+				if cash == nil {
+					return planFull(c, grant, past, namespace)
+				}
+				grant = cash
+				seat = controllers.Seat(c, grant, namespace, subject, model)
 			}
+			paidPlanned = paidPlan(grant)
 			defer controllers.Unseat(c)
 			usage(c, grant)
 			controllers.Cover(c, grant)
@@ -440,11 +449,52 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// A conversation the wallet cannot pay for goes on in limited mode, like one the
 	// plan cannot: the free model answers and says why. Asked again from the top, so
 	// the free model is held to the plan's windows and the free allowance.
-	if deny.Code == object.CodeInsufficientBalance && model != "" && !strings.EqualFold(model, controllers.FreeModel) &&
+	if deny.Code == object.CodeInsufficientBalance && model != "" && !strings.EqualFold(model, controllers.FreeModel) && !paidPlanned &&
 		fallback(c, path, deny.Code) && fallBack(c, controllers.FreeModel, deny.Code, namespace, "") {
 		return BalanceGateFilter(c)
 	}
 	return denied(c, deny, subject, namespace, balance, path)
+}
+
+// pastPlan asks the host what pays for a call its plan has no room for (LimitAsk.Past)
+// and answers that grant when it is the payer's own money — cash or the org's credit
+// line, which the paid lane always seats. Anything else — granted credit, a free cap —
+// is given back. The host's refusal past the plan, when it gave one, is answered too:
+// it says when the plan's usage reopens.
+func pastPlan(c *zip.Ctx, limits object.LimitFunc, ask object.LimitAsk) (*object.LimitGrant, *object.LimitHit) {
+	ask.Past = true
+	g, hit, err := limits(c.Context(), ask)
+	switch {
+	case err != nil:
+		log.Warning("limits: unreadable past the plan subject=%s namespace=%s model=%s: %v", ask.Subject, ask.Namespace, ask.Model, err)
+		return nil, nil
+	case g == nil:
+		return nil, hit
+	case g.Pays != object.PaysPrepaid:
+		giveBack(g)
+		return nil, nil
+	}
+	return g, nil
+}
+
+// busyRetry is how long a payer whose plan is paying for as many of its calls as it
+// does at once is told to wait: a seat is given back the moment its answer is counted.
+const busyRetry = 10 * time.Second
+
+// planFull answers a call a paid plan has no room for and nothing past the plan pays:
+// the plan's calls in flight hold its room, so it waits seconds (paid_lane_full);
+// or the call is more than the plan has left, so it waits for the plan's usage to
+// reopen (the host's refusal past the plan, plan_allowance_used). Either way it may buy
+// usage credits and go on now. Never another model.
+func planFull(c *zip.Ctx, g *object.LimitGrant, past *object.LimitHit, org string) error {
+	if controllers.Busy(c) {
+		return limitReached(c, &object.LimitHit{Code: controllers.ReasonFull, Class: g.Class, ResetsAt: time.Now().Add(busyRetry),
+			Message: "Your plan is paying for as many of your calls as it does at once. Wait for one of them to be answered, or buy usage credits to go on now."}, org)
+	}
+	if past == nil {
+		past = &object.LimitHit{Code: object.CodePlanAllowance, Class: g.Class}
+	}
+	return limitReached(c, past, org)
 }
 
 // callerPays serves a call a program in this process made for who, covered by that
@@ -550,13 +600,19 @@ func giveBack(g *object.LimitGrant) {
 	}
 }
 
-// limitReached writes the host's refusal, named by its code and never by a figure:
-// 429 usage_cap_exceeded when a window of the plan is spent, 429 free_plan_cap when a
-// free plan's daily cap on the model is used, 402 plan_allowance_used when the plan's
-// included usage of the class is used and nothing else may pay, 402
-// paid_plan_required when the model needs a paid plan or prepaid balance, 402
-// model_cap when the model has used its share of the plan's allowance. It names
-// when it lifts (Retry-After where it lifts by itself) and what lifts it sooner.
+// limitReached writes the host's refusal, named by its code and never by a figure.
+//
+// A paid plan that used what it includes WAITS OR BUYS CREDITS: 429 with
+// plan_allowance_used (its included usage of the class), model_cap (a model's share
+// of it) or paid_lane_full (its calls in flight hold its room), and 429
+// usage_cap_exceeded for a spent request window or free_plan_cap for a free plan's
+// daily cap on the model. Each says both ways on, in the body and in the headers:
+// wait until it reopens (Retry-After, X-Hanzo-Usage-Resets, resets_at), or buy usage
+// credits now (X-Hanzo-Topup-Url, the topup action), which pay the model asked for.
+//
+// A model nothing will pay for — no paid plan, no cash — is 402 paid_plan_required,
+// naming the top-up page. A refusal also names the plan that raises it and, for a
+// capped model, the Hanzo model the caller may choose instead; it never serves one.
 func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	type action struct {
 		Kind  string `json:"kind"`
@@ -575,6 +631,7 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 			Fallback   string   `json:"fallback,omitempty"`
 			Limit      string   `json:"limit,omitempty"`
 			ResetsAt   string   `json:"resets_at,omitempty"`
+			TopupURL   string   `json:"topup_url"`
 			UpgradeURL string   `json:"upgrade_url,omitempty"`
 			Actions    []action `json:"actions,omitempty"`
 		} `json:"error"`
@@ -584,11 +641,14 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	if code == "" {
 		code = object.CodeUsageCap
 	}
-	status := http.StatusPaymentRequired
+	status, wait := http.StatusPaymentRequired, false
 	body.Error.Type = "billing_error"
-	if code == object.CodeUsageCap || code == object.CodeFreePlanCap {
-		status = http.StatusTooManyRequests
+	switch code {
+	case object.CodeUsageCap, object.CodeFreePlanCap:
+		status, wait = http.StatusTooManyRequests, true
 		body.Error.Type = "rate_limit_error"
+	case object.CodePlanAllowance, object.CodeModelCap, controllers.ReasonFull:
+		status, wait = http.StatusTooManyRequests, true
 	}
 	msg := hit.Message
 	if msg == "" && code == object.CodeUsageCap {
@@ -598,45 +658,57 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	if msg == "" {
 		msg = "This request is outside what your plan includes."
 	}
+	// The policy's sentence ends on a colon for the page it leads to; the page is
+	// named below, with the wait beside it.
+	msg = strings.TrimSuffix(strings.TrimSpace(msg), ":")
+	if !strings.HasSuffix(msg, ".") {
+		msg += "."
+	}
 	if !hit.ResetsAt.IsZero() {
 		reset := hit.ResetsAt.UTC()
 		body.Error.ResetsAt = reset.Format(time.RFC3339)
-		if code == object.CodeUsageCap {
-			msg += " They reset at " + body.Error.ResetsAt + "."
+		if wait {
+			c.SetHeader("X-Hanzo-Usage-Resets", body.Error.ResetsAt)
+			if left := int64(math.Ceil(time.Until(reset).Seconds())); left > 0 {
+				c.SetHeader("Retry-After", fmt.Sprint(left))
+			}
 		}
-		if wait := int64(time.Until(reset).Seconds()); wait > 0 && status == http.StatusTooManyRequests {
-			c.SetHeader("Retry-After", fmt.Sprint(wait))
-		}
+	}
+	if wait && body.Error.ResetsAt != "" {
+		body.Error.Actions = append(body.Error.Actions, action{Kind: "wait", Label: "Wait until " + body.Error.ResetsAt})
+	}
+	body.Error.Actions = append(body.Error.Actions, action{Kind: "topup", Label: "Buy usage credits", URL: pay})
+	if hit.Credits {
+		// The payer holds granted credit and has not chosen to spend it: the action
+		// turns the choice on (PUT /v1/ai/limits), it moves no money.
+		body.Error.Actions = append(body.Error.Actions, action{Kind: "credits", Label: "Continue with credits", URL: "/v1/ai/limits"})
 	}
 	if hit.Upgrade != "" {
 		body.Error.UpgradeURL = pay + "/cart?plan=" + url.QueryEscape(hit.Upgrade)
 		body.Error.Actions = append(body.Error.Actions, action{Kind: "upgrade", Label: "Upgrade your plan", URL: body.Error.UpgradeURL, Plan: hit.Upgrade})
+		c.SetHeader("X-Hanzo-Upgrade-Url", body.Error.UpgradeURL)
 	}
 	if code == object.CodeModelCap && hit.Fallback != "" {
 		body.Error.Actions = append(body.Error.Actions, action{Kind: "switch", Label: "Try " + modelName(hit.Fallback), Model: hit.Fallback})
 	}
 	switch {
-	case code == object.CodeUsageCap:
-	case hit.Credits:
-		// The payer holds what could pay and has not chosen to: the action turns
-		// the choice on (PUT /v1/ai/limits), it moves no money.
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "credits", Label: "Continue with credits", URL: "/v1/ai/limits"})
+	case wait && body.Error.ResetsAt != "":
+		msg += " Wait until " + body.Error.ResetsAt + ", or buy usage credits to go on now: " + pay
+	case wait:
+		msg += " Buy usage credits to go on now: " + pay
 	default:
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "topup", Label: "Add prepaid credit", URL: pay})
-	}
-	switch {
-	case body.Error.UpgradeURL != "" && code == object.CodeUsageCap:
-		msg += " Upgrade for more at " + body.Error.UpgradeURL
-	case code != object.CodeUsageCap:
-		msg += " " + pay
+		msg += " Add funds or upgrade: " + pay
 	}
 	body.Error.Message = msg
 	body.Error.Code = code
 	body.Error.Class = hit.Class
 	body.Error.Model = hit.Model
 	body.Error.Fallback = hit.Fallback
+	body.Error.TopupURL = pay
 	raw, _ := json.Marshal(body)
 	c.SetHeader("X-Hanzo-Usage", "limited")
+	c.SetHeader("X-Hanzo-Usage-Reason", code)
+	c.SetHeader("X-Hanzo-Topup-Url", pay)
 	if hit.Class != "" {
 		c.SetHeader("X-Hanzo-Usage-Class", hit.Class)
 	}
@@ -687,30 +759,25 @@ func modelName(id string) string {
 }
 
 // fallback reports whether a refused request is answered by another model instead.
-// It is the one rule for every refusal for want of payment in chat — the plan's
-// allowance used, a paid plan required, a model past its share, an empty wallet — and
-// it holds for a conversation from a signed-in app or a client that sent
-// X-Hanzo-Fallback: allow. An API key gets the refusal unless it asks: a program is
-// told, not silently answered by another model.
+// Only the free plan's conversation in a signed-in app is: a chat no paid plan and no
+// cash pays for (paid_plan_required, or an empty wallet with no paid plan behind it),
+// from a request whose validated token was minted for a registered app
+// (controllers.Apps), which shows its person what answered (X-Hanzo-Fallback,
+// X-Hanzo-Usage: limited).
 //
-// While the paid lane's switch is on, a refusal that says a paid plan has used what it
-// includes — the plan's allowance (plan_allowance_used) or a model's share of it
-// (model_cap) — is answered on any client: limited free usage past the included usage
-// is part of every paid plan, marked by X-Hanzo-Fallback and X-Hanzo-Usage: limited.
+// Never a paid plan, on any surface: one that used what it includes waits until its
+// usage reopens or buys usage credits (limitReached). Never an API key or a token
+// delegated for model calls, whatever it sends: a program named its model, and gets
+// that model or the refusal saying what pays, never another model on a 200.
 func fallback(c *zip.Ctx, path, code string) bool {
 	if !controllers.ChatPath(path) {
 		return false
 	}
 	switch code {
-	case object.CodePlanAllowance, object.CodeModelCap:
-		if !controllers.FreeOnly() {
-			return true
-		}
 	case object.CodePaidPlan, object.CodeInsufficientBalance:
-	default:
-		return false
+		return len(controllers.Apps(c)) > 0
 	}
-	return len(controllers.Apps(c)) > 0 || strings.EqualFold(strings.TrimSpace(c.Header("X-Hanzo-Fallback")), "allow")
+	return false
 }
 
 // standing says on the response where a bounded caller's free calls stand: the
