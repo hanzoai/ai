@@ -420,7 +420,7 @@ func TestAnLLMDecisionBillsItsCompletion(t *testing.T) {
 		return http.StatusOK, decisionAnswer
 	}
 	asked := `{"model":"zenlm/zen6","state":"I was charged twice.","questions":{"is_bug":{"type":"boolean","instructions":"Is this a bug?"}}}`
-	cents := (decisionCostNano("zenlm/zen6", coarseTokenEstimate([]byte(asked)), decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
+	cents := (decisionCostNano("zenlm/zen6", len(asked)+decisionPromptTokens, decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
 	if cents < 2 {
 		t.Fatalf("zenlm/zen6 holds %d cents; its output ceiling must hold more than Kai's cent", cents)
 	}
@@ -681,6 +681,81 @@ func TestDecisionsCatalog(t *testing.T) {
 	for _, id := range []string{"laya", "laya-multilingual", "laya-agent"} {
 		if r := resolveModelRoute(id); r != nil && r.providerName == object.KaiName {
 			t.Errorf("%s routes to the decision service; the baseline is never published", id)
+		}
+	}
+}
+
+// An answer is billed on the usage it states, so one whose usage is not two whole
+// token counts (and a cost, if any, a number of 0 or more) is refused 502 and
+// billed nothing, whatever model answered: no string, fraction, exponent, sign or
+// count past int64 is read as some number of tokens, and the hold is given back.
+func TestAnAnswerThatDoesNotSayWhatItSpentIsRefused(t *testing.T) {
+	fake, events := setupDecisions(t)
+	user, _ := providerKeyBillingUser(&object.Provider{Owner: decisionsOrg})
+	subject := user.PayerSubject(decisionsOrg)
+	asked := `{"model":"zenlm/zen6","state":"x","questions":{"q":{"type":"boolean"}}}`
+	answer := func(usage string) string {
+		return `{"id":"d","model":"zenlm/zen6","provider":"Hanzo","answers":{"q":{"type":"boolean","probability":1}}` + usage +
+			`,"routing":{"backend":"llm","checkpoint":"zen6","reason":"r"},"state_hash":"s","latency_ms":1}`
+	}
+	for _, usage := range []string{
+		``,
+		`,"usage":null`,
+		`,"usage":{"input_tokens":319}`,
+		`,"usage":{"input_tokens":319,"output_tokens":"4096"}`,
+		`,"usage":{"input_tokens":"319","output_tokens":23}`,
+		`,"usage":{"input_tokens":319,"output_tokens":23.5}`,
+		`,"usage":{"input_tokens":319,"output_tokens":1e3}`,
+		`,"usage":{"input_tokens":319,"output_tokens":-1}`,
+		`,"usage":{"input_tokens":319,"output_tokens":99999999999999999999}`,
+		`,"usage":{"input_tokens":319,"output_tokens":23,"cost":"0.001"}`,
+		`,"usage":{"input_tokens":319,"output_tokens":23,"cost":-0.001}`,
+	} {
+		fake.answer = answer(usage)
+		for _, model := range []string{"zenlm/zen6", "kai"} {
+			fund(decisionsOrg, 100_00)
+			body := strings.Replace(asked, `"model":"zenlm/zen6"`, `"model":"`+model+`"`, 1)
+			status, out := driveDecisions(t, "Bearer "+decisionsKey, body)
+			if status != http.StatusBadGateway || out != `{"error":{"code":502,"message":"the decision service's answer did not say what it spent"}}` {
+				t.Errorf("%s answering usage %q => %d %s, want 502", model, usage, status, out)
+			}
+			if left, _ := object.GlobalBalanceLedger.Available(subject); left != 100_00 {
+				t.Errorf("%s answering usage %q left %d of 10000 cents held", model, usage, left)
+			}
+		}
+	}
+	if len(*events) != 0 {
+		t.Fatalf("refused answers were debited: %+v", *events)
+	}
+	fake.answer = answer(`,"usage":{"input_tokens":319,"output_tokens":23,"cost":null}`)
+	if status, out := driveDecisions(t, "Bearer "+decisionsKey, asked); status != http.StatusOK || len(*events) != 1 ||
+		(*events)[0].USD != nanoToUSD(319*2280+23*7260) {
+		t.Fatalf("a usage of two counts and a null cost => %d %s, debits %+v", status, out, *events)
+	}
+}
+
+// With no config loaded the static table is the route table, and decisionRoute
+// reads it as decisionModels does: every route to the decision service, in any
+// case and spacing, and no other id.
+func TestDecisionRouteReadsTheStaticTableWithNoConfig(t *testing.T) {
+	prev := globalModelConfig
+	globalModelConfig = nil
+	t.Cleanup(func() { globalModelConfig = prev })
+	if GetModelConfig() != nil {
+		t.Fatal("a config is still loaded")
+	}
+	ids := decisionModels()
+	if len(ids) != 5 {
+		t.Fatalf("static decision models = %v", ids)
+	}
+	for _, id := range append(ids, " ZenLM/Zen6 ", "KAI") {
+		if !decisionRoute(id) {
+			t.Errorf("%q is a route to the decision service; decisionRoute says not", id)
+		}
+	}
+	for _, id := range []string{"", "zen6", "zenlm/zen5", "gpt-4o", "kai-0123456789ab", "jev-latest"} {
+		if decisionRoute(id) {
+			t.Errorf("%q is no route to the decision service; decisionRoute says it is", id)
 		}
 	}
 }
