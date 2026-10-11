@@ -73,6 +73,7 @@ var openrouterFam = &modelFamily{
 	terms:       openrouterTerms,
 	spare:       openrouterSpare,
 	aliases:     openrouterAliases,
+	native:      anthropicNative,
 }
 
 // The catalog is read from the store the sync keeps (listing.go); assigned here

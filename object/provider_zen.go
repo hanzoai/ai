@@ -165,6 +165,57 @@ func AccountOf(names []string, key string) string {
 	return ""
 }
 
+// AnthropicKeys names Anthropic's own API keys in the order a request tries them:
+// ANTHROPIC_API_KEY, then _2 and _3, each read the way an OpenRouter key is
+// (resolveKey). AnthropicKeyList names one more entry, which holds further keys,
+// one a line. A key joins the pool by being written under the next name, or as
+// another line of the list, at the provider keys path.
+var AnthropicKeys = keySeries("ANTHROPIC_API_KEY", 3)
+
+// AnthropicKeyList is the entry that holds further Anthropic keys, one a line.
+const AnthropicKeyList = "ANTHROPIC_API_KEYS"
+
+// Account is one credential of a vendor's pool: its place in the pool, counted
+// from 1 in the order the pool is declared, the name it is declared under, and
+// its key. Place and Name say which account a request ran on; Key never leaves
+// the request that is sent with it.
+type Account struct {
+	Place int
+	Name  string
+	Key   string
+}
+
+// Accounts resolves a pool: each of names that holds a key, in order, then each
+// line of the entry named list. A name's place is its position among names
+// whether or not the names before it hold a key, so an account keeps its place
+// when another is removed; a line's place follows the names. A key held under
+// two names is one account, the first.
+func Accounts(names []string, list string) []Account {
+	var out []Account
+	seen := map[string]bool{}
+	add := func(place int, name, key string) {
+		if key = strings.TrimSpace(key); key == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, Account{Place: place, Name: name, Key: key})
+	}
+	for i, n := range names {
+		add(i+1, n, resolveKey(n))
+	}
+	if list != "" {
+		line := 0
+		for _, key := range strings.Split(resolveKey(list), "\n") {
+			if strings.TrimSpace(key) == "" {
+				continue
+			}
+			line++
+			add(len(names)+line, list+"#"+strconv.Itoa(line), key)
+		}
+	}
+	return out
+}
+
 // familyProviderFns is the ONE list of model families known to provider
 // resolution, keyed by the family's provider name. GetModelProviderByName reads
 // it instead of hand-writing the names, so a family added here is resolvable

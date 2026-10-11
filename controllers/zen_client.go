@@ -129,6 +129,11 @@ type modelFamily struct {
 	// not define them.
 	terms func(body []byte, free bool) []byte
 
+	// native is the API of the vendor that MAKES some of this family's SKUs, asked
+	// for them before the family's own address (native.go): a model a reseller
+	// lists is its maker's to serve first. nil for a family with none.
+	native *native
+
 	// aliases maps an id a caller may send onto the discovered SKU that serves it,
 	// lowercase on both sides, for a vendor whose catalog names none (OpenRouter's,
 	// openrouter_alias.go). A Hanzo family's catalog states its own (named). lookup
@@ -1116,6 +1121,9 @@ func WarmFamilies() {
 			if f.load != nil {
 				go f.keepListed()
 			}
+			if f.native != nil {
+				go f.native.watch()
+			}
 		}
 	})
 }
@@ -1687,6 +1695,14 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		return len(fallback(fam, sku, &apiError{status: http.StatusBadGateway, msg: "unavailable"}, nil)) > 0
 	}
 
+	// The API version and betas a caller in the Anthropic dialect stated, read while
+	// the request is still ours: a maker that speaks that dialect is sent them.
+	var version string
+	var betas []string
+	if dialect == "anthropic" {
+		version, betas = c.anthropicHeaders()
+	}
+
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
 	// the request is the caller's own. That is what lets a route on a DIFFERENT
@@ -1727,6 +1743,22 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// The vendor is sent its own id for the SKU. An alias is ours, so it goes
 		// upstream as the SKU it names while the answer still wears the alias.
 		b := withModel(rawBody, f.sku(s))
+		// A model its maker serves is asked of the maker first, on every key of its
+		// pool, and of this family only once none of them answered (native.go). A
+		// maker's API bills every call, so only a request seated on the paid lane
+		// reaches it, and only for a route this family charges for: a free route and
+		// the pool's never do.
+		var missed []miss
+		if n := f.native; n != nil && !FreeOnlyFor(ctx) {
+			if price, listed := f.lookup(s); listed && price.priced() {
+				own, refused := n.send(ctx, nativeCall{path: apiPath, sku: f.sku(s), body: b, stream: stream || assemble,
+					version: version, betas: betas, price: price, start: start})
+				if own != nil {
+					return own, nil
+				}
+				missed = refused
+			}
+		}
 		if f.terms != nil {
 			b = f.terms(b, f.free(s))
 		}
@@ -1739,6 +1771,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// A stream's 200 arrives before its answer; send judges its opening frames
 		// on each key (family_open.go).
 		resp, err := f.send(r, p, f.free(s), stream || assemble)
+		// Each key of the maker's that refused first is on the books beside whatever
+		// this family answers, as a family's own failed arms are.
+		if resp != nil && len(missed) > 0 {
+			resp.Header.Add(failoverHeader, chain(missed))
+		}
 		// A Hanzo family that committed its answer to a request that may buy a paid
 		// rung is the request's one paid attempt, whatever it then says: the request
 		// buys no second paid answer. A whole answer is taken as accepted by a paid rung
@@ -2890,7 +2927,13 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	var exact *int64 // the charge the ledger, row and span read
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
-			nano = zm.bill(mk.cogs(), t)
+			// What the call cost is the answer's own statement, or its maker's
+			// (native.go): a resold SKU never bills below either.
+			stated := mk.cogs()
+			if stated == nil {
+				stated = sv.cogs
+			}
+			nano = zm.bill(stated, t)
 		} else {
 			nano = tokenCostNano(model, t.prompt(), t.completion, t.cached, t.written)
 		}
@@ -2916,9 +2959,10 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	if cogs == nil {
 		cogs = mk.cogs()
 	}
+	origin, via := fam.reached(prov, mk, sv)
 	rec := &usageRecord{
 		Owner: w.ledger, Organization: authUser.Owner,
-		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: originOf(prov, mk),
+		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: origin, Via: via,
 		PromptTokens: t.prompt(), CacheReadTokens: t.cached, CacheWriteTokens: t.written, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
 		Cost: float64(nano) / 1e9, Currency: "USD",

@@ -88,6 +88,9 @@ const (
 	// attrFailover is the chain of arms a family tried and could not use before
 	// the one that answered, with why. Absent when the first arm answered.
 	attrFailover = "gen_ai.hanzo.failover"
+	// attrVia is the vendor account an answer ran on where a model's own vendor
+	// served it: the vendor and the key's place in its pool, never a key.
+	attrVia = "gen_ai.hanzo.via"
 	// attrPriced is emitted (=false) ONLY when the model had no configured price and
 	// billed at the default — so o11y can flag the row. Absent ⇒ priced normally.
 	attrPriced         = "gen_ai.hanzo.priced"
@@ -258,6 +261,9 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 	}
 	if record.Failover != "" {
 		attrs = append(attrs, attribute.String(attrFailover, record.Failover))
+	}
+	if record.Via != "" {
+		attrs = append(attrs, attribute.String(attrVia, record.Via))
 	}
 	if record.RequestID != "" {
 		attrs = append(attrs, attribute.String(attrRequestID, record.RequestID))

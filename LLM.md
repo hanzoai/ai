@@ -633,6 +633,68 @@ through wasm2go: guest code stays in the hanzoai/wasm sandbox, which refuses Mem
 wasm2go is ahead-of-time translation: it removes the VM's overhead, not the module's own
 execution cost.
 
+## A model asked of its maker first (`controllers/native.go`, `anthropic_chat.go`)
+
+Owner, 2026-10-09/11: "in waterfall we should try all native anthropic api keys, then
+fall to OR, then free models". A resale family may name a `native`: the API of the
+vendor that MAKES some of its SKUs. `openrouterFam.native` is Anthropic's
+(`ANTHROPIC_URL`; unset, the maker is never asked). The SKU, its catalog price and every
+gate are the family's, unchanged. `dispatch` asks the maker first and the family's own
+address only once no key answered:
+
+- **Paid only.** A maker bills every call, so it is asked only by a request seated on the
+  paid lane (`!FreeOnlyFor(ctx)`) for a route the family lists and charges for. A free
+  route, the free pool, `enso-free`/`zen-free`/`free`, and every unseated request never
+  reach it (`TestTheFreeLaneNeverReachesAMaker`).
+- **Every key, in order.** The pool is `object.Accounts(AnthropicKeys, AnthropicKeyList)`:
+  `ANTHROPIC_API_KEY`, `_2`, `_3`, then each line of `ANTHROPIC_API_KEYS`. A key's place is
+  its name's (2 for `_2`) whatever the names before it hold. Always from the first key
+  that can serve, never round the ring: a prompt cache is the account's, so one account
+  leads. 401/403 and an account out of credit (402, or the vendor's 400 "credit balance")
+  bench the key `nativeDead` (10 min); 429 until `Retry-After`, never past `nativeBusy`
+  (1 min); 404, 408, 5xx and 529 ask the next key and bench nothing. Any other refusal
+  (400, 413, 422) is the request's own: no other key is asked and the reseller is, so
+  nothing that worked through the reseller stops working.
+- **What a key lists is what it is asked for.** `GET /v1/models` per key at start and
+  every `nativeEvery` (5 min): `anthropic/claude-haiku-4.5` is `claude-haiku-4-5`, or the
+  newest `claude-haiku-4-5-<date>`; a SKU with a `:variant` is the reseller's. A key whose
+  list was never read is not asked. The same read benches a key the vendor refuses and
+  brings back one it accepts again; it says nothing of credit, so a key out of credit
+  rests its time out. A key's standing is logged when it changes
+  (`anthropic key ANTHROPIC_API_KEY is not serving (401: …)`) and counted once in
+  `cloud_supply_refused{provider="anthropic"}`.
+- **As itself.** Nothing here picks another model. When no key answers, the reseller is
+  asked for the same model; when it refuses too, `fallback` returns nothing for a
+  third-party SKU and `candidates` has nobody left, so the caller gets 503
+  `providers_exhausted` (`TestAClaudeModelNobodyServesIsRefusedNeverStoodInFor`).
+- **Dialects.** `/v1/messages` bodies go as they came (model respelled, the caller's
+  `anthropic-version`, the betas the shared account serves, `shared()` deciding whether
+  the body is the shared account's at all). A chat, and so `/v1/responses`, is translated
+  by `chatAsMessages` and read back by `claudeChat` — always as a stream, which the pipe
+  assembles for a whole answer. A sampling parameter and a way of thinking are sent only
+  to a model whose listed capabilities take them; what the Messages API has no word for
+  (audio, a stored file, JSON mode with no schema, an answer begun for the model) is
+  `errUntranslated` and goes to the reseller untouched. A request with no `cache_control`
+  is asked to cache its prompt, as on the reseller's path.
+- **Money.** The answer bills the catalog price of its tokens (`zenModel.bill`). The maker
+  states what it cost at the vendor's own price (the SKU's rates less the family's markup,
+  an hour-long cache write at the vendor's hour rate) as `X-Hanzo-Cogs`, header or trailer,
+  exactly as a family service does; `bill` never goes below that times the markup.
+- **On the books.** `X-Hanzo-Arm` (the vendor's id), `X-Hanzo-Provider: anthropic`,
+  `X-Hanzo-Key` (the key's NAME) and `X-Hanzo-Failover` (`<id> (anthropic): key 1: 401
+  authentication_error`, one a key that refused) ride the answer in process. The usage
+  row's `origin` is `api.anthropic.com#<place>` (admin lens only), its span carries
+  `gen_ai.hanzo.via = anthropic#<place>`, `gen_ai.provider.name = anthropic` and the
+  vendor's id as `gen_ai.response.model`; `provider` stays the family (`openrouter`).
+  Margin by route is `GROUP BY origin` over `billed_nano`/`cost_nano`. Never a key.
+
+Enso and Zen rungs are walked by their family service, not here (hanzo-inc/zen): its
+catalog asks a rung's upstreams in the order written, and its Go engine takes a provider
+of `kind: anthropic` with `key_env`/`key_envs`, so the same order there is that rung
+written before the OpenRouter rung for the same model. No rung in either production
+catalog names a Claude model today (universe `charts/app/files/{zen,enso}/catalog.yaml`),
+so there is nothing to reorder.
+
 ## Strict mode — served unchanged or refused (`controllers/strict.go`)
 
 `X-Hanzo-Strict: 1` on `/v1/chat/completions` asks for the request to reach the

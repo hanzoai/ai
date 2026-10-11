@@ -958,6 +958,11 @@ type usageRecord struct {
 	// Failover is the chain of arms that failed before the one that answered, as
 	// the family reported it. Empty when the first arm answered.
 	Failover string `json:"failover,omitempty"`
+	// Via is the vendor account an answer ran on where a model's own vendor served
+	// it, as the vendor and the key's place in its pool ("anthropic#2"): the name
+	// of a place, never a key. Empty on every other call. Emitted on the span as
+	// gen_ai.hanzo.via; the row says the same in Origin, as host#place.
+	Via string `json:"via,omitempty"`
 	// ReasoningTokens is the part of CompletionTokens the model spent reasoning.
 	ReasoningTokens int `json:"reasoningTokens,omitempty"`
 	// First is the time from the start of the call to the first token of the

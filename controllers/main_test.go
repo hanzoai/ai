@@ -23,6 +23,9 @@ func TestMain(m *testing.M) {
 	for _, k := range object.OpenRouterKeys {
 		_ = os.Unsetenv(k)
 	}
+	for _, k := range append([]string{"ANTHROPIC_URL", object.AnthropicKeyList}, object.AnthropicKeys...) {
+		_ = os.Unsetenv(k)
+	}
 	os.Exit(m.Run())
 }
 
