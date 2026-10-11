@@ -125,11 +125,12 @@ var meteredPaths = map[string]bool{
 
 // FamilyOf names the Hanzo family that serves model — "enso" or "zen" — or "" for a
 // model that is not a Hanzo SKU. The platform's own name for the free pool is Enso's
-// (freeDoor).
+// (freeDoor). A route to the decision service is served by no family, whatever its
+// id begins with: zenlm/zen6 is a decision, not a Zen chat SKU.
 func FamilyOf(model string) string {
 	m := strings.ToLower(strings.TrimSpace(model))
 	switch {
-	case m == "":
+	case m == "", decisionRoute(m):
 		return ""
 	case m == freeID:
 		return ensoFam.name

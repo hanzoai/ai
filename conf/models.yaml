@@ -397,6 +397,26 @@ models:
     pricing: {input: 0.042, output: 0.00}
     released: 2026-09-18T00:01:25Z
     hidden: true
+  # Zen through the same service: it asks Hanzo's router for the Zen model under a
+  # strict JSON schema and holds the answer to it. The router keeps no logprobs for
+  # Zen, so each answer is the option chosen with all the mass. The ids are
+  # namespaced: zen6 is Zen's chat route. The answer is a completion, so its output
+  # is billed beside its input: both at the published Zen chat row (zen5's), the two
+  # ids being served by one chain.
+  zenlm/zen6:
+    provider: kai
+    upstream: zenlm/zen6
+    owned_by: hanzo
+    outputs: [decision]
+    pricing: {input: 2.28, output: 7.26}
+    description: Zen 6 answering typed questions at /v1/decisions under a strict JSON schema.
+  zenlm/zen6-flash:
+    provider: kai
+    upstream: zenlm/zen6-flash
+    owned_by: hanzo
+    outputs: [decision]
+    pricing: {input: 2.28, output: 7.26}
+    description: Zen 6 Flash answering typed questions at /v1/decisions under a strict JSON schema.
 
   # ── DO upstream leaves ──────────────────────────────────────────────
   # Declared so an alias above inherits its upstream's REAL served window

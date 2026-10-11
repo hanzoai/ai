@@ -196,7 +196,7 @@ func TestDecisionsServeJevByItsVendorIds(t *testing.T) {
 	for _, model := range []string{"jev-latest", "jev-preview", "jev-1.13.0", "jev-1.13", "laya"} {
 		status, body := driveDecisions(t, "Bearer "+decisionsKey,
 			`{"model":"`+model+`","state":"x","questions":{"q":{"type":"noul"}}}`)
-		want := string(decisionsFailure(400, fmt.Sprintf("unknown model %q; use one of kai, typesafe/jev-1.13, ~typesafe/jev-latest", model)))
+		want := string(decisionsFailure(400, fmt.Sprintf("unknown model %q; use one of %s", model, decisionsServed)))
 		if status != http.StatusBadRequest || body != want {
 			t.Errorf("%s => %d %s", model, status, body)
 		}
