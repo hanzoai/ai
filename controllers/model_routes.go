@@ -175,6 +175,11 @@ var modelRoutes = map[string]modelRoute{
 	"kai":                  {providerName: object.KaiName, upstreamModel: "kai", ownedBy: "hanzo", outputs: []string{"decision"}, created: 1790550362, description: "Hanzo's decision model, which answers typed questions at /v1/decisions rather than a chat turn."},
 	"typesafe/jev-1.13":    {providerName: object.KaiName, upstreamModel: "typesafe/jev-1.13", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true, created: 1789689684},
 	"~typesafe/jev-latest": {providerName: object.KaiName, upstreamModel: "~typesafe/jev-latest", ownedBy: "typesafe", outputs: []string{"decision"}, hidden: true, created: 1789689685},
+	// Zen answers a decision through the same service, by a chat completion from
+	// Hanzo's router held to a strict schema. The ids are namespaced: zen6 is Zen's
+	// chat route.
+	"zenlm/zen6":       {providerName: object.KaiName, upstreamModel: "zenlm/zen6", ownedBy: "hanzo", outputs: []string{"decision"}, description: "Zen 6 answering typed questions at /v1/decisions under a strict JSON schema."},
+	"zenlm/zen6-flash": {providerName: object.KaiName, upstreamModel: "zenlm/zen6-flash", ownedBy: "hanzo", outputs: []string{"decision"}, description: "Zen 6 Flash answering typed questions at /v1/decisions under a strict JSON schema."},
 }
 
 // modelCountByProvider returns, per provider name, how many user-facing model

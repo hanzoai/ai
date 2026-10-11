@@ -248,6 +248,11 @@ var modelPricing = map[string]modelPrice{
 	"kai":                  {InputPerMillion: 0.021},
 	"typesafe/jev-1.13":    {InputPerMillion: 0.042},
 	"~typesafe/jev-latest": {InputPerMillion: 0.042},
+	// Zen answering a decision is a chat completion the decision service buys from
+	// Hanzo's router, so its output is priced: both legs at the published Zen chat
+	// row (zen5's), the two ids being served by one chain.
+	"zenlm/zen6":       {InputPerMillion: 2.28, OutputPerMillion: 7.26},
+	"zenlm/zen6-flash": {InputPerMillion: 2.28, OutputPerMillion: 7.26},
 }
 
 // imagePricePerImageCents maps an image model (user-facing name OR upstream
@@ -406,10 +411,12 @@ func videoCostCents(model string, n int) int64 {
 	return per * int64(n)
 }
 
-// decisionCostNano is the billed price of a decision in nano-USD: its input
-// tokens at the model's price, as every model is priced.
-func decisionCostNano(model string, inputTokens int) int64 {
-	return tokenCostNano(model, inputTokens, 0, 0, 0)
+// decisionCostNano is the billed price of a decision in nano-USD: its input and
+// output tokens at the model's price, as every model is priced. Kai's and Jev's
+// output is priced at zero, so their output tokens move nothing; an LLM model's
+// completion, reasoning included, bills at its output price.
+func decisionCostNano(model string, inputTokens, outputTokens int) int64 {
+	return tokenCostNano(model, inputTokens, max(outputTokens, 0), 0, 0)
 }
 
 // DO-AI alias pricing (same as their base model)
@@ -448,11 +455,16 @@ func getModelPriceForOrgOK(model string, orgId string) (modelPrice, bool) {
 	// from where costs are registered. Resolving the two together would make restating
 	// the price the only way to state a family model's COGS, which is how the cost came
 	// to BE the price.
-	if p, ok := familyModelPrice(model); ok {
-		if !p.costed() {
-			p.CostInPerMillion, p.CostOutPerMillion = registeredCost(model, orgId)
+	// A route to the decision service is priced by its own row, never by a family that
+	// claims the id by prefix or alias: zenlm/zen6 starts with "zen", and the Zen chat
+	// SKU it names lists at $0.
+	if !decisionRoute(model) {
+		if p, ok := familyModelPrice(model); ok {
+			if !p.costed() {
+				p.CostInPerMillion, p.CostOutPerMillion = registeredCost(model, orgId)
+			}
+			return p, true
 		}
-		return p, true
 	}
 
 	// Check DB route pricing first (org-specific -> global)

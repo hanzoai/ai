@@ -56,13 +56,19 @@ import (
 // against the org that pays, names every handle by that org, forwards the body
 // under the id the model's route names upstream, answers, and files the debit once
 // the answer has gone. The models are the routes to that service
-// (conf/models.yaml, provider kai): kai, and the Jev ids the service forwards to
-// OpenRouter. A decision bills its input tokens at the model's price
-// (decisionCostNano): Kai at $0.021 per million, Jev at its list price, $0.042.
+// (conf/models.yaml, provider kai): kai, the Jev ids the service forwards to
+// OpenRouter, and the Zen ids it answers with a chat completion from Hanzo's router.
+// A decision bills its input and output tokens at the model's price
+// (decisionCostNano): Kai at $0.021 per million input, Jev at its list price,
+// $0.042, both with output free; Zen at its chat row, output included.
 
 const (
 	decisionsPath = "/v1/decisions"
 	nanoPerCent   = 10_000_000
+	// decisionOutputTokens is the most output one decision can report: the decision
+	// service's cap on an LLM model's completion, reasoning included. A hold covers
+	// it, so a call settles within what it reserved.
+	decisionOutputTokens = 4096
 )
 
 // decisionContent is Content on the decision wire: a string, an object or an
@@ -108,8 +114,8 @@ func (c *decisionLabels) UnmarshalJSON(b []byte) error { return (*json.RawMessag
 // forwards. A request over a handle carries neither state nor questions: they are
 // the ones observed.
 type decisionsRequest struct {
-	// Model is kai, kai-<12 hex> (Kai's versioned id), typesafe/jev-1.13 or
-	// ~typesafe/jev-latest.
+	// Model is kai, kai-<12 hex> (Kai's versioned id), typesafe/jev-1.13,
+	// ~typesafe/jev-latest, zenlm/zen6 or zenlm/zen6-flash.
 	Model string `json:"model" validate:"required"`
 	// State is what the questions are about: a string, an object or an array.
 	State decisionContent `json:"state,omitempty"`
@@ -309,6 +315,19 @@ func decisionModels() []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// decisionRoute reports whether model's route, configured or static, is the
+// decision service: model is one of decisionModels. A family that claims the id by
+// prefix or alias neither prices nor names it.
+func decisionRoute(model string) bool {
+	key := strings.ToLower(strings.TrimSpace(model))
+	if cfg := GetModelConfig(); cfg != nil {
+		r := cfg.ResolveRoute(key)
+		return r != nil && r.providerName == object.KaiName
+	}
+	r, ok := modelRoutes[key]
+	return ok && r.providerName == object.KaiName
 }
 
 // DecisionFree reports whether a model /v1/decisions serves costs org nothing.
@@ -547,7 +566,8 @@ var readModel = decisionModel
 
 // decisionModel reads the model a body names, and refuses a body with none, or a
 // model /v1/decisions does not serve. It serves every route to the decision
-// service: Kai, and Jev under OpenRouter's vendor ids, which reach Jev itself. An
+// service: Kai, Jev under OpenRouter's vendor ids, which reach Jev itself, and Zen
+// under its zenlm/ ids, which no Zen chat SKU answers to. An
 // id that names Jev is never answered by Kai, so a route that would send one there
 // is unknown, and so is every bare Jev spelling, which has no route. A model the
 // service knows and does not publish is unknown, so it is never forwarded. The
@@ -1082,9 +1102,11 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	// Reserve the call's price before anything is sent, and never less than a cent:
 	// the ledger holds whole cents and a decision costs a fraction of one, so a hold
 	// rounded to zero would admit every call against a balance of one cent. A cent
-	// covers a whole wire's worth of state at either model's price. Whatever way this
-	// ends, the hold is released; a served call settles it first, in nano, at the
-	// tokens its answer reports.
+	// covers a whole wire's worth of state at Kai's or Jev's price. The hold prices
+	// the most output an answer can report (decisionOutputTokens), which costs
+	// nothing where output is free, so a model whose output is priced cannot settle
+	// past what was reserved. Whatever way this ends, the hold is released; a served
+	// call settles it first, in nano, at the tokens its answer reports.
 	//
 	// A decision over a handle bills the questions it was observed with, which its
 	// own body does not carry: it holds what handled remembers of them.
@@ -1092,7 +1114,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	if h.handle != "" {
 		tokens = max(tokens, handled.cost(d.ledger, h.handle))
 	}
-	est := (decisionCostNano(d.model, tokens) + nanoPerCent - 1) / nanoPerCent
+	est := (decisionCostNano(d.model, tokens, decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
 	hold, admitted := reserveFor(ctx, d.user.PayerSubject(d.ledger), max(est, 1))
 	if !admitted {
 		return refused(d.rid, decline(http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
@@ -1126,8 +1148,13 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		header[k] = v
 	}
 	out, _ = Restate(got.status, out, header, d.rid)
+	// Only an answer bills. A refusal bills nothing, though an LLM model's router may
+	// have spent on it — a completion the service refuses for not fitting its schema
+	// was written first. That is the accepted loss: the service reports no usage on a
+	// refusal and logs what each one spent, and its caps bound it: a completion's
+	// max_tokens (decisionOutputTokens at most) and 64 completions in flight a model.
 	if got.status == http.StatusOK {
-		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens))
+		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens, got.usage.OutputTokens))
 		if h.observe != "" {
 			handled.note(d.ledger, h.observe, min(h.asked, got.usage.InputTokens))
 		}
@@ -1448,12 +1475,14 @@ func remint(body []byte) []byte {
 // {"type": "boolean"|"choice"|"score", "instructions": ..., "criteria": ...}}}.
 // model is kai, Kai's versioned id kai-<12 hex of the weights' sha256> — priced as
 // kai and sent as asked — or Jev by OpenRouter's vendor ids, typesafe/jev-1.13 and
-// ~typesafe/jev-latest, which reach Jev itself and bill at Jev's list price. No Jev
-// id is ever answered by Kai: a bare one, such as jev-latest, is an unknown model.
-// model is required; state and questions are required unless the request names a
-// handle, which carries neither. instructions is optional and any JSON. A choice
-// names at least 2 labels and a score at least 1 level, bounded by the token
-// budget rather than a count; questions holds 1 to 100.
+// ~typesafe/jev-latest, which reach Jev itself and bill at Jev's list price, or Zen
+// by zenlm/zen6 and zenlm/zen6-flash, answered by a chat completion under a strict
+// schema and billed its output beside its input. No Jev id is ever answered by Kai:
+// a bare one, such as jev-latest, is an unknown model. model is required; state
+// and questions are required unless the request names a handle, which carries
+// neither. instructions is optional and any JSON. A choice names at least 2 labels
+// and a score at least 1 level, bounded by the token budget rather than a count;
+// questions holds 1 to 100.
 //
 // A boolean is a yes/no probability, answered {"type": "boolean", "probability":
 // p}. noul is accepted as Jev's spelling of it and answered in Jev's shape,
@@ -1482,7 +1511,7 @@ func remint(body []byte) []byte {
 // MiB (code request_too_long), 429 rate limited or queue full, 502 the service
 // failed, 503 the model is known and not served, 529 overloaded. 402, 429 and 529
 // carry Retry-After and Retry-After-Ms, and every answer carries X-Request-Id.
-// Billed on the answer's input tokens at the model's price.
+// Billed on the answer's input and output tokens at the model's price.
 func (c *ApiController) Decisions() { c.decision() }
 
 // decision answers /v1/decisions over HTTP: authenticate, resolve who pays, and

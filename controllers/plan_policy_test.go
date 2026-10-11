@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -117,8 +118,71 @@ func TestACoveredCallSettlesItsListPrice(t *testing.T) {
 
 // Kai is sold at half of Jev for the same work.
 func TestKaiIsHalfOfJev(t *testing.T) {
-	kai, jev := decisionCostNano("kai", 1_000_000), decisionCostNano("typesafe/jev-1.13", 1_000_000)
-	if kai <= 0 || kai*2 != jev || decisionCostNano("~typesafe/jev-latest", 1_000_000) != jev {
+	kai, jev := decisionCostNano("kai", 1_000_000, 0), decisionCostNano("typesafe/jev-1.13", 1_000_000, 0)
+	if kai <= 0 || kai*2 != jev || decisionCostNano("~typesafe/jev-latest", 1_000_000, 0) != jev {
 		t.Fatalf("a million tokens: kai %d nano, jev %d nano; want kai at half of jev", kai, jev)
+	}
+}
+
+// An LLM decision's completion bills at the model's output price; Kai's and Jev's
+// output is priced at zero, so the same tokens bill them exactly as before. A
+// negative count credits nothing.
+func TestADecisionBillsItsOutputWhereItIsPriced(t *testing.T) {
+	for _, id := range []string{"zenlm/zen6", "zenlm/zen6-flash"} {
+		in := decisionCostNano(id, 1_000_000, 0)
+		if out := decisionCostNano(id, 1_000_000, 1_000_000) - in; in != 2_280_000_000 || out != 7_260_000_000 {
+			t.Errorf("%s: a million in %d nano, a million out %d more; want $2.28 and $7.26", id, in, out)
+		}
+		if got := decisionCostNano(id, 1000, -1000); got != 1000*2280 {
+			t.Errorf("%s: negative output moved the bill to %d nano", id, got)
+		}
+	}
+	for id, perToken := range map[string]int64{"kai": 21, "typesafe/jev-1.13": 42, "~typesafe/jev-latest": 42} {
+		if got := decisionCostNano(id, 1000, decisionOutputTokens); got != 1000*perToken {
+			t.Errorf("%s: 1000 in and %d out bill %d nano, want %d: its output is free", id, decisionOutputTokens, got, 1000*perToken)
+		}
+	}
+}
+
+// A Free plan is never handed an LLM decision for nothing. The model is priced, so
+// the host's policy is asked it as a priced call of class ours, never the free
+// class, and no decision model reads free to the balance gate. A plan that covers
+// it settles its list price, output included; an empty wallet nothing covers is
+// refused.
+func TestAnLLMDecisionIsNeverFree(t *testing.T) {
+	const org = "policy-llm"
+	for _, id := range []string{"zenlm/zen6", "zenlm/zen6-flash"} {
+		if costsNothing(id, org) || ClassOf(id) != object.ClassOurs {
+			t.Errorf("%s: free %v, class %q; want priced, ours", id, costsNothing(id, org), ClassOf(id))
+		}
+	}
+	if DecisionFree(org) {
+		t.Fatal("a decision model reads free to the balance gate")
+	}
+
+	var events []object.UsageEvent
+	prevUsage := object.UsageRecorder()
+	object.SetUsageRecorder(func(_ context.Context, u object.UsageEvent) error { events = append(events, u); return nil })
+	t.Cleanup(func() { object.SetUsageRecorder(prevUsage) })
+	var settled []int64
+	g := &object.LimitGrant{Pays: object.PaysPlan, Settle: func(n int64) { settled = append(settled, n) }}
+	user := &iam.User{Owner: org, Name: "ann"}
+	rec := &usageRecord{Owner: org, Model: "zenlm/zen6", Provider: object.KaiName, PromptTokens: 319, CompletionTokens: 23,
+		DecisionCount: 1, Status: "success", Currency: "USD"}
+	rec.bind(withGrant(g), user)
+	if err := recordUsage(rec); err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(319*2280 + 23*7260); len(settled) != 1 || settled[0] != want {
+		t.Fatalf("a plan-covered zenlm/zen6 decision settled %v nano, want [%d]: its list price, output included", settled, want)
+	}
+
+	prevBalance := object.BalanceReader()
+	object.SetBalanceReader(balReader(0, nil))
+	t.Cleanup(func() { object.SetBalanceReader(prevBalance) })
+	object.GlobalBalanceLedger.SetBalance(user.PayerSubject(org), 0)
+	err := enforceBalanceGate(context.Background(), user, org, "zenlm/zen6")
+	if statusOf(err) != http.StatusPaymentRequired {
+		t.Fatalf("an empty wallet nothing covers asked zenlm/zen6 => %v, want 402", err)
 	}
 }

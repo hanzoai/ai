@@ -47,6 +47,9 @@ const decisionAnswer = `{"id":"dec_1","model":"kai","provider":"Hanzo","answers"
 
 const decisionBody = `{"model":"kai","state":{"message":"Payment failed twice"},"questions":{"is_bug":{"type":"noul","instructions":"Is this a bug?"}}}`
 
+// decisionsServed is every model /v1/decisions serves, as its 400 names them.
+const decisionsServed = "kai, typesafe/jev-1.13, zenlm/zen6, zenlm/zen6-flash, ~typesafe/jev-latest"
+
 var decisionsSeq atomic.Int64
 
 // fakeDecisions is the decision service: it records what reached it and answers
@@ -386,6 +389,134 @@ func TestDecisionPricesAgree(t *testing.T) {
 			t.Errorf("%s: a million input tokens bill %d nano, want $%v", model, got, in)
 		}
 	}
+	// Zen answers with a completion, so both legs carry a price, the same in both.
+	for _, model := range []string{"zenlm/zen6", "zenlm/zen6-flash"} {
+		static, p := modelPricing[model], getModelPrice(model)
+		if p.InputPerMillion != 2.28 || p.OutputPerMillion != 7.26 || static.InputPerMillion != p.InputPerMillion || static.OutputPerMillion != p.OutputPerMillion {
+			t.Errorf("%s: models.yaml %+v, static %+v; want $2.28 in and $7.26 out per million in both", model, p, static)
+		}
+	}
+}
+
+// An LLM model answers a decision with a completion, and the completion is billed:
+// its output tokens at the model's output price beside its input. The body reaches
+// the service as written, a boolean still a boolean, under the id asked. The call is
+// held at the most output an answer can report, so a balance that covers less is
+// refused before the service is asked, while Kai, whose output is free, is held at
+// its cent as before. Jev reports output tokens, and they bill nothing.
+func TestAnLLMDecisionBillsItsCompletion(t *testing.T) {
+	fake, events := setupDecisions(t)
+	const zen = `{"id":"dec_3","model":"zenlm/zen6","provider":"Hanzo","answers":{"is_bug":{"type":"boolean","probability":1}},"usage":{"input_tokens":319,"output_tokens":1400},"routing":{"backend":"llm","checkpoint":"zen6","reason":"r"},"state_hash":"s","latency_ms":1}`
+	const jev = `{"id":"dec_2","model":"typesafe/jev-1.13","provider":"OpenRouter","answers":{"is_bug":{"type":"noul","noul":0.96}},"usage":{"input_tokens":42,"output_tokens":70,"cost":0.000019992}}`
+	fake.serve = func(_ string, body []byte) (int, string) {
+		var b struct{ Model string }
+		_ = json.Unmarshal(body, &b)
+		switch b.Model {
+		case "zenlm/zen6":
+			return http.StatusOK, zen
+		case "typesafe/jev-1.13":
+			return http.StatusOK, jev
+		}
+		return http.StatusOK, decisionAnswer
+	}
+	asked := `{"model":"zenlm/zen6","state":"I was charged twice.","questions":{"is_bug":{"type":"boolean","instructions":"Is this a bug?"}}}`
+	cents := (decisionCostNano("zenlm/zen6", coarseTokenEstimate([]byte(asked)), decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
+	if cents < 2 {
+		t.Fatalf("zenlm/zen6 holds %d cents; its output ceiling must hold more than Kai's cent", cents)
+	}
+
+	fund(decisionsOrg, cents-1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, asked); status != http.StatusPaymentRequired {
+		t.Fatalf("zenlm/zen6 against a balance under its output ceiling => %d %s, want 402", status, body)
+	}
+	if calls, _, _ := fake.seen(); calls != 0 || len(*events) != 0 {
+		t.Fatalf("a refused hold reached the service (%d calls) or was billed (%d debits)", calls, len(*events))
+	}
+	fund(decisionsOrg, cents-1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, decisionBody); status != http.StatusOK {
+		t.Fatalf("kai against the same balance => %d %s, want 200: its output is free", status, body)
+	}
+
+	fund(decisionsOrg, cents)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, asked); status != http.StatusOK || body != zen {
+		t.Fatalf("zenlm/zen6 against its output ceiling => %d %s", status, body)
+	}
+	if _, _, sent := fake.seen(); string(sent) != asked {
+		t.Fatalf("zenlm/zen6 was sent\n%s\nwant the body as written", sent)
+	}
+	// The hold settles at what the answer spent: 1.09¢, its output nearly all of it,
+	// so a whole cent leaves the balance and the rest is held against it.
+	user, _ := providerKeyBillingUser(&object.Provider{Owner: decisionsOrg})
+	if left, _ := object.GlobalBalanceLedger.Available(user.PayerSubject(decisionsOrg)); left != cents-2 {
+		t.Fatalf("after a 1.09¢ answer %d of %d cents are left, want %d", left, cents, cents-2)
+	}
+
+	fund(decisionsOrg, 100_00)
+	jevAsked := strings.Replace(decisionBody, `"model":"kai"`, `"model":"typesafe/jev-1.13"`, 1)
+	if status, body := driveDecisions(t, "Bearer "+decisionsKey, jevAsked); status != http.StatusOK || body != jev {
+		t.Fatalf("jev => %d %s", status, body)
+	}
+
+	want := []struct{ model, usd string }{
+		{"kai", nanoToUSD(42 * 21)},
+		{"zenlm/zen6", nanoToUSD(319*2280 + 1400*7260)},
+		{"typesafe/jev-1.13", nanoToUSD(42 * 42)},
+	}
+	if len(*events) != len(want) {
+		t.Fatalf("debits = %+v, want %d", *events, len(want))
+	}
+	for i, w := range want {
+		if e := (*events)[i]; e.Model != w.model || e.USD != w.usd {
+			t.Errorf("debit %d = %s at $%s, want %s at $%s", i, e.Model, e.USD, w.model, w.usd)
+		}
+	}
+}
+
+// zenlm/zen6 begins with "zen", and zen6, the Zen chat SKU it names, lists at $0.
+// Neither makes the decision the Zen family's or free: beside a Zen family that
+// lists zen6 at zero and even names zenlm/zen6 its alias, the decision id routes
+// to the decision service at its own row, in no family, priced, and zen6 still
+// chats through Zen, its listing no longer claiming the decision id as its slug.
+func TestNoFamilyPricesOrNamesADecision(t *testing.T) {
+	zenServiceAt(t, false)
+	zenFam.mu.Lock()
+	zenFam.named = map[string]string{"zenlm/zen6": "zen6", "zenlm/zen6-flash": "zen6"}
+	zenFam.mu.Unlock()
+	useCatalog(t, "../conf/models.yaml")
+	if p, ok := familyModelPrice("zenlm/zen6"); !ok || p.InputPerMillion != 0 || p.OutputPerMillion != 0 {
+		t.Fatalf("the family prices zenlm/zen6 at %+v, %v; the test needs it to claim the id at zero", p, ok)
+	}
+	if r := resolveModelRoute("zen6"); r == nil || r.providerName != zenFam.name {
+		t.Fatalf("zen6 routes to %+v, want the Zen family", r)
+	}
+	for _, id := range []string{"zenlm/zen6", "zenlm/zen6-flash"} {
+		if r := resolveModelRoute(id); r == nil || r.providerName != object.KaiName || r.upstreamModel != id {
+			t.Errorf("%s routes to %+v, want the decision service under its own id", id, r)
+		}
+		if model, version, bad := decisionModel([]byte(`{"model":"` + strings.ToUpper(id) + `"}`)); bad != nil || model != id || version != "" {
+			t.Errorf("%s reads as %q %q %v", id, model, version, bad)
+		}
+		if p, ok := getModelPriceForOrgOK(id, decisionsOrg); !ok || p.InputPerMillion != 2.28 || p.OutputPerMillion != 7.26 {
+			t.Errorf("%s is priced %+v, %v; want its own row", id, p, ok)
+		}
+		if costsNothing(id, decisionsOrg) || FamilyOf(id) != "" || ClassOf(id) != object.ClassOurs {
+			t.Errorf("%s: free %v, family %q, class %q; want priced, no family, ours",
+				id, costsNothing(id, decisionsOrg), FamilyOf(id), ClassOf(id))
+		}
+	}
+	if DecisionFree(decisionsOrg) {
+		t.Fatal("a decision model reads free")
+	}
+	listed := map[string]modelInfo{}
+	for _, m := range listAvailableModels() {
+		listed[m.ID] = m
+	}
+	if zen6, ok := listed["zen6"]; !ok || strings.EqualFold(zen6.CanonicalSlug, "zenlm/zen6") {
+		t.Fatalf("zen6 listed %v with slug %q; want it listed, not claiming the decision id", ok, zen6.CanonicalSlug)
+	}
+	if m := listed["zenlm/zen6"]; m.Family != "kai" || m.Free {
+		t.Fatalf("zenlm/zen6 lists in family %q, free %v; want kai, priced", m.Family, m.Free)
+	}
 }
 
 // No credential, or one nobody issued, is 401 — and nothing reaches the service.
@@ -416,7 +547,7 @@ func TestDecisionsUnknownModel(t *testing.T) {
 		if status != http.StatusBadRequest {
 			t.Fatalf("%s => %d, want 400", model, status)
 		}
-		want := string(decisionsFailure(400, fmt.Sprintf("unknown model %q; use one of kai, typesafe/jev-1.13, ~typesafe/jev-latest", model)))
+		want := string(decisionsFailure(400, fmt.Sprintf("unknown model %q; use one of %s", model, decisionsServed)))
 		if body != want {
 			t.Fatalf("%s refusal:\n got %s\nwant %s", model, body, want)
 		}
@@ -486,7 +617,7 @@ func TestZapDecisions(t *testing.T) {
 
 	msg, _ = zapDecisions(context.Background(), "Bearer "+decisionsKey, []byte(`{"model":"laya"}`))
 	status, body, _ := cloudRespStatus(t, msg)
-	if status != 400 || string(body) != string(decisionsFailure(400, `unknown model "laya"; use one of kai, typesafe/jev-1.13, ~typesafe/jev-latest`)) {
+	if status != 400 || string(body) != string(decisionsFailure(400, `unknown model "laya"; use one of `+decisionsServed)) {
 		t.Fatalf("unknown model => %d %s", status, body)
 	}
 
@@ -505,10 +636,14 @@ func TestZapDecisions(t *testing.T) {
 	}
 }
 
-// The shipped catalog publishes kai as a decision model, keeps the Jev ids
-// callable and unlisted, and the static fallback agrees.
+// The shipped catalog publishes kai and the Zen ids as decision models, keeps the
+// Jev ids callable and unlisted, and the static fallback agrees. A Zen id lists as
+// the decision service's, priced on both legs.
 func TestDecisionsCatalog(t *testing.T) {
-	want := []string{"kai", "typesafe/jev-1.13", "~typesafe/jev-latest"}
+	want := []string{"kai", "typesafe/jev-1.13", "zenlm/zen6", "zenlm/zen6-flash", "~typesafe/jev-latest"}
+	if got := strings.Join(decisionModels(), ", "); got != decisionsServed {
+		t.Fatalf("decisionModels = %s, want what a 400 names: %s", got, decisionsServed)
+	}
 	if got := decisionModels(); !slices.Equal(got, want) {
 		t.Fatalf("static decision models = %v, want %v", got, want)
 	}
@@ -528,9 +663,19 @@ func TestDecisionsCatalog(t *testing.T) {
 	if !slices.Equal(kai.Outputs, []string{"decision"}) || kai.OwnedBy != "hanzo" {
 		t.Fatalf("kai lists as outputs=%v owned_by=%q, want [decision] hanzo", kai.Outputs, kai.OwnedBy)
 	}
-	for _, id := range want[1:] {
+	for _, id := range []string{"typesafe/jev-1.13", "~typesafe/jev-latest"} {
 		if _, ok := listed[id]; ok {
 			t.Errorf("%s is listed; it is callable, not published", id)
+		}
+	}
+	for _, id := range []string{"zenlm/zen6", "zenlm/zen6-flash"} {
+		m, ok := listed[id]
+		if !ok || !slices.Equal(m.Outputs, []string{"decision"}) || m.OwnedBy != "hanzo" || m.Family != "kai" {
+			t.Errorf("%s lists as %+v, want a decision model of hanzo's in family kai", id, m)
+			continue
+		}
+		if m.Free || m.Pricing == nil || m.Pricing.InputPerMillion != 2.28 || m.Pricing.OutputPerMillion != 7.26 {
+			t.Errorf("%s lists free=%v at %+v, want $2.28 in and $7.26 out per million", id, m.Free, m.Pricing)
 		}
 	}
 	for _, id := range []string{"laya", "laya-multilingual", "laya-agent"} {
