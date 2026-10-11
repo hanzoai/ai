@@ -37,6 +37,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -428,8 +429,8 @@ func chatAsMessages(body []byte, m claude) (out []byte, hide bool, err error) {
 	// ── thinking ──
 	// A chat asks for reasoning by effort, by a budget of tokens, or not at all.
 	// A model that thinks adaptively is given the effort; one that thinks within a
-	// budget is given the budget, but never in the middle of a tool loop or beside
-	// a forced tool call, where the vendor refuses it.
+	// budget is given the budget, but never in the middle of a tool loop. Neither
+	// is asked to think beside a forced tool call, which the vendor refuses.
 	effort, budget, off := in.Effort, 0, false
 	if w := in.ReasoningWish; w != nil {
 		if w.Effort != "" {
@@ -445,7 +446,7 @@ func chatAsMessages(body []byte, m claude) (out []byte, hide bool, err error) {
 	asked := !off && (effort != "" || budget > 0 || (in.ReasoningWish != nil && in.ReasoningWish.Enabled != nil))
 	switch {
 	case m.Adaptive:
-		if asked {
+		if asked && !forced {
 			req["thinking"] = map[string]any{"type": "adaptive"}
 		}
 		if e := effortOf(effort, m); e != "" {
@@ -549,8 +550,11 @@ type claudeChat struct {
 	stop    string
 	wrote   int
 	done    bool
-	// end is told what the answer used once, when the stream ends however it ends.
+	// end is told what the answer used once, when the stream ends however it ends:
+	// at its last event, when the vendor breaks off, or when its reader hangs up.
 	end func(used AnthropicUsage, final bool, wrote int)
+	// mu holds what a Read translated against a Close from another goroutine.
+	mu sync.Mutex
 }
 
 func newClaudeChat(src io.ReadCloser, model string, hide bool, end func(AnthropicUsage, bool, int)) *claudeChat {
@@ -560,23 +564,75 @@ func newClaudeChat(src io.ReadCloser, model string, hide bool, end func(Anthropi
 	}
 }
 
-func (s *claudeChat) Close() error { return s.src.Close() }
-
-func (s *claudeChat) Read(p []byte) (int, error) {
-	for s.out.Len() == 0 && !s.done {
-		line, err := s.br.ReadBytes('\n')
-		s.event(strings.TrimRight(string(line), "\r\n"))
-		if err != nil {
-			s.finish()
-		}
-	}
-	if s.out.Len() == 0 {
-		return 0, io.EOF
-	}
-	return s.out.Read(p)
+// Close hangs up on the vendor and, for a stream that had not ended, says what it
+// used as far as it got: the vendor bills what it wrote either way.
+func (s *claudeChat) Close() error {
+	err := s.src.Close()
+	s.mu.Lock()
+	s.finish()
+	s.mu.Unlock()
+	return err
 }
 
-// finish ends the stream once and says what it used.
+func (s *claudeChat) Read(p []byte) (int, error) {
+	for {
+		s.mu.Lock()
+		if s.out.Len() > 0 {
+			n, err := s.out.Read(p)
+			s.mu.Unlock()
+			return n, err
+		}
+		if s.done {
+			s.mu.Unlock()
+			return 0, io.EOF
+		}
+		s.mu.Unlock()
+		// Not under mu: this is the read a Close has to be able to break.
+		line, err := s.br.ReadBytes('\n')
+		s.mu.Lock()
+		for !s.done {
+			s.event(strings.TrimRight(string(line), "\r\n"))
+			if err != nil {
+				// The vendor broke off before it said the answer was over.
+				s.broken("the answer was cut off upstream")
+				break
+			}
+			// Every line the vendor has already sent is translated now, so what the
+			// stream knows it wrote never waits on how fast it is read: a reader
+			// that hangs up is billed for what had arrived, not for what it took.
+			if !s.arrived() {
+				break
+			}
+			line, err = s.br.ReadBytes('\n')
+		}
+		s.mu.Unlock()
+	}
+}
+
+// arrived reports whether a whole line is already buffered, so reading it does
+// not wait on the vendor.
+func (s *claudeChat) arrived() bool {
+	n := s.br.Buffered()
+	if n == 0 {
+		return false
+	}
+	b, _ := s.br.Peek(n)
+	return bytes.IndexByte(b, '\n') >= 0
+}
+
+// broken ends an answer the vendor did not finish. What was written is the
+// caller's, marked as cut short (`length`) so that neither a stream's reader nor
+// the whole answer assembled from it takes it for one that finished, and then the
+// reason is said. mu is held.
+func (s *claudeChat) broken(why string) {
+	if s.wrote > 0 {
+		s.chunk(map[string]any{}, "length")
+	}
+	s.frame(map[string]any{"error": map[string]any{"message": why, "type": "upstream_error"}})
+	s.finish()
+}
+
+// finish ends the stream once and says what it used. mu is held.
 func (s *claudeChat) finish() {
 	if s.done {
 		return
@@ -674,7 +730,6 @@ func (s *claudeChat) event(line string) {
 		if said == "" {
 			said = "the answer was cut off upstream"
 		}
-		s.frame(map[string]any{"error": map[string]any{"message": said, "type": "upstream_error"}})
-		s.finish()
+		s.broken(said)
 	}
 }

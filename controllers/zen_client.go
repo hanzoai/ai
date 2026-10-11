@@ -1703,6 +1703,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		version, betas = c.anthropicHeaders()
 	}
 
+	// made is the answer a maker gave, when one did: what says a maker served this
+	// request is the response dispatch was handed, never a header on it.
+	var made *http.Response
+
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
 	// the request is the caller's own. That is what lets a route on a DIFFERENT
@@ -1748,12 +1752,16 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// maker's API bills every call, so only a request seated on the paid lane
 		// reaches it, and only for a route this family charges for: a free route and
 		// the pool's never do.
+		//
+		// And only the route the caller named: a route that stands in for another, or
+		// one out of the pool, is never a maker's, whatever it is priced at.
 		var missed []miss
-		if n := f.native; n != nil && !FreeOnlyFor(ctx) {
+		if n := f.native; n != nil && f == fam && s == model && !FreeOnlyFor(ctx) {
 			if price, listed := f.lookup(s); listed && price.priced() {
 				own, refused := n.send(ctx, nativeCall{path: apiPath, sku: f.sku(s), body: b, stream: stream || assemble,
 					version: version, betas: betas, price: price, start: start})
 				if own != nil {
+					made = own
 					return own, nil
 				}
 				missed = refused
@@ -2136,6 +2144,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// The rest of what the family said about this answer is for our records only:
 	// the vendor and the failed arms never reach the client.
 	sv := servingOf(resp.Header)
+	if made != nil && resp == made {
+		sv.maker = by.native
+	}
 	// answer is the response whose trailer states what a committed answer cost, read
 	// once its body has ended.
 	answer := resp
@@ -2177,6 +2188,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// One whose cost was never stated settles what its mark owes, here, so the
 		// usage record is the one settle of every answer that ended. A paid attempt
 		// already settled — refused, and this answer the pool's — charges nothing more.
+		//
+		// The body is closed first. An answer its caller hung up on was not read to
+		// its end, and a maker's states what it cost as far as it got when it is
+		// hung up on in turn (native.go): the vendor bills what it wrote either way.
+		if answer.Body != nil {
+			_ = answer.Body.Close()
+		}
 		sv.merge(answer.Trailer)
 		if owed := pm.owed.Load(); sv.cost == nil && pm.tried.Load() {
 			sv.cost = &owed
@@ -2301,6 +2319,10 @@ type serving struct {
 	// cogs is what the request cost upstream, nano-dollars (cogsHeader); nil when
 	// the family stated none.
 	cogs *int64
+	// maker is the vendor's own API that gave this answer (native.go), nil for
+	// every answer a family's address gave. The pipe sets it from the response it
+	// was handed, so no header an address sends can claim it.
+	maker *native
 }
 
 // merge reads what a family stated in its trailer, at an answer's end, over what its
@@ -2839,7 +2861,11 @@ func sniffZenUsage(payload []byte, t *tokens) {
 	if json.Unmarshal(payload, &p) != nil {
 		return
 	}
-	read := func(u *usage) {
+	// whole says the usage is the answer's own count. The one a Messages stream
+	// opens with (message_start) is not: it states the prompt and an output of one
+	// token before a word is written, so it never says what the answer's output
+	// cost. Taking it as that billed a stream its caller hung up on for one token.
+	read := func(u *usage, whole bool) {
 		if u == nil {
 			return
 		}
@@ -2861,7 +2887,8 @@ func sniffZenUsage(payload []byte, t *tokens) {
 			t.fresh, t.cached, t.written = u.PromptTokens-cached-written, cached, written
 		}
 		if u.OutputTokens > 0 {
-			t.completion, t.reported = u.OutputTokens, true
+			t.completion = u.OutputTokens
+			t.reported = t.reported || whole
 		}
 		if u.CompletionTokens > 0 {
 			t.completion, t.reported = u.CompletionTokens, true
@@ -2870,9 +2897,9 @@ func sniffZenUsage(payload []byte, t *tokens) {
 			t.reasoning = u.CompletionDetails.Reasoning
 		}
 	}
-	read(p.Usage)
+	read(p.Usage, true)
 	if p.Message != nil {
-		read(p.Message.Usage)
+		read(p.Message.Usage, false)
 	}
 }
 
@@ -2927,10 +2954,11 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	var exact *int64 // the charge the ledger, row and span read
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
-			// What the call cost is the answer's own statement, or its maker's
-			// (native.go): a resold SKU never bills below either.
+			// What the call cost is the answer's own statement, or the maker's that
+			// gave it (native.go): a resold SKU never bills below either. A cost in
+			// the headers of any other answer is its family's record, not a price.
 			stated := mk.cogs()
-			if stated == nil {
+			if stated == nil && sv.maker != nil {
 				stated = sv.cogs
 			}
 			nano = zm.bill(stated, t)
@@ -2959,7 +2987,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	if cogs == nil {
 		cogs = mk.cogs()
 	}
-	origin, via := fam.reached(prov, mk, sv)
+	origin, via := reached(prov, mk, sv)
 	rec := &usageRecord{
 		Owner: w.ledger, Organization: authUser.Owner,
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: origin, Via: via,

@@ -78,9 +78,22 @@ const (
 	// credential or for want of credit. Neither mends itself, so the wait is long;
 	// a read of the key's list that succeeds ends it at once.
 	nativeDead = 10 * time.Minute
-	// nativeBusy is the longest a rate-limited key sits out, whatever its vendor says.
-	nativeBusy = time.Minute
+	// nativeBusy is the longest a rate-limited key sits out, whatever its vendor says,
+	// and nativePause how long it sits out when the vendor does not say.
+	nativeBusy  = time.Minute
+	nativePause = 5 * time.Second
+	// nativeHead is how long the vendor may take to begin a STREAM. A stream's
+	// head arrives before its answer, so a vendor silent this long is not serving,
+	// and the request still has the reseller's whole wait ahead of it. A whole
+	// answer's head arrives with the answer and keeps the pipe's own wait.
+	nativeHead = 30 * time.Second
 )
+
+// nativeStreams sends the requests whose answer is a stream.
+var nativeStreams = &http.Client{Transport: &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	ResponseHeaderTimeout: nativeHead,
+}}
 
 // native is a model vendor's own API, as a resale family asks it.
 type native struct {
@@ -148,11 +161,15 @@ func (n *native) origin(name string) string {
 	return host
 }
 
-// reached is where an answer of this family's came from, and the vendor account
-// it ran on where the family's maker served it: the maker's host and the place
-// in its pool of the key that answered, in place of the family's own address.
-func (f *modelFamily) reached(prov *object.Provider, mk *mark, sv serving) (origin, via string) {
-	if n := f.native; n != nil && sv.vendor == n.name {
+// reached is where an answer came from, and the vendor account it ran on where
+// its family's maker served it: the maker's host and the place in its pool of the
+// key that answered, in place of the family's own address.
+//
+// Whether a maker served it is the pipe's own knowledge (serving.maker), never a
+// header's: a reseller's address answering with a maker's headers stays the
+// reseller.
+func reached(prov *object.Provider, mk *mark, sv serving) (origin, via string) {
+	if n := sv.maker; n != nil {
 		return n.origin(sv.account), n.label(n.place(sv.account))
 	}
 	return originOf(prov, mk), ""
@@ -232,8 +249,10 @@ func (n *native) refresh() {
 			switch {
 			case err != nil:
 				n.say(a, "unread", "%s key %s: list unread: %v", n.name, a.Name, err)
-			case status == http.StatusUnauthorized || status == http.StatusForbidden:
+			case status == http.StatusUnauthorized:
 				n.rest(a, status, "the vendor refuses this key", scopeAll)
+			case status == http.StatusForbidden:
+				n.rest(a, status, "the vendor refuses this key", scopePriced)
 			case status != http.StatusOK:
 				n.say(a, "unread", "%s key %s: list unread: status %d", n.name, a.Name, status)
 			default:
@@ -243,8 +262,10 @@ func (n *native) refresh() {
 				}
 				n.lists[keyID(a.Key)] = models
 				n.mu.Unlock()
-				// A list that reads says the key is accepted; it says nothing of what
-				// the account can pay, so a key resting for want of credit rests on.
+				// A list that reads says the key is a key the vendor knows: it ends the
+				// wait of one refused as a credential (401). It says nothing of what
+				// the key may do or its account can pay, so a key refused permission
+				// (403) or resting for want of credit rests its time out.
 				revive(a.Key)
 				if !cooling(a.Key, false) {
 					n.say(a, "serving", "%s key %s: serving, %d models listed", n.name, a.Name, len(models))
@@ -272,16 +293,17 @@ func (n *native) say(a object.Account, standing, format string, v ...any) bool {
 }
 
 // rest benches a key the vendor refused for itself for nativeDead, and says so
-// once. scope is what it sits out for: every route for a refused credential
-// (scopeAll), which a list that reads again ends; priced routes for an account out
-// of credit (scopePriced), which only its time ends. Each needs a person, so each
-// is a line in the log and a count in cloud_supply_refused, when the key's
-// standing changes and not on every request that would have used it.
+// once. scope is what ends the wait: a key refused as a credential (401, scopeAll)
+// is back as soon as its list reads again; one refused permission (403) or out of
+// credit (scopePriced) only when its time is up, since a list that reads says
+// nothing of either. Each needs a person, so each is a line in the log and a
+// count in cloud_supply_refused, when the key's standing changes and not on every
+// request that would have used it.
 func (n *native) rest(a object.Account, status int, why string, scope keyScope) {
 	until := keyNow().Add(nativeDead)
 	coolUntil(a.Key, scope, until)
 	reason := reasonCredential
-	if scope != scopeAll {
+	if status == http.StatusPaymentRequired {
 		reason = reasonFunding
 	}
 	if n.say(a, "resting "+strconv.Itoa(status), "%s key %s is not serving (%d: %s): it sits out until %s, and the next key, then the reseller, answer for it. Replace or fund it at KMS hanzo/prod:/ai.",
@@ -290,7 +312,7 @@ func (n *native) rest(a object.Account, status int, why string, scope keyScope) 
 	}
 }
 
-// revive ends a key's wait for a refused credential.
+// revive ends the wait of a key refused as a credential.
 func revive(key string) {
 	keyCoolMu.Lock()
 	delete(keyCooled, keyCooling{keyID(key), scopeAll})
@@ -484,7 +506,11 @@ func (n *native) send(ctx context.Context, c nativeCall) (*http.Response, []miss
 		}
 		req.Header.Set("Content-Type", "application/json")
 		n.sign(req, a, c.version, n.betas(c))
-		resp, err := zenPipeClient.Do(req)
+		client := zenPipeClient
+		if c.stream {
+			client = nativeStreams
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			// The vendor was not reached, which no other key changes.
 			log.Warn("%s could not be reached for %s on key %s: %v", n.name, c.sku, a.Name, err)
@@ -506,17 +532,27 @@ func (n *native) send(ctx context.Context, c nativeCall) (*http.Response, []miss
 		}
 		said, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		resp.Body.Close()
+		if c.stream && string(said) == emptyAnswer {
+			// The model was asked and ended its answer having said nothing (opening).
+			// That is the request's own answer: every key would buy the same
+			// silence, so none is asked, and the reseller answers for it.
+			return nil, append(missed, miss{upstream: m.ID, provider: n.name, reason: fmt.Sprintf("key %d: empty answer", a.Place)})
+		}
 		status, kind, why := claudeRefusal(resp.StatusCode, said)
 		missed = append(missed, miss{upstream: m.ID, provider: n.name, reason: fmt.Sprintf("key %d: %d %s", a.Place, status, kind)})
 		switch {
-		case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		case status == http.StatusUnauthorized:
 			n.rest(a, status, kind, scopeAll)
-		case unfunded(status, why):
+		case status == http.StatusForbidden:
+			n.rest(a, status, kind, scopePriced)
+		case unfunded(status, kind, why):
 			n.rest(a, http.StatusPaymentRequired, "the account is out of credit", scopePriced)
 		case status == http.StatusTooManyRequests:
-			if wait := retryAfter(resp.Header); wait > 0 {
-				coolUntil(a.Key, scopePriced, keyNow().Add(min(wait, nativeBusy)))
+			wait := retryAfter(resp.Header)
+			if wait <= 0 {
+				wait = nativePause
 			}
+			coolUntil(a.Key, scopePriced, keyNow().Add(min(wait, nativeBusy)))
 			log.Warn("%s key %s is rate limited for %s (429): the next key is asked", n.name, a.Name, c.sku)
 		case status == http.StatusNotFound || status == http.StatusRequestTimeout || status >= 500:
 			log.Warn("%s key %s did not serve %s (%d %s): the next key is asked", n.name, a.Name, c.sku, status, kind)
@@ -610,11 +646,22 @@ func claudeRefusal(status int, body []byte) (int, string, string) {
 	return status, kind, e.Error.Message
 }
 
-// unfunded reports the refusal of an account that cannot pay. The vendor answers one
-// out of credit 400 in a sentence of its own, so the sentence is read where the
-// status does not say it.
-func unfunded(status int, message string) bool {
-	return status == http.StatusPaymentRequired || strings.Contains(strings.ToLower(message), "credit balance")
+// unfunded reports the refusal of an account that cannot pay: a 402, the vendor's
+// billing_error, or the 400 it answers an account out of credit or at its spending
+// limit with, read by the vendor's own sentence FROM ITS START. A message that merely contains the words
+// is a validation error quoting the caller's request back, and reading it as the
+// account's would let one request bench every key of the pool.
+func unfunded(status int, kind, message string) bool {
+	if status == http.StatusPaymentRequired || kind == "billing_error" {
+		return true
+	}
+	if status != http.StatusBadRequest {
+		return false
+	}
+	said := strings.ToLower(strings.TrimSpace(message))
+	// Out of credit, and at the spending limit its owner set for it.
+	return strings.HasPrefix(said, "your credit balance is too low") ||
+		strings.HasPrefix(said, "you have reached your specified api usage limits")
 }
 
 // retryAfter is the wait a refusal states in seconds, or 0.
@@ -638,7 +685,8 @@ func chain(missed []miss) string {
 // answer is the vendor's 200 as the pipe reads a family's: the body in the
 // dialect the caller's request spoke, and where it came from in its headers. What
 // it cost is stated once its usage is known — at once for a whole answer, in the
-// trailer for a stream.
+// trailer for a stream. It carries none of the vendor's own headers and not the
+// request it answers, which holds the key.
 func (n *native) answer(resp *http.Response, c nativeCall, m claude, a object.Account, hide bool, missed []miss) *http.Response {
 	h := http.Header{}
 	h.Set(armHeader, m.ID)
@@ -655,7 +703,6 @@ func (n *native) answer(resp *http.Response, c nativeCall, m claude, a object.Ac
 		ProtoMinor: resp.ProtoMinor,
 		Header:     h,
 		Trailer:    http.Header{},
-		Request:    resp.Request,
 	}
 	// stated files what the answer cost. A stream cut before its count is priced on
 	// what it reported and the text it wrote, at four characters a token.
@@ -706,19 +753,25 @@ func (c nativeCall) cost(used AnthropicUsage) (string, bool) {
 }
 
 // tap relays a stream in the vendor's own dialect as it came and reads its usage
-// as it passes, so what the answer cost is stated when it ends.
+// as it passes, so what the answer cost is stated when it ends: at its last byte,
+// or when its reader hangs up on it. The vendor bills what it wrote either way.
 type tap struct {
 	io.ReadCloser
+	end func(used AnthropicUsage, final bool, wrote int)
+
+	// mu holds what a Read learned against a Close from another goroutine.
+	mu    sync.Mutex
 	line  []byte
 	used  AnthropicUsage
 	final bool
 	wrote int
-	end   func(used AnthropicUsage, final bool, wrote int)
 	ended bool
 }
 
 func (t *tap) Read(p []byte) (int, error) {
 	n, err := t.ReadCloser.Read(p)
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	for _, b := range p[:n] {
 		if b != '\n' {
 			// A line past sseLineMax is a document inside a tool result: relayed,
@@ -736,9 +789,26 @@ func (t *tap) Read(p []byte) (int, error) {
 		}
 		t.line = t.line[:0]
 	}
-	if err != nil && !t.ended {
+	if err != nil {
+		t.finish()
+	}
+	return n, err
+}
+
+// Close hangs up on the vendor and, for a stream that had not ended, says what it
+// used as far as it got.
+func (t *tap) Close() error {
+	err := t.ReadCloser.Close()
+	t.mu.Lock()
+	t.finish()
+	t.mu.Unlock()
+	return err
+}
+
+// finish says once what the stream used. mu is held.
+func (t *tap) finish() {
+	if !t.ended {
 		t.ended = true
 		t.end(t.used, t.final, t.wrote)
 	}
-	return n, err
 }

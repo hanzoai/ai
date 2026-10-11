@@ -107,8 +107,15 @@ func TestEveryUsageShapeCountsThePromptWhole(t *testing.T) {
 			tokens{fresh: 200, cached: 800, completion: 7, reported: true}},
 		{"openrouter", `{"usage":{"prompt_tokens":10000,"completion_tokens":5,"cost":0.01,"prompt_tokens_details":{"cached_tokens":6000,"cache_write_tokens":1000}}}`,
 			tokens{fresh: 3000, cached: 6000, written: 1000, completion: 5, reported: true}},
-		{"anthropic", `{"type":"message_start","message":{"usage":{"input_tokens":200,"cache_read_input_tokens":800,"cache_creation_input_tokens":300,"output_tokens":1}}}`,
-			tokens{fresh: 200, cached: 800, written: 300, completion: 1, reported: true}},
+		// A Messages stream opens with its prompt and an output of one token, before
+		// a word is written: the prompt is read from it, and it is not the answer's
+		// own count, which the event that closes the answer states.
+		{"anthropic, opening", `{"type":"message_start","message":{"usage":{"input_tokens":200,"cache_read_input_tokens":800,"cache_creation_input_tokens":300,"output_tokens":1}}}`,
+			tokens{fresh: 200, cached: 800, written: 300, completion: 1}},
+		{"anthropic, closing", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}`,
+			tokens{completion: 42, reported: true}},
+		{"anthropic, whole", `{"type":"message","usage":{"input_tokens":200,"cache_read_input_tokens":800,"cache_creation_input_tokens":300,"output_tokens":42}}`,
+			tokens{fresh: 200, cached: 800, written: 300, completion: 42, reported: true}},
 	} {
 		var got tokens
 		sniffZenUsage([]byte(tc.body), &got)

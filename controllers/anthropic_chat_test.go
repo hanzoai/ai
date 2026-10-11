@@ -220,8 +220,10 @@ func TestReasoningIsAskedTheWayTheModelTakesIt(t *testing.T) {
 	}
 	forced := `{"model":"m","max_tokens":10000,"reasoning_effort":"high","messages":[{"role":"user","content":"hi"}],
 	  "tools":[{"type":"function","function":{"name":"f"}}],"tool_choice":"required"}`
-	if v := asMessages(t, forced, budgeted); v["thinking"] != nil {
-		t.Errorf("thinking was asked beside a forced tool: %v", v["thinking"])
+	for _, m := range []claude{budgeted, adaptive} {
+		if v := asMessages(t, forced, m); v["thinking"] != nil {
+			t.Errorf("%s: thinking was asked beside a forced tool: %v", m.ID, v["thinking"])
+		}
 	}
 	// A ceiling with no room for the least budget asks for none.
 	if v := asMessages(t, `{"model":"m","max_tokens":1024,"reasoning_effort":"high","messages":[{"role":"user","content":"hi"}]}`, budgeted); v["thinking"] != nil {
@@ -423,13 +425,21 @@ func TestAStreamThatBreaksOffIsNotAnAnswerThatFinished(t *testing.T) {
 	if e, ok := frames[len(frames)-1]["error"].(map[string]any); !ok || e["message"] != "Overloaded" {
 		t.Errorf("the last frame is %v, want the error", frames[len(frames)-1])
 	}
+	// What was written is marked as cut short, so the whole answer assembled from
+	// the stream is never taken for one that finished.
+	if !strings.Contains(raw, `"finish_reason":"length"`) {
+		t.Errorf("an answer that broke off is not marked as cut short:\n%s", raw)
+	}
 	// A vendor's name in its error is not the caller's to read.
 	frames, _, _, _, _ = chatRead(t, false, append(open, `{"type":"error","error":{"type":"api_error","message":"Anthropic is having a bad day"}}`)...)
 	if e := frames[len(frames)-1]["error"].(map[string]any); strings.Contains(strings.ToLower(e["message"].(string)), "anthropic") {
 		t.Errorf("the error names the vendor: %v", e)
 	}
-	_, raw, _, final, ends = chatRead(t, false, open...)
+	frames, raw, _, final, ends = chatRead(t, false, open...)
 	if ends != 1 || final || strings.Contains(raw, "[DONE]") || strings.Contains(raw, "finish_reason\":\"stop") {
 		t.Errorf("a cut stream: ends=%d final=%v raw=%s", ends, final, raw)
+	}
+	if e, ok := frames[len(frames)-1]["error"].(map[string]any); !ok || e["message"] != "the answer was cut off upstream" || !strings.Contains(raw, `"finish_reason":"length"`) {
+		t.Errorf("a cut stream's last frame is %v, want it marked as cut short and told the answer was cut off:\n%s", frames[len(frames)-1], raw)
 	}
 }

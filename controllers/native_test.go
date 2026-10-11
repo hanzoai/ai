@@ -15,6 +15,8 @@
 package controllers
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -312,7 +314,7 @@ func TestARefusedKeySitsOutItsTimeAndIsAskedAgain(t *testing.T) {
 	or := &accounts{}
 	fam := resale(t, or)
 	m := makerAt(t, &maker{refuse: map[string]turnedAway{
-		"a1": {status: 403, kind: "permission_error", message: "not allowed"},
+		"a1": {status: 401, kind: "authentication_error", message: "invalid x-api-key"},
 		"a2": {status: 400, kind: "invalid_request_error", message: "Your credit balance is too low to access the API."},
 		"a3": {status: 429, kind: "rate_limit_error", message: "slow down", after: "600"},
 	}}, "a1", "a2", "a3")
@@ -349,7 +351,7 @@ func TestARefusedKeySitsOutItsTimeAndIsAskedAgain(t *testing.T) {
 		t.Fatalf("asked %v once the wait was over, want every key probed again", got)
 	}
 
-	// A key whose list reads again is back at once.
+	// A key refused as a credential is back as soon as its list reads again.
 	m.mu.Lock()
 	m.refuse = nil
 	m.mu.Unlock()
@@ -359,24 +361,71 @@ func TestARefusedKeySitsOutItsTimeAndIsAskedAgain(t *testing.T) {
 	}
 }
 
-// A key's list reading again says the vendor accepts the key, and nothing of what
-// its account can pay: a key resting for want of credit rests on through it, and
-// the next key serves.
-func TestAKeyOutOfCreditRestsThoughItsListReads(t *testing.T) {
+// A key's list reading again says the vendor knows the key, and nothing of what the
+// key may do or its account can pay: a key refused permission, and one resting for
+// want of credit, rest on through it, and the next key serves. Asking them again
+// every time the lists were read would cost a refused call each five minutes.
+func TestAKeyOutOfCreditOrRefusedPermissionRestsThoughItsListReads(t *testing.T) {
 	or := &accounts{}
 	fam := resale(t, or)
 	m := makerAt(t, &maker{refuse: map[string]turnedAway{
 		"a1": {status: 400, kind: "invalid_request_error", message: "Your credit balance is too low to access the API."},
-	}}, "a1", "a2")
-	if got := askOnce(t, m, fam); !slices.Equal(got, []string{"a1", "a2"}) {
-		t.Fatalf("asked %v, want the key out of credit and then the next", got)
+		"a2": {status: 403, kind: "permission_error", message: "not allowed"},
+	}}, "a1", "a2", "a3")
+	if got := askOnce(t, m, fam); !slices.Equal(got, []string{"a1", "a2", "a3"}) {
+		t.Fatalf("asked %v, want the two keys that cannot serve and then the next", got)
 	}
 	anthropicNative.refresh()
-	if got := askOnce(t, m, fam); !slices.Equal(got, []string{"a2"}) {
-		t.Fatalf("asked %v after the lists read again, want the funded key alone", got)
+	if got := askOnce(t, m, fam); !slices.Equal(got, []string{"a3"}) {
+		t.Fatalf("asked %v after the lists read again, want the serving key alone", got)
 	}
 	if got := or.calls(); len(got) != 0 {
 		t.Fatalf("the reseller was asked %v while a key of the maker's served", got)
+	}
+}
+
+// Only the vendor's own sentence benches a key for credit. A validation error that
+// quotes the caller's request back may hold the same words, and is the request's
+// own: one key hears it, none rests, and the reseller answers. Read as the
+// account's, one crafted request would bench every key of the pool for all callers.
+func TestAVendorsErrorQuotingTheCallerBenchesNoKey(t *testing.T) {
+	for _, tc := range []struct {
+		status        int
+		kind, message string
+		want          bool
+	}{
+		{402, "billing_error", "Payment required.", true},
+		{400, "billing_error", "anything", true},
+		{400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing.", true},
+		{400, "invalid_request_error", "  your credit balance is too low", true},
+		{400, "invalid_request_error", "You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.", true},
+		{400, "invalid_request_error", "messages: You have reached your specified API usage limits", false},
+		{400, "invalid_request_error", "messages.0.content.0: Input tag 'Your credit balance is too low' found using 'type' does not match", false},
+		{400, "invalid_request_error", "tools.0.custom.name: credit balance", false},
+		{429, "rate_limit_error", "Your credit balance is too low", false},
+	} {
+		if got := unfunded(tc.status, tc.kind, tc.message); got != tc.want {
+			t.Errorf("unfunded(%d, %q, %q) = %v, want %v", tc.status, tc.kind, tc.message, got, tc.want)
+		}
+	}
+
+	or := &accounts{}
+	fam := resale(t, or)
+	m := makerAt(t, &maker{refuse: map[string]turnedAway{
+		"a1": {status: 400, kind: "invalid_request_error", message: "messages.0.content.0: Input tag 'your credit balance is too low' found using 'type'"},
+		"a2": {status: 400, kind: "invalid_request_error", message: "messages.0.content.0: Input tag 'your credit balance is too low' found using 'type'"},
+	}}, "a1", "a2")
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	if out, answer := chat(t, c, fam, claudeSKU, hello(claudeSKU), false, nil); out != nil || !strings.Contains(answer, `"ok"`) {
+		t.Fatalf("attempts=%+v answer=%s — the reseller should have answered", out, answer)
+	}
+	if got := m.calls(); !slices.Equal(got, []string{"a1"}) {
+		t.Fatalf("the maker's keys were asked %v, want one: the refusal is the request's own", got)
+	}
+	for _, a := range anthropicNative.accounts() {
+		if cooling(a.Key, false) {
+			t.Fatalf("key %s rests after an error that quoted the caller", a.Name)
+		}
 	}
 }
 
@@ -490,9 +539,23 @@ func TestWhenNoKeyAnswersTheResellerIsAskedForTheSameModel(t *testing.T) {
 		t.Fatalf("the reseller was asked %v, want once", got)
 	}
 
+	// An answer that ended having said nothing is the request's own too: every
+	// key would buy the same silence, so one is asked and then the reseller.
+	m.mu.Lock()
+	m.asked, m.refuse = nil, nil
+	m.events = []string{okEvents[0], okEvents[5], okEvents[6]}
+	m.mu.Unlock()
+	or.reset()
+	if out, answer := chat(t, visit(http.MethodPost, "/v1/chat/completions"), fam, claudeSKU, hello(claudeSKU), false, nil); out != nil || !strings.Contains(answer, `"ok"`) {
+		t.Fatalf("attempts=%+v answer=%s", out, answer)
+	}
+	if got, sold := m.calls(), or.calls(); !slices.Equal(got, []string{"a1"}) || !slices.Equal(sold, []string{"k1"}) {
+		t.Fatalf("an empty answer: the maker was asked %v and the reseller %v, want one key and then the reseller", got, sold)
+	}
+
 	// An answer that is not the stream asked for is not relayed as one.
 	m.mu.Lock()
-	m.asked, m.refuse, m.whole = nil, nil, true
+	m.asked, m.refuse, m.events, m.whole = nil, nil, nil, true
 	m.mu.Unlock()
 	or.reset()
 	if out, answer := chat(t, visit(http.MethodPost, "/v1/chat/completions"), fam, claudeSKU, hello(claudeSKU), false, nil); out != nil || !strings.Contains(answer, `"ok"`) {
@@ -700,18 +763,37 @@ func TestAnAnswerSaysWhichOfTheMakersKeysServedIt(t *testing.T) {
 	h.Set(armHeader, claudeID)
 	h.Set(providerHeader, "anthropic")
 	h.Set(keyHeader, "ANTHROPIC_API_KEY_2")
-	if origin, via := openrouterFam.reached(prov, nil, servingOf(h)); origin != "api.maker.example#2" || via != "anthropic#2" {
+	made := func(h http.Header) serving {
+		sv := servingOf(h)
+		sv.maker = anthropicNative
+		return sv
+	}
+	if origin, via := reached(prov, nil, made(h)); origin != "api.maker.example#2" || via != "anthropic#2" {
 		t.Errorf("a maker's answer came from %q via %q, want api.maker.example#2 via anthropic#2", origin, via)
 	}
 	h.Set(keyHeader, object.AnthropicKeyList+"#3")
-	if origin, via := openrouterFam.reached(prov, nil, servingOf(h)); origin != "api.maker.example#6" || via != "anthropic#6" {
+	if origin, via := reached(prov, nil, made(h)); origin != "api.maker.example#6" || via != "anthropic#6" {
 		t.Errorf("a key of the list came from %q via %q, want place 6: after the three names", origin, via)
 	}
-	if origin, via := openrouterFam.reached(prov, nil, servingOf(http.Header{})); origin != "reseller.example" || via != "" {
+	if origin, via := reached(prov, nil, servingOf(http.Header{})); origin != "reseller.example" || via != "" {
 		t.Errorf("the reseller's answer came from %q via %q, want its own host and no account", origin, via)
 	}
-	if origin, via := zenFam.reached(prov, nil, servingOf(h)); via != "" || origin != "reseller.example" {
-		t.Errorf("a family with no maker read %q via %q from a maker's headers", origin, via)
+	// That a maker served an answer is the pipe's own knowledge. A reseller's
+	// address answering with a maker's headers stays the reseller, and a cost in
+	// its headers is never the floor of a bill.
+	h.Set(cogsHeader, "9")
+	if origin, via := reached(prov, nil, servingOf(h)); via != "" || origin != "reseller.example" {
+		t.Errorf("a maker's headers alone read as %q via %q, want the reseller's own address", origin, via)
+	}
+	fam := resale(t, &accounts{})
+	w := whence{ledger: "acme", ctx: context.Background(), asked: fam}
+	spent := tokens{fresh: 1000, completion: 500, reported: true}
+	sku, _ := fam.lookup(claudeSKU)
+	if nano := recordFamilyUsage(w, fam, claudeSKU, "", prov, &mark{}, nil, true, false, "r", spent, servingOf(h), time.Now(), nil, "success", ""); nano != sku.retailNano(spent) {
+		t.Errorf("a $9 cost in a reseller's headers billed %d nano, want the catalog price %d", nano, sku.retailNano(spent))
+	}
+	if nano := recordFamilyUsage(w, fam, claudeSKU, "", prov, &mark{}, nil, true, false, "r", spent, made(h), time.Now(), nil, "success", ""); nano < 9_000_000_000 {
+		t.Errorf("a maker's stated cost of $9 billed %d nano, want no less than the cost and the fee", nano)
 	}
 
 	// Each key that refused first is an arm of the chain, read back as the family
@@ -754,5 +836,89 @@ func TestTheMakersPoolIsItsNamesThenItsList(t *testing.T) {
 	t.Setenv("ANTHROPIC_URL", "")
 	if resp, missed := anthropicNative.send(context.Background(), nativeCall{path: "chat/completions", sku: claudeSKU, body: []byte(hello(claudeSKU)), start: time.Now()}); resp != nil || missed != nil {
 		t.Fatal("a maker with no address was asked")
+	}
+}
+
+// talk is a long answer its maker is still writing: the stream opens with the
+// prompt's count and an output of one token, as the vendor's does, and never
+// reaches the count that closes it.
+func talk() []string {
+	events := []string{
+		`{"type":"message_start","message":{"id":"msg_vendor","role":"assistant","model":"claude-haiku-5-5","usage":{"input_tokens":1000,"output_tokens":1}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+	}
+	for i := 0; i < 400; i++ {
+		events = append(events, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"forty characters of an answer, give or t"}}`)
+	}
+	return events
+}
+
+// taker is a caller that takes so many writes of an answer and goes away, keeping
+// what it took.
+type taker struct {
+	left int
+	took bytes.Buffer
+}
+
+func (k *taker) Write(p []byte) (int, error) {
+	if k.left <= 0 {
+		return 0, errors.New("client gone")
+	}
+	k.left--
+	return k.took.Write(p)
+}
+
+// A stream its caller hangs up on is billed for what was written, in either
+// dialect, and says what it cost as far as it got. The vendor's stream opens with
+// an output count of one token; billed as that, a caller who streamed a long
+// answer and dropped the connection before its end paid for the prompt and one
+// token while the vendor billed every token it wrote.
+func TestAStreamItsCallerHangsUpOnIsBilledForWhatWasWritten(t *testing.T) {
+	or := &accounts{}
+	fam := resale(t, or)
+	makerAt(t, &maker{events: talk()}, "a1")
+	got := ledger(t)
+	alice := &iam.User{Owner: "acme", Name: "alice"}
+
+	// The prompt and one token of answer: what the stream's opening count says.
+	sku, _ := fam.lookup(claudeSKU)
+	least := sku.retailNano(tokens{fresh: 1000, completion: 1})
+	const piece = "forty characters of an answer, give or t"
+
+	for i, dialect := range []string{"anthropic", "openai"} {
+		path, body := "messages", `{"model":"`+claudeSKU+`","max_tokens":8000,"stream":true,"messages":[{"role":"user","content":"Go on."}]}`
+		if dialect == "openai" {
+			path = "chat/completions"
+		}
+		c := visit(http.MethodPost, "/v1/"+path)
+		c.Fiber().Request().SetBody([]byte(body))
+		if out := c.pipeToFamily(fam, path, dialect, claudeSKU, []byte(body), true, 8000, "acme", alice, false, nil, time.Now()); out != nil {
+			t.Fatalf("%s: refused: %+v", dialect, out)
+		}
+		// The caller takes some of the answer and goes away: the write to it fails,
+		// and the server closes the stream it was writing, as it does for a
+		// connection that is gone. The stream's writer settles on its own goroutine.
+		caller := &taker{left: 120}
+		_ = c.Fiber().Response().BodyWriteTo(bufio.NewWriterSize(caller, 16))
+		_ = c.Fiber().Response().CloseBodyStream()
+		for deadline := time.Now().Add(5 * time.Second); len(got()) != i+1 && time.Now().Before(deadline); {
+			time.Sleep(5 * time.Millisecond)
+		}
+		ev := got()
+		if len(ev) != i+1 {
+			t.Fatalf("%s: %d debits, want one a stream: %+v", dialect, len(ev), ev)
+		}
+		billed, _ := usdNanos(ev[i].USD)
+		spent, stated := usdNanos(ev[i].CostUSD)
+		// What the caller took is the least that was written: it is on the bill, at
+		// four characters a token.
+		took := strings.Count(caller.took.String(), piece) * len(piece)
+		if floor := sku.retailNano(tokens{fresh: 1000, completion: took / 4}); took == 0 || billed < floor || billed <= least {
+			t.Errorf("%s: a caller who took %d characters and hung up was billed $%s; the prompt and one token is $%s, and the text it took $%s",
+				dialect, took, ev[i].USD, nanoUSD(&least), nanoUSD(&floor))
+		}
+		if !stated || spent <= 0 || billed*1000 < spent*1055 {
+			t.Errorf("%s: billed $%s at a stated cost of $%q, want the cost of what was written and the fee on top", dialect, ev[i].USD, ev[i].CostUSD)
+		}
 	}
 }

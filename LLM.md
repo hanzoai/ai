@@ -642,25 +642,33 @@ vendor that MAKES some of its SKUs. `openrouterFam.native` is Anthropic's
 gate are the family's, unchanged. `dispatch` asks the maker first and the family's own
 address only once no key answered:
 
-- **Paid only.** A maker bills every call, so it is asked only by a request seated on the
-  paid lane (`!FreeOnlyFor(ctx)`) for a route the family lists and charges for. A free
-  route, the free pool, `enso-free`/`zen-free`/`free`, and every unseated request never
-  reach it (`TestTheFreeLaneNeverReachesAMaker`).
+- **Paid only, and only the route named.** A maker bills every call, so it is asked only
+  by a request seated on the paid lane (`!FreeOnlyFor(ctx)`), for the route the caller
+  named (`f == fam && s == model`), where the family lists and charges for it. A free
+  route, the free pool, `enso-free`/`zen-free`/`free`, a route standing in for another
+  and every unseated request never reach it (`TestTheFreeLaneNeverReachesAMaker`).
 - **Every key, in order.** The pool is `object.Accounts(AnthropicKeys, AnthropicKeyList)`:
   `ANTHROPIC_API_KEY`, `_2`, `_3`, then each line of `ANTHROPIC_API_KEYS`. A key's place is
   its name's (2 for `_2`) whatever the names before it hold. Always from the first key
   that can serve, never round the ring: a prompt cache is the account's, so one account
-  leads. 401/403 and an account out of credit (402, or the vendor's 400 "credit balance")
-  bench the key `nativeDead` (10 min); 429 until `Retry-After`, never past `nativeBusy`
-  (1 min); 404, 408, 5xx and 529 ask the next key and bench nothing. Any other refusal
-  (400, 413, 422) is the request's own: no other key is asked and the reseller is, so
-  nothing that worked through the reseller stops working.
+  leads. What a refusal does to its key:
+  - 401: benched `nativeDead` (10 min), back at once when its list reads again.
+  - 403, and an account that cannot pay (402, `billing_error`, or the vendor's 400 whose
+    sentence STARTS "Your credit balance is too low" or "You have reached your specified
+    API usage limits"): benched `nativeDead`, by time alone. A 400 that merely contains
+    those words is a validation error quoting the caller, and benches nothing — read
+    loosely, one crafted request benched the whole pool.
+  - 429: benched until `Retry-After` (5 s when unstated), never past `nativeBusy` (1 min).
+  - 404, 408, 5xx, 529: the next key, nothing benched.
+  - Anything else (400, 413, 422), an answer that ended having said nothing, and a 200
+    that is not the stream asked for: the request's own. No other key is asked and the
+    reseller is, so nothing that worked through the reseller stops working.
+  A stream's head is waited for `nativeHead` (30 s); a vendor that cannot be reached is
+  not asked on another key.
 - **What a key lists is what it is asked for.** `GET /v1/models` per key at start and
   every `nativeEvery` (5 min): `anthropic/claude-haiku-4.5` is `claude-haiku-4-5`, or the
   newest `claude-haiku-4-5-<date>`; a SKU with a `:variant` is the reseller's. A key whose
-  list was never read is not asked. The same read benches a key the vendor refuses and
-  brings back one it accepts again; it says nothing of credit, so a key out of credit
-  rests its time out. A key's standing is logged when it changes
+  list was never read is not asked. A key's standing is logged when it changes
   (`anthropic key ANTHROPIC_API_KEY is not serving (401: …)`) and counted once in
   `cloud_supply_refused{provider="anthropic"}`.
 - **As itself.** Nothing here picks another model. When no key answers, the reseller is
@@ -679,7 +687,19 @@ address only once no key answered:
 - **Money.** The answer bills the catalog price of its tokens (`zenModel.bill`). The maker
   states what it cost at the vendor's own price (the SKU's rates less the family's markup,
   an hour-long cache write at the vendor's hour rate) as `X-Hanzo-Cogs`, header or trailer,
-  exactly as a family service does; `bill` never goes below that times the markup.
+  exactly as a family service does; `bill` never goes below that times the markup. That a
+  maker gave the answer is the pipe's own knowledge (`serving.maker`, set from the response
+  `dispatch` was handed): a cost or a vendor in the headers of any other answer floors no
+  bill and relabels no row.
+- **A stream its caller hangs up on** is billed for what the vendor had written: the
+  vendor invoices it either way. `claudeChat` translates every line already received,
+  `tap` counts every byte it passes, each states its cost when it is closed, and `settle`
+  closes the body before it reads the trailer. `sniffZenUsage` no longer takes a Messages
+  stream's opening count (`message_start`, an output of one token) as the answer's own:
+  that billed a cut stream for one token, on every family
+  (`TestAStreamItsCallerHangsUpOnIsBilledForWhatWasWritten`). An answer the VENDOR breaks
+  off ends `finish_reason: "length"` and then an error frame, so the whole answer
+  assembled from it is never taken for one that finished.
 - **On the books.** `X-Hanzo-Arm` (the vendor's id), `X-Hanzo-Provider: anthropic`,
   `X-Hanzo-Key` (the key's NAME) and `X-Hanzo-Failover` (`<id> (anthropic): key 1: 401
   authentication_error`, one a key that refused) ride the answer in process. The usage
