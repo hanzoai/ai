@@ -657,7 +657,11 @@ OpenRouter's vendor ids (`typesafe/jev-1.13`, `~typesafe/jev-latest`), selected 
 (`jevNamed`), and a bare `jev-*` has no route, so it is 400. Every refusal is
 `{"error":{"code","message"}}`. Kai bills $0.021 and Jev its list $0.042 per
 million input tokens — the same row in `model_pricing.go`,
-`conf/models.yaml` and hanzoai/pricing's `decisionCatalog`.
+`conf/models.yaml` and hanzoai/pricing's `decisionCatalog`. `zenlm/zen6` and
+`zenlm/zen6-flash` are Zen answering through the same service by a chat completion
+from Hanzo's router; they bill input and output ($2.28 / $7.26 per million, the
+published Zen chat row). `decisionCostNano` prices input and output for every
+model; Kai's and Jev's output rows are zero, so their bills are input alone.
 
 - **One principal pays.** The ledger org is what the reservation, the debit and
   every handle name: `billingOrg` on HTTP; on ZAP the same rule over the gateway
@@ -690,7 +694,18 @@ million input tokens — the same row in `model_pricing.go`,
   a decision costs a fraction of one: `decide` holds `max(1¢, estimate)` and settles
   with `settleNano`; `BalanceLedger` carries the sub-cent remainder, which counts
   against what is available as the cent it has begun. A cent covers a whole wire's
-  worth of state at either price.
+  worth of state at Kai's or Jev's price.
+- **An LLM decision bills no more than it was admitted at.** A model whose output
+  is priced is held at a token a body byte plus `decisionPromptTokens` (1,024) and
+  `decisionOutputTokens` (4,096) of output, and is settled and debited at most that
+  hold whoever pays (`BilledNanoExact`), a plan included. Counts are clamped where
+  priced: none below 0, output at 4,096, input at 2^30. An answer whose usage is
+  not two whole token counts is 502 and billed nothing (`decisionUsage`). Known
+  loss: the service writes the state out again before the router counts it (1e15
+  becomes 1000000000000000.0), so a number-heavy body can cost past its hold; the
+  excess is ours and logged (`decide`), about $1.76 a call at worst, until the
+  service passes the state's bytes through. A refusal after the router spent is
+  ours too, bounded by the service's max_tokens and 64 in flight a model.
 - **The reply never waits on the books.** The debit goes to 16 settlers through a
   1024-deep queue (full: filed inline, never dropped). A debit the ledger refuses or
   does not answer in `usageTimeout` (5 s) is tried 3 times with backoff; a retry after

@@ -414,9 +414,12 @@ func videoCostCents(model string, n int) int64 {
 // decisionCostNano is the billed price of a decision in nano-USD: its input and
 // output tokens at the model's price, as every model is priced. Kai's and Jev's
 // output is priced at zero, so their output tokens move nothing; an LLM model's
-// completion, reasoning included, bills at its output price.
+// completion, reasoning included, bills at its output price. A count is what the
+// service reports, relayed from whatever answered it, so each is bounded: none below
+// zero, output at the most a completion is asked for, input short of overflow.
 func decisionCostNano(model string, inputTokens, outputTokens int) int64 {
-	return tokenCostNano(model, inputTokens, max(outputTokens, 0), 0, 0)
+	return tokenCostNano(model, min(max(inputTokens, 0), decisionInputTokens),
+		min(max(outputTokens, 0), decisionOutputTokens), 0, 0)
 }
 
 // DO-AI alias pricing (same as their base model)

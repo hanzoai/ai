@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"context"
+	"math/big"
 	"net/http"
 	"testing"
 
@@ -130,8 +131,20 @@ func TestKaiIsHalfOfJev(t *testing.T) {
 func TestADecisionBillsItsOutputWhereItIsPriced(t *testing.T) {
 	for _, id := range []string{"zenlm/zen6", "zenlm/zen6-flash"} {
 		in := decisionCostNano(id, 1_000_000, 0)
-		if out := decisionCostNano(id, 1_000_000, 1_000_000) - in; in != 2_280_000_000 || out != 7_260_000_000 {
-			t.Errorf("%s: a million in %d nano, a million out %d more; want $2.28 and $7.26", id, in, out)
+		if out := decisionCostNano(id, 1_000_000, decisionOutputTokens) - in; in != 2_280_000_000 || out != decisionOutputTokens*7260 {
+			t.Errorf("%s: a million in %d nano, %d out %d more; want $2.28 a million and $7.26 a million", id, in, decisionOutputTokens, out)
+		}
+		// Output past what a completion is asked for bills the ceiling, and a count
+		// whose product would overflow bills a bounded, positive amount.
+		if got, ceil := decisionCostNano(id, 1000, 1_000_000_000), decisionCostNano(id, 1000, decisionOutputTokens); got != ceil {
+			t.Errorf("%s: 1e9 output tokens bill %d nano, want the ceiling's %d", id, got, ceil)
+		}
+		// 1<<62 times 2,280 wraps to exactly 0, so an odd count is what shows the bound,
+		// and the ceiling is held to the exact product, which int64 must hold.
+		ceil := new(big.Int).Add(new(big.Int).Mul(big.NewInt(decisionInputTokens), big.NewInt(2280)),
+			big.NewInt(decisionOutputTokens*7260))
+		if got := decisionCostNano(id, 1<<62+1, 1<<62+1); !ceil.IsInt64() || got != ceil.Int64() {
+			t.Errorf("%s: an overflowing count bills %d nano, want the ceiling's %s", id, got, ceil)
 		}
 		if got := decisionCostNano(id, 1000, -1000); got != 1000*2280 {
 			t.Errorf("%s: negative output moved the bill to %d nano", id, got)

@@ -69,6 +69,12 @@ const (
 	// service's cap on an LLM model's completion, reasoning included. A hold covers
 	// it, so a call settles within what it reserved.
 	decisionOutputTokens = 4096
+	// decisionPromptTokens is what the service wraps a body in for an LLM model: its
+	// system prompt, the chat template and the schema's frame.
+	decisionPromptTokens = 1024
+	// decisionInputTokens is the most input a decision bills: past every reach, and
+	// short of where a count times a price overflows int64.
+	decisionInputTokens = 1 << 30
 )
 
 // decisionContent is Content on the decision wire: a string, an object or an
@@ -1005,16 +1011,55 @@ func send(ctx context.Context, kai *object.Provider, org, set, rid string, body 
 	}
 	if resp.StatusCode == http.StatusOK {
 		var answer struct {
-			Usage   decisionsUsage    `json:"usage"`
+			Usage   json.RawMessage   `json:"usage"`
 			Routing *decisionsRouting `json:"routing"`
 		}
 		_ = json.Unmarshal(b, &answer)
-		d.usage = answer.Usage
+		u, ok := decisionUsage(answer.Usage)
+		if !ok {
+			log.Error("decisions: the decision service's answer states no usage ai can bill request_id=%s: %.256s", rid, answer.Usage)
+			return decided{fault: decline(http.StatusBadGateway, "the decision service's answer did not say what it spent")}
+		}
+		d.usage = u
 		if r := answer.Routing; r != nil && r.Backend == "kai" {
 			d.sha256 = r.Sha256
 		}
 	}
 	return d
+}
+
+// decisionUsage reads an answer's usage: input_tokens and output_tokens each a whole
+// number of 0 or more written as a JSON number, and cost, where stated, a number of
+// 0 or more. Any other usage, none included, is not ok. An answer is billed on what
+// it says it spent, so one that does not say is refused rather than answered at a
+// guess: billed nothing, which is the same accepted loss as any refusal, and
+// logged. The service writes its usage from integer fields, so only a broken
+// service reaches the refusal.
+func decisionUsage(raw json.RawMessage) (decisionsUsage, bool) {
+	var u struct {
+		InputTokens  json.RawMessage `json:"input_tokens"`
+		OutputTokens json.RawMessage `json:"output_tokens"`
+		Cost         *float64        `json:"cost"`
+	}
+	if json.Unmarshal(raw, &u) != nil || (u.Cost != nil && *u.Cost < 0) {
+		return decisionsUsage{}, false
+	}
+	in, inOK := count(u.InputTokens)
+	out, outOK := count(u.OutputTokens)
+	if !inOK || !outOK {
+		return decisionsUsage{}, false
+	}
+	return decisionsUsage{InputTokens: in, OutputTokens: out, Cost: u.Cost}, true
+}
+
+// count reads a token count: a JSON integer of 0 or more that an int64 holds. A
+// string, a fraction, an exponent and a sign are none.
+func count(raw json.RawMessage) (int, bool) {
+	if len(raw) == 0 || raw[0] < '0' || raw[0] > '9' {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(string(raw), 10, 64)
+	return int(n), err == nil
 }
 
 // decisionRecord is the row a served decision files: one call at the per-call
@@ -1114,8 +1159,15 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	if h.handle != "" {
 		tokens = max(tokens, handled.cost(d.ledger, h.handle))
 	}
-	est := (decisionCostNano(d.model, tokens, decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
-	hold, admitted := reserveFor(ctx, d.user.PayerSubject(d.ledger), max(est, 1))
+	// A model whose output is priced answers by a chat completion, and its tokenizer
+	// reads a digit, a hex character or an emoji's byte as a token: len/4 holds a
+	// quarter of that. It is held at a token a byte, beside the prompt around it.
+	llm := getModelPrice(d.model).OutputPerMillion > 0
+	if llm {
+		tokens = max(tokens, len(body)+decisionPromptTokens)
+	}
+	est := max((decisionCostNano(d.model, tokens, decisionOutputTokens)+nanoPerCent-1)/nanoPerCent, 1)
+	hold, admitted := reserveFor(ctx, d.user.PayerSubject(d.ledger), est)
 	if !admitted {
 		return refused(d.rid, decline(http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
 	}
@@ -1154,7 +1206,18 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	// refusal and logs what each one spent, and its caps bound it: a completion's
 	// max_tokens (decisionOutputTokens at most) and 64 completions in flight a model.
 	if got.status == http.StatusOK {
-		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens, got.usage.OutputTokens))
+		// An LLM call never bills past what it was admitted at, whoever pays: the service
+		// writes the body out again (a number such as 1e15 becomes 1000000000000000.0) and
+		// the router counts what it read, which no bound on the body can foresee. A plan,
+		// or a wallet the ledger has not read, is held to the same bound a held wallet is.
+		// The excess is ours, and logged.
+		cost := decisionCostNano(d.model, got.usage.InputTokens, got.usage.OutputTokens)
+		var capped *int64
+		if held := est * nanoPerCent; llm && cost > held {
+			log.Warning("decisions: %s answer cost %d nano past its %d nano hold request_id=%s; billed the hold", d.model, cost, held, d.rid)
+			capped, cost = &held, held
+		}
+		hold.settleNano(cost)
 		if h.observe != "" {
 			handled.note(d.ledger, h.observe, min(h.asked, got.usage.InputTokens))
 		}
@@ -1162,6 +1225,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 			handled.note(d.ledger, h.handle, got.usage.InputTokens)
 		}
 		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
+		rec.BilledNanoExact = capped
 		rec.ClientIP = d.ip
 		// The row carries the id the caller was answered under, so a bill and the
 		// answer it is for are found by one id; the row's own id stays ours.
