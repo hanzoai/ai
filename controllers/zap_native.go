@@ -375,6 +375,7 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 		premium, stream, record.ClientIP,
 		byo, feeCents, record.Account,
 		costNano, m.BilledNano, marginNano, unpriced, uncosted,
+		cacheSavedNano(record),
 	}
 }
 

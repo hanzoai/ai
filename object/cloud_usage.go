@@ -82,7 +82,8 @@ const cloudUsageTableDDL = `
 		billed_nano Int64,
 		margin_nano Int64,
 		unpriced UInt8,
-		uncosted UInt8
+		uncosted UInt8,
+		cache_saved_nano Int64
 	) ENGINE = ReplacingMergeTree()
 	ORDER BY (timestamp, organization, user_id, id)
 	TTL timestamp + INTERVAL 2 YEAR`
@@ -169,6 +170,12 @@ var cloudUsageColumnMigrations = []string{
 	// and what did the customer actually want". Beside `model` (what answered) it
 	// makes a fallback a fact in the ledger rather than an inference from two rows.
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS requested String`,
+	// cache_saved_nano is what the prompt cache took off this call's bill: its
+	// cache-read tokens at the model's input price less the same tokens at the
+	// cache-read price, in the billed price's own nano-USD. It is written from the
+	// price the debit used, so a later price change never rewrites what a past call
+	// saved. A row written before the column carries 0, which is "not measured".
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS cache_saved_nano Int64`,
 }
 
 // CloudUsageColumns is the write order for a usage row, and the ONLY place it is
@@ -189,6 +196,7 @@ var CloudUsageColumns = []string{
 	"is_premium", "is_stream", "client_ip",
 	"byo", "fee_cents", "account",
 	"cost_nano", "billed_nano", "margin_nano", "unpriced", "uncosted",
+	"cache_saved_nano",
 }
 
 // CloudUsageInsert is the usage-row INSERT, derived from CloudUsageColumns.

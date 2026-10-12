@@ -126,3 +126,40 @@ func TestUncostedRowSaysSoRatherThanReadingAsFree(t *testing.T) {
 		t.Errorf("cost_nano = %v, want 5000000 at the configured COGS rates", known["cost_nano"])
 	}
 }
+
+// The cache's saving is the billed price's own arithmetic: cache-read tokens at the
+// input price less the same tokens at the cache-read price (a tenth of input when the
+// model states none), in the nano-USD the debit uses, and the row carries it.
+func TestUsageRowCarriesWhatTheCacheSaved(t *testing.T) {
+	withMarginPricing(t)
+
+	saved := func(rec *usageRecord) int64 {
+		row := cloudUsageValues(rec, time.Now())
+		for i, c := range object.CloudUsageColumns {
+			if c == "cache_saved_nano" {
+				return row[i].(int64)
+			}
+		}
+		t.Fatal("cache_saved_nano is not a column")
+		return 0
+	}
+
+	// $10/1M input is 10,000 nano a token; its cache read defaults to a tenth, 1,000.
+	// 4,000 cached tokens save 4,000 × 9,000 nano.
+	token := &usageRecord{Model: "marginmodel", PromptTokens: 5000, CompletionTokens: 100, CacheReadTokens: 4000, Status: "success"}
+	if got, want := saved(token), int64(4000*9000); got != want {
+		t.Errorf("cache_saved_nano = %d, want %d", got, want)
+	}
+	if got := saved(&usageRecord{Model: "marginmodel", PromptTokens: 5000, Status: "success"}); got != 0 {
+		t.Errorf("no cache read saved %d, want 0", got)
+	}
+	for name, rec := range map[string]*usageRecord{
+		"free":     {Model: "marginmodel", CacheReadTokens: 4000, Free: true},
+		"byo":      {Model: "marginmodel", CacheReadTokens: 4000, BYO: true},
+		"decision": {Model: "marginmodel", CacheReadTokens: 4000, DecisionCount: 1},
+	} {
+		if got := saved(rec); got != 0 {
+			t.Errorf("%s call saved %d, want 0: its bill is not the token table's", name, got)
+		}
+	}
+}

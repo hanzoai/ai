@@ -51,14 +51,39 @@ func nanoPerToken(perMillion float64) int64 {
 // convention on every path: usageRecord.PromptTokens). The input rate bills the part
 // read fresh, prompt less reads and writes; each cache part bills at its own rate.
 func tokenNanoAt(inPerM, outPerM, cacheReadPerM, cacheWritePerM float64, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) int64 {
-	if cacheReadPerM == 0 && inPerM > 0 {
-		cacheReadPerM = inPerM * 0.10
-	}
+	cacheReadPerM = cacheReadRate(inPerM, cacheReadPerM)
 	cacheWritePerM = cacheWriteRate(inPerM, cacheWritePerM)
 	return int64(fresh(promptTokens, cacheReadTokens, cacheWriteTokens))*nanoPerToken(inPerM) +
 		int64(completionTokens)*nanoPerToken(outPerM) +
 		int64(cacheReadTokens)*nanoPerToken(cacheReadPerM) +
 		int64(cacheWriteTokens)*nanoPerToken(cacheWritePerM)
+}
+
+// cacheReadRate is the per-million price of a cache read: the model's own rate when
+// it states one, else a tenth of its input rate (Anthropic parity). The one rule for
+// the nano ledger (tokenNanoAt) and what the cache saved (cacheSavedNano).
+func cacheReadRate(inPerM, readPerM float64) float64 {
+	if readPerM == 0 && inPerM > 0 {
+		return inPerM * 0.10
+	}
+	return readPerM
+}
+
+// cacheSavedNano is what the prompt cache took off a call's bill, in nano-USD: its
+// cache-read tokens at the input price less the same tokens at the cache-read price,
+// both from the model's billed price, the table usageCostNano reads. Only a call
+// billed per token at that table saves anything it can state: a free route, a BYO
+// call (its bill is a fee, not the table's price), a call billed at an amount its
+// answer stated, and a decision, image, video or audio call have no such saving, so
+// they are 0. Never negative.
+func cacheSavedNano(record *usageRecord) int64 {
+	if record.CacheReadTokens <= 0 || record.Free || record.BYO || record.BilledNanoExact != nil ||
+		record.VideoCount > 0 || record.ImageCount > 0 || record.DecisionCount > 0 || recordIsAudio(record) {
+		return 0
+	}
+	price := getModelPrice(record.Model)
+	per := nanoPerToken(price.InputPerMillion) - nanoPerToken(cacheReadRate(price.InputPerMillion, price.CacheReadPerMillion))
+	return int64(record.CacheReadTokens) * max(per, 0)
 }
 
 // fresh is the part of a prompt read neither from the cache nor written to it.
