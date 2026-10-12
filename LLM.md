@@ -741,7 +741,7 @@ OpenRouter's vendor ids (`typesafe/jev-1.13`, `~typesafe/jev-latest`), selected 
 million input tokens — the same row in `model_pricing.go`,
 `conf/models.yaml` and hanzoai/pricing's `decisionCatalog`. `zenlm/zen6` and
 `zenlm/zen6-flash` are Zen answering through the same service by a chat completion
-from Hanzo's router; they bill input and output ($2.28 / $7.26 per million, the
+from Hanzo's router; they bill input and output ($2.28 / $7.26 per million, a PROVISIONAL launch price the owner has not confirmed: the
 published Zen chat row). `decisionCostNano` prices input and output for every
 model; Kai's and Jev's output rows are zero, so their bills are input alone.
 
