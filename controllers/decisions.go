@@ -69,6 +69,12 @@ const (
 	// service's cap on an LLM model's completion, reasoning included. A hold covers
 	// it, so a call settles within what it reserved.
 	decisionOutputTokens = 4096
+	// decisionPromptTokens is what the service wraps a body in for an LLM model: its
+	// system prompt, the chat template and the schema's frame.
+	decisionPromptTokens = 1024
+	// decisionInputTokens is the most input a decision bills: past every reach, and
+	// short of where a count times a price overflows int64.
+	decisionInputTokens = 1 << 30
 )
 
 // decisionContent is Content on the decision wire: a string, an object or an
@@ -1114,8 +1120,15 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	if h.handle != "" {
 		tokens = max(tokens, handled.cost(d.ledger, h.handle))
 	}
-	est := (decisionCostNano(d.model, tokens, decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
-	hold, admitted := reserveFor(ctx, d.user.PayerSubject(d.ledger), max(est, 1))
+	// A model whose output is priced answers by a chat completion, and its tokenizer
+	// reads a digit, a hex character or an emoji's byte as a token: len/4 holds a
+	// quarter of that. It is held at a token a byte, beside the prompt around it.
+	llm := getModelPrice(d.model).OutputPerMillion > 0
+	if llm {
+		tokens = max(tokens, len(body)+decisionPromptTokens)
+	}
+	est := max((decisionCostNano(d.model, tokens, decisionOutputTokens)+nanoPerCent-1)/nanoPerCent, 1)
+	hold, admitted := reserveFor(ctx, d.user.PayerSubject(d.ledger), est)
 	if !admitted {
 		return refused(d.rid, decline(http.StatusPaymentRequired, object.InsufficientBalance(d.host, d.ledger, "cost").Message))
 	}
@@ -1154,7 +1167,17 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 	// refusal and logs what each one spent, and its caps bound it: a completion's
 	// max_tokens (decisionOutputTokens at most) and 64 completions in flight a model.
 	if got.status == http.StatusOK {
-		hold.settleNano(decisionCostNano(d.model, got.usage.InputTokens, got.usage.OutputTokens))
+		// An LLM call a wallet holds for never settles past its hold: the service writes the
+		// body out again (a number such as 1e15 becomes 1000000000000000.0) and the
+		// router counts what it read, which no bound on the body can foresee. The excess
+		// is ours, and logged.
+		cost := decisionCostNano(d.model, got.usage.InputTokens, got.usage.OutputTokens)
+		var capped *int64
+		if held := est * nanoPerCent; llm && hold != nil && hold.subject != "" && cost > held {
+			log.Warning("decisions: %s answer cost %d nano past its %d nano hold request_id=%s; billed the hold", d.model, cost, held, d.rid)
+			capped, cost = &held, held
+		}
+		hold.settleNano(cost)
 		if h.observe != "" {
 			handled.note(d.ledger, h.observe, min(h.asked, got.usage.InputTokens))
 		}
@@ -1162,6 +1185,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 			handled.note(d.ledger, h.handle, got.usage.InputTokens)
 		}
 		rec := decisionRecord(d.ctx, d.ledger, d.user, d.model, kai, d.premium, got.usage)
+		rec.BilledNanoExact = capped
 		rec.ClientIP = d.ip
 		// The row carries the id the caller was answered under, so a bill and the
 		// answer it is for are found by one id; the row's own id stays ours.

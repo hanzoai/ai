@@ -420,7 +420,7 @@ func TestAnLLMDecisionBillsItsCompletion(t *testing.T) {
 		return http.StatusOK, decisionAnswer
 	}
 	asked := `{"model":"zenlm/zen6","state":"I was charged twice.","questions":{"is_bug":{"type":"boolean","instructions":"Is this a bug?"}}}`
-	cents := (decisionCostNano("zenlm/zen6", coarseTokenEstimate([]byte(asked)), decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
+	cents := (decisionCostNano("zenlm/zen6", len(asked)+decisionPromptTokens, decisionOutputTokens) + nanoPerCent - 1) / nanoPerCent
 	if cents < 2 {
 		t.Fatalf("zenlm/zen6 holds %d cents; its output ceiling must hold more than Kai's cent", cents)
 	}
