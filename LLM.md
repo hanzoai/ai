@@ -1160,6 +1160,12 @@ The shape of the fix is that **cost is optional and margin follows it**:
 - `controllers/zap_native.go` + `object/cloud_usage.go` — the warehouse column is
   `Int64`, so an unknown cost writes 0 and sets `uncosted = 1` beside it. Query
   `uncosted = 0` for rows whose cost is a fact.
+- `cache_saved_nano` (`cacheSavedNano`, `controllers/billing_nano.go`) — what the prompt
+  cache took off the call's bill: cache-read tokens at the model's input price less the
+  same at its cache-read price (`cacheReadRate`, shared with `tokenNanoAt`), from the
+  billed table. 0 for a free, BYO, stated-amount, decision, image, video or audio call,
+  and for a row written before the column: 0 there is "not measured", so a sum is a floor.
+  cloud's `/v1/usage/summary` reads it as `llm.cacheSavedCents`.
 - `controllers/telemetry.go` — the span emits `provider_cost` only when there is one,
   the way it already treated margin. It no longer asserts a COGS it does not have.
 
