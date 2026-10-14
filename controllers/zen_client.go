@@ -122,12 +122,13 @@ type modelFamily struct {
 	// exchange. It is called with the outgoing body and whether the route being
 	// asked for is one the vendor charges nothing for, because that is the trade a
 	// free route IS: the vendor serves it for nothing and keeps what it carried.
-	// A priced route pays instead, and keeps nothing.
+	// A priced route pays instead, and keeps nothing. m is the SKU as listed, whose
+	// retail bounds what the vendor may route a priced request to.
 	//
 	// nil for a family whose dialect states no such thing, and the body then goes
 	// out untouched — vendor-specific fields are never sent to a vendor that did
 	// not define them.
-	terms func(body []byte, free bool) []byte
+	terms func(body []byte, m zenModel, free bool) []byte
 
 	// native is the API of the vendor that MAKES some of this family's SKUs, asked
 	// for them before the family's own address (native.go): a model a reseller
@@ -1768,7 +1769,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			}
 		}
 		if f.terms != nil {
-			b = f.terms(b, f.free(s))
+			m, _ := f.lookup(s)
+			b = f.terms(b, m, f.free(s))
 		}
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		r.ContentLength = int64(len(b))

@@ -599,19 +599,29 @@ func (f *modelFamily) collection(sku string) (word string, stated bool) {
 	return collection(f.free(sku)), true
 }
 
-// openrouterTerms states what OpenRouter may keep of this exchange, in its own
-// dialect: `provider.data_collection`.
+// openrouterTerms states, in OpenRouter's own dialect (`provider`), what the vendor
+// may keep of this exchange and which of its providers may serve it.
 //
 // A free route is free BECAUSE the vendor keeps what it carried — that is the
 // trade, and asking for a free route while denying collection asks for the price
 // without the terms, which the vendor answers by having no endpoint to serve it.
 // A priced route pays instead and keeps nothing.
 //
+// A priced route also goes to the provider with the lowest latency among those
+// whose price is at most the SKU's retail (`sort`, `max_price`, USD per million
+// tokens). Left to itself OpenRouter balances a model's traffic toward its cheapest
+// providers whatever they take: on openai/gpt-oss-120b (2026-10-14) its default
+// answered first in 0.88 s and billed 0.83 to 1.35 times our retail, and this in
+// 0.49 s at 0.95 times it. A call bills at least its cost times the margin (bill),
+// so the cap also bounds that bill at margin times retail. A SKU the vendor prices
+// per call (Variable) states no retail and gets no cap.
+//
 // Written over the caller's own `provider` object rather than replacing it, so a
-// caller who states other vendor preferences keeps them.
+// caller who states other vendor preferences keeps them, its own `sort` and
+// `max_price` included.
 //
 // A Claude model is also asked to cache its prompt (claudeCache).
-func openrouterTerms(body []byte, free bool) []byte {
+func openrouterTerms(body []byte, sku zenModel, free bool) []byte {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(body, &m); err != nil || m == nil {
 		return body
@@ -626,6 +636,14 @@ func openrouterTerms(body []byte, free bool) []byte {
 		return body
 	}
 	prov["data_collection"] = word
+	if !free && !sku.Variable && sku.Base.In.Sign() > 0 && sku.Base.Out.Sign() > 0 {
+		if _, ok := prov["sort"]; !ok {
+			prov["sort"] = json.RawMessage(`"latency"`)
+		}
+		if _, ok := prov["max_price"]; !ok {
+			prov["max_price"] = json.RawMessage(`{"prompt":` + sku.Base.In.String() + `,"completion":` + sku.Base.Out.String() + `}`)
+		}
+	}
 	pb, err := json.Marshal(prov)
 	if err != nil {
 		return body

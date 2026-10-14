@@ -162,7 +162,7 @@ func TestOpenRouterIsAskedToCacheAClaudePrompt(t *testing.T) {
 		{"not claude", `{"model":"openai/gpt-6","messages":[{"role":"user","content":"hi"}]}`, ``},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got := string(decoded(t, openrouterTerms([]byte(c.body), false))["cache_control"])
+			got := string(decoded(t, openrouterTerms([]byte(c.body), zenModel{}, false))["cache_control"])
 			if got != c.want {
 				t.Errorf("cache_control = %q, want %q", got, c.want)
 			}
