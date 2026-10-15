@@ -68,7 +68,11 @@ const flagshipWindow = 1_000_000
 // TTL. All of zen's original machinery is a method on this value; zen and enso are
 // two instances.
 type modelFamily struct {
-	name     string   // "zen" | "enso" | "openrouter" — the brand label
+	name string // "zen" | "enso" | "openrouter" — the brand label
+	// plus says the family's SKUs are priced at cost: a call bills what its arms
+	// cost us, the platform's fee on top (fee.go, rates.go), and its listed price is
+	// the rates job's (from, typical, up to). Enso's are.
+	plus     bool
 	typ      string   // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
 	prefix   string   // public brand prefix for cold-start ownership (before first discovery)
 	owner    string   // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
@@ -183,6 +187,7 @@ var (
 	}
 	ensoFam = &modelFamily{
 		name: "enso", typ: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
+		plus:       true,
 		freeName:   "enso-free",
 		providerFn: object.EnsoProvider,
 		// The flagship windows. Every other SKU, enso-pro among them, is listed and
@@ -2064,6 +2069,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// receiver for the same reason: with no `c` in scope it cannot reach a request
 	// at all, which is a compile-time property rather than a rule to remember.
 	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam, plan: grantOf(c.Ctx)}
+	if fam.plus {
+		// A family priced at cost is priced by depth too (rates.go).
+		w.depth = depthOf(rawBody)
+	}
 
 	// ONE status decision, ahead of the split, because the answer to "can this
 	// request still be moved" is the same for both shapes. The status arrives
@@ -2929,6 +2938,7 @@ type whence struct {
 	ctx    context.Context    // what the usage row and its span hang off
 	asked  *modelFamily       // the family of the model the caller named
 	plan   *object.LimitGrant // the plan that covers the request, nil for none
+	depth  string             // how hard the request asks its model to think (depthOf)
 }
 
 // recordFamilyUsage takes NO RECEIVER, deliberately. It is called from inside a
@@ -2952,18 +2962,32 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	if lf := listedFamily(sv.vendor); lf != nil && sv.arm != "" && lf.free(sv.arm) {
 		lf.served(sv.arm, sv.account, status == "success")
 	}
+	// What the call cost us to buy: the family's own statement (cogsHeader) where it
+	// made one, else the cost the answer's usage stated (a resale vendor's), with the
+	// fee of the vendor whose credit bought it on top (fee.go). It is the row's COGS,
+	// so usageMargin reads the margin on a relayed call as a fact rather than a guess.
+	cogs := sv.cogs
+	if cogs == nil {
+		cogs = mk.cogs()
+	}
+	cost := costed(cogs, buyers(fam, sv)...)
 	var nano int64
 	var exact *int64 // the charge the ledger, row and span read
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
-			// What the call cost is the answer's own statement, or the maker's that
-			// gave it (native.go): a resold SKU never bills below either. A cost in
-			// the headers of any other answer is its family's record, not a price.
-			stated := mk.cogs()
-			if stated == nil && sv.maker != nil {
-				stated = sv.cogs
+			switch {
+			case (fam.plus || sv.maker != nil) && cost != nil:
+				// Priced at cost: what the call's arms cost us, the platform's fee on
+				// top and nothing else (fee.go). A family priced so states its cost on
+				// every answer, and a maker states what it charged (native.go).
+				nano = plus(*cost, false)
+			default:
+				// What the call cost is the answer's own statement: a resold SKU
+				// never bills below it. A cost in the headers of any other answer is
+				// its family's record, not a price. A family priced at cost whose
+				// answer stated none bills its listed price, the most a token bills.
+				nano = zm.bill(mk.cogs(), t)
 			}
-			nano = zm.bill(stated, t)
 		} else {
 			nano = tokenCostNano(model, t.prompt(), t.completion, t.cached, t.written)
 		}
@@ -2977,17 +3001,20 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		}
 		exact = &nano
 	}
+	// A call that cost us more than it billed is a loss, and a loss is never
+	// silent: the row says how much (loss_nano), and the rates job counts it.
+	var loss int64
+	if status == "success" && cost != nil && *cost > nano {
+		loss = *cost - nano
+		log.Warn("loss: %s answered by %s (%s) cost %d nano and billed %d", model, sv.arm, sv.vendor, *cost, nano)
+	}
 	hold.settleNano(nano)
 	if authUser == nil {
 		return nano
 	}
-	// What the call cost us to buy, beside what we charged for it: the family's own
-	// statement (cogsHeader) where it made one, else the cost the answer's usage
-	// stated (a resale vendor's). usageMargin reads it as the COGS, so the margin on
-	// a relayed call is a fact rather than a guess.
-	cogs := sv.cogs
-	if cogs == nil {
-		cogs = mk.cogs()
+	var trailed string
+	if fam.plus {
+		trailed = trail(model, sv, t)
 	}
 	origin, via := reached(prov, mk, sv)
 	rec := &usageRecord{
@@ -2995,10 +3022,11 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: origin, Via: via,
 		PromptTokens: t.prompt(), CacheReadTokens: t.cached, CacheWriteTokens: t.written, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
+		Reasoning: w.depth, Arms: trailed, LossNano: loss,
 		Cost: float64(nano) / 1e9, Currency: "USD",
 		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: w.ip, RequestID: reqID, Account: "hanzo", Routing: string(mk.routing),
-		CostNanoExact:   cogs,
+		CostNanoExact:   cost,
 		BilledNanoExact: exact,
 		plan:            w.plan,
 		planNanos:       planCost(w.plan, sv.cost),

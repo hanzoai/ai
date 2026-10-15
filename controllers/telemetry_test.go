@@ -352,6 +352,7 @@ func TestUsageCostCents_MatchesSpanTotal(t *testing.T) {
 // ~1% platform fee for a BYO call (where the customer paid the upstream directly). The
 // total_cost stays the full provider cost for analytics — so Observe ≠ invoice is fixed.
 func TestUsageBilledCents_BYOReconcilesInvoice(t *testing.T) {
+	fees(t, map[string]string{"hanzo_byok": "1"})
 	// A call whose full provider cost is > 0.
 	base := &usageRecord{Model: "zen5", PromptTokens: 100000, CompletionTokens: 50000}
 	cost := usageCostCents(base)

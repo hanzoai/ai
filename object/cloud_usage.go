@@ -83,7 +83,13 @@ const cloudUsageTableDDL = `
 		margin_nano Int64,
 		unpriced UInt8,
 		uncosted UInt8,
-		cache_saved_nano Int64
+		cache_saved_nano Int64,
+		reasoning String,
+		reasoning_tokens UInt32,
+		served String,
+		vendor String,
+		arms String,
+		loss_nano Int64
 	) ENGINE = ReplacingMergeTree()
 	ORDER BY (timestamp, organization, user_id, id)
 	TTL timestamp + INTERVAL 2 YEAR`
@@ -176,6 +182,24 @@ var cloudUsageColumnMigrations = []string{
 	// price the debit used, so a later price change never rewrites what a past call
 	// saved. A row written before the column carries 0, which is "not measured".
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS cache_saved_nano Int64`,
+	// reasoning is how hard the caller asked the model to think — none, low, medium,
+	// high, max, or default for a request that asked nothing and got its model's own —
+	// and reasoning_tokens the part of the completion it spent doing so. A price that
+	// moves with routing moves with depth, so the rates job reads both.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS reasoning String`,
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS reasoning_tokens UInt32`,
+	// served is the upstream model that answered and vendor the provider whose
+	// account ran it: the arm. A family's answer names both, and a row that kept
+	// neither could not say what a request was routed to or whose credit bought it.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS served String`,
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS vendor String`,
+	// arms is every arm a request priced at cost ran, as JSON: each upstream, its
+	// provider, its rates at the time and the tokens it was paid for, and each arm
+	// that failed first with why. The Enso family's requests carry it.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS arms String`,
+	// loss_nano is what a call cost us past what it billed, 0 for every call billed
+	// at or above its cost. Never silent: a loss is a row, and the rates job counts it.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS loss_nano Int64`,
 }
 
 // CloudUsageColumns is the write order for a usage row, and the ONLY place it is
@@ -197,6 +221,7 @@ var CloudUsageColumns = []string{
 	"byo", "fee_cents", "account",
 	"cost_nano", "billed_nano", "margin_nano", "unpriced", "uncosted",
 	"cache_saved_nano",
+	"reasoning", "reasoning_tokens", "served", "vendor", "arms", "loss_nano",
 }
 
 // CloudUsageInsert is the usage-row INSERT, derived from CloudUsageColumns.

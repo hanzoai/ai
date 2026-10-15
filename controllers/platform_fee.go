@@ -15,8 +15,11 @@
 package controllers
 
 import (
+	"strconv"
+
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/decimal"
 )
 
 // globalProviderOwner is the sentinel Owner of the built-in (Hanzo-served)
@@ -29,13 +32,24 @@ const globalProviderOwner = "admin"
 
 // platformFeeCents returns the Hanzo platform surcharge, in integer cents, for a
 // completion. BYO (a customer-connected third-party account executed the call) →
-// 1% of the provider list-price cost, rounded UP so a non-zero cost never yields a
-// zero fee. Buying via Hanzo credits (byo=false) → 0 (no surcharge). Pure/total.
+// the platform's BYOK fee (fee.go: the host's `hanzo_byok`, 1%) of the provider
+// list-price cost, rounded UP so a non-zero fee never yields a zero cent. Buying via
+// Hanzo credits (byo=false) → 0 here: that call's price carries its own fee.
 func platformFeeCents(costCents int64, byo bool) int64 {
 	if !byo || costCents <= 0 {
 		return 0
 	}
-	return (costCents + 99) / 100
+	pct := platform(true).Sub(decimal.New(1, 0))
+	if pct.Sign() <= 0 {
+		return 0
+	}
+	fee := decimal.New(costCents, 0).Mul(pct)
+	whole := fee.Quo(decimal.New(1, 0), 0)
+	if whole.Cmp(fee) < 0 {
+		whole = whole.Add(decimal.New(1, 0))
+	}
+	n, _ := strconv.ParseInt(whole.String(), 10, 64)
+	return n
 }
 
 // providerBYO classifies a resolved (provider, billed-user) pair for metering.

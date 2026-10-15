@@ -172,6 +172,7 @@ func TestConnectionView_NoLeak(t *testing.T) {
 // org-owned provider is BYO and bills the 1% fee; the global Hanzo built-in is not
 // BYO and bills no surcharge (the full token cost path). FEE-ONCE.
 func TestProviderBYO_FeeOnce(t *testing.T) {
+	fees(t, map[string]string{"hanzo_byok": "1"})
 	user := &iam.User{Owner: "acme", Name: "z"}
 
 	// Org's OWN connected account → BYO, fee applies.

@@ -118,21 +118,21 @@ const openrouterAuto = "openrouter/free"
 var openrouterTokensPerMillion = decimal.New(1_000_000, 0)
 
 // openrouterMarkup is the multiple a model resold from OpenRouter bills over the price
-// OpenRouter states: 1 + OpenRouter's fee, a percent the host's operator sets
-// (object.Fee; 5.5 is what OpenRouter charges on the credit it sells). A fee that is
-// not a percent of 0 or more is an error, and the catalog stays as it was: a resold
-// model is never priced below what its vendor charges.
+// OpenRouter states: what the call costs us, 1 + OpenRouter's fee (object.Fee; 5.5 is
+// what OpenRouter charges on the credit it sells), times 1 + the platform's own fee
+// (fee.go), which is the margin. A vendor fee that is not a percent of 0 or more is an
+// error, and the catalog stays as it was: a resold model is never priced below what
+// its vendor charges.
 func openrouterMarkup() (decimal.Decimal, error) {
-	one := decimal.New(1, 0)
-	raw := strings.TrimSpace(object.Fee("openrouter"))
-	if raw == "" {
-		return one, nil
+	cost := decimal.New(1, 0)
+	if raw := strings.TrimSpace(object.Fee("openrouter")); raw != "" {
+		pct, err := decimal.Parse(raw)
+		if err != nil || pct.Sign() < 0 {
+			return decimal.Decimal{}, fmt.Errorf("openrouter fee %q is not a percent of 0 or more", raw)
+		}
+		cost = cost.Add(pct.Mul(decimal.New(1, 2)))
 	}
-	pct, err := decimal.Parse(raw)
-	if err != nil || pct.Sign() < 0 {
-		return decimal.Decimal{}, fmt.Errorf("openrouter fee %q is not a percent of 0 or more", raw)
-	}
-	return one.Add(pct.Mul(decimal.New(1, 2))), nil
+	return cost.Mul(platform(false)), nil
 }
 
 // openrouterWireModel is the subset of OpenRouter's /v1/models item ai needs to list,

@@ -149,14 +149,14 @@ func usageCostNano(record *usageRecord) int64 {
 }
 
 // usageBilledNano is what Hanzo DEBITS in nano-USD: the full cost for a Hanzo-served
-// call, or the 1% platform fee for a BYO call (ceil to the nano, so a fee is never
-// rounded down to zero).
+// call, or the platform's BYOK fee for a BYO call (fee.go, 1%; ceil to the nano, so a
+// fee is never rounded down to zero).
 func usageBilledNano(record *usageRecord, costNano int64) int64 {
 	if record.BYO {
 		if costNano <= 0 {
 			return 0
 		}
-		return (costNano + 99) / 100 // ceil(cost / 100) = 1% platform fee
+		return plus(costNano, true) - costNano
 	}
 	return costNano
 }

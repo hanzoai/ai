@@ -144,13 +144,19 @@ func TestOpenRouterUnconfiguredExposesNothing(t *testing.T) {
 // fee installs the host's OpenRouter fee, in percent, for one test.
 func fee(t *testing.T, pct string) {
 	t.Helper()
-	object.SetFees(func(vendor string) string {
-		if vendor == "openrouter" {
-			return pct
-		}
-		return ""
+	fees(t, map[string]string{"openrouter": pct})
+}
+
+// fees installs every fee the host states, by name, and forgets every fee read so
+// the next one asks again; both undone when the test ends.
+func fees(t *testing.T, by map[string]string) {
+	t.Helper()
+	object.SetFees(func(name string) string { return by[name] })
+	levies.forget()
+	t.Cleanup(func() {
+		object.SetFees(nil)
+		levies.forget()
 	})
-	t.Cleanup(func() { object.SetFees(nil) })
 }
 
 // Retail is the vendor's price plus the fee the host's operator sets (5.5%, what

@@ -213,6 +213,8 @@ func resale(t *testing.T, a *accounts, also ...string) *modelFamily {
 	t.Setenv("OPENROUTER_API_KEY_2", "")
 	t.Setenv("OPENROUTER_API_KEY_3", "")
 	fam := spareFamily(t, a.serve(t).URL, "vendor/big:free", also...)
+	// A maker's answer bills what it cost, the platform's fee on top (fee.go).
+	fees(t, map[string]string{"hanzo": "5.5"})
 	// $0.10 in, $0.50 out, $0.01 a cached read and $0.125 a cache write a million
 	// tokens at the vendor, each times 1.055.
 	tier := zenTier{
@@ -686,7 +688,7 @@ func TestAMakersAnswerBillsTheCatalogPriceAndStatesWhatItCost(t *testing.T) {
 
 	// 1,000 fresh, 3,000 cached, 2,000 written, 500 out:
 	//   vendor: (1000×0.10 + 3000×0.01 + 2000×0.125 + 500×0.50) / 1e6 = $0.00063
-	//   caller: that × 1.055                                          = $0.00066465
+	//   caller: that × 1.055, the platform's fee                      = $0.00066465
 	const cost, price = "0.00063", "0.00066465"
 	for _, stream := range []bool{true, false} {
 		c := visit(http.MethodPost, "/v1/chat/completions")
@@ -722,7 +724,7 @@ func TestAMakersAnswerBillsTheCatalogPriceAndStatesWhatItCost(t *testing.T) {
 }
 
 // An hour-long cache write costs the vendor's hour rate, which the catalog does
-// not list: the call bills what it cost times the family's fee, never the
+// not list: the call bills what it cost times the platform's fee, never the
 // five-minute rate.
 func TestAnHourLongCacheWriteNeverBillsBelowItsCost(t *testing.T) {
 	or := &accounts{}

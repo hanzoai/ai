@@ -18,9 +18,11 @@ import "testing"
 
 // TestPlatformFeeCents pins the two policies exactly:
 //   - byo=false (bought via Hanzo credits) → 0 surcharge, at every cost.
-//   - byo=true  (customer-connected account) → ceil(cost/100), so a non-zero cost
-//     always bills at least 1 cent and never rounds down to a free call.
+//   - byo=true  (customer-connected account) → ceil(cost × the host's BYOK fee, 1%),
+//     so a non-zero cost always bills at least 1 cent and never rounds down to a free
+//     call.
 func TestPlatformFeeCents(t *testing.T) {
+	fees(t, map[string]string{"hanzo_byok": "1"})
 	cases := []struct {
 		name string
 		cost int64
@@ -52,5 +54,18 @@ func TestPlatformFeeCents(t *testing.T) {
 				t.Errorf("platformFeeCents(%d, %v) = %d, want %d", tc.cost, tc.byo, got, tc.want)
 			}
 		})
+	}
+}
+
+// The BYOK fee is the host's setting, read where the platform's fee is: at 2% the
+// same call bills 2%, and a host that states none bills no fee at all.
+func TestTheBYOKFeeIsTheHostsSetting(t *testing.T) {
+	fees(t, map[string]string{"hanzo_byok": "2"})
+	if got := platformFeeCents(10000, true); got != 200 {
+		t.Errorf("at 2%% the fee on 10000c = %d, want 200", got)
+	}
+	fees(t, map[string]string{})
+	if got := platformFeeCents(10000, true); got != 0 {
+		t.Errorf("with no fee stated the fee = %d, want 0", got)
 	}
 }

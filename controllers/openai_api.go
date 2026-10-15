@@ -965,6 +965,16 @@ type usageRecord struct {
 	Via string `json:"via,omitempty"`
 	// ReasoningTokens is the part of CompletionTokens the model spent reasoning.
 	ReasoningTokens int `json:"reasoningTokens,omitempty"`
+	// Reasoning is how hard the caller asked the model to think (depthOf): none,
+	// low, medium, high, max, or default when it asked nothing. Empty where the path
+	// does not read it.
+	Reasoning string `json:"reasoning,omitempty"`
+	// Arms is every arm a call priced at cost ran (trail), as JSON; empty on a call
+	// priced any other way.
+	Arms string `json:"arms,omitempty"`
+	// LossNano is what the call cost us past what it billed: 0 on every call billed
+	// at or above its cost. A loss is never silent; it is this.
+	LossNano int64 `json:"lossNano,omitempty"`
 	// First is the time from the start of the call to the first token of the
 	// answer. Zero when not measured.
 	First time.Duration `json:"-"`

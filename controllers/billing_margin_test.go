@@ -62,6 +62,7 @@ func showNano(v *int64) string {
 }
 
 func TestUsageMargin(t *testing.T) {
+	fees(t, map[string]string{"hanzo_byok": "1"})
 	withMarginPricing(t)
 
 	cases := []struct {
@@ -156,6 +157,7 @@ func TestUsageMargin(t *testing.T) {
 // exactly, for both a served and a BYO call. Margin is additive telemetry, never a
 // change to what the customer pays.
 func TestUsageMargin_BilledUnchangedFromBaseline(t *testing.T) {
+	fees(t, map[string]string{"hanzo_byok": "1"})
 	withMarginPricing(t)
 
 	for _, rec := range []usageRecord{

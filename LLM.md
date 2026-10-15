@@ -885,12 +885,14 @@ credits paid for it. There is exactly one meter and one credential store.
 
 **Two account modes (one router, one meter):**
 - **Hanzo credits (default).** No org-owned provider for the requested model →
-  the global built-in (`Owner == "admin"`) serves it. Billed = token list-price
-  cost (existing behavior). No surcharge.
+  the global built-in (`Owner == "admin"`) serves it. A route row (models.yaml) bills
+  its token list price; a family's answer (Enso, a resold OpenRouter SKU, a maker's)
+  bills its cost and the platform's fee (Priced at cost, below).
 - **Connected third-party account (BYO).** The org connected its OWN OpenAI /
   Anthropic / Google account via `/v1/ai/connections`. The router uses the org's
-  KMS-sealed key, the customer pays that provider directly, and Hanzo bills a **1%
-  platform fee** on the provider list price for routing + metering + management.
+  KMS-sealed key, the customer pays that provider directly, and Hanzo bills the
+  **`hanzo_byok` platform fee** (1%, the host's setting, `fee.go`) on the provider list
+  price for routing + metering + management.
 
 **BYO is the EXISTING BYOK seam, not new plumbing.** `resolveProviderForUser` →
 `object.GetModelProviderByNameForOrg(org, name)` returns the org's own provider row
@@ -902,7 +904,7 @@ when it has one (`Owner == org`), else the global `admin` built-in. `providerBYO
 calls `recordUsage` (→ commerce `POST /v1/billing/usage`) + `recordTrace` (→ the
 `hanzo.cloud_usage` warehouse). This feature adds three dimensions to that ONE
 event: `byo`, `fee_cents`, `account`. `platformFeeCents(costCents, byo) =
-byo ? ceil(costCents/100) : 0`. Billed `amount = byo ? fee_cents : cost_cents`; the
+byo ? ceil(costCents × hanzo_byok%) : 0`. Billed `amount = byo ? fee_cents : cost_cents`; the
 full `cost_cents` is recorded on every row for analytics even when only the fee is
 billed. `hanzo.cloud_usage` is the ONE global usage store (its `organization` column
 is the row-level tenant filter — a tenant reads only its own org; the admin org
@@ -1222,24 +1224,83 @@ facts: the family owns what we charge, the route row owns what it costs us.
 ### What still has no COGS
 
 The mechanism no longer lies, but a rate nobody has entered is still a rate nobody has
-entered. Enso's real figures are known and live in the Enso catalog: `1.392 / 2.784`
-$/MTok on the `deepseek-v4-pro` anchor (enso, enso-ultra) and `0.112 / 0.224` on
-`deepseek-4-flash`. Against billed 4/20 that is roughly 2.9x in / 7.2x out.
-
-Registering them is an operator action on the route row — set both legs; one leg alone
-is ignored by `costed()`. Until then the rows read `uncosted = 1`, which is the honest
-answer and a visible one: `SELECT count() FROM hanzo.cloud_usage WHERE uncosted = 1`
-is the backlog, and it should fall as rates are entered.
-
-For enso-ultra the fan-out means COGS is the sum of the arms that ran, which only the
-server can total. `controllers/trace_export.go` carries `BilledNano`/`CostNano` and
-surfaces as `CostNanoExact`; a stated cost wins over the rate table in `usageMargin`.
-Rate math cannot express a fan-out cost at all, so that is the right seam for it.
+entered. A route row (models.yaml, the static table) states no cost until an operator
+sets both legs; one leg alone is ignored by `costed()`. Until then the rows read
+`uncosted = 1`, which is the honest answer and a visible one: `SELECT count() FROM
+hanzo.cloud_usage WHERE uncosted = 1` is the backlog. A family's answer (Zen, Enso, the
+OpenRouter resale) states its own cost on every call (`X-Hanzo-Cogs`, or the vendor's
+usage `cost`), which wins over the rate table in `usageMargin`: rate math cannot express
+a fan-out or a failover's cost at all, and only the family can total it.
 
 The admin cockpit's below-cost check compared price against a "cost" that WAS the price,
 so its difference was always exactly zero and it could neither fire honestly nor stay
 quiet honestly. It now has a cost to compare against, or a flag saying there is none.
 
+
+## Priced at cost: the fee is the margin (`fee.go`, `rates.go`)
+
+Owner, 2026-10-15: a model served through the gateway bills the price of the arm that
+actually answered, passed through, and the platform's fee on top: 5.5% (OpenRouter's own
+rate) on Hanzo's accounts, 1% on the org's own provider key. The fee is the margin; there
+is no other markup, and nothing is ever billed below cost.
+
+- **Fees are the host's** (`object.Fee`, cloud `apps/flags` `SeedFees`, edited at
+  admin.hanzo.ai Usage policy): `openrouter` (5.5, the vendor's fee on its credit, part
+  of the cost), `hanzo` (5.5, the platform's) and `hanzo_byok` (1). `fee.go` reads each
+  at most once a minute (`levy`), a stale read answering while the next runs; a read that
+  is no percent keeps the last good one, and a platform fee of zero is refused there and
+  at the admin write. A host that states none bills at cost: never below it.
+- **Cost of record** (`costed`): what the family (`X-Hanzo-Cogs`) or the vendor's usage
+  stated, times the fee of the costliest vendor whose credit bought any arm of it
+  (`buyers`: OpenRouter for the resale family's own answers; the answering arm's
+  provider and every failed arm's for a family's; none for a maker's, whose price is its
+  own). It is `cost_nano`. A call routed through OpenRouter therefore costs its stated
+  price plus 5.5%, and the platform's fee goes on top of that, never on the bare list.
+- **Enso is priced at cost** (`modelFamily.plus`): an answer bills `plus(cost)`, its cost
+  of record times the platform's fee. An answer whose family stated no cost bills the
+  SKU's listed price (the engine's retail, the dearest rung times the catalog's margin),
+  which is the most a token bills; the hold reserves that same ceiling. A maker's answer
+  (native.go) is priced at cost the same way. A resold OpenRouter SKU bills its vendor's
+  price times `(1 + openrouter fee) × (1 + hanzo fee)` (`openrouterMarkup`), never below
+  its stated cost times that. A BYO call (`providerBYO`) bills the `hanzo_byok` fee alone.
+- **Never silent**: a call whose cost exceeds what it billed (a stand-in capped at the
+  named model's price, a free rung that cost something) writes `loss_nano` on its row and
+  a `loss:` warning. The rates job counts every one.
+- **The row** (hanzo.cloud_usage, one a call): beside `model` (the SKU), `cost_nano`,
+  `billed_nano` and `margin_nano` (= the fee collected), a family's rows carry `served`
+  and `vendor` (the arm and the provider whose account ran it), `reasoning` (the depth
+  asked, `depthOf`, mirroring hanzo-inc/engine thinking.rs: none, low, medium, high, max,
+  or default), `reasoning_tokens`, `loss_nano`, and on Enso's `arms`: JSON, the arm that
+  answered with its rate at the time (`rate`, the vendor's fee as `fee`) and the tokens it
+  was paid for, then each arm that failed first and why. Failed arms keep their
+  `failover` rows too.
+- **Rates** (`rates.go`): each priced Enso SKU has three prices, each the platform's fee
+  over a cost: `from` (its cheapest arm, class by class), `typical` (what its calls cost
+  over the last day, or its last 50 when the day held fewer: each row's cost of record
+  split between fresh, cached, written and output tokens by its arm's rates, summed and
+  divided by each class's tokens) and `up_to` (its dearest arm, a long prompt's price
+  included). The arms come from the family's admin catalog (`GET {ENSO_URL}/v1/admin/catalog`
+  under `ZEN_ADMIN_TOKEN`, read every 5 minutes, the engine's shape; the long price once
+  the engine publishes it there). Typical is measured at start, every 24 hours and on
+  `Reprice` (cloud: `POST /v1/pricing/sync`), grouped by depth and over every depth.
+  `Prices`, `Price` and `Blend` (a set of models a caller composed: from its cheapest, up
+  to its dearest, nothing typical) read the last board; `/v1/models` lists an Enso SKU at
+  its typical rate (its up-to where nothing was measured), `variable: true`, with
+  `pricing.from`, `pricing.up_to`, `pricing.fee` and `pricing.window` beside it. A
+  SuperAdmin's quote names the arms; no other read does. The board's `Ledger` is the
+  day's answers, failovers, OpenRouter-bought answers (`fallbacks`, `fallback_share`), fee
+  collected, losses, and each by model and vendor (`routes`).
+- **Not yet**: the routing-time check (an arm whose cost would exceed what the request
+  may spend) is the engine's to make; with every call billed at its own cost plus the
+  fee, the margin holds on every arm by construction, and the engine walks rungs in the
+  catalog's order. Direct-key rungs ahead of OpenRouter are catalog data (universe
+  `charts/app/files/enso/catalog.yaml`) and wait on keys and the engine's anthropic kind.
+
+`routing.go` still reads and writes a family's catalog at `/v1/admin/zen/*`, which the
+Go zen serves and the engine (enso since 1.6.1) does not (`/v1/admin/*`). Moving it is
+not a path edit: convergence applies the newest stored version wherever a family serves
+another, so the first read that succeeds would push the last stored enso version over
+the live catalog. The rates read the engine's path on their own, read-only.
 
 ## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
 
