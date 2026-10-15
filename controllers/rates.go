@@ -92,6 +92,9 @@ type Window struct {
 type Arm struct {
 	Upstream string `json:"upstream"`
 	Provider string `json:"provider"`
+	// Kind is the path the provider is (resolve.go): direct, family, do or
+	// openrouter.
+	Kind string `json:"kind"`
 	// Fee is the reseller's fee on the provider's price, percent; "0" for none.
 	Fee  string `json:"fee"`
 	List Rate   `json:"list"`
@@ -230,7 +233,7 @@ func (r rung) paid(prompt int64) costs {
 
 // arm is the rung as a SuperAdmin reads it.
 func (r rung) arm() Arm {
-	a := Arm{Upstream: r.upstream, Provider: r.provider, Fee: feePercent(levies.multiple(r.provider)), List: r.cost.rate()}
+	a := Arm{Upstream: r.upstream, Provider: r.provider, Kind: kindOfRung(r.provider), Fee: feePercent(levies.multiple(r.provider)), List: r.cost.rate()}
 	if r.long != nil {
 		l := r.long.rate()
 		a.Long, a.Above = &l, int(r.above)
@@ -365,27 +368,57 @@ func Blend(ids []string, byok bool) (Quote, error) {
 }
 
 // costOfModel is the least and the most a token of id costs us, and the arm it
-// is quoted as.
+// is quoted as: a model priced at cost its own from and up to; a resold model at its
+// vendor's price on its first keyed path (resolve.go), a direct key's price alone and
+// OpenRouter's with OpenRouter's fee; any other at its price list.
 func costOfModel(id string) (lo, hi costs, a Arm, err error) {
 	if p, ok := Price(id, "", false, false); ok {
 		b := current.Load()
 		q := b.quotes[quoteKey(id, "")]
-		return q.from, q.upTo, Arm{Upstream: p.Model, Provider: ensoFam.name, Fee: "0", List: q.from.rate()}, nil
+		return q.from, q.upTo, Arm{Upstream: p.Model, Provider: ensoFam.name, Kind: family, Fee: "0", List: q.from.rate()}, nil
 	}
 	if zm, ok := familyLookup(id); ok && zm.priced() {
 		if f, _ := familyServing(id); f == openrouterFam && zm.CostIn.Sign() > 0 {
 			c := costs{in: zm.CostIn, out: zm.CostOut}
-			m := levies.multiple(openrouterFam.name)
-			return c.times(m), c.times(m), Arm{Upstream: zm.ID, Provider: openrouterFam.name, Fee: feePercent(m), List: c.rate()}, nil
+			path := first(Paths(id, ""))
+			m := decimal.New(1, 0)
+			if path.Kind == reseller {
+				m = levies.multiple(openrouterFam.name)
+			}
+			return c.times(m), c.times(m), Arm{Upstream: zm.ID, Provider: path.Provider, Kind: path.Kind, Fee: feePercent(m), List: c.rate()}, nil
 		}
 		c := costs{in: zm.Base.In, out: zm.Base.Out}
-		return c, c, Arm{Upstream: zm.ID, Provider: zm.OwnedBy, Fee: "0", List: c.rate()}, nil
+		return c, c, Arm{Upstream: zm.ID, Provider: zm.OwnedBy, Kind: family, Fee: "0", List: c.rate()}, nil
 	}
 	if p, ok := getModelPriceForOrgOK(id, ""); ok && !p.Variable && (p.InputPerMillion > 0 || p.OutputPerMillion > 0) {
 		c := costs{in: decimal.MustParse(strconv.FormatFloat(p.InputPerMillion, 'f', -1, 64)), out: decimal.MustParse(strconv.FormatFloat(p.OutputPerMillion, 'f', -1, 64))}
-		return c, c, Arm{Upstream: id, Fee: "0", List: c.rate()}, nil
+		path := first(Paths(id, ""))
+		return c, c, Arm{Upstream: id, Provider: path.Provider, Kind: path.Kind, Fee: "0", List: c.rate()}, nil
 	}
 	return costs{}, costs{}, Arm{}, fmt.Errorf("model %q has no price", id)
+}
+
+// first is the first keyed path, else the first, else none.
+func first(ps []Path) Path {
+	for _, p := range ps {
+		if p.Keyed {
+			return p
+		}
+	}
+	if len(ps) > 0 {
+		return ps[0]
+	}
+	return Path{}
+}
+
+// kindOfRung is the path a family's rung runs on, by its catalog provider: a
+// reseller's credit (a provider with a fee: OpenRouter's), else the provider's own
+// API.
+func kindOfRung(provider string) string {
+	if levies.multiple(provider).Cmp(decimal.New(1, 0)) > 0 {
+		return reseller
+	}
+	return kindOfRow(provider)
 }
 
 // StartRates computes the board at start and keeps it: the catalog's arms every

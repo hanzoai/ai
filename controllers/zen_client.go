@@ -1246,7 +1246,16 @@ func (f *modelFamily) modelPrice(model string) (modelPrice, bool) {
 	if !ok {
 		return modelPrice{}, false
 	}
-	return m.price()
+	p, ok := m.price()
+	// A family priced at cost holds at least what its dearest arm costs with every
+	// fee on it (rates.go up to), so no hold reserves less than a call can bill.
+	if f.plus {
+		if q, quoted := Price(model, "", false, false); quoted {
+			p.InputPerMillion = max(p.InputPerMillion, q.UpTo.Input)
+			p.OutputPerMillion = max(p.OutputPerMillion, q.UpTo.Output)
+		}
+	}
+	return p, ok
 }
 
 // passthroughRoute routes any family model to its family provider, forwarding the SKU

@@ -85,27 +85,27 @@ models:
   # this file takes precedence over that alias, so a chat id stays here only while
   # OpenRouter lists no priced SKU of the same model at the same size.
   claude-3-5-haiku:
-    provider: do-ai
-    upstream: anthropic-claude-3.5-haiku
+    provider: anthropic
+    upstream: claude-3-5-haiku-20241022
     fallbacks:
-    - provider: anthropic
-      upstream: claude-3-5-haiku-20241022
+    - provider: do-ai
+      upstream: anthropic-claude-3.5-haiku
     pricing: {input: 0.80, output: 4.00}
 
   claude-3-7-sonnet:
-    provider: do-ai
-    upstream: anthropic-claude-3.7-sonnet
+    provider: anthropic
+    upstream: claude-3-7-sonnet-20250219
     fallbacks:
-    - provider: anthropic
-      upstream: claude-3-7-sonnet-20250219
+    - provider: do-ai
+      upstream: anthropic-claude-3.7-sonnet
     pricing: {input: 3.00, output: 15.00}
 
   claude-opus-4:
-    provider: do-ai
-    upstream: anthropic-claude-opus-4
+    provider: anthropic
+    upstream: claude-opus-4-20250514
     fallbacks:
-    - provider: anthropic
-      upstream: claude-opus-4-20250514
+    - provider: do-ai
+      upstream: anthropic-claude-opus-4
     pricing: {input: 15.00, output: 75.00}
 
   gemma-3-31b:

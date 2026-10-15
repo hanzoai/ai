@@ -1290,6 +1290,18 @@ is no other markup, and nothing is ever billed below cost.
   SuperAdmin's quote names the arms; no other read does. The board's `Ledger` is the
   day's answers, failovers, OpenRouter-bought answers (`fallbacks`, `fallback_share`), fee
   collected, losses, and each by model and vendor (`routes`).
+- **Resolution is stated** (`resolve.go`): a model is reached on a direct key first (its
+  maker's API for a SKU its keys list, native.go, ahead of the family that resells it;
+  a route row's own provider), then DigitalOcean's inference (`do-ai`), then OpenRouter,
+  the fallback (`openrouterTail`, a route's last candidate). `Paths(id, org)` states
+  that order for one model, each path's `kind` (direct, family, do, openrouter) and
+  whether a key serves it. Between a row's own providers a call keeps the row's declared
+  order (`candidates`), so every row of `conf/models.yaml` lists its direct provider
+  before `do-ai`, held by `TestEveryShippedRouteAsksADirectKeyBeforeDigitalOcean`.
+  `Blend` costs a resold model on its first keyed path: a direct key's price alone,
+  OpenRouter's with OpenRouter's fee. Each quote's arm names its `kind`.
+- **The hold is at least up to**: a family priced at cost holds no less than its dearest
+  arm with every fee on it (`modelPrice`), so no reservation is below what a call bills.
 - **Not yet**: the routing-time check (an arm whose cost would exceed what the request
   may spend) is the engine's to make; with every call billed at its own cost plus the
   fee, the margin holds on every arm by construction, and the engine walks rungs in the
