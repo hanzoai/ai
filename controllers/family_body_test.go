@@ -124,8 +124,16 @@ func TestTheResellerIsSentOnlyWhatWasPriced(t *testing.T) {
 	}
 	var prov map[string]json.RawMessage
 	_ = json.Unmarshal(got["provider"], &prov)
-	if _, ok := prov["data_collection"]; !ok || len(prov) != 1 {
-		t.Errorf("provider = %s, want only the terms ai states", got["provider"])
+	// The terms ai states: no data collection, a price ceiling, and the fastest
+	// provider under it. Nothing the caller sent.
+	stated := map[string]bool{"data_collection": true, "max_price": true, "sort": true}
+	if _, ok := prov["data_collection"]; !ok {
+		t.Errorf("provider = %s, want data_collection stated", got["provider"])
+	}
+	for k := range prov {
+		if !stated[k] {
+			t.Errorf("provider carries %q: %s, want only the terms ai states", k, got["provider"])
+		}
 	}
 	if string(got["max_tokens"]) != jsonInt(clampMaxTokens("", 100000000)) {
 		t.Errorf("max_tokens = %s", got["max_tokens"])
