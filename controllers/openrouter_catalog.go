@@ -620,13 +620,25 @@ func (f *modelFamily) collection(sku string) (word string, stated bool) {
 // caller who states other vendor preferences keeps them, its own `sort` and
 // `max_price` included.
 //
-// A Claude model is also asked to cache its prompt (claudeCache).
-func openrouterTerms(body []byte, sku zenModel, free bool) []byte {
+// A Claude model is also asked to cache its prompt (claudeCache), and every call
+// names its conversation (`session_id`, the caller's session header): OpenRouter
+// then sends each turn to the provider that served the last, whose cache holds the
+// prefix, from the first turn on. Without it, stickiness starts only after a cache
+// hit, so a conversation's second turn can land on a provider with no copy.
+func openrouterTerms(body []byte, sku zenModel, free bool, session string) []byte {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(body, &m); err != nil || m == nil {
 		return body
 	}
 	claudeCache(m, body)
+	if _, ok := m["session_id"]; !ok && session != "" {
+		if len(session) > maxSession {
+			session = session[:maxSession]
+		}
+		if v, err := json.Marshal(session); err == nil {
+			m["session_id"] = v
+		}
+	}
 	prov := map[string]json.RawMessage{}
 	if raw, ok := m["provider"]; ok {
 		_ = json.Unmarshal(raw, &prov)
@@ -655,6 +667,9 @@ func openrouterTerms(body []byte, sku zenModel, free bool) []byte {
 	}
 	return out
 }
+
+// maxSession is the longest session_id OpenRouter accepts.
+const maxSession = 256
 
 // ephemeral is the cache Anthropic keeps for five minutes, renewed by every read.
 var ephemeral = json.RawMessage(`{"type":"ephemeral"}`)

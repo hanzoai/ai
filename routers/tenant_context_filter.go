@@ -35,9 +35,10 @@ func getTenantHeader(c *zip.Ctx, name string) string {
 }
 
 // firstNonEmptyHeader returns the first non-empty value among the named headers.
-// A session id may arrive under either X-Session-Id (Hanzo convention) or the
-// OpenAI/librechat-style X-Conversation-Id — honor both so a client that sends
-// either turns the o11y sessions view on.
+// A session id may arrive under X-Session-Id (Hanzo convention), the
+// OpenAI/librechat-style X-Conversation-Id or Claude Code's X-Claude-Code-Session-Id
+// — honor each so a client that sends one turns the o11y sessions view on, and its
+// turns are routed to the provider that holds their prompt cache.
 func firstNonEmptyHeader(c *zip.Ctx, names ...string) string {
 	for _, n := range names {
 		if v := getTenantHeader(c, n); v != "" {
@@ -91,7 +92,7 @@ func TenantContextFilter(c *zip.Ctx) error {
 	attr := object.GenAIAttribution{
 		Org:         orgID,
 		Project:     projectID,
-		Session:     firstNonEmptyHeader(c, "X-Session-Id", "X-Conversation-Id"),
+		Session:     firstNonEmptyHeader(c, "X-Session-Id", "X-Conversation-Id", "X-Claude-Code-Session-Id"),
 		Environment: env,
 		APIKeyHash:  hashBearer(getTenantHeader(c, "Authorization")),
 		// The person a service credential is acting for. Already read above for the

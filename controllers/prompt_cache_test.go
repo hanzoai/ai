@@ -162,7 +162,7 @@ func TestOpenRouterIsAskedToCacheAClaudePrompt(t *testing.T) {
 		{"not claude", `{"model":"openai/gpt-6","messages":[{"role":"user","content":"hi"}]}`, ``},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got := string(decoded(t, openrouterTerms([]byte(c.body), zenModel{}, false))["cache_control"])
+			got := string(decoded(t, openrouterTerms([]byte(c.body), zenModel{}, false, ""))["cache_control"])
 			if got != c.want {
 				t.Errorf("cache_control = %q, want %q", got, c.want)
 			}
@@ -198,5 +198,24 @@ func TestTheAnthropicToolProxyAsksForTheCache(t *testing.T) {
 	}
 	if err := json.Unmarshal(c.Fiber().Response().Body(), &answer); err != nil || answer.Usage.PromptDetails.Cached != 900 {
 		t.Errorf("cached_tokens = %d (err %v), want 900: %s", answer.Usage.PromptDetails.Cached, err, c.Fiber().Response().Body())
+	}
+}
+
+// OpenRouter is told which conversation a call belongs to, so it sends every turn
+// to the provider that holds the prompt's cache. The caller's session header names
+// it, cut to OpenRouter's 256 characters; with none, nothing is invented.
+func TestOpenRouterIsToldTheSession(t *testing.T) {
+	body := []byte(`{"model":"vendor/x","messages":[{"role":"user","content":"hi"}]}`)
+	if got := string(decoded(t, openrouterTerms(body, zenModel{}, false, "sess-1"))["session_id"]); got != `"sess-1"` {
+		t.Errorf("session_id = %s, want \"sess-1\"", got)
+	}
+	if _, ok := decoded(t, openrouterTerms(body, zenModel{}, false, ""))["session_id"]; ok {
+		t.Error("a call with no session must name none")
+	}
+	long := strings.Repeat("s", 300)
+	var got string
+	_ = json.Unmarshal(decoded(t, openrouterTerms(body, zenModel{}, false, long))["session_id"], &got)
+	if len(got) != maxSession {
+		t.Errorf("session_id is %d characters, want %d", len(got), maxSession)
 	}
 }

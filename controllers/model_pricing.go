@@ -126,7 +126,42 @@ func pricingInfo(p modelPrice, ok bool) *modelPricingInfo {
 		}
 		info.Rates, info.Overrides = c.Rates, c.Overrides
 	}
+	// The cache prices a call is billed at (cacheReadRate, cacheWriteRate), stated
+	// wherever the vendor's card does not state them: a model with no cache rate of its
+	// own bills a read at a tenth of input and a write at cacheWriteMultiple of it, and
+	// a caller pricing a cached conversation from this catalog reads the same numbers.
+	// Not a variable SKU: each of its calls bills what served it, cache included.
+	if p.InputPerMillion > 0 && !p.Variable {
+		rates := make(map[string]string, len(info.Rates)+2)
+		for k, v := range info.Rates {
+			rates[k] = v
+		}
+		read, write := cacheRates(p)
+		if _, ok := rates["input_cache_read"]; !ok {
+			rates["input_cache_read"] = read
+		}
+		if _, ok := rates["input_cache_write"]; !ok {
+			rates["input_cache_write"] = write
+		}
+		info.Rates = rates
+	}
 	return info
+}
+
+// cacheRates is what a cache read and a cache write of this price bill, per token and
+// exactly: the model's own rate when it states one, else the ledger's defaults
+// (cacheReadRate, cacheWriteRate) applied in decimal, so $0.80/M reads at
+// "0.00000008" and never a float's 8.000000000000002e-08.
+func cacheRates(p modelPrice) (read, write string) {
+	in := decimal.MustParse(perToken(p.InputPerMillion))
+	read, write = perToken(p.CacheReadPerMillion), perToken(p.CacheWritePerMillion)
+	if p.CacheReadPerMillion == 0 {
+		read = in.Mul(decimal.MustParse("0.1")).String()
+	}
+	if p.CacheWritePerMillion == 0 {
+		write = in.Mul(decimal.MustParse(strconv.FormatFloat(cacheWriteMultiple, 'f', -1, 64))).String()
+	}
+	return read, write
 }
 
 // perToken is a per-million rate as US dollars per token, exactly: the rate is read

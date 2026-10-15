@@ -735,15 +735,15 @@ func TestTermsFollowThePrice(t *testing.T) {
 		return m.Provider.DataCollection
 	}
 	body := []byte(`{"model":"vendor/x","messages":[]}`)
-	if got := read(openrouterTerms(body, zenModel{}, true)); got != collectionAllow {
+	if got := read(openrouterTerms(body, zenModel{}, true, "")); got != collectionAllow {
 		t.Errorf("free route data_collection = %q, want %q", got, collectionAllow)
 	}
-	if got := read(openrouterTerms(body, zenModel{}, false)); got != collectionDeny {
+	if got := read(openrouterTerms(body, zenModel{}, false, "")); got != collectionDeny {
 		t.Errorf("priced route data_collection = %q, want %q", got, collectionDeny)
 	}
 
 	// A caller's own vendor preferences survive: terms state one field, not the object.
-	kept := openrouterTerms([]byte(`{"model":"vendor/x","provider":{"order":["a","b"]}}`), zenModel{}, true)
+	kept := openrouterTerms([]byte(`{"model":"vendor/x","provider":{"order":["a","b"]}}`), zenModel{}, true, "")
 	var m struct {
 		Provider struct {
 			DataCollection string   `json:"data_collection"`
@@ -758,7 +758,7 @@ func TestTermsFollowThePrice(t *testing.T) {
 	}
 
 	// A body we cannot read goes out as it came in rather than mangled.
-	if got := string(openrouterTerms([]byte("not json"), zenModel{}, true)); got != "not json" {
+	if got := string(openrouterTerms([]byte("not json"), zenModel{}, true, "")); got != "not json" {
 		t.Errorf("unreadable body was rewritten to %q", got)
 	}
 }
@@ -1486,22 +1486,22 @@ func TestOpenRouterTermsRouteByLatencyUnderRetail(t *testing.T) {
 		return m.Provider.Sort, m.Provider.MaxPrice
 	}
 	body := []byte(`{"model":"openai/gpt-oss-120b","messages":[]}`)
-	if s, max := read(openrouterTerms(body, priced, false)); s != "latency" || max["prompt"] != 0.039035 || max["completion"] != 0.17935 {
+	if s, max := read(openrouterTerms(body, priced, false, "")); s != "latency" || max["prompt"] != 0.039035 || max["completion"] != 0.17935 {
 		t.Errorf("priced route: sort %q max_price %v, want latency under 0.039035/0.17935", s, max)
 	}
-	if s, max := read(openrouterTerms(body, priced, true)); s != "" || max != nil {
+	if s, max := read(openrouterTerms(body, priced, true, "")); s != "" || max != nil {
 		t.Errorf("free route: sort %q max_price %v, want neither", s, max)
 	}
 	variable := priced
 	variable.Variable = true
-	if s, max := read(openrouterTerms(body, variable, false)); s != "" || max != nil {
+	if s, max := read(openrouterTerms(body, variable, false, "")); s != "" || max != nil {
 		t.Errorf("per-call price: sort %q max_price %v, want neither", s, max)
 	}
-	if s, max := read(openrouterTerms(body, zenModel{}, false)); s != "" || max != nil {
+	if s, max := read(openrouterTerms(body, zenModel{}, false, "")); s != "" || max != nil {
 		t.Errorf("unpriced SKU: sort %q max_price %v, want neither", s, max)
 	}
 	own := []byte(`{"model":"openai/gpt-oss-120b","provider":{"sort":"throughput","max_price":{"prompt":1}}}`)
-	if s, max := read(openrouterTerms(own, priced, false)); s != "throughput" || max["prompt"] != 1 || len(max) != 1 {
+	if s, max := read(openrouterTerms(own, priced, false, "")); s != "throughput" || max["prompt"] != 1 || len(max) != 1 {
 		t.Errorf("caller's own choice: sort %q max_price %v, want it kept", s, max)
 	}
 }

@@ -128,7 +128,7 @@ type modelFamily struct {
 	// nil for a family whose dialect states no such thing, and the body then goes
 	// out untouched — vendor-specific fields are never sent to a vendor that did
 	// not define them.
-	terms func(body []byte, m zenModel, free bool) []byte
+	terms func(body []byte, m zenModel, free bool, session string) []byte
 
 	// native is the API of the vendor that MAKES some of this family's SKUs, asked
 	// for them before the family's own address (native.go): a model a reseller
@@ -1770,7 +1770,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 		if f.terms != nil {
 			m, _ := f.lookup(s)
-			b = f.terms(b, m, f.free(s))
+			b = f.terms(b, m, f.free(s), object.GenAIAttributionFromContext(ctx).Session)
 		}
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		r.ContentLength = int64(len(b))

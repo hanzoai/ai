@@ -154,7 +154,8 @@ func TestPricingInfoPublishesWhatWasFound(t *testing.T) {
 		t.Errorf("a stated price of zero must project as zero, got %+v", free)
 	}
 	got := pricingInfo(modelPrice{InputPerMillion: 1.25, OutputPerMillion: 5.00}, true)
-	want := modelPricingInfo{Prompt: "0.00000125", Completion: "0.000005", InputPerMillion: 1.25, OutputPerMillion: 5.00}
+	want := modelPricingInfo{Prompt: "0.00000125", Completion: "0.000005", InputPerMillion: 1.25, OutputPerMillion: 5.00,
+		Rates: map[string]string{"input_cache_read": "0.000000125", "input_cache_write": "0.0000015625"}}
 	if got == nil || !reflect.DeepEqual(*got, want) {
 		t.Errorf("real pricing must project faithfully, got %+v, want %+v", got, want)
 	}
@@ -176,7 +177,8 @@ func TestPricingKeysNameTheirUnit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"prompt":"0.0000008","completion":"0.000004","input_per_million":0.8,"output_per_million":4}`
+	const want = `{"prompt":"0.0000008","completion":"0.000004","input_per_million":0.8,"output_per_million":4,` +
+		`"rates":{"input_cache_read":"0.00000008","input_cache_write":"0.000001"}}`
 	if string(raw) != want {
 		t.Errorf("pricing block\n got %s\nwant %s", raw, want)
 	}

@@ -76,6 +76,20 @@ func TestTenantContextFilter_SessionAliasConversationID(t *testing.T) {
 	}
 }
 
+// TestTenantContextFilter_SessionClaudeCode proves Claude Code's own session header
+// names the session, so its turns reach the provider that holds their prompt cache.
+func TestTenantContextFilter_SessionClaudeCode(t *testing.T) {
+	p := ask("POST", "/v1/messages")
+	p = p.with("X-Claude-Code-Session-Id", "cc-41")
+	p = p.with("Authorization", "Bearer sk-secret-key")
+
+	p = p.through(TenantContextFilter)
+
+	if attr := object.GenAIAttributionFromContext(p.left()); attr.Session != "cc-41" {
+		t.Fatalf("session via X-Claude-Code-Session-Id = %q, want \"cc-41\"", attr.Session)
+	}
+}
+
 func TestHashBearer(t *testing.T) {
 	if got := hashBearer(""); got != "" {
 		t.Fatalf("empty → %q, want \"\"", got)
