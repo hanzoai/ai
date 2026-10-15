@@ -352,3 +352,93 @@ func TestAResponsesRequestNamingAnUnpricedFieldIsRefused(t *testing.T) {
 		t.Fatalf("err = %v, want a refusal naming service_tier", err)
 	}
 }
+
+// Codex declares each MCP server's tools as one `namespace`. Chat Completions has
+// none, so every tool inside is a function of its own, and a call coming back is
+// answered with the namespace and name the client routes by. Sending the
+// namespace as one empty function left the model one tool per server to call,
+// with no schema, and Codex refused every call it made ("unsupported call").
+func TestResponsesNamespaceToolsReachTheModelOneByOne(t *testing.T) {
+	req := &OpenAIResponsesRequest{
+		Model:  "enso",
+		Stream: true,
+		Input: json.RawMessage(`[
+			{"type":"message","role":"user","content":"decide"},
+			{"type":"function_call","call_id":"c0","namespace":"mcp__hanzo","name":"kai_decide","arguments":"{}"},
+			{"type":"function_call_output","call_id":"c0","output":"0.99"}
+		]`),
+		Tools: []responsesTool{
+			{Type: "function", Name: "exec_command", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)},
+			{Type: "namespace", Name: "mcp__hanzo", Description: "Hanzo", Tools: []responsesTool{
+				{Type: "function", Name: "kai_decide", Description: "decide", Parameters: json.RawMessage(`{"type":"object","properties":{"questions":{"type":"object"}}}`)},
+				{Type: "function", Name: "exec", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)},
+			}},
+		},
+	}
+	chat, kinds, err := responsesToChatRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tool := range chat.Tools {
+		names = append(names, tool.Function.Name)
+	}
+	if strings.Join(names, ",") != "exec_command,mcp__hanzo__kai_decide,mcp__hanzo__exec" {
+		t.Fatalf("chat tools = %v", names)
+	}
+	if params, _ := json.Marshal(chat.Tools[1].Function.Parameters); !strings.Contains(string(params), `"questions"`) {
+		t.Fatalf("the tool inside the namespace lost its schema: %s", params)
+	}
+	// The history names the same call the same way.
+	var history string
+	for _, m := range chat.Messages {
+		for _, tc := range m.ToolCalls {
+			history += tc.Function.Name
+		}
+	}
+	if history != "mcp__hanzo__kai_decide" {
+		t.Fatalf("history tool call = %q", history)
+	}
+
+	out := &bytes.Buffer{}
+	bridge := newResponsesBridge(out, req, kinds)
+	upstream := strings.Join([]string{
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"mcp__hanzo__kai_decide","arguments":"{}"}}]},"finish_reason":null}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}}`,
+		`data: [DONE]`,
+		"",
+	}, "\n\n")
+	if _, err := bridge.Write([]byte(upstream)); err != nil {
+		t.Fatal(err)
+	}
+	if err := bridge.Close(); err != nil {
+		t.Fatal(err)
+	}
+	wire := out.String()
+	if !strings.Contains(wire, `"name":"kai_decide","namespace":"mcp__hanzo"`) {
+		t.Fatalf("the call did not come back namespaced:\n%s", wire)
+	}
+	if strings.Contains(wire, `"name":"mcp__hanzo__kai_decide"`) {
+		t.Fatalf("the flat name leaked to the client:\n%s", wire)
+	}
+
+	// A whole answer comes back the same way.
+	whole := `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call_2","function":{"name":"mcp__hanzo__exec","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`
+	body, err := openAIChatResponseToResponses([]byte(whole), req, kinds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"namespace":"mcp__hanzo"`) || !strings.Contains(string(body), `"name":"exec"`) {
+		t.Fatalf("whole answer = %s", body)
+	}
+}
+
+func TestFlatNamesStayWithinSixtyFourCharacters(t *testing.T) {
+	long := flatName("mcp__codex_apps__safety_settings", "_prepare_parental_control_update_with_a_longer_name")
+	if len(long) > 64 || long != flatName("mcp__codex_apps__safety_settings", "_prepare_parental_control_update_with_a_longer_name") {
+		t.Fatalf("flat name %q (%d)", long, len(long))
+	}
+	if got := flatName("mcp__codex_apps__github", "_add_comment_to_issue"); got != "mcp__codex_apps__github__add_comment_to_issue" {
+		t.Fatalf("flat name %q", got)
+	}
+}

@@ -14,6 +14,8 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,6 +49,38 @@ type OpenAIResponsesRequest struct {
 	Metadata          map[string]string `json:"metadata,omitempty"`
 	Reasoning         json.RawMessage   `json:"reasoning,omitempty"`
 	Text              json.RawMessage   `json:"text,omitempty"`
+
+	// spaces names, for each tool a namespace holds, its flat chat name's
+	// namespace and own name, so a call coming back is answered as the client
+	// declared it.
+	spaces map[string]spaced
+}
+
+// spaced is a tool inside a namespace: Codex declares each MCP server's tools
+// as one `namespace` and routes a call by its namespace and name.
+type spaced struct{ Namespace, Name string }
+
+// flatName is a namespaced tool's chat function name. Chat Completions has no
+// namespaces, so the two are joined, within the 64 characters a function name
+// may have; the same pair always gives the same name, so a call in the history
+// and a call in the answer agree.
+func flatName(namespace, name string) string {
+	flat := namespace + "__" + strings.TrimLeft(name, "_")
+	if len(flat) <= 64 {
+		return flat
+	}
+	sum := sha256.Sum256([]byte(namespace + "\x00" + name))
+	return flat[:55] + "_" + hex.EncodeToString(sum[:4])
+}
+
+// unflat answers a chat call by the namespace and name its client declared.
+func (r *OpenAIResponsesRequest) unflat(call *responsesToolCallState) {
+	if r == nil {
+		return
+	}
+	if s, ok := r.spaces[call.Name]; ok {
+		call.Namespace, call.Name = s.Namespace, s.Name
+	}
 }
 
 type responsesTool struct {
@@ -56,6 +90,8 @@ type responsesTool struct {
 	Parameters  json.RawMessage `json:"parameters,omitempty"`
 	Strict      bool            `json:"strict,omitempty"`
 	Format      json.RawMessage `json:"format,omitempty"`
+	// Tools are what a `namespace` holds.
+	Tools []responsesTool `json:"tools,omitempty"`
 }
 
 type responsesInputItem struct {
@@ -65,6 +101,7 @@ type responsesInputItem struct {
 	Content   json.RawMessage `json:"content,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`
 	Name      string          `json:"name,omitempty"`
+	Namespace string          `json:"namespace,omitempty"`
 	Arguments string          `json:"arguments,omitempty"`
 	Input     string          `json:"input,omitempty"`
 	Output    json.RawMessage `json:"output,omitempty"`
@@ -317,15 +354,31 @@ func responsesToChatRequest(request *OpenAIResponsesRequest) (*openai.ChatComple
 
 	tools := make([]openai.Tool, 0, len(request.Tools))
 	toolKinds := make(map[string]string, len(request.Tools))
-	for _, tool := range request.Tools {
+	// A namespace is not a function: each tool it holds is one, named flat.
+	var add func(tool responsesTool, namespace string)
+	add = func(tool responsesTool, namespace string) {
 		if tool.Name == "" {
-			continue
+			return
 		}
 		kind := tool.Type
 		if kind == "" {
 			kind = "function"
 		}
-		toolKinds[tool.Name] = kind
+		if kind == "namespace" {
+			for _, inner := range tool.Tools {
+				add(inner, tool.Name)
+			}
+			return
+		}
+		name := tool.Name
+		if namespace != "" {
+			name = flatName(namespace, tool.Name)
+			if request.spaces == nil {
+				request.spaces = map[string]spaced{}
+			}
+			request.spaces[name] = spaced{Namespace: namespace, Name: tool.Name}
+		}
+		toolKinds[name] = kind
 		params := any(json.RawMessage(tool.Parameters))
 		if len(tool.Parameters) == 0 || string(tool.Parameters) == "null" {
 			if kind == "custom" {
@@ -343,9 +396,12 @@ func responsesToChatRequest(request *OpenAIResponsesRequest) (*openai.ChatComple
 		tools = append(tools, openai.Tool{
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
-				Name: tool.Name, Description: tool.Description, Parameters: params, Strict: tool.Strict,
+				Name: name, Description: tool.Description, Parameters: params, Strict: tool.Strict,
 			},
 		})
+	}
+	for _, tool := range request.Tools {
+		add(tool, "")
 	}
 
 	chat := &openai.ChatCompletionRequest{
@@ -420,9 +476,13 @@ func responsesInputToMessages(instructions string, raw json.RawMessage) ([]opena
 				encoded, _ := json.Marshal(map[string]string{"input": item.Input})
 				arguments = string(encoded)
 			}
+			name := item.Name
+			if item.Namespace != "" {
+				name = flatName(item.Namespace, item.Name)
+			}
 			pendingCalls = append(pendingCalls, openai.ToolCall{
 				ID: callID, Type: openai.ToolTypeFunction,
-				Function: openai.FunctionCall{Name: item.Name, Arguments: arguments},
+				Function: openai.FunctionCall{Name: name, Arguments: arguments},
 			})
 		case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
 			flushCalls()
@@ -646,6 +706,7 @@ type responsesToolCallState struct {
 	ID          string
 	CallID      string
 	Name        string
+	Namespace   string
 	Arguments   strings.Builder
 	Kind        string
 	Started     bool
@@ -759,6 +820,7 @@ func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error 
 				if kind := t.toolKinds[call.Name]; kind != "" {
 					call.Kind = kind
 				}
+				t.request.unflat(call)
 			}
 			if !call.Started && (call.CallID != "" || call.Name != "") {
 				call.Started = true
@@ -831,16 +893,20 @@ func (c *responsesToolCallState) finalArguments() string {
 }
 
 func (c *responsesToolCallState) item(status, arguments string) map[string]any {
+	item := map[string]any{
+		"id": c.ID, "type": "function_call", "call_id": c.CallID,
+		"name": c.Name, "arguments": arguments, "status": status,
+	}
 	if c.Kind == "custom" {
-		return map[string]any{
+		item = map[string]any{
 			"id": c.ID, "type": "custom_tool_call", "call_id": c.CallID,
 			"name": c.Name, "input": arguments, "status": status,
 		}
 	}
-	return map[string]any{
-		"id": c.ID, "type": "function_call", "call_id": c.CallID,
-		"name": c.Name, "arguments": arguments, "status": status,
+	if c.Namespace != "" {
+		item["namespace"] = c.Namespace
 	}
+	return item
 }
 
 func (t *responsesStreamTranslator) finish() error {
@@ -1073,6 +1139,7 @@ func openAIChatResponseToResponses(body []byte, request *OpenAIResponsesRequest,
 			if call.Kind == "" {
 				call.Kind = "function"
 			}
+			request.unflat(call)
 			call.Arguments.WriteString(tc.Function.Arguments)
 			outputs = append(outputs, call.item("completed", call.finalArguments()))
 		}

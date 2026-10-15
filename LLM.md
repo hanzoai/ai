@@ -499,6 +499,13 @@ comes from `commerce` at `/v1/billing/balance?user=<org>&currency=usd`. No
 principal bypasses it: the gate always consults the balance, and a lookup that
 fails returns 500 rather than free access. To verify premium/zen, credit the org.
 
+`/v1/responses` turns a `namespace` tool (Codex declares each MCP server's tools as
+one) into one chat function per tool it holds, named `<namespace>__<name>` and hashed
+to fit 64 characters (`flatName`); a call comes back with the `namespace` and `name`
+the client routes by (`unflat`), and a namespaced call in the history is named the
+same way. Sending the namespace as one empty function left a model one schemaless
+tool per server, and Codex refused every call it made (`unsupported call: mcp__hanzo`).
+
 ## The chat relay — the caller's body, as written (`controllers/forward.go`)
 
 Every non-family `/v1/chat/completions` (and `/v1/responses`, which becomes one)
