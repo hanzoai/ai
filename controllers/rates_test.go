@@ -348,6 +348,9 @@ func TestTheBoardQuotesEveryPricedModel(t *testing.T) {
 	if _, ok := Price("enso", "", false, false); ok {
 		t.Error("a free model was quoted")
 	}
+	if all := Prices(false, false); all.Fee != "5.5" || len(all.Free) != 1 || all.Free[0] != "enso" || len(all.Quotes) != 3 {
+		t.Errorf("the board = fee %q, free %v, %d quotes; want 5.5, [enso] and enso-flash at low and in all, enso-pro in all", all.Fee, all.Free, len(all.Quotes))
+	}
 	if _, ok := Price("zen5", "", false, false); ok {
 		t.Error("a model not priced at cost was quoted")
 	}

@@ -155,8 +155,12 @@ type Ledger struct {
 type Board struct {
 	Computed time.Time `json:"computed"`
 	Measured time.Time `json:"measured"`
-	Quotes   []Quote   `json:"quotes"`
-	Ledger   Ledger    `json:"ledger"`
+	// Fee is the platform's fee the quotes carry, percent.
+	Fee    string  `json:"fee"`
+	Quotes []Quote `json:"quotes"`
+	// Free names the family's models served at no charge, which no quote prices.
+	Free   []string `json:"free,omitempty"`
+	Ledger Ledger   `json:"ledger"`
 	// Error is why the last measure failed, "" when it held.
 	Error string `json:"error,omitempty"`
 }
@@ -263,6 +267,7 @@ func (p cell) quote(byok, admin bool) Quote {
 type board struct {
 	computed, measured time.Time
 	quotes             map[string]cell // by quoteKey
+	free               []string
 	ledger             Ledger
 	err                string
 	// rows is the measure the quotes were computed from, kept so a catalog read can
@@ -288,7 +293,7 @@ func Prices(byok, admin bool) Board {
 	if b == nil {
 		return Board{}
 	}
-	out := Board{Computed: b.computed, Measured: b.measured, Ledger: b.ledger, Error: b.err}
+	out := Board{Computed: b.computed, Measured: b.measured, Fee: feePercent(platform(byok)), Free: b.free, Ledger: b.ledger, Error: b.err}
 	keys := make([]string, 0, len(b.quotes))
 	for k := range b.quotes {
 		keys = append(keys, k)
@@ -471,8 +476,10 @@ func compute(b *board, now time.Time) {
 		rungs = *p
 	}
 	b.quotes = map[string]cell{}
+	b.free = nil
 	for _, z := range ensoFam.snapshot() {
 		if !z.priced() {
+			b.free = append(b.free, z.ID)
 			continue
 		}
 		model := strings.ToLower(z.ID)
