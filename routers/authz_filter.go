@@ -232,7 +232,7 @@ func unauthenticated(c *zip.Ctx) string {
 }
 
 // hasPresentCredential reports whether the request carries SOME credential — a
-// session user (cookie auth) or a Bearer token. It is a coarse presence check
+// session user (cookie auth) or a key, Bearer or x-api-key. It is a coarse presence check
 // (defense in depth); the controller validates the credential. It deliberately
 // does not parse/verify, so it never rejects a valid credential type
 // (pk-/sk-/hz_/JWT/session) and never adds an IAM round-trip to the filter.
@@ -240,7 +240,7 @@ func hasPresentCredential(c *zip.Ctx) bool {
 	if GetSessionUser(c) != nil {
 		return true
 	}
-	return parseBearerToken(c) != ""
+	return credential(c) != ""
 }
 
 // sessionOrBearerUser resolves the request principal for the authz gate: the
@@ -263,7 +263,7 @@ func sessionOrBearerUser(c *zip.Ctx) *iam.User {
 	if u := GetSessionUser(c); u != nil {
 		return u
 	}
-	token := parseBearerToken(c)
+	token := credential(c)
 	if token == "" {
 		return nil
 	}

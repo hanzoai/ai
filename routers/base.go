@@ -111,11 +111,8 @@ func denyForbidden(c *zip.Ctx, msg string, data ...any) error {
 	return responseError(c, http.StatusForbidden, msg, data...)
 }
 
-// parseBearerToken reads the credential the caller presented.
-func parseBearerToken(c *zip.Ctx) string {
-	prefix, token, ok := strings.Cut(c.Header("Authorization"), " ")
-	if !ok || prefix != "Bearer" {
-		return ""
-	}
-	return token
+// credential reads the key the caller presented, Bearer or x-api-key, in the
+// order controllers.Credential reads them.
+func credential(c *zip.Ctx) string {
+	return controllers.Credential(c.Header("Authorization"), c.Header("x-api-key"))
 }

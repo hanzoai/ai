@@ -599,14 +599,7 @@ func (c *ApiController) respondAnthropicRefusal(err error) {
 // @Success 200 {object} AnthropicResponse
 // @router /messages [post]
 func (c *ApiController) AnthropicMessages() {
-	// Extract token: prefer x-api-key, fall back to Authorization: Bearer
-	token := c.Header("x-api-key")
-	if token == "" {
-		authHeader := c.Header("Authorization")
-		if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
-			token = after
-		}
-	}
+	token := Credential(c.Header("Authorization"), c.Header("x-api-key"))
 
 	if token == "" {
 		c.respondAnthropicError("authentication_error", "Missing API key. Provide x-api-key header or Authorization: Bearer header.", 401)
@@ -1849,13 +1842,7 @@ func sayable(msg string) string {
 // @Description Anthropic-compatible token counting.
 // @router /messages/count_tokens [post]
 func (c *ApiController) AnthropicCountTokens() {
-	token := c.Header("x-api-key")
-	if token == "" {
-		authHeader := c.Header("Authorization")
-		if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
-			token = after
-		}
-	}
+	token := Credential(c.Header("Authorization"), c.Header("x-api-key"))
 	if token == "" {
 		c.respondAnthropicError("authentication_error", "Missing API key. Provide x-api-key header or Authorization: Bearer header.", 401)
 		return

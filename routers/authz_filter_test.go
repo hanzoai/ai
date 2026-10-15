@@ -604,3 +604,25 @@ func TestTheFreeViewIsTheSuperAdmins(t *testing.T) {
 		t.Errorf("the SuperAdmin's GET /v1/admin/ai/free = %d, want through", q.status())
 	}
 }
+
+// The Anthropic wire carries its key on x-api-key, and every Anthropic SDK and the
+// desktop apps built on one send it there. The gate admits that key as it admits a
+// Bearer one; the controller validates both the same way.
+func TestTheAnthropicKeyHeaderIsACredential(t *testing.T) {
+	for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions"} {
+		if q := ask(http.MethodPost, path).with("x-api-key", "sk-some-key").through(permissionFilter); q.status() == http.StatusUnauthorized {
+			t.Errorf("POST %s with x-api-key = 401 %s; the key is a credential", path, q.wrote)
+		}
+		if q := ask(http.MethodPost, path).through(permissionFilter); q.status() != http.StatusUnauthorized {
+			t.Errorf("POST %s with no key = %d, want 401", path, q.status())
+		}
+	}
+}
+
+// One request, two keys: the gate reads the Bearer one, as the controller does.
+func TestBearerWinsOverTheAnthropicHeader(t *testing.T) {
+	q := ask(http.MethodPost, "/v1/messages").with("Authorization", "Bearer sk-bearer").with("x-api-key", "sk-header")
+	if got := credential(q.Ctx); got != "sk-bearer" {
+		t.Errorf("credential = %q, want the Bearer key", got)
+	}
+}
