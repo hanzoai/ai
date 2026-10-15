@@ -28,6 +28,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -248,6 +249,31 @@ func TestFamilyStreamIsOurs(t *testing.T) {
 			if !usageFields[key] {
 				t.Errorf("streamed usage carries %q — our buy price rides the last chunk of "+
 					"nearly every chat, so a buffered-only prune leaks on almost all of them", key)
+			}
+		}
+	}
+}
+
+// Every chunk carries `created`, the stream's one time, even where the upstream
+// sent none: Grok Build's client refuses a chunk without it, and the reasoning
+// delta some upstreams open with is one.
+func TestEveryChunkCarriesTheStreamsTime(t *testing.T) {
+	for name, stream := range map[string]string{
+		"first chunk bare": strings.Replace(upstreamStream, `,"created":1786649556`, "", 1),
+		"every chunk bare": strings.ReplaceAll(upstreamStream, `,"created":1786649556`, ""),
+	} {
+		to := toStream()
+		relayZenStream(to.w, strings.NewReader(stream), ourMark(), nil)
+		var first string
+		for i, event := range chunks(t, to.String()) {
+			got := string(event["created"])
+			if _, err := strconv.ParseInt(got, 10, 64); err != nil {
+				t.Fatalf("%s: chunk %d created = %q, want a Unix time", name, i, got)
+			}
+			if first == "" {
+				first = got
+			} else if got != first {
+				t.Errorf("%s: chunk %d created = %s, want the stream's one time %s", name, i, got, first)
 			}
 		}
 	}

@@ -34,6 +34,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/json"
+	"time"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
@@ -120,6 +121,9 @@ type mark struct {
 	// of a stream. nil when no router decided.
 	routing json.RawMessage
 	routed  bool
+	// created is the stream's one Unix time: the first chat envelope's own, or
+	// the moment it left when an upstream chunk carried none.
+	created json.RawMessage
 	// speaks is the envelope shape this relay carries. Every relayed dialect has
 	// one; a dialect with no mark is a dialect with no envelope, which is how the
 	// Anthropic path and the embeddings path went on publishing `provider`,
@@ -317,6 +321,19 @@ func (m *mark) stampChat(env map[string]json.RawMessage) []byte {
 	env["id"] = text(m.id)
 	env["model"] = text(m.model)
 	env["provider"] = text(m.seller)
+	// Every chat object and chunk carries `created`, and a strict client refuses
+	// a stream with one missing. Some upstream chunks omit it, a reasoning delta
+	// among them, so each answer envelope carries the stream's one time. A bare
+	// refusal is not a chunk and is left as it came.
+	if _, answer := env["choices"]; answer {
+		if m.created == nil {
+			m.created = env["created"]
+			if m.created == nil {
+				m.created, _ = json.Marshal(time.Now().Unix())
+			}
+		}
+		env["created"] = m.created
+	}
 	if choices, ok := env["choices"]; ok {
 		env["choices"] = stampChoices(choices)
 	}

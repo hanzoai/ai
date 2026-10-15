@@ -472,6 +472,7 @@ func asStream(whole []byte) []byte {
 	var c struct {
 		ID      string          `json:"id"`
 		Model   string          `json:"model"`
+		Created int64           `json:"created"`
 		Usage   json.RawMessage `json:"usage"`
 		Choices []struct {
 			Index   int                        `json:"index"`
@@ -481,6 +482,9 @@ func asStream(whole []byte) []byte {
 	}
 	if json.Unmarshal(whole, &c) != nil {
 		return openError("openai", http.StatusBadGateway, []byte(emptyAnswer))
+	}
+	if c.Created == 0 {
+		c.Created = time.Now().Unix()
 	}
 	choices := make([]map[string]any, 0, len(c.Choices))
 	for _, ch := range c.Choices {
@@ -497,7 +501,7 @@ func asStream(whole []byte) []byte {
 		}
 		choices = append(choices, map[string]any{"index": ch.Index, "delta": delta, "finish_reason": ch.Finish})
 	}
-	chunk := map[string]any{"id": c.ID, "model": c.Model, "object": "chat.completion.chunk", "choices": choices}
+	chunk := map[string]any{"id": c.ID, "model": c.Model, "object": "chat.completion.chunk", "created": c.Created, "choices": choices}
 	if len(c.Usage) > 0 {
 		chunk["usage"] = c.Usage
 	}
