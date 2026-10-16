@@ -148,6 +148,8 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	}
 
 	requestStartTime := time.Now().UTC()
+	// ZAP has no gate to ask who pays, so a router id is its free SKU.
+	request.Model = unpaid(request.Model)
 
 	// STEP 1/2 — auth → provider + user + upstream model, with per-org provider
 	// selection (BYO seam) resolved from authUser.Owner inside zapResolveAuth.

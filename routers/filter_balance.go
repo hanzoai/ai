@@ -237,50 +237,77 @@ func BalanceGateFilter(c *zip.Ctx) error {
 			model, session = m, true
 		}
 	}
-	// THE DEPTH LIFT. The default free id is served as the priced SKU router.depth
-	// names at the request's reasoning depth for a caller who pays for it, and gated
-	// and billed as that SKU; anyone else keeps the free id, answered as it always is.
+	// THE ENSO ROUTER. A router id (router.depth: enso, enso-auto, hanzo/enso) is no
+	// SKU, and no request is served as one: each is resolved here, before anything
+	// prices it, to the one tier its reasoning depth names, then gated, held, seated and
+	// billed as that tier, exactly as a request naming the tier is. A request nothing
+	// pays that tier for is resolved to the family's free SKU instead (enso-free), billed
+	// nothing and never refused for want of payment, and the answer says which:
+	// X-Routed-Model and the `routing` object name what answered and why, and a refusal
+	// for want of payment adds limited mode's headers (fallBack).
 	//
-	// With no usage policy the wallet decides, here. With one, the policy decides in
-	// the one ask that serves the call (the loop below): the request is lifted
-	// tentatively, and lifted it stays only when a PAID PLAN pays for the SKU — its
-	// included usage, or past it the payer's own funded wallet — and the paid lane
-	// seats it. A free plan, no plan, a free cap and granted credit never lift, and
-	// neither does a call while the paid lane is closed: free callers get free models.
-	// A lift the policy refuses gives back what its ask took and asks again as the
-	// free id. A call a program in this process made for a customer is never lifted.
-	sku, lift := depthRoute(model, c.Body())
+	// Nothing pays the tier when the family serves it to no one at a price; when a
+	// program in this process made the call (its own meter charges the customer for the
+	// id it named); with no usage policy, when the wallet cannot cover it; with one, when
+	// the paid lane's switch is off, the policy refuses the tier or names nothing, names
+	// a payer the paid lane does not seat (the free plan, a free cap, granted credit),
+	// names prepaid cash the wallet cannot cover, or the paid lane has no room for it.
+	// What admitting the tier took is given back first. A refusal the free SKU meets as
+	// well (a request window, the free allowance) is the free SKU's.
+	tier, free, routed := depthRoute(model, c.Body())
 	_, stated := object.CallerOf(c.Context())
-	funded := lift && object.Limits() == nil && balanceGate.funds(c, subject, namespace, userKey)
-	tentative := lift && object.Limits() != nil && !stated && !controllers.FreeOnly()
-	asked, before := model, c.Body()
-	lifted := false
+	asked, sent := model, append([]byte(nil), c.Body()...)
+	// onTier: the request names its router's tier, which the policy has yet to pay for.
+	onTier := false
 	// paidPlanned: the host named a paid plan behind the grant that went on to the
 	// wallet. Such a payer is never handed to the free model when the wallet refuses.
 	paidPlanned := false
-	route := func(funded bool) {
-		if r := controllers.DepthRouting(asked, before, funded); r != nil {
-			controllers.SetRouting(c, r)
-		}
-	}
-	if funded || tentative {
-		if body, ok := controllers.WithModel(c.Body(), sku); ok {
-			before = append([]byte(nil), c.Body()...)
+	name := func(m string) bool {
+		body, ok := controllers.WithModel(c.Body(), m)
+		if ok {
 			c.Fiber().Request().SetBody(body)
 			c.Fiber().Request().Header.Del("Content-Encoding")
-			c.SetHeader(controllers.RoutedModelHeader, sku)
-			model, lifted = sku, tentative
+			c.SetHeader(controllers.RoutedModelHeader, m)
+			model = m
 		}
+		return ok
 	}
-	route(funded || lifted)
-	// unlift puts a refused lift back: the free id, as the caller sent it, saying
-	// nothing of the lane the lift was refused a seat on.
-	unlift := func() {
-		c.Fiber().Request().SetBody(before)
-		c.Fiber().Response().Header.Del(controllers.RoutedModelHeader)
+	// rest serves a routed request on its free SKU. why is what kept it off its tier;
+	// code, when a refusal for want of payment did, is said as limited mode, with the
+	// plan that lifts it (upgrade).
+	rest := func(why, code, upgrade string) {
+		if code != "" {
+			why = "nothing pays for it (" + code + ")"
+			fallBack(c, free, code, namespace, upgrade)
+		}
 		c.Fiber().Response().Header.Del(controllers.LaneReasonHeader)
-		model, lifted = asked, false
-		route(false)
+		name(free)
+		onTier = false
+		controllers.SetRouting(c, controllers.DepthRouting(asked, sent, why))
+	}
+	if routed {
+		paid := func(ok bool) {
+			if ok && name(tier) {
+				controllers.SetRouting(c, controllers.DepthRouting(asked, sent, ""))
+			}
+		}
+		switch {
+		case tier == "":
+			rest("", "", "")
+		case stated:
+			rest("a program in this process meters its own call", "", "")
+		case object.Limits() == nil:
+			ok, deny, _ := balanceGate.checkBalance(c.Host(), subject, namespace, userKey)
+			if !ok {
+				rest("", deny.Code, "")
+			}
+			paid(ok)
+		case controllers.FreeOnly():
+			rest("the paid lane is closed", "", "")
+		default:
+			paid(true)
+			onTier = model == tier
+		}
 	}
 	// WHO PAYS IS THE HOST'S CALL. Its usage policy puts every model in a class and
 	// spends, in order: the plan's included usage for that class, then prepaid cash,
@@ -330,8 +357,8 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				log.Warning("limits: unreadable, refusing subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
 				return denied(c, object.UsageUnavailable(), subject, namespace, 0, path)
 			}
-			if hit != nil && lifted {
-				unlift()
+			if hit != nil && onTier {
+				rest("", hit.Code, hit.Upgrade)
 				continue
 			}
 			if hit != nil {
@@ -346,24 +373,26 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				return limitReached(c, hit, namespace)
 			}
 			if grant == nil {
-				if lifted {
-					unlift()
+				if onTier {
+					rest("", object.CodePaidPlan, "")
 					continue
 				}
 				break
 			}
-			// A tentative lift holds only for a paid plan whose included usage, or past
-			// it the payer's own funded wallet, pays, and only on a seat of the paid
-			// lane; the wallet is read before the seat holds anything.
-			if lifted && !(paidPlan(grant) && (grant.Pays == object.PaysPlan || grant.Pays == object.PaysPrepaid && balanceGate.funds(c, subject, namespace, userKey))) {
-				giveBack(grant)
-				unlift()
-				continue
+			// A routed tier is paid for only by a paid plan's included usage, or by prepaid
+			// cash its wallet covers, and only on a seat of the paid lane; the wallet is
+			// read before the seat holds anything.
+			if onTier {
+				if code := owes(c, grant, subject, namespace, userKey); code != "" {
+					giveBack(grant)
+					rest("", code, "")
+					continue
+				}
 			}
 			seat := controllers.Seat(c, grant, namespace, subject, model)
-			if lifted && seat != controllers.SeatPaid {
+			if onTier && seat != controllers.SeatPaid {
 				giveBack(grant)
-				unlift()
+				rest("", controllers.ReasonFull, "")
 				continue
 			}
 			// A PAID PLAN'S CALL IS SERVED AS ASKED OR NOT AT ALL. One the paid lane has
@@ -451,6 +480,12 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	sufficient, deny, balance := balanceGate.checkBalance(c.Host(), subject, namespace, userKey)
 	if sufficient {
 		return c.Continue()
+	}
+	// A routed tier the wallet cannot cover is served on its free SKU, asked again from
+	// the top as the free SKU is.
+	if routed && model == tier && deny.Code == object.CodeInsufficientBalance {
+		rest("", deny.Code, "")
+		return BalanceGateFilter(c)
 	}
 	// A conversation the wallet cannot pay for goes on in limited mode, like one the
 	// plan cannot: the free model answers and says why. Asked again from the top, so
@@ -581,9 +616,25 @@ var costsNothing = controllers.ModelCostsNothing
 // (controllers.DecisionFree), indirected so the gate's tests state the prices directly.
 var decisionFree = controllers.DecisionFree
 
-// depthRoute names the priced SKU a free default id is served at for a funded caller
+// depthRoute resolves a router id to its tier and its free SKU
 // (controllers.DepthRoute), indirected so the gate's tests state the table directly.
 var depthRoute = controllers.DepthRoute
+
+// owes is why grant does not pay for a routed tier on the paid lane, "" when it does:
+// a paid plan's included usage, or prepaid cash the payer's wallet covers. Prepaid cash
+// the wallet cannot cover owes insufficient_balance; anything else (the free plan, a
+// free cap, granted credit) paid_plan_required.
+func owes(c *zip.Ctx, g *object.LimitGrant, subject, namespace, userKey string) string {
+	switch {
+	case g.Pays == object.PaysPlan && paidPlan(g):
+		return ""
+	case g.Pays == object.PaysPrepaid && balanceGate.funds(c, subject, namespace, userKey):
+		return ""
+	case g.Pays == object.PaysPrepaid:
+		return object.CodeInsufficientBalance
+	}
+	return object.CodePaidPlan
+}
 
 // funds reports whether the caller's wallet pays for a priced call: its balance
 // admits it. Any refusal or unreadable answer is no.

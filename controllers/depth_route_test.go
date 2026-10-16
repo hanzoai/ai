@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/decimal"
@@ -59,29 +60,28 @@ models: {}
 	t.Cleanup(func() { globalModelConfig = prev })
 }
 
-// seedEnso stands in for enso discovery: two free ids, three priced rungs, and one
-// priced SKU held behind a grant.
+// seedEnso stands in for enso discovery: the free SKU, three priced tiers, and one
+// priced SKU held behind a grant. The router ids are no SKUs and are not listed.
 func seedEnso(t *testing.T) {
 	t.Helper()
-	price := func(in, out string) zenTier {
-		return zenTier{MaxCtx: 1_000_000, In: decimal.MustParse(in), Out: decimal.MustParse(out)}
+	price := func(in, out string, ctx int) zenTier {
+		return zenTier{MaxCtx: ctx, In: decimal.MustParse(in), Out: decimal.MustParse(out)}
 	}
 	free := zenTier{MaxCtx: 256_000}
 	saved := ensoFam.byID
 	ensoFam.byID = map[string]zenModel{
-		"enso-auto":    {ID: "enso-auto", Base: free, Tiers: []zenTier{free}},
-		"enso":         {ID: "enso", Base: free, Tiers: []zenTier{free}},
 		"enso-free":    {ID: "enso-free", Base: free, Tiers: []zenTier{free}},
-		"enso-flash":   {ID: "enso-flash", Base: price("0.42", "1.50"), Tiers: []zenTier{price("0.42", "1.50")}, Funding: "prepaid"},
-		"enso-pro":     {ID: "enso-pro", Base: price("4.20", "13.20"), Tiers: []zenTier{price("4.20", "13.20")}, Funding: "prepaid"},
-		"enso-ultra":   {ID: "enso-ultra", Base: price("6.00", "30.00"), Tiers: []zenTier{price("6.00", "30.00")}, Funding: "prepaid"},
-		"enso-preview": {ID: "enso-preview", Base: price("1", "1"), Tiers: []zenTier{price("1", "1")}, Access: "waitlist"},
+		"enso-flash":   {ID: "enso-flash", Base: price("0.33", "1.65", 900_000), Tiers: []zenTier{price("0.33", "1.65", 900_000)}, Funding: "prepaid"},
+		"enso-pro":     {ID: "enso-pro", Base: price("4.40", "22.00", 272_000), Tiers: []zenTier{price("4.40", "22.00", 272_000)}, Funding: "prepaid"},
+		"enso-ultra":   {ID: "enso-ultra", Base: price("5.50", "27.50", 1_000_000), Tiers: []zenTier{price("5.50", "27.50", 1_000_000)}, Funding: "prepaid"},
+		"enso-preview": {ID: "enso-preview", Base: price("1", "1", 1_000_000), Tiers: []zenTier{price("1", "1", 1_000_000)}, Access: "waitlist"},
 	}
 	t.Cleanup(func() { ensoFam.byID = saved })
 }
 
-// The depth a request states picks the row, in every dialect a caller sends it in,
-// and a request that states none takes the default.
+// The depth a request states picks the tier, in every dialect a caller sends it in,
+// and a request that states none takes the default. Whatever the depth, the free SKU
+// is the family's.
 func TestDepthRouteReadsTheDepthEveryDialectStates(t *testing.T) {
 	depthConfig(t)
 	seedEnso(t)
@@ -103,24 +103,33 @@ func TestDepthRouteReadsTheDepthEveryDialectStates(t *testing.T) {
 		{`{"model":"enso-auto","reasoning_effort":"a word nobody defined"}`, "enso-flash"},
 		{`not json`, "enso-flash"},
 	} {
-		got, ok := DepthRoute("enso-auto", []byte(tc.body))
-		if !ok || got != tc.want {
-			t.Errorf("%s → (%q, %v), want %q", tc.body, got, ok, tc.want)
+		tier, free, ok := DepthRoute("enso-auto", []byte(tc.body))
+		if !ok || tier != tc.want || free != "enso-free" {
+			t.Errorf("%s → (%q, %q, %v), want %q and enso-free", tc.body, tier, free, ok, tc.want)
 		}
 	}
-	if got, ok := DepthRoute("Enso", []byte(`{"reasoning_effort":"high"}`)); !ok || got != "enso-pro" {
-		t.Errorf("the old name routes like enso-auto, got (%q, %v)", got, ok)
+	if tier, free, ok := DepthRoute("Enso", []byte(`{"reasoning_effort":"high"}`)); !ok || tier != "enso-pro" || free != "enso-free" {
+		t.Errorf("the old name routes like enso-auto, got (%q, %q, %v)", tier, free, ok)
 	}
 }
 
-// Only a free id with a row is lifted, and only onto a priced SKU the family serves
-// without a grant. Everything else runs as sent.
-func TestDepthRouteLiftsOnlyAFreeIdOntoAPricedSKU(t *testing.T) {
+// Only a router id is routed, and only onto a tier the family serves at a price
+// without a grant: a row naming anything else keeps the router on its free SKU, since
+// the id itself is never served.
+func TestDepthRouteRoutesOnlyARouterIdOntoAPaidTier(t *testing.T) {
 	depthConfig(t)
 	seedEnso(t)
 	for _, model := range []string{"enso-free", "enso-flash", "enso-ultra", "zen-free", "gpt-6-sol", ""} {
-		if got, ok := DepthRoute(model, []byte(`{"reasoning_effort":"high"}`)); ok {
-			t.Errorf("%q has no depth row and was routed to %q", model, got)
+		if tier, free, ok := DepthRoute(model, []byte(`{"reasoning_effort":"high"}`)); ok {
+			t.Errorf("%q is no router id and was routed to (%q, %q)", model, tier, free)
+		}
+		if got := unpaid(model); got != model {
+			t.Errorf("unpaid(%q) = %q, want it unchanged", model, got)
+		}
+	}
+	for _, model := range []string{"enso-auto", "ENSO"} {
+		if got := unpaid(model); got != "enso-free" {
+			t.Errorf("unpaid(%q) = %q, want enso-free", model, got)
 		}
 	}
 
@@ -129,20 +138,17 @@ func TestDepthRouteLiftsOnlyAFreeIdOntoAPricedSKU(t *testing.T) {
 		globalModelConfig.mu.Lock()
 		globalModelConfig.router.Depth["enso-auto"]["high"] = sku
 		globalModelConfig.mu.Unlock()
-		if got, ok := DepthRoute("enso-auto", []byte(`{"reasoning_effort":"high"}`)); ok {
-			t.Errorf("a row naming %q routed to %q", sku, got)
+		if tier, free, ok := DepthRoute("enso-auto", []byte(`{"reasoning_effort":"high"}`)); !ok || tier != "" || free != "enso-free" {
+			t.Errorf("a row naming %q: (%q, %q, %v), want no tier and enso-free", sku, tier, free, ok)
 		}
 	}
 
-	// A requested id the family prices is already on the paid ladder.
-	ensoFam.byID["enso-auto"] = ensoFam.byID["enso-flash"]
-	if got, ok := DepthRoute("enso-auto", []byte(`{}`)); ok {
-		t.Errorf("a priced requested id was re-routed to %q", got)
-	}
-
 	globalModelConfig = nil
-	if got, ok := DepthRoute("enso-auto", []byte(`{}`)); ok {
-		t.Errorf("no model table routed to %q", got)
+	if tier, free, ok := DepthRoute("enso-auto", []byte(`{}`)); ok {
+		t.Errorf("no model table routed to (%q, %q)", tier, free)
+	}
+	if got := unpaid("enso-auto"); got != "enso-auto" {
+		t.Errorf("no model table: unpaid = %q", got)
 	}
 }
 
@@ -181,9 +187,9 @@ func TestDepthRoutingSaysWhatEnsoReadAndWhy(t *testing.T) {
 	seedEnso(t)
 	high := []byte(`{"model":"enso","reasoning_effort":"high"}`)
 
-	r := DepthRouting("enso", high, true)
+	r := DepthRouting("enso", high, "")
 	if r == nil {
-		t.Fatal("enso is depth-routed: want a routing")
+		t.Fatal("enso is a router id: want a routing")
 	}
 	if r.Router != "enso" || r.Chosen != "enso-pro" {
 		t.Fatalf("router %q chose %q, want enso chose enso-pro", r.Router, r.Chosen)
@@ -201,51 +207,91 @@ func TestDepthRoutingSaysWhatEnsoReadAndWhy(t *testing.T) {
 	if string(got) != string(exp) {
 		t.Fatalf("candidates = %s, want %s", got, exp)
 	}
-	if r.Reason != "high reasoning names enso-pro, and your plan or credit pays for it." {
+	if r.Reason != "high reasoning names enso-pro, and your plan or balance pays for it." {
 		t.Fatalf("reason = %q", r.Reason)
 	}
 
-	// The same request from a caller nothing pays for keeps the free id, and says so.
-	r = DepthRouting("enso", high, false)
-	if r.Chosen != "enso" || r.Inputs.Policy != "unfunded" {
+	// The same request nothing pays the tier for is served on the free SKU, and says why.
+	r = DepthRouting("enso", high, "nothing pays for it (insufficient_balance)")
+	if r.Chosen != "enso-free" || r.Inputs.Policy != "unfunded" {
 		t.Fatalf("unfunded: chose %q policy %q", r.Chosen, r.Inputs.Policy)
 	}
-	if r.Reason != "high reasoning names enso-pro, which your plan and credit do not pay for, so enso serves." {
+	if r.Reason != "high reasoning names enso-pro, but nothing pays for it (insufficient_balance), so enso-free serves at no charge." {
 		t.Fatalf("unfunded reason = %q", r.Reason)
 	}
 
 	// A request stating no depth is read at the default row.
-	r = DepthRouting("enso", []byte(`{"model":"enso"}`), true)
+	r = DepthRouting("enso", []byte(`{"model":"enso"}`), "")
 	if r.Inputs.Depth != "default" || r.Inputs.Key != "default" || r.Chosen != "enso-flash" {
 		t.Fatalf("default: %+v chose %q", r.Inputs, r.Chosen)
 	}
 
 	// An unknown depth is read at the default row, and the reason says where it was read.
-	r = DepthRouting("enso", []byte(`{"model":"enso","reasoning_effort":"deep"}`), true)
-	if r.Inputs.Key != "default" || r.Reason != "deep reasoning (read at default) names enso-flash, and your plan or credit pays for it." {
+	r = DepthRouting("enso", []byte(`{"model":"enso","reasoning_effort":"deep"}`), "")
+	if r.Inputs.Key != "default" || r.Reason != "deep reasoning (read at default) names enso-flash, and your plan or balance pays for it." {
 		t.Fatalf("unknown depth: %+v %q", r.Inputs, r.Reason)
 	}
 
+	// A tier the family does not serve at a price leaves the free SKU, whoever pays.
+	globalModelConfig.mu.Lock()
+	globalModelConfig.router.Depth["enso"]["max"] = "enso-preview"
+	globalModelConfig.mu.Unlock()
+	r = DepthRouting("enso", []byte(`{"reasoning_effort":"max"}`), "")
+	if r.Chosen != "enso-free" || r.Inputs.Policy != "n/a" ||
+		r.Reason != "max reasoning names enso-preview, but enso-preview is not a paid model open to every caller, so enso-free serves." {
+		t.Fatalf("unserved tier: chose %q policy %q reason %q", r.Chosen, r.Inputs.Policy, r.Reason)
+	}
+
 	// A model with no row is not routed by Enso.
-	for _, model := range []string{"enso-pro", "zen5"} {
-		if DepthRouting(model, high, true) != nil {
+	for _, model := range []string{"enso-pro", "enso-free", "zen5"} {
+		if DepthRouting(model, high, "") != nil {
 			t.Fatalf("%s has no depth row: want no routing", model)
 		}
 	}
 }
 
-func TestDepthRoutingNeverLiftsAPricedId(t *testing.T) {
+// /v1/models lists each router id: its default tier's row and price under its own id,
+// the narrowest window of its tiers, and a description of where it routes. A router
+// whose default tier is not listed is not listed either.
+func TestTheRouterIdsAreListed(t *testing.T) {
 	depthConfig(t)
 	seedEnso(t)
-	priced := ensoFam.byID["enso-auto"]
-	priced.Base = zenTier{MaxCtx: 1_000_000, In: ensoFam.byID["enso-pro"].Base.In, Out: ensoFam.byID["enso-pro"].Base.Out}
-	priced.Tiers = []zenTier{priced.Base}
-	ensoFam.byID["enso-auto"] = priced
-	r := DepthRouting("enso-auto", []byte(`{"reasoning_effort":"max"}`), true)
-	if r.Chosen != "enso-auto" || r.Inputs.Policy != "n/a" {
-		t.Fatalf("priced id: chose %q policy %q", r.Chosen, r.Inputs.Policy)
+	models := []modelInfo{
+		{ID: "enso-flash", Object: "model", OwnedBy: "hanzo", Premium: true, ContextWindow: 900_000, SupportsVision: true},
+		{ID: "enso-free", Object: "model", OwnedBy: "hanzo", ContextWindow: 256_000},
+		{ID: "enso-pro", Object: "model", OwnedBy: "hanzo", Premium: true, ContextWindow: 272_000},
+		{ID: "enso-ultra", Object: "model", OwnedBy: "hanzo", Premium: true, ContextWindow: 1_000_000},
 	}
-	if r.Reason != "max reasoning names enso-ultra, but enso-auto is not a free id the table lifts, so enso-auto serves as asked." {
-		t.Fatalf("reason = %q", r.Reason)
+	out := depthListings(globalModelConfig, models)
+	var ids []string
+	byID := map[string]modelInfo{}
+	for _, m := range out {
+		ids = append(ids, m.ID)
+		byID[m.ID] = m
+	}
+	if got := strings.Join(ids, ","); got != "enso,enso-auto,enso-flash,enso-free,enso-pro,enso-ultra" {
+		t.Fatalf("listed %s", got)
+	}
+	for _, id := range []string{"enso", "enso-auto"} {
+		m := byID[id]
+		if m.Name != "Enso" || !m.Premium || !m.SupportsVision || m.ContextWindow != 272_000 {
+			t.Errorf("%s = %+v, want enso-flash's row at the narrowest tier window", id, m)
+		}
+		for _, says := range []string{"enso-flash at off, none, minimal, low, medium, default", "enso-pro at high", "enso-ultra at xhigh, max", "enso-free, at no charge"} {
+			if !strings.Contains(m.Description, says) {
+				t.Errorf("%s description %q does not say %q", id, m.Description, says)
+			}
+		}
+		if got := listedAs(id); got != "enso-flash" {
+			t.Errorf("%s is priced as %q, want enso-flash", id, got)
+		}
+	}
+	if got := listedAs("enso-pro"); got != "enso-pro" {
+		t.Errorf("a tier is priced as %q", got)
+	}
+
+	// No default tier listed: no router row.
+	if out := depthListings(globalModelConfig, models[1:]); len(out) != 3 {
+		t.Errorf("without enso-flash listed: %d rows", len(out))
 	}
 }

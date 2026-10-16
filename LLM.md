@@ -1274,9 +1274,10 @@ Enso pricing. Each Enso SKU has one fixed list price, and nothing measured moves
   | enso-ultra | Claude Sonnet 5.5, 2.20 / 11.00 / 0.11 / 2.75 | 2.5 | 5.50 / 27.50 / 0.275 / 6.875 |
 
   Flash is 3x because Luna past a 272k prompt costs 0.20 / 0.75; ultra 2.5x because its
-  Opus 5.5 arm (4.40 / 22.00) with OpenRouter's fee would sit above twice Sonnet. A SKU
-  the catalog serves free (enso, enso-auto, hanzo/enso, enso-free) has no line and bills
-  nothing. `modelFamily.fix` lays the list over the family's discovery, so `/v1/models`
+  Opus 5.5 arm (4.40 / 22.00) with OpenRouter's fee would sit above twice Sonnet.
+  enso-free, the one SKU the catalog serves free, has no line and bills nothing; enso,
+  enso-auto and hanzo/enso are no SKUs but the router over these three (Enso's router,
+  below). `modelFamily.fix` lays the list over the family's discovery, so `/v1/models`
   lists it, `zenModel.bill` bills it, the hold reserves it, and the price list reads it
   (`Prices`, which cloud lays over `/v1/pricing`): one number in every place. A SKU the
   service prices that the list does not is dropped from the listing and never served,
@@ -1334,6 +1335,47 @@ Go zen serves and the engine (enso since 1.6.1) does not (`/v1/admin/*`). Moving
 not a path edit: convergence applies the newest stored version wherever a family serves
 another, so the first read that succeeds would push the last stored enso version over
 the live catalog. The guard reads the engine's path on its own, read-only.
+
+## Enso's router: one tier a request, enso-free when nothing pays (`depth_route.go`, `routers/filter_balance.go`)
+
+Owner, 2026-10-15: only `enso-free` is free. `enso`, `enso-auto` and `hanzo/enso` are the
+paid router, and they are ai's, not the engine's: the engine serves leaf SKUs only, and
+universe's enso catalog lists none of the three.
+
+- **The router is `router.depth`** (cloud-api-models, universe `values/hanzo/cloud.yaml`):
+  a row per router id, reasoning depth → tier. Up to low (and a request that states no
+  depth) enso-flash, medium and high enso-pro, xhigh and max enso-ultra. The depth is the
+  request's own (`requestDepth`: `reasoning_effort`, `reasoning.effort`, a token budget,
+  `thinking`). No learned router is in the path: the engine's `POST /route` is empty in
+  `conf/models.yaml` and its policy serves nothing in production.
+- **Resolved before anything prices it** (`BalanceGateFilter`): a request naming a router
+  id is rewritten to its tier and then gated, held, seated, billed and guarded exactly as
+  a request naming the tier, at the tier's fixed price (`ensoPrices`). Explicit tiers and
+  enso-free are unchanged.
+- **Nothing pays the tier, enso-free answers at $0, never a refusal for want of
+  payment**: the family serves the tier to no one at a price; a program in this process
+  made the call (`object.Caller`: its meter charges for the id it named); with no usage
+  policy, the wallet cannot cover it; with one, the paid lane's switch is off, the policy
+  refuses the tier or names nothing, names a payer the paid lane does not seat (the free
+  plan, a free cap, granted credit: `paid_plan_required`), names prepaid cash the wallet
+  cannot cover (`insufficient_balance`), or the paid lane has no room (`paid_lane_full`).
+  A paid plan's included usage and a payer's own prepaid cash pay, plan or none (`owes`).
+  What admitting the tier took is given back; a refusal enso-free meets as well (a
+  request window, the free allowance) is enso-free's.
+- **The answer says so**: `X-Routed-Model` names what answered (the tier or enso-free);
+  the chat envelope's `routing` object says `router: enso`, `chosen`, the depth and key it
+  read, `policy` funded | unfunded | n/a, and a sentence of why. A refusal for want of
+  payment adds limited mode's headers (`fallBack`): `X-Hanzo-Fallback: enso-free`,
+  `X-Hanzo-Usage-Reason` (the code), `X-Hanzo-Usage: limited`, `X-Hanzo-Topup-Url`. The
+  usage row's `model` is the SKU that answered.
+- **ZAP** has no gate, so its chat, responses and messages handlers serve a router id as
+  enso-free (`unpaid`).
+- **Listed** (`depthListings`): each router id is a row of `/v1/models`, its default
+  tier's row and price (`listedAs`) under its own id, the narrowest window of its tiers,
+  and a description of where it routes. Never `free`.
+- Tests: `TestARouterIdIsServedOnItsTierOrItsFreeSKU` (every payer case, the switch, a
+  program's call, a tier named outright), `TestDepthRoute*`, `TestDepthRouting*`,
+  `TestTheRouterIdsAreListed`, `TestARouterIdListsAtItsDefaultTiersPrice`.
 
 ## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
 

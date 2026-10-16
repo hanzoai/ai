@@ -193,10 +193,9 @@ var (
 		prices:     ensoPrices,
 		freeName:   "enso-free",
 		providerFn: object.EnsoProvider,
-		// The flagship windows. Every other SKU, enso-pro among them, is listed and
+		// The flagship window. Every other SKU, enso-pro among them, is listed and
 		// served from discovery.
 		windows: map[string]int{
-			"enso":       flagshipWindow,
 			"enso-ultra": flagshipWindow,
 		},
 	}
@@ -1092,7 +1091,7 @@ const warmRetry = 10 * time.Second
 
 // warm loads the family's catalog when it has never been read. A price asked for
 // before the first discovery is then the discovered one: on a pod that has just
-// started, enso-auto reads as the free SKU it is, not as an unknown and so priced id.
+// started, enso-free reads as the free SKU it is, not as an unknown and so priced id.
 // Concurrent readers wait for the one load; after a failed one they read the empty
 // snapshot until warmRetry has passed.
 func (f *modelFamily) warm() {

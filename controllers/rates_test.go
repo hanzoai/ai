@@ -37,7 +37,7 @@ const servedRoute = `{"margin":"3.0","providers":{"openrouter":{"base":"https://
    {"provider":"openrouter","upstream":"anthropic/claude-sonnet-5.5","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"2.75"}},
    {"provider":"openrouter","upstream":"anthropic/claude-opus-5.5","ctx":1000000,"cost":{"in":"4.40","out":"22.00","cache_read":"0.22","cache_write":"5.50"}},
    {"provider":"openrouter","upstream":"google/gemini-4-argon","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"0.1875"}}]},
- "enso":{"route":[{"provider":"free","upstream":"vendor/x:free","ctx":256000,"cost":{"in":"0","out":"0"}}]},
+ "enso-free":{"route":[{"provider":"free","upstream":"vendor/x:free","ctx":256000,"cost":{"in":"0","out":"0"}}]},
  "enso-gone":{"disabled":true,"route":[{"provider":"openrouter","upstream":"vendor/y","cost":{"in":"9","out":"9"}}]}}}`
 
 // ensoService is the enso family on httptest: discovery, the admin catalog behind
@@ -86,7 +86,7 @@ func (e *ensoService) serve(w http.ResponseWriter, r *http.Request) {
  {"id":"enso-pro","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"3.3","output":"16.5"}},
  {"id":"enso-ultra","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"5.236","output":"26.18"}},
  {"id":"enso-rogue","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"9","output":"9"}},
- {"id":"enso","object":"model","owned_by":"hanzo","mode":"chat","context_window":256000,"pricing":{"input":"0","output":"0"}}]}`)
+ {"id":"enso-free","object":"model","owned_by":"hanzo","mode":"chat","context_window":256000,"pricing":{"input":"0","output":"0"}}]}`)
 	case "/v1/chat/completions":
 		e.asked.Add(1)
 		var in struct {
@@ -275,7 +275,7 @@ func TestTheServedRoutesFitUnderTheirPrices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"enso-flash", "enso-pro", "enso-ultra", "enso"} {
+	for _, id := range []string{"enso-flash", "enso-pro", "enso-ultra", "enso-free"} {
 		m, ok := ensoFam.lookup(id)
 		if !ok {
 			t.Fatalf("%s not listed", id)
@@ -306,7 +306,7 @@ func TestTheListingCarriesTheFixedPrice(t *testing.T) {
 	if _, ok := ensoFam.lookup("enso-rogue"); ok {
 		t.Error("a model with no price here was listed")
 	}
-	if free, ok := ensoFam.lookup("enso"); !ok || free.priced() {
+	if free, ok := ensoFam.lookup("enso-free"); !ok || free.priced() {
 		t.Errorf("the free model = %+v, %v", free, ok)
 	}
 	var listed *modelInfo
@@ -317,7 +317,7 @@ func TestTheListingCarriesTheFixedPrice(t *testing.T) {
 			listed = &models[i]
 		case "enso-rogue":
 			t.Error("/v1/models lists a model with no price")
-		case "enso":
+		case "enso-free":
 			if p := models[i].Pricing; p == nil || p.InputPerMillion != 0 || !models[i].Free {
 				t.Errorf("the free model lists %+v", p)
 			}
@@ -463,6 +463,32 @@ func TestTheRouteIsReadUnderTheAdminTokenAndKept(t *testing.T) {
 	}
 }
 
+// A router id lists beside its tiers at the price of the tier a request stating no
+// depth is served at, never free: only enso-free is.
+func TestARouterIdListsAtItsDefaultTiersPrice(t *testing.T) {
+	depthConfig(t)
+	ensoServiceAt(t)
+	rows := map[string]modelInfo{}
+	for _, m := range listAvailableModels() {
+		rows[m.ID] = m
+	}
+	for _, id := range []string{"enso", "enso-auto"} {
+		m, ok := rows[id]
+		if !ok {
+			t.Fatalf("%s is not listed", id)
+		}
+		if p := m.Pricing; p == nil || m.Free || p.InputPerMillion != 0.33 || p.OutputPerMillion != 1.65 || m.Class != object.ClassOurs || m.Family != "enso" {
+			t.Errorf("%s lists %+v at %+v, want enso-flash's 0.33 / 1.65, ours, enso", id, m, p)
+		}
+		if m.ContextWindow != 900000 {
+			t.Errorf("%s holds %d, want enso-flash's 900000, the narrowest of its tiers", id, m.ContextWindow)
+		}
+	}
+	if m := rows["enso-free"]; !m.Free {
+		t.Errorf("enso-free lists %+v, want free", m)
+	}
+}
+
 // The price list states each model's price, and the free models; a SuperAdmin reads
 // how each price was set, its route held to it, and the ledger.
 func TestThePriceListStatesOneNumberAModel(t *testing.T) {
@@ -473,8 +499,8 @@ func TestThePriceListStatesOneNumberAModel(t *testing.T) {
 		b.Prices[1].Typical != "" || b.Prices[1].Arms != nil || b.Ledger != nil {
 		t.Fatalf("the price list = %+v", b)
 	}
-	if len(b.Free) != 1 || b.Free[0] != "enso" {
-		t.Errorf("free = %v, want [enso]", b.Free)
+	if len(b.Free) != 1 || b.Free[0] != "enso-free" {
+		t.Errorf("free = %v, want [enso-free]", b.Free)
 	}
 	admin := Prices(context.Background(), true)
 	ultra := admin.Prices[2]

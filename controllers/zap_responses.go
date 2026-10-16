@@ -121,6 +121,8 @@ func zapResponsesHandler(ctx context.Context, auth string, body []byte) (*zap.Me
 	if err != nil {
 		return object.BuildCloudResponse(400, nil, err.Error())
 	}
+	// ZAP has no gate to ask who pays, so a router id is its free SKU.
+	chatRequest.Model = unpaid(chatRequest.Model)
 
 	// STEP 1/2 — identity + org scoping + per-org provider + upstream model.
 	// The ONE auth seam (routes pk-/sk- IAM keys, JWTs, and sk- direct keys).

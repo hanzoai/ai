@@ -23,13 +23,13 @@ import (
 )
 
 // The production families guarantee their flagship SKUs at the 1M served window.
-// enso-pro is deliberately NOT among them: the enso service serves enso, enso-flash
-// and enso-ultra and answers 404 for enso-pro, and ai must never guarantee a window
-// for a SKU no family serves.
+// enso-pro is deliberately NOT among them: it is listed at the window discovery
+// states. Nor is enso, which is a router id and no SKU: its listing holds the
+// narrowest window of its tiers (depthListing).
 func TestFamilyFlagshipWindows(t *testing.T) {
 	want := map[*modelFamily]map[string]int{
 		zenFam:  {"zen5": flagshipWindow, "zen5-coder": flagshipWindow, "zen5-pro": flagshipWindow},
-		ensoFam: {"enso": flagshipWindow, "enso-ultra": flagshipWindow},
+		ensoFam: {"enso-ultra": flagshipWindow},
 	}
 	for fam, windows := range want {
 		for id, w := range windows {
@@ -38,8 +38,10 @@ func TestFamilyFlagshipWindows(t *testing.T) {
 			}
 		}
 	}
-	if _, ok := ensoFam.windows["enso-pro"]; ok {
-		t.Error("enso-pro must not be a guaranteed enso window: the family answers 404 for it")
+	for _, id := range []string{"enso-pro", "enso"} {
+		if _, ok := ensoFam.windows[id]; ok {
+			t.Errorf("%s must not be a guaranteed enso window", id)
+		}
 	}
 }
 

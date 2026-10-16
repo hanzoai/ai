@@ -436,6 +436,8 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	if err := json.Unmarshal(body, &request); err != nil {
 		return object.BuildCloudResponse(400, nil, "invalid request: "+err.Error())
 	}
+	// ZAP has no gate to ask who pays, so a router id is its free SKU.
+	request.Model = unpaid(request.Model)
 
 	// Auth → provider + user + upstream model.
 	provider, authUser, upstreamModel, err := zapResolveAuth(auth, request.Model)

@@ -528,7 +528,7 @@ func (c *modelCatalog) get() ([]modelInfo, []byte, error) {
 func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 	var models []modelInfo
 	if cfg != nil {
-		models = mergeFamilyModels(cfg.ListModels())
+		models = depthListings(cfg, mergeFamilyModels(cfg.ListModels()))
 	} else {
 		models = staticModels()
 	}
@@ -539,7 +539,7 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 	published := make(map[string]string, len(models))
 	for i := range models {
 		m := &models[i]
-		m.Pricing = pricingInfo(getModelPriceForOrgOK(m.ID, ""))
+		m.Pricing = pricingInfo(getModelPriceForOrgOK(listedAs(m.ID), ""))
 		m.Free = m.Pricing != nil && !m.Pricing.Variable && m.Pricing.InputPerMillion == 0 && m.Pricing.OutputPerMillion == 0
 		slug := canonicalSlug(*m)
 		key := strings.ToLower(slug)

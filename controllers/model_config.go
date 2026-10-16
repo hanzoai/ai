@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -743,6 +744,13 @@ func (mc *ModelConfig) depthTable(model string) map[string]string {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	return mc.router.Depth[strings.ToLower(strings.TrimSpace(model))]
+}
+
+// routers are the ids router.depth holds a row for, sorted.
+func (mc *ModelConfig) routers() []string {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	return slices.Sorted(maps.Keys(mc.router.Depth))
 }
 
 // ConfRouterPolicy returns the live conf router Prefer + CostCeiling under the
