@@ -43,10 +43,11 @@ import (
 // leaves under an id of its own. A request naming a handle is never held: the
 // state behind it is the service's to keep.
 //
-// An answer is held under what gave it: the weights (routing.sha256) and the org's
+// An answer is held under what gave it: the model asked (a Kai version on its own
+// service is held apart from kai), the weights (routing.sha256) and the org's
 // published capabilities the request carried (X-Org-Capabilities). A request is
-// looked up under the weights the service last answered with and the capabilities
-// it carries, so once an org publishes, replaces or withdraws a capability, the
+// looked up under the weights the service last answered that model with and the
+// capabilities it carries, so once an org publishes, replaces or withdraws a capability, the
 // answers it held before are not given again.
 
 // decisionTTL is how long an answer is given again for an identical request.
@@ -75,7 +76,7 @@ type decisionCacheT struct {
 	m      map[[32]byte]*list.Element // by key
 	size   int
 	orgs   map[string]*share // what each org holds
-	rev    map[string]string // upstream model → routing.sha256 of its latest 200 answer
+	rev    map[string]string // model asked → routing.sha256 of its latest 200 answer
 	flight singleflight.Group
 }
 
@@ -86,18 +87,18 @@ type share struct {
 	n, size int
 }
 
-// recall answers body, sent as up for org with its capabilities set, from a live
+// recall answers body, asked for model by org with its capabilities set, from a live
 // held answer, else asks the service once for every identical body in flight. An
 // answer that was not produced by this caller's own call leaves under a fresh id.
-func recall(ctx context.Context, kai *object.Provider, up, org, set, rid string, body []byte) decided {
+func recall(ctx context.Context, kai *object.Provider, model, org, set, rid string, body []byte) decided {
 	norm, ok := holdable(body)
 	if !ok {
 		return send(ctx, kai, org, set, rid, body)
 	}
 	c := &decisionCache
 	c.mu.Lock()
-	rev := c.rev[up]
-	id := decisionKey(org, up, rev, set, norm)
+	rev := c.rev[model]
+	id := decisionKey(org, model, rev, set, norm)
 	d, hit := c.lookup(id)
 	c.mu.Unlock()
 	if hit {
@@ -105,12 +106,12 @@ func recall(ctx context.Context, kai *object.Provider, up, org, set, rid string,
 		return d
 	}
 	if rev == "" {
-		return learn(up, org, set, norm, send(ctx, kai, org, set, rid, body))
+		return learn(model, org, set, norm, send(ctx, kai, org, set, rid, body))
 	}
 	mine := false
 	v, _, _ := c.flight.Do(string(id[:]), func() (any, error) {
 		mine = true
-		return learn(up, org, set, norm, send(context.WithoutCancel(ctx), kai, org, set, rid, body)), nil
+		return learn(model, org, set, norm, send(context.WithoutCancel(ctx), kai, org, set, rid, body)), nil
 	})
 	d = v.(decided)
 	if !mine {
@@ -129,9 +130,9 @@ func recall(ctx context.Context, kai *object.Provider, up, org, set, rid string,
 	return d
 }
 
-// learn takes the weights a 200 answer names as up's revision, and holds the answer
+// learn takes the weights a 200 answer names as model's revision, and holds the answer
 // for org under its capabilities set when Kai gave it in process.
-func learn(up, org, set string, norm []byte, d decided) decided {
+func learn(model, org, set string, norm []byte, d decided) decided {
 	if d.fault != nil || d.status != http.StatusOK {
 		return d
 	}
@@ -141,9 +142,9 @@ func learn(up, org, set string, norm []byte, d decided) decided {
 	if c.rev == nil {
 		c.rev = make(map[string]string)
 	}
-	c.rev[up] = d.sha256
+	c.rev[model] = d.sha256
 	if d.sha256 != "" && len(d.body) <= decisionBytes {
-		c.hold(decisionKey(org, up, d.sha256, set, norm), org, d)
+		c.hold(decisionKey(org, model, d.sha256, set, norm), org, d)
 	}
 	return d
 }
@@ -237,11 +238,13 @@ func holdable(body []byte) ([]byte, bool) {
 	return norm.Bytes(), true
 }
 
-// decisionKey is SHA-256 of the org, the upstream model, its revision, the org's
-// capabilities set and the body, NUL between them.
-func decisionKey(org, up, rev, set string, norm []byte) [32]byte {
+// decisionKey is SHA-256 of the org, the model asked, its revision, the org's
+// capabilities set and the body as sent, NUL between them. The model is the id the
+// answer names, not the one the service was asked for: a Kai version KAI_URLS names
+// is asked for kai at its own service, and is never answered by kai's held answers.
+func decisionKey(org, model, rev, set string, norm []byte) [32]byte {
 	h := sha256.New()
-	h.Write([]byte(org + "\x00" + up + "\x00" + rev + "\x00" + set + "\x00"))
+	h.Write([]byte(org + "\x00" + model + "\x00" + rev + "\x00" + set + "\x00"))
 	h.Write(norm)
 	var id [32]byte
 	h.Sum(id[:0])

@@ -373,6 +373,10 @@ models:
   # for a chat turn.
   # released: kai when api.hanzo.ai first served it (cloud f80ce7a0a, ai
   # v1.833.242); the Jev ids when OpenRouter listed them (its `created`).
+  # A Kai version (kai-<12 hex>, kai-<major>.<minor>[.<patch>]) needs no row: it is
+  # kai, priced, gated and filed as kai. One that runs as its own deployment is named
+  # in KAI_URLS (kai-1.4=http://kai-1-4.hanzo.svc:8080,...), which sends its decisions
+  # there and lists it on /v1/models as kai's row; kai itself stays KAI_URL's.
   kai:
     provider: kai
     upstream: kai

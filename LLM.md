@@ -740,7 +740,7 @@ own file (anthropic_api.go).
 
 `controllers/decisions.go`. It reaches the decision service (`KAI_URL`) through one
 core, `decide`, which the HTTP handler and the ZAP twins (`zap_decisions.go`) call
-after resolving the principal. It serves Kai (`kai`, `kai-<12 hex>`) and Jev by
+after resolving the principal. It serves Kai (`kai` and its versions, below) and Jev by
 OpenRouter's vendor ids (`typesafe/jev-1.13`, `~typesafe/jev-latest`), selected by
 `model`; the vendor ids reach Jev itself. Nothing named Jev is ever answered by Kai
 (`jevNamed`), and a bare `jev-*` has no route, so it is 400. Every refusal is
@@ -806,9 +806,11 @@ model; Kai's and Jev's output rows are zero, so their bills are input alone.
 - **Held answers are per org.** `decisioncache.go` is an LRU of Kai answers for an
   identical body (whitespace-insensitive, order kept) from the same org within a
   minute, under a fresh `id`, billed like a miss. Each org holds at most an eighth of
-  it and evicts its own. Never across orgs. Handle requests are never held. The key's
-  revision is the weights (`routing.sha256`), plus `routing.capability` {name,
-  sha256} when the org's capability answered. A lookup uses the capability that
+  it and evicts its own. Never across orgs. Handle requests are never held. The key
+  names the model asked (the id the answer names, so `kai` and a version asked of its
+  own service as `kai` never share an answer); its revision is the weights
+  (`routing.sha256`), plus `routing.capability` {name, sha256} when the org's
+  capability answered. A lookup uses the capability that
   last answered that org (kept on its share), so once a capability answers, the
   base answers the org held stop being served. An answer without the field keeps
   the weights-only key.
@@ -854,10 +856,26 @@ model; Kai's and Jev's output rows are zero, so their bills are input alone.
   `supports_vision`; a models.yaml row may state a `name` and a `description`. Class and
   family resolve routes, so `build` stamps them after it stores the slugs —
   before, the first build waits on its own lock (`TestFirstBuildDoesNotWaitOnItself`).
-- **Kai's versioned id** `kai-<first 12 lowercase hex of the weights' sha256>` is
-  Kai with no route of its own: priced and filed as `kai`, sent to the
-  service as asked (the service checks it names the weights it serves). Any other
-  `kai-…` no route names is 400.
+- **A Kai version** is `kai-<first 12 lowercase hex of the weights' sha256>` or a
+  release, `kai-<major>.<minor>` or `kai-<major>.<minor>.<patch>` (each part digits, no
+  leading zero; `kaiVersion`). With no route of its own it is Kai: priced, gated
+  (`DecisionAs`, which the balance gate reads a decision's model through, so the plan
+  is asked about `kai` in class ours) and filed as `kai`, and its answer names the
+  version. Any other `kai-…` no route names is 400.
+- **Each Kai version may run as its own deployment: `KAI_URLS`.** Comma-separated
+  `id=url` pairs (`kai-1.4=http://kai-1-4.hanzo.svc:8080,kai-1.5=http://kai-1-5.hanzo.svc:8080`),
+  read once at boot (`InitKaiURLs`, first in `Bootstrap`): an id that is no Kai version
+  (`kai` itself included), an id named twice, or a url that is not http(s) with a host
+  (no credential, query or fragment) refuses the boot, naming the pair. A decision
+  whose id is a pair's goes to that url (`kaiFor`: Kai's own provider, only the address
+  moved, so the same client, timeouts, `KAI_API_KEY`, `X-Org-Id`,
+  `X-Org-Capabilities`, capture and billing), asked there for `kai` — the one Kai that
+  deployment runs, which is how the stock image serves its folder — and the answer is
+  renamed to the id asked. Every other id, `kai` included, and a version no pair names
+  (sent as asked) go to `KAI_URL`. `/v1/models` lists each pair's id as `kai`'s row
+  under that id (owned_by hanzo, kai's price, class and family, slug `hanzo/<id>`);
+  no models.yaml row is needed. Blank or unset, nothing changes. Start a version: add
+  its deployment and its pair; kill it: drop both.
 - **Nothing named Jev reaches Kai**: a route or a models.yaml `alias_of` that would
   send a Jev-named id to a Kai upstream is refused where it resolves (`Canonical`,
   `decisionModel`).

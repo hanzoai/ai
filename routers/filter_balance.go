@@ -229,6 +229,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 	model := requestedModel(c)
+	// A decision is gated as it is priced: a Kai version is Kai (controllers.DecisionAs).
+	if controllers.DecisionPath(path) {
+		model = controllers.DecisionAs(model)
+	}
 	// A push to or the close of a live transcript names no model: it is billed as the
 	// model its open named, for the caller who opened it, and was counted there.
 	session := false

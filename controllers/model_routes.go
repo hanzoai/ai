@@ -484,6 +484,7 @@ type modelCatalog struct {
 	cfg    *ModelConfig
 	cfgAt  time.Time
 	fam    []discovery
+	kai    *map[string]string // KAI_URLS, whose versions are listed
 	models []modelInfo
 	body   []byte
 	err    error
@@ -503,13 +504,14 @@ func (c *modelCatalog) get() ([]modelInfo, []byte, error) {
 		cfgAt = cfg.ChangedAt()
 	}
 	fam := discoveries()
+	kai := kaiURLs.Load()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.models == nil || c.cfg != cfg || c.cfgAt != cfgAt || !slices.Equal(c.fam, fam) {
+	if c.models == nil || c.cfg != cfg || c.cfgAt != cfgAt || !slices.Equal(c.fam, fam) || c.kai != kai {
 		c.models = c.build(cfg)
 		c.body, c.err = json.Marshal(modelListEnvelope(c.models))
-		c.cfg, c.cfgAt, c.fam = cfg, cfgAt, fam
+		c.cfg, c.cfgAt, c.fam, c.kai = cfg, cfgAt, fam, kai
 	}
 	return c.models, c.body, c.err
 }
@@ -551,6 +553,26 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 			published[key] = m.ID
 		}
 	}
+	// A Kai version KAI_URLS names is Kai run as its own service: listed as Kai's row
+	// under its id, at Kai's price, its slug published as any row's is.
+	if i := slices.IndexFunc(models, func(m modelInfo) bool { return m.ID == "kai" }); i >= 0 {
+		n := len(models)
+		for _, id := range kaiVersions() {
+			if ids[id] {
+				continue
+			}
+			row := models[i]
+			row.ID, row.CanonicalSlug = id, ""
+			if slug := canonicalSlug(row); slug != "" && !ids[slug] && !routes(slug) {
+				row.CanonicalSlug = slug
+				published[slug] = id
+			}
+			models = append(models, row)
+		}
+		if len(models) > n {
+			sort.Slice(models, func(a, b int) bool { return models[a].ID < models[b].ID })
+		}
+	}
 	slugs.Store(&published)
 
 	// Class and family resolve each row's route, and resolving an id no config row
@@ -559,8 +581,9 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 	// wait on its own lock.
 	for i := range models {
 		m := &models[i]
-		m.Class = ClassOf(m.ID)
-		m.Family = lineage(m.ID, m.OwnedBy)
+		as := DecisionAs(m.ID)
+		m.Class = ClassOf(as)
+		m.Family = lineage(as, m.OwnedBy)
 	}
 	return models
 }

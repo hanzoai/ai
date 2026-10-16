@@ -106,6 +106,12 @@ func doBootstrap() (err error) {
 		}
 	}()
 
+	// Where each Kai version that runs as its own service lives (KAI_URLS). Read
+	// first: a malformed pair refuses the boot before anything else is opened.
+	if err := controllers.InitKaiURLs(); err != nil {
+		return err
+	}
+
 	// Persistence: flags, ORM adapter, schema, DB connection.
 	object.InitFlag()
 	object.InitAdapter()

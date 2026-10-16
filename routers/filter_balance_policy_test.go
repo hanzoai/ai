@@ -175,6 +175,22 @@ func TestACoveredDecisionReachesItsHandlerAtAnEmptyWallet(t *testing.T) {
 	}
 }
 
+// A Kai version is gated as Kai: the policy is asked about kai, in Kai's class, as
+// it is priced and filed.
+func TestAKaiVersionIsGatedAsKai(t *testing.T) {
+	gateWith(t, 0)
+	asked := policy(t, &object.LimitGrant{Plan: "free", Pays: object.PaysFree, Class: object.ClassOurs, State: "ok", Settle: func(int64) {}}, nil)
+	p := ask(http.MethodPost, "/v1/decisions").with("Authorization", "Bearer tok").
+		body([]byte(`{"model":"kai-1.4","state":"s","questions":{"q":{"type":"noul"}}}`)).
+		through(Dialect, BalanceGateFilter)
+	if p.status() != http.StatusOK {
+		t.Fatalf("kai-1.4 under a free cap at $0: %d (%s)", p.status(), p.said())
+	}
+	if len(*asked) != 1 || (*asked)[0].Model != "kai" || (*asked)[0].Class != object.ClassOurs {
+		t.Fatalf("asked %+v, want kai in class ours", *asked)
+	}
+}
+
 // A model that has used its share of the plan is refused on every surface — 429 model_cap, naming the model and offering
 // its Hanzo fallback as a switch the caller may make, never one made for it — and
 // other premium models are untouched.

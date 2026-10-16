@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -25,10 +26,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -42,6 +45,7 @@ import (
 
 	iam "github.com/hanzoai/ai/internal/iam"
 
+	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/upstream"
@@ -354,19 +358,131 @@ func kaiUpstream(up string) bool {
 	return up == "kai" || strings.HasPrefix(up, "kai@")
 }
 
-// kaiVersion reports whether id is Kai's versioned id: kai- and the first 12
-// lowercase hex digits of the served weights' sha256.
+// kaiVersion reports whether id names one Kai: kai- and the first 12 lowercase hex
+// digits of its weights' sha256, or its release, kai-<major>.<minor> or
+// kai-<major>.<minor>.<patch>, each part a number written without a leading zero.
 func kaiVersion(id string) bool {
-	hex, ok := strings.CutPrefix(id, "kai-")
-	if !ok || len(hex) != 12 {
+	v, ok := strings.CutPrefix(id, "kai-")
+	if !ok {
 		return false
 	}
-	for _, c := range hex {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+	if len(v) == 12 && strings.Trim(v, "0123456789abcdef") == "" {
+		return true
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) != 2 && len(parts) != 3 {
+		return false
+	}
+	for _, n := range parts {
+		if n == "" || (n[0] == '0' && len(n) > 1) || strings.Trim(n, "0123456789") != "" {
 			return false
 		}
 	}
 	return true
+}
+
+// kaiServed reports whether kai routes to Kai itself, so a Kai version is Kai.
+func kaiServed() bool {
+	k := resolveModelRoute("kai")
+	return k != nil && k.providerName == object.KaiName && kaiUpstream(k.upstreamModel)
+}
+
+// DecisionAs is the id a decision asking for model is priced, gated and filed under:
+// a Kai version no route of its own names is kai; any other model is itself. The
+// balance gate reads a decision's model through it, so a version is admitted on the
+// plan, class and price Kai is.
+func DecisionAs(model string) string {
+	if kaiVersion(model) && resolveModelRoute(model) == nil && kaiServed() {
+		return "kai"
+	}
+	return model
+}
+
+// A Kai version may run as its own deployment: KAI_URLS names, for each such version,
+// the decision service that runs it, as comma-separated id=url pairs
+// (kai-1.4=http://kai-1-4.hanzo.svc:8080). A decision asking for one of those ids is
+// sent there and asked for kai, the one Kai that service runs; its answer names the id
+// asked. Credential, client, headers, capture and billing are the default path's, and
+// it is priced and filed as kai. Every other id, kai included, goes to KAI_URL. The
+// pairs are read once, at boot, and a malformed one refuses the boot.
+var kaiURLs atomic.Pointer[map[string]string]
+
+// InitKaiURLs reads KAI_URLS. Unset or blank, no version has a service of its own.
+func InitKaiURLs() error {
+	m, err := parseKaiURLs(conf.GetConfigString("KAI_URLS"))
+	if err != nil {
+		return err
+	}
+	kaiURLs.Store(m)
+	return nil
+}
+
+// parseKaiURLs reads KAI_URLS's pairs: each id a Kai version (kaiVersion), named once,
+// and each url an http or https address with a host and no credential. Blank is nil.
+func parseKaiURLs(spec string) (*map[string]string, error) {
+	if strings.TrimSpace(spec) == "" {
+		return nil, nil
+	}
+	m := map[string]string{}
+	for i, entry := range strings.Split(spec, ",") {
+		id, raw, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		id, raw = strings.TrimSpace(id), strings.TrimSpace(raw)
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("KAI_URLS: entry %d (%q) is not id=url", i+1, strings.TrimSpace(entry))
+		case !kaiVersion(id):
+			return nil, fmt.Errorf("KAI_URLS: entry %d: %q is no Kai version; an id is kai-<major>.<minor>, kai-<major>.<minor>.<patch> or kai-<12 hex>, and kai itself is KAI_URL's", i+1, id)
+		}
+		if _, twice := m[id]; twice {
+			return nil, fmt.Errorf("KAI_URLS: %s is named twice", id)
+		}
+		u, err := url.Parse(raw)
+		switch {
+		case err == nil && u.User != nil:
+			return nil, fmt.Errorf("KAI_URLS: %s: the address carries a credential; KAI_API_KEY is the one Kai sends", id)
+		case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "":
+			return nil, fmt.Errorf("KAI_URLS: %s: %q is not an http or https address", id, raw)
+		}
+		m[id] = strings.TrimRight(raw, "/")
+	}
+	return &m, nil
+}
+
+// kaiURL is the address KAI_URLS names for model, and whether it names one.
+func kaiURL(model string) (string, bool) {
+	m := kaiURLs.Load()
+	if m == nil {
+		return "", false
+	}
+	u, ok := (*m)[model]
+	return u, ok
+}
+
+// kaiVersions are the ids KAI_URLS names, sorted.
+func kaiVersions() []string {
+	m := kaiURLs.Load()
+	if m == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(*m))
+	for id := range *m {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// kaiFor is the decision service that answers model: KAI_URL's (object.KaiProvider),
+// at the address KAI_URLS names for model when it names one. Only the address moves.
+func kaiFor(model string) *object.Provider {
+	kai := object.KaiProvider()
+	u, ok := kaiURL(model)
+	if kai == nil || !ok {
+		return kai
+	}
+	at := *kai
+	at.ProviderUrl = u
+	return &at
 }
 
 // jevNamed reports whether an id names Jev.
@@ -595,13 +711,11 @@ func decisionModel(body []byte) (model, version string, _ *decisionRefusal) {
 		model = id
 	}
 	r := resolveModelRoute(model)
-	// Kai's versioned id names the weights it is asked of: it is Kai, priced and
-	// filed as kai, and the service is sent the id as asked, to check it names the
-	// weights it serves. Anything else spelled kai-… that no route names is unknown.
-	if r == nil && strings.HasPrefix(strings.ToLower(model), "kai-") {
-		if k := resolveModelRoute("kai"); k != nil && k.providerName == object.KaiName && kaiUpstream(k.upstreamModel) && kaiVersion(model) {
-			return "kai", model, nil
-		}
+	// A Kai version names the Kai it is asked of: it is Kai, priced and filed as kai,
+	// and the answer names the version. Anything else spelled kai-… that no route
+	// names is unknown.
+	if r == nil && kaiVersion(model) && kaiServed() {
+		return "kai", model, nil
 	}
 	if r == nil || r.providerName != object.KaiName || (jevNamed(model) && kaiUpstream(r.upstreamModel)) {
 		return "", "", decline(http.StatusBadRequest, fmt.Sprintf("unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", ")))
@@ -817,10 +931,11 @@ type decided struct {
 	exp    time.Time
 }
 
-// consult sends body to the decision service for org with its capabilities set,
+// consult sends body to the decision service kai for org with its capabilities set,
 // naming model by the id its route names upstream, and returns what the service
-// said: a 200 names the model asked for, with the usage that answer reports. A
-// refusal is ai's own: the service is not configured, or could not be reached.
+// said: a 200 names the model asked for, with the usage that answer reports, and is
+// held under that id. A refusal is ai's own: the service is not configured, or could
+// not be reached.
 func consult(ctx context.Context, kai *object.Provider, model, version, org, set, rid string, body []byte) decided {
 	if kai == nil {
 		return decided{fault: decline(http.StatusServiceUnavailable, "the decision service is not configured")}
@@ -832,6 +947,11 @@ func consult(ctx context.Context, kai *object.Provider, model, version, org, set
 	if version != "" {
 		// A versioned id reaches the service as asked, and its answer names it.
 		up, model = version, version
+	}
+	// A version KAI_URLS names is the one Kai its own service runs (kaiFor), so it is
+	// asked there as kai, and its answer names the version.
+	if _, own := kaiURL(model); own {
+		up = "kai"
 	}
 	// The service reads the model the call was priced for, whatever spelling it was
 	// asked in: the body's model is set to that id unless it already is it, byte for
@@ -849,7 +969,7 @@ func consult(ctx context.Context, kai *object.Provider, model, version, org, set
 	if jevNamed(model) {
 		body, asked = spell(body)
 	}
-	d := recall(ctx, kai, up, org, set, rid, body)
+	d := recall(ctx, kai, model, org, set, rid, body)
 	if d.status == http.StatusOK && up != model {
 		if named, ok := WithModel(d.body, model); ok {
 			d.body = named
@@ -1181,7 +1301,7 @@ func decide(ctx context.Context, d decisionCall) decisionReply {
 		log.Error("decisions: the org's capabilities could not be read request_id=%s: %v", d.rid, err)
 		return refused(d.rid, decline(http.StatusServiceUnavailable, "the organization's capabilities could not be read; retry"))
 	}
-	kai := object.KaiProvider()
+	kai := kaiFor(cmp.Or(d.version, d.model))
 	// Kai captures its states; Jev, reached through the same service, has none.
 	asked := ctx
 	if !jevNamed(d.model) && object.Capturing(ctx, d.ledger) {
