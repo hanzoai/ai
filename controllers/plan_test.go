@@ -135,6 +135,7 @@ func planEnso(t *testing.T, paid bool, cost string) (*httptest.Server, func() []
 	}))
 	t.Cleanup(srv.Close)
 	restore(t, ensoFam)
+	laid(t, ensoFam, "enso-pro", "enso-flash")
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
 	}
@@ -253,9 +254,11 @@ func TestTheSpendNeverReachesAnotherFamily(t *testing.T) {
 	}))
 	defer down.Close()
 	restore(t, ensoFam)
+	laid(t, ensoFam, "enso-flash")
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: down.URL}
 	}
+	ensoFam.byID = map[string]zenModel{"enso-flash": {ID: "enso-flash"}}
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 
 	body := []byte(`{"model":"enso-flash","messages":[{"role":"user","content":"hi"}]}`)
@@ -279,6 +282,7 @@ func enso(t *testing.T, handler http.HandlerFunc) {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	restore(t, ensoFam)
+	laid(t, ensoFam, "enso-pro", "enso-flash")
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
 	}
@@ -458,6 +462,7 @@ func ensoAt(t *testing.T, wait time.Duration, handler http.HandlerFunc) {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	restore(t, ensoFam)
+	laid(t, ensoFam, "enso-pro", "enso-flash")
 	ensoFam.providerFn = func() *object.Provider {
 		return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: srv.URL}
 	}

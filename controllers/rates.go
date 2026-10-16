@@ -14,37 +14,38 @@
 
 package controllers
 
-// rates.go — what an Enso model costs, as it is routed.
+// rates.go — what an Enso model costs: one fixed price a model, and what its calls
+// cost us.
 //
-// An Enso SKU is a route over arms — the family's catalog names each upstream, the
-// provider whose account runs it, and what a million tokens of it cost — and a call
-// bills what its arms cost us plus the platform's fee (fee.go). So an Enso SKU has
-// no one price. It has three, each the platform's fee over a cost:
+// An Enso model is a route over arms: the family's catalog names each upstream, the
+// provider whose account runs it and what a million of its tokens cost. It is sold
+// at ONE price, set here (ensoPrices): 2 to 3 times the list price of the upstream
+// it typically routes to, and well under Claude Fable and GPT-6 Astra. The price does
+// not move with routing, depth or what calls measured. The family's listing carries
+// it (fix), so /v1/models lists it, a call bills it (zenModel.bill), a hold reserves
+// it, and the price list reads it here (Prices): one number wherever it is read.
 //
-//	from     its cheapest arm, class by class: the least a token of it bills;
-//	typical  what its calls cost over the last day, measured from the ledger (or
-//	         its last `thin` calls when the day held fewer): each call's cost of
-//	         record split between its token classes by its arm's rates, summed, and
-//	         divided by the tokens, class by class;
-//	up to    its dearest arm, a long prompt's price included: the most.
+// Two things hold the price to what the arms cost:
 //
-// An arm costs us its provider's price and, where a reseller's credit bought it, the
-// reseller's fee (OpenRouter's 5.5%). from and up to follow the catalog, read every
-// rateEvery; typical is measured at start, once a day and when asked (Reprice: POST
-// /v1/pricing/sync). /v1/models, /v1/pricing and the quote all read the same
-// computation, so one model cannot carry two prices by where it is read.
+//	the guard   no request goes to a model whose route holds an arm that costs us
+//	            more than the model bills, in any token class, at a long prompt's
+//	            price and with a reseller's fee (guard). The route is the family's
+//	            admin catalog, read at most once a routeEvery.
+//	the ledger  every call's row states what it cost us, what it billed and the arm
+//	            that answered (trail); Prices reports the last day by model and arm,
+//	            with the margin the price made. A report: nothing reads it to price.
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/hanzoai/ai/log"
@@ -52,22 +53,68 @@ import (
 	"github.com/hanzoai/decimal"
 )
 
-const (
-	// rateDay is the window typical is measured over.
-	rateDay = 24 * time.Hour
-	// rateBack is how far back a thin window reaches for its last calls.
-	rateBack = 30 * 24 * time.Hour
-	// thin is the fewest calls a typical rate is measured over: a model the day
-	// served fewer is measured over its last thin calls instead.
-	thin = 50
-	// rateRows bounds one day's read of the ledger.
-	rateRows = 200_000
-	// rateEvery is how often the catalog's arms are read again, so from and up to
-	// follow a catalog edit within it.
-	rateEvery = 5 * time.Minute
-	// measureEvery is how often typical is measured.
-	measureEvery = 24 * time.Hour
-)
+// ensoPrices is what a million tokens of each Enso model the family charges for
+// bill: the list price of the upstream its route typically answers on (the catalog's
+// cost of its first rung, universe charts/app/files/enso/catalog.yaml) times a
+// multiple of 2 to 3. A model the catalog serves at no charge has no line and bills
+// nothing. Claude Fable 5.1 and GPT-6 Astra list at $10 / $50; the dearest here is
+// 55% of either. Owner, 2026-10-15.
+var ensoPrices = map[string]tag{
+	// GPT-6 Luna, three times: past a 272k-token prompt Luna costs $0.20 / $0.75 /
+	// $0.02 / $0.25, which twice its short price would cover by 4% of input once
+	// OpenRouter's fee is on it.
+	"enso-flash": {typical: "openai/gpt-6-luna", list: dollars("0.11", "0.55", "0.011", "0.1375"), multiple: decimal.New(3, 0)},
+	// GPT-6.1 Sol, twice. Every arm of the route (Sol, Gemini 4 Argon, Claude Sonnet
+	// 5.5) costs Sol's price.
+	"enso-pro": {typical: "openai/gpt-6.1-sol", list: dollars("2.20", "11.00", "0.11", "2.75"), multiple: decimal.New(2, 0)},
+	// Claude Sonnet 5.5, which answers most of its calls, two and a half times: the
+	// Claude Opus 5.5 arm behind it costs twice Sonnet, so twice Sonnet would leave
+	// that arm, with OpenRouter's fee, above the price.
+	"enso-ultra": {typical: "anthropic/claude-sonnet-5.5", list: dollars("2.20", "11.00", "0.11", "2.75"), multiple: decimal.MustParse("2.5")},
+}
+
+// tag is how one model's price was set: the upstream it typically routes to, that
+// upstream's list price, and the multiple of it the model sells at.
+type tag struct {
+	typical  string
+	list     costs
+	multiple decimal.Decimal
+}
+
+// price is what a million of the model's tokens bill, class by class.
+func (p tag) price() costs { return p.list.times(p.multiple) }
+
+// dollars is a list price a million tokens, from its four classes' decimals.
+func dollars(in, out, read, write string) costs {
+	return costs{in: decimal.MustParse(in), out: decimal.MustParse(out), read: decimal.MustParse(read), write: decimal.MustParse(write)}
+}
+
+// fix lays the family's own prices over its service's listing: a model priced here
+// lists and bills at that price whatever its service quotes; a model its service
+// serves at no charge stays free; a model its service charges for that is not priced
+// here is dropped, since nothing here may bill it. A family with no prices of its own
+// is listed as its service lists it.
+func (f *modelFamily) fix(models []zenModel) []zenModel {
+	if f.prices == nil {
+		return models
+	}
+	out := models[:0]
+	for _, m := range models {
+		if p, ok := f.prices[strings.ToLower(m.ID)]; ok {
+			c := p.price()
+			m.Base = zenTier{MaxCtx: m.MaxCtx, In: c.in, Out: c.out, CacheRead: c.read, CacheWrite: c.write}
+			m.Tiers = []zenTier{m.Base}
+			out = append(out, m)
+			continue
+		}
+		if !m.priced() {
+			out = append(out, m)
+			continue
+		}
+		log.Error("%s: %s is priced by its service and has no price here: it is neither listed nor served", f.name, m.ID)
+	}
+	return out
+}
 
 // Rate is a price in US dollars a million tokens.
 type Rate struct {
@@ -77,18 +124,25 @@ type Rate struct {
 	CacheWrite float64 `json:"cache_write,omitempty"`
 }
 
-// Window is the calls a typical rate was measured over.
-type Window struct {
-	Since    time.Time `json:"since"`
-	Until    time.Time `json:"until"`
-	Requests int       `json:"requests"`
-	// Basis is "24h" (every call of the last day), "last" (the last calls, the
-	// day having held fewer than thin), or "" when no call was measured.
-	Basis string `json:"basis"`
+// Listing is one Enso model's price.
+type Listing struct {
+	Model string `json:"model"`
+	Price Rate   `json:"price"`
+	// Typical, List and Multiple say how the price was set: the upstream the model
+	// typically routes to, that upstream's list price, and the multiple of it the
+	// price is. They, Arms and Refused name upstreams: a SuperAdmin's read alone
+	// carries them.
+	Typical  string `json:"typical,omitempty"`
+	List     *Rate  `json:"list,omitempty"`
+	Multiple string `json:"multiple,omitempty"`
+	// Arms is the model's route as last read.
+	Arms []Arm `json:"arms,omitempty"`
+	// Refused is why the guard sends the model nothing, "" while it is served.
+	Refused string `json:"refused,omitempty"`
 }
 
-// Arm is one route of a model: its upstream, the provider whose account runs it,
-// and the provider's price.
+// Arm is one rung of a model's route: its upstream, the provider whose account runs
+// it, and the provider's price.
 type Arm struct {
 	Upstream string `json:"upstream"`
 	Provider string `json:"provider"`
@@ -101,37 +155,31 @@ type Arm struct {
 	// Long is the provider's price for a prompt past Above tokens.
 	Long  *Rate `json:"long,omitempty"`
 	Above int   `json:"above,omitempty"`
+	// Over names the token classes in which the arm costs us more than the model
+	// bills; empty when it fits under the price.
+	Over []string `json:"over,omitempty"`
 }
 
-// Quote is one model's price at one reasoning depth, the platform's fee applied.
-type Quote struct {
-	Model string `json:"model"`
-	// Reasoning is the depth quoted: none, low, medium, high, max, default; ""
-	// for every depth together.
-	Reasoning string `json:"reasoning"`
-	From      Rate   `json:"from"`
-	// Typical is nil when no call was measured.
-	Typical *Rate  `json:"typical"`
-	UpTo    Rate   `json:"up_to"`
-	Fee     string `json:"fee"`
-	BYOK    bool   `json:"byok,omitempty"`
-	Window  Window `json:"window"`
-	// Arms names the upstreams: a SuperAdmin's read alone carries them.
-	Arms []Arm `json:"arms,omitempty"`
-}
-
-// Route is one model's answers through one provider's account.
+// Route is one model's calls on one arm through one provider's account over the
+// day, nano-dollars.
 type Route struct {
-	Model      string `json:"model"`
-	Vendor     string `json:"vendor"`
-	Requests   int    `json:"requests"`
-	CostNano   int64  `json:"cost_nano"`
-	BilledNano int64  `json:"billed_nano"`
-	FeeNano    int64  `json:"fee_nano"`
-	LossNano   int64  `json:"loss_nano"`
+	Model  string `json:"model"`
+	Served string `json:"served"`
+	Vendor string `json:"vendor"`
+	// Requests are the answers the arm gave; Failovers the times it failed first.
+	Requests  int `json:"requests"`
+	Failovers int `json:"failovers"`
+	// Uncosted are answers that stated no cost, which the margin leaves out.
+	Uncosted   int   `json:"uncosted"`
+	CostNano   int64 `json:"cost_nano"`
+	BilledNano int64 `json:"billed_nano"`
+	// MarginNano is what the answers whose cost is known billed past their cost.
+	MarginNano int64 `json:"margin_nano"`
+	LossNano   int64 `json:"loss_nano"`
 }
 
-// Ledger is what the family's calls did over the last day.
+// Ledger is what the family's calls did over the last day: in all, and by model and
+// arm.
 type Ledger struct {
 	Since    time.Time `json:"since"`
 	Until    time.Time `json:"until"`
@@ -143,32 +191,78 @@ type Ledger struct {
 	// the answers.
 	Fallbacks     int     `json:"fallbacks"`
 	FallbackShare float64 `json:"fallback_share"`
-	// Losses are answers that cost us more than they billed: none while every call
-	// bills its cost plus the fee. Each is a row (loss_nano).
+	Uncosted      int     `json:"uncosted"`
+	// Losses are answers that cost us more than they billed: each is a row
+	// (loss_nano), and the guard keeps there being none.
 	Losses     int     `json:"losses"`
 	LossNano   int64   `json:"loss_nano"`
 	CostNano   int64   `json:"cost_nano"`
 	BilledNano int64   `json:"billed_nano"`
-	FeeNano    int64   `json:"fee_nano"`
+	MarginNano int64   `json:"margin_nano"`
 	Routes     []Route `json:"routes"`
 }
 
-// Board is one computation: every model's quote at every depth measured, and the
-// ledger it was measured from.
+// Board is Enso's prices, and to a SuperAdmin what its calls did.
 type Board struct {
-	Computed time.Time `json:"computed"`
-	Measured time.Time `json:"measured"`
-	// Fee is the platform's fee the quotes carry, percent.
-	Fee    string  `json:"fee"`
-	Quotes []Quote `json:"quotes"`
-	// Free names the family's models served at no charge, which no quote prices.
-	Free   []string `json:"free,omitempty"`
-	Ledger Ledger   `json:"ledger"`
-	// Error is why the last measure failed, "" when it held.
+	Prices []Listing `json:"prices"`
+	// Free names the family's models served at no charge.
+	Free []string `json:"free,omitempty"`
+	// Ledger is the last day's, a SuperAdmin's read alone.
+	Ledger *Ledger `json:"ledger,omitempty"`
+	// Error is why the ledger could not be read, "" when it was.
 	Error string `json:"error,omitempty"`
 }
 
-// costs is a price per million tokens before the platform's fee.
+// Prices is every Enso model's price and the models served free. A SuperAdmin's read
+// (admin) also says how each price was set, each model's route as last read and
+// whether the guard serves it, and what the family's calls did over the last day.
+func Prices(ctx context.Context, admin bool) Board {
+	f := ensoFam
+	f.warm()
+	b := Board{Prices: make([]Listing, 0, len(f.prices))}
+	var rs map[string][]rung
+	var rerr error
+	if admin {
+		rs, rerr = f.route(ctx)
+	}
+	for _, id := range slices.Sorted(maps.Keys(f.prices)) {
+		p := f.prices[id]
+		l := Listing{Model: id, Price: p.price().rate()}
+		if admin {
+			list := p.list.rate()
+			l.Typical, l.List, l.Multiple = p.typical, &list, p.multiple.String()
+			for _, r := range rs[id] {
+				l.Arms = append(l.Arms, r.arm(p.price()))
+			}
+			switch m, ok := f.lookup(id); {
+			case rerr != nil:
+				l.Refused = "its route cannot be read: " + rerr.Error()
+			case !ok:
+				l.Refused = "its service does not list it"
+			default:
+				l.Refused = misfit(m, rs[id])
+			}
+		}
+		b.Prices = append(b.Prices, l)
+	}
+	for _, m := range f.snapshot() {
+		if !m.priced() {
+			b.Free = append(b.Free, m.ID)
+		}
+	}
+	slices.Sort(b.Free)
+	if admin {
+		l, err := reckon(ctx, f, time.Now().UTC())
+		if err != nil {
+			b.Error = err.Error()
+		} else {
+			b.Ledger = &l
+		}
+	}
+	return b
+}
+
+// costs is a price per million tokens.
 type costs struct{ in, out, read, write decimal.Decimal }
 
 // readRate is a cached token's rate: the stated one, else input's.
@@ -191,26 +285,9 @@ func (c costs) times(m decimal.Decimal) costs {
 	return costs{c.in.Mul(m), c.out.Mul(m), c.read.Mul(m), c.write.Mul(m)}
 }
 
-func (c costs) zero() bool { return c.in.IsZero() && c.out.IsZero() }
-
 func (c costs) rate() Rate {
 	f := func(d decimal.Decimal) float64 { v, _ := strconv.ParseFloat(d.String(), 64); return v }
 	return Rate{Input: f(c.in), Output: f(c.out), CacheRead: f(c.read), CacheWrite: f(c.write)}
-}
-
-// least and most are the cheaper and dearer of two costs, class by class.
-func least(a, b costs) costs {
-	return costs{minDec(a.in, b.in), minDec(a.out, b.out), minDec(a.read, b.read), minDec(a.write, b.write)}
-}
-func most(a, b costs) costs {
-	return costs{maxDecimal(a.in, b.in), maxDecimal(a.out, b.out), maxDecimal(a.read, b.read), maxDecimal(a.write, b.write)}
-}
-
-func minDec(a, b decimal.Decimal) decimal.Decimal {
-	if a.Cmp(b) <= 0 {
-		return a
-	}
-	return b
 }
 
 // rung is one arm as the family's catalog states it: its provider's price, and the
@@ -231,184 +308,36 @@ func (r rung) paid(prompt int64) costs {
 	return c.times(levies.multiple(r.provider))
 }
 
-// arm is the rung as a SuperAdmin reads it.
-func (r rung) arm() Arm {
-	a := Arm{Upstream: r.upstream, Provider: r.provider, Kind: kindOfRung(r.provider), Fee: feePercent(levies.multiple(r.provider)), List: r.cost.rate()}
+// over names the token classes in which the rung costs us more than price bills, at
+// its own price and at a long prompt's where it charges one.
+func (r rung) over(price costs) []string {
+	ends := []costs{r.paid(0)}
+	if r.long != nil {
+		ends = append(ends, r.paid(r.above+1))
+	}
+	var out []string
+	add := func(class string, cost, bill decimal.Decimal) {
+		if cost.Cmp(bill) > 0 && !slices.Contains(out, class) {
+			out = append(out, class)
+		}
+	}
+	for _, c := range ends {
+		add("input", c.in, price.in)
+		add("output", c.out, price.out)
+		add("cache read", c.readRate(), price.readRate())
+		add("cache write", c.writeRate(), price.writeRate())
+	}
+	return out
+}
+
+// arm is the rung as a SuperAdmin reads it, held to price.
+func (r rung) arm(price costs) Arm {
+	a := Arm{Upstream: r.upstream, Provider: r.provider, Kind: kindOfRung(r.provider), Fee: feePercent(levies.multiple(r.provider)), List: r.cost.rate(), Over: r.over(price)}
 	if r.long != nil {
 		l := r.long.rate()
 		a.Long, a.Above = &l, int(r.above)
 	}
 	return a
-}
-
-// cell is one model at one depth, before the platform's fee.
-type cell struct {
-	model, depth string
-	from, upTo   costs
-	typical      *costs
-	window       Window
-	rungs        []rung
-}
-
-// quote is p with the platform's fee applied.
-func (p cell) quote(byok, admin bool) Quote {
-	m := platform(byok)
-	q := Quote{Model: p.model, Reasoning: p.depth, From: p.from.times(m).rate(), UpTo: p.upTo.times(m).rate(), Fee: feePercent(m), BYOK: byok, Window: p.window}
-	if p.typical != nil {
-		t := p.typical.times(m).rate()
-		q.Typical = &t
-	}
-	if admin {
-		for _, r := range p.rungs {
-			q.Arms = append(q.Arms, r.arm())
-		}
-	}
-	return q
-}
-
-// board is the last computation; nil until the first.
-type board struct {
-	computed, measured time.Time
-	quotes             map[string]cell // by quoteKey
-	free               []string
-	ledger             Ledger
-	err                string
-	// rows is the measure the quotes were computed from, kept so a catalog read can
-	// recompute from and up to without reading the ledger again.
-	rows []object.PricedRow
-	last []object.PricedRow
-}
-
-var (
-	current atomic.Pointer[board]
-	// ladders is each cost-plus SKU's rungs, from the family's catalog.
-	ladders atomic.Pointer[map[string][]rung]
-	// repricing serializes computations.
-	repricing sync.Mutex
-)
-
-func quoteKey(model, depth string) string { return strings.ToLower(model) + "\x00" + depth }
-
-// Prices is every quote of the last computation, the platform's fee (BYOK's when
-// byok) applied. A SuperAdmin's read (admin) carries each quote's arms.
-func Prices(byok, admin bool) Board {
-	b := current.Load()
-	if b == nil {
-		return Board{}
-	}
-	out := Board{Computed: b.computed, Measured: b.measured, Fee: feePercent(platform(byok)), Free: b.free, Ledger: b.ledger, Error: b.err}
-	keys := make([]string, 0, len(b.quotes))
-	for k := range b.quotes {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	for _, k := range keys {
-		out.Quotes = append(out.Quotes, b.quotes[k].quote(byok, admin))
-	}
-	return out
-}
-
-// Price quotes model at depth (none, low, medium, high, max, default; "" for every
-// depth together). A depth no call was measured at quotes the model's from and up
-// to with nothing typical. ok is false for a model not priced at cost.
-func Price(model, depth string, byok, admin bool) (Quote, bool) {
-	b := current.Load()
-	if b == nil {
-		return Quote{}, false
-	}
-	depth = normalDepth(depth)
-	if p, ok := b.quotes[quoteKey(model, depth)]; ok {
-		return p.quote(byok, admin), true
-	}
-	p, ok := b.quotes[quoteKey(model, "")]
-	if !ok {
-		return Quote{}, false
-	}
-	p.depth, p.typical, p.window = depth, nil, Window{}
-	return p.quote(byok, admin), true
-}
-
-// normalDepth spells a depth as the ledger does: every depth an effort names reads
-// as depthOf reads it, and "" stays "" (every depth).
-func normalDepth(d string) string {
-	d = strings.ToLower(strings.TrimSpace(d))
-	switch d {
-	case "", "default":
-		return d
-	}
-	return effortDepth(d)
-}
-
-// Blend quotes a set of models a caller composed (the benchmark's presets): from
-// its cheapest model, up to its dearest, nothing typical, since no call routed it.
-// A model priced at cost reads its own from and up to; any other its price list,
-// a resold model's at its vendor's price and the reseller's fee, the same cost of
-// record its calls carry.
-func Blend(ids []string, byok bool) (Quote, error) {
-	if len(ids) == 0 {
-		return Quote{}, fmt.Errorf("a blend names at least one model")
-	}
-	var from, upTo costs
-	var listed []Arm
-	for i, id := range ids {
-		id = strings.TrimSpace(id)
-		lo, hi, a, err := costOfModel(id)
-		if err != nil {
-			return Quote{}, err
-		}
-		if i == 0 {
-			from, upTo = lo, hi
-		} else {
-			from, upTo = least(from, lo), most(upTo, hi)
-		}
-		listed = append(listed, a)
-	}
-	m := platform(byok)
-	return Quote{Model: strings.Join(ids, ","), From: from.times(m).rate(), UpTo: upTo.times(m).rate(), Fee: feePercent(m), BYOK: byok, Arms: listed}, nil
-}
-
-// costOfModel is the least and the most a token of id costs us, and the arm it
-// is quoted as: a model priced at cost its own from and up to; a resold model at its
-// vendor's price on its first keyed path (resolve.go), a direct key's price alone and
-// OpenRouter's with OpenRouter's fee; any other at its price list.
-func costOfModel(id string) (lo, hi costs, a Arm, err error) {
-	if p, ok := Price(id, "", false, false); ok {
-		b := current.Load()
-		q := b.quotes[quoteKey(id, "")]
-		return q.from, q.upTo, Arm{Upstream: p.Model, Provider: ensoFam.name, Kind: family, Fee: "0", List: q.from.rate()}, nil
-	}
-	if zm, ok := familyLookup(id); ok && zm.priced() {
-		if f, _ := familyServing(id); f == openrouterFam && zm.CostIn.Sign() > 0 {
-			c := costs{in: zm.CostIn, out: zm.CostOut}
-			path := first(Paths(id, ""))
-			m := decimal.New(1, 0)
-			if path.Kind == reseller {
-				m = levies.multiple(openrouterFam.name)
-			}
-			return c.times(m), c.times(m), Arm{Upstream: zm.ID, Provider: path.Provider, Kind: path.Kind, Fee: feePercent(m), List: c.rate()}, nil
-		}
-		c := costs{in: zm.Base.In, out: zm.Base.Out}
-		return c, c, Arm{Upstream: zm.ID, Provider: zm.OwnedBy, Kind: family, Fee: "0", List: c.rate()}, nil
-	}
-	if p, ok := getModelPriceForOrgOK(id, ""); ok && !p.Variable && (p.InputPerMillion > 0 || p.OutputPerMillion > 0) {
-		c := costs{in: decimal.MustParse(strconv.FormatFloat(p.InputPerMillion, 'f', -1, 64)), out: decimal.MustParse(strconv.FormatFloat(p.OutputPerMillion, 'f', -1, 64))}
-		path := first(Paths(id, ""))
-		return c, c, Arm{Upstream: id, Provider: path.Provider, Kind: path.Kind, Fee: "0", List: c.rate()}, nil
-	}
-	return costs{}, costs{}, Arm{}, fmt.Errorf("model %q has no price", id)
-}
-
-// first is the first keyed path, else the first, else none.
-func first(ps []Path) Path {
-	for _, p := range ps {
-		if p.Keyed {
-			return p
-		}
-	}
-	if len(ps) > 0 {
-		return ps[0]
-	}
-	return Path{}
 }
 
 // kindOfRung is the path a family's rung runs on, by its catalog provider: a
@@ -421,357 +350,132 @@ func kindOfRung(provider string) string {
 	return kindOfRow(provider)
 }
 
-// StartRates computes the board at start and keeps it: the catalog's arms every
-// rateEvery, typical every measureEvery. A computation that fails is tried again at
-// the next tick, and the last board stands meanwhile.
-func StartRates() {
-	ratesOnce.Do(func() {
+// misfit is why a model's route does not fit under the price it lists at: the first
+// arm that costs us more than it bills, in which classes, or a route with no arm. ""
+// when every arm fits. It names upstreams, so it is for the log and a SuperAdmin.
+func misfit(m zenModel, rs []rung) string {
+	if len(rs) == 0 {
+		return "its route holds no arm"
+	}
+	price := costs{in: m.Base.In, out: m.Base.Out, read: m.Base.CacheRead, write: m.Base.CacheWrite}
+	for _, r := range rs {
+		if classes := r.over(price); len(classes) > 0 {
+			return fmt.Sprintf("%s through %s costs more than %s bills in %s", r.upstream, r.provider, m.ID, strings.Join(classes, ", "))
+		}
+	}
+	return ""
+}
+
+// guard refuses a model of a family that sets its own prices unless every arm of its
+// route costs us no more than the model bills, in every token class, at a long
+// prompt's price where an arm charges one and with the fee of a reseller whose credit
+// buys it. What cannot be checked is not sent: a model with no price, or whose route
+// was never read or holds no arm, is refused too. The refusal names no upstream; the
+// log does. nil for a family priced any other way.
+func (f *modelFamily) guard(ctx context.Context, model string) error {
+	if f.prices == nil {
+		return nil
+	}
+	m, ok := f.lookup(model)
+	if !ok {
+		return &apiError{status: http.StatusServiceUnavailable, msg: model + " has no price and is not served"}
+	}
+	rs, err := f.route(ctx)
+	if err != nil {
+		return &apiError{status: http.StatusServiceUnavailable, msg: model + " is not served right now: its route cannot be checked"}
+	}
+	if why := misfit(m, rs[strings.ToLower(m.ID)]); why != "" {
+		return &apiError{status: http.StatusServiceUnavailable, msg: model + " is not served right now: its route costs more than it bills"}
+	}
+	return nil
+}
+
+const (
+	// routeEvery is how long a read of a family's route stands before the next is
+	// begun.
+	routeEvery = time.Minute
+	// routeRetry is how long a first read that failed answers its failure before it
+	// is tried again, so an unreachable catalog is not asked on every request.
+	routeRetry = 15 * time.Second
+	// routeWait bounds one read.
+	routeWait = 20 * time.Second
+)
+
+// ladder is a family's route as its admin catalog was last read: each model's
+// rungs.
+type ladder struct {
+	mu    sync.Mutex
+	rungs map[string][]rung // by lowercase id; nil until a read holds
+	at    time.Time         // when rungs were read
+	tried time.Time         // when the last read failed
+	err   error             // why it failed
+	busy  bool              // a read runs beside the requests
+}
+
+// route is the family's route as last read. The first read is made here and waited
+// for, whether or not the request that asked is still there; a read older than
+// routeEvery is made again beside the request, which reads the last one meanwhile. A
+// failed read keeps the last one; a first read that failed answers its failure for
+// routeRetry.
+func (f *modelFamily) route(ctx context.Context) (map[string][]rung, error) {
+	l := &f.ladder
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.rungs == nil {
+		if l.err != nil && time.Since(l.tried) < routeRetry {
+			return nil, l.err
+		}
+		rs, err := readRoute(context.WithoutCancel(ctx), f)
+		l.keep(f, rs, err)
+		if err != nil {
+			return nil, err
+		}
+		return l.rungs, nil
+	}
+	if time.Since(l.at) >= routeEvery && !l.busy {
+		l.busy = true
 		go func() {
-			ctx := context.Background()
-			if _, err := Reprice(ctx); err != nil {
-				log.Warn("rates: %v", err)
-			}
-			for {
-				time.Sleep(rateEvery)
-				b := current.Load()
-				var err error
-				if b == nil || b.err != "" || time.Since(b.measured) >= measureEvery {
-					_, err = Reprice(ctx)
-				} else {
-					err = rearm(ctx)
-				}
-				if err != nil {
-					log.Warn("rates: %v", err)
-				}
-			}
+			rs, err := readRoute(context.Background(), f)
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.busy = false
+			l.keep(f, rs, err)
 		}()
-	})
+	}
+	return l.rungs, nil
 }
 
-var ratesOnce sync.Once
-
-// Reprice reads the family's arms and the last day's ledger and computes the board
-// now. A ledger it cannot read keeps the last measure and says why on the board.
-func Reprice(ctx context.Context) (Board, error) {
-	repricing.Lock()
-	defer repricing.Unlock()
-	if err := readArms(ctx); err != nil {
-		log.Warn("rates: the enso catalog's arms: %v", err)
+// keep records one read with l.mu held: a route that was read replaces the last, and
+// every model it prices above what the model bills is said; a read that failed keeps
+// the last.
+func (l *ladder) keep(f *modelFamily, rs map[string][]rung, err error) {
+	if err != nil {
+		l.err, l.tried = err, time.Now()
+		log.Warn("%s: its route: %v", f.name, err)
+		return
 	}
-	now := time.Now().UTC()
-	day, derr := object.PricedRows(ctx, ensoFam.name, now.Add(-rateDay), rateRows)
-	var last []object.PricedRow
-	if derr == nil {
-		last, derr = object.LastPricedRows(ctx, ensoFam.name, now.Add(-rateBack), thin)
-	}
-	b := &board{computed: now, measured: now}
-	if derr != nil {
-		b.err = derr.Error()
-		if prev := current.Load(); prev != nil {
-			b.rows, b.last, b.measured = prev.rows, prev.last, prev.measured
-		}
-	} else {
-		b.rows, b.last = day, last
-	}
-	compute(b, now)
-	current.Store(b)
-	ratesAt.Add(1)
-	if derr != nil {
-		return Prices(false, true), fmt.Errorf("the ledger: %w", derr)
-	}
-	return Prices(false, true), nil
-}
-
-// rearm reads the catalog's arms again and recomputes from and up to over the
-// last measure.
-func rearm(ctx context.Context) error {
-	repricing.Lock()
-	defer repricing.Unlock()
-	err := readArms(ctx)
-	prev := current.Load()
-	b := &board{computed: time.Now().UTC()}
-	if prev != nil {
-		b.measured, b.rows, b.last, b.err = prev.measured, prev.rows, prev.last, prev.err
-	}
-	compute(b, b.computed)
-	current.Store(b)
-	ratesAt.Add(1)
-	return err
-}
-
-// ratesAt moves whenever a board is stored, so the model listing builds again.
-var ratesAt atomic.Int64
-
-// compute fills b's quotes and ledger from its rows and the arms last read.
-func compute(b *board, now time.Time) {
-	rungs := map[string][]rung{}
-	if p := ladders.Load(); p != nil {
-		rungs = *p
-	}
-	b.quotes = map[string]cell{}
-	b.free = nil
-	for _, z := range ensoFam.snapshot() {
-		if !z.priced() {
-			b.free = append(b.free, z.ID)
-			continue
-		}
-		model := strings.ToLower(z.ID)
-		rs := rungs[model]
-		from, upTo, ok := span(rs)
-		if !ok {
-			// No arm read: the listing's own price, the most a token bills, bounds
-			// both, so neither reads below what a call can cost.
-			c := costs{in: z.Base.In, out: z.Base.Out, read: z.Base.CacheRead, write: z.Base.CacheWrite}.times(inverse(platform(false)))
-			from, upTo = c, c
-		}
-		groups := map[string][]object.PricedRow{}
-		basis := map[string]string{}
-		pick(model, b.rows, b.last, now, groups, basis)
-		for depth, rows := range groups {
-			p := cell{model: z.ID, depth: depth, from: from, upTo: upTo, rungs: rs}
-			p.typical, p.window = typical(rows, rs, upTo)
-			p.window.Basis = basis[depth]
-			if p.window.Requests == 0 {
-				p.window.Basis = ""
+	l.rungs, l.at, l.err = rs, time.Now(), nil
+	for _, id := range slices.Sorted(maps.Keys(rs)) {
+		if m, ok := f.lookup(id); ok {
+			if why := misfit(m, rs[id]); why != "" {
+				log.Error("guard: %s is refused: %s", id, why)
 			}
-			b.quotes[quoteKey(model, depth)] = p
 		}
-		if _, ok := b.quotes[quoteKey(model, "")]; !ok {
-			b.quotes[quoteKey(model, "")] = cell{model: z.ID, from: from, upTo: upTo, rungs: rs}
-		}
-	}
-	b.ledger = books(b.rows, now)
-}
-
-// inverse is 1/m, to eighteen places.
-func inverse(m decimal.Decimal) decimal.Decimal {
-	if m.Sign() <= 0 {
-		return decimal.New(1, 0)
-	}
-	return decimal.New(1, 0).Quo(m, 18)
-}
-
-// span is the cheapest and the dearest a token of the rungs costs us, class by
-// class, a long prompt's price among the dearest. A rung of no cost (a free lane) is
-// no arm of a priced model.
-func span(rs []rung) (from, upTo costs, ok bool) {
-	for _, r := range rs {
-		if r.cost.zero() {
-			continue
-		}
-		lo := r.paid(0)
-		hi := lo
-		if r.long != nil {
-			hi = most(hi, r.paid(r.above+1))
-		}
-		if !ok {
-			from, upTo, ok = lo, hi, true
-			continue
-		}
-		from, upTo = least(from, lo), most(upTo, hi)
-	}
-	return from, upTo, ok
-}
-
-// pick groups a model's answered, costed calls by depth, and all of them under "":
-// the last day's when it holds thin or more, else the last thin of each.
-func pick(model string, day, last []object.PricedRow, now time.Time, groups map[string][]object.PricedRow, basis map[string]string) {
-	measured := func(r object.PricedRow) bool {
-		return strings.EqualFold(r.Model, model) && r.Status == "success" && !r.Uncosted && r.CostNano > 0
-	}
-	byDay := map[string][]object.PricedRow{}
-	for _, r := range day {
-		if measured(r) {
-			byDay[r.Reasoning] = append(byDay[r.Reasoning], r)
-		}
-	}
-	byLast := map[string][]object.PricedRow{}
-	for _, r := range last {
-		if measured(r) {
-			byLast[r.Reasoning] = append(byLast[r.Reasoning], r)
-		}
-	}
-	depths := map[string]bool{}
-	for d := range byDay {
-		depths[d] = true
-	}
-	for d := range byLast {
-		depths[d] = true
-	}
-	var all []object.PricedRow
-	allBasis := "24h"
-	for d := range depths {
-		rows, why := byDay[d], "24h"
-		if len(rows) < thin {
-			rows, why = byLast[d], "last"
-			allBasis = "last"
-		}
-		if len(rows) == 0 {
-			continue
-		}
-		groups[d], basis[d] = rows, why
-		all = append(all, rows...)
-	}
-	if len(all) > 0 {
-		groups[""], basis[""] = all, allBasis
 	}
 }
 
-// typical is what a token of rows cost us on average, class by class: each row's
-// cost of record split between fresh input, cached input, input written to the
-// cache and output by its arm's rates, and each class summed over its tokens. Each
-// class so lies between its cheapest arm and its dearest. A class no token of was
-// measured reads at its dearest; a cache class none was, at nothing.
-func typical(rows []object.PricedRow, rs []rung, upTo costs) (*costs, Window) {
-	var w Window
-	var nano [4]decimal.Decimal
-	var count [4]int64
-	for i := range nano {
-		nano[i] = decimal.New(0, 0)
-	}
-	for _, r := range rows {
-		ru, ok := rungOf(rs, r.Served, r.Vendor)
-		if !ok {
-			continue
-		}
-		c := ru.paid(r.Prompt)
-		n := [4]int64{max(r.Prompt-r.Cached-r.Written, 0), r.Cached, r.Written, r.Completion}
-		part := [4]decimal.Decimal{
-			c.in.Mul(decimal.New(n[0], 0)),
-			c.readRate().Mul(decimal.New(n[1], 0)),
-			c.writeRate().Mul(decimal.New(n[2], 0)),
-			c.out.Mul(decimal.New(n[3], 0)),
-		}
-		sum := part[0].Add(part[1]).Add(part[2]).Add(part[3])
-		if sum.Sign() <= 0 {
-			continue
-		}
-		cost := decimal.New(costOfRow(r, rs), 0)
-		for i := range part {
-			nano[i] = nano[i].Add(cost.Mul(part[i]).Quo(sum, 9))
-			count[i] += n[i]
-		}
-		if w.Requests == 0 || r.At.Before(w.Since) {
-			w.Since = r.At
-		}
-		if r.At.After(w.Until) {
-			w.Until = r.At
-		}
-		w.Requests++
-	}
-	if w.Requests == 0 {
-		return nil, Window{}
-	}
-	// nano-dollars a token are dollars a million tokens over a thousand.
-	per := func(i int) decimal.Decimal {
-		return nano[i].Quo(decimal.New(count[i], 0), 18).Quo(decimal.New(1000, 0), 18)
-	}
-	t := costs{in: upTo.in, out: upTo.out, read: decimal.New(0, 0), write: decimal.New(0, 0)}
-	if count[0] > 0 {
-		t.in = per(0)
-	}
-	if count[1] > 0 {
-		t.read = per(1)
-	}
-	if count[2] > 0 {
-		t.write = per(2)
-	}
-	if count[3] > 0 {
-		t.out = per(3)
-	}
-	return &t, w
+// stale marks the route read due, so the next request reads it again.
+func (l *ladder) stale() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.at = time.Time{}
 }
 
-// rungOf is the rung a call ran on: its upstream through its provider, else its
-// upstream through any, else the model's first rung that costs anything.
-func rungOf(rs []rung, served, vendor string) (rung, bool) {
-	for _, r := range rs {
-		if r.upstream == served && r.provider == vendor {
-			return r, true
-		}
-	}
-	for _, r := range rs {
-		if r.upstream == served {
-			return r, true
-		}
-	}
-	for _, r := range rs {
-		if !r.cost.zero() {
-			return r, true
-		}
-	}
-	return rung{}, false
-}
-
-// costOfRow is a row's cost of record, nano-dollars. A row written before the
-// ledger named its vendor states its family's cost alone, and is costed here at the
-// dearest reseller fee of the model's rungs, the fee the call most likely paid.
-func costOfRow(r object.PricedRow, rs []rung) int64 {
-	if r.Vendor != "" {
-		return r.CostNano
-	}
-	m := decimal.New(1, 0)
-	for _, ru := range rs {
-		m = maxDecimal(m, levies.multiple(ru.provider))
-	}
-	return nanoUp(decimal.New(r.CostNano, 9).Mul(m))
-}
-
-// books is what the day's rows did: answers, the arms that failed first, those a
-// reseller's credit bought, the fee collected and every loss, by model and vendor.
-func books(rows []object.PricedRow, now time.Time) Ledger {
-	l := Ledger{Since: now.Add(-rateDay), Until: now}
-	routes := map[string]*Route{}
-	for _, r := range rows {
-		switch r.Status {
-		case "failover":
-			l.Failovers++
-			continue
-		case "success":
-		default:
-			continue
-		}
-		l.Requests++
-		if r.Vendor != "" && levies.multiple(r.Vendor).Cmp(decimal.New(1, 0)) > 0 {
-			l.Fallbacks++
-		}
-		fee := int64(0)
-		if !r.Uncosted && r.BilledNano > r.CostNano {
-			fee = r.BilledNano - r.CostNano
-		}
-		l.CostNano += r.CostNano
-		l.BilledNano += r.BilledNano
-		l.FeeNano += fee
-		if r.LossNano > 0 {
-			l.Losses++
-			l.LossNano += r.LossNano
-		}
-		k := r.Model + "\x00" + r.Vendor
-		rt := routes[k]
-		if rt == nil {
-			rt = &Route{Model: r.Model, Vendor: r.Vendor}
-			routes[k] = rt
-		}
-		rt.Requests++
-		rt.CostNano += r.CostNano
-		rt.BilledNano += r.BilledNano
-		rt.FeeNano += fee
-		rt.LossNano += r.LossNano
-	}
-	if l.Requests > 0 {
-		l.FallbackShare = float64(l.Fallbacks) / float64(l.Requests)
-	}
-	l.Routes = make([]Route, 0, len(routes))
-	for _, rt := range routes {
-		l.Routes = append(l.Routes, *rt)
-	}
-	slices.SortFunc(l.Routes, func(a, b Route) int {
-		if c := strings.Compare(a.Model, b.Model); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Vendor, b.Vendor)
-	})
-	return l
+// last is the route as last read, without reading it; nil before the first.
+func (l *ladder) last() map[string][]rung {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rungs
 }
 
 // adminPrice is one price as the family's admin catalog writes it: USD a million
@@ -795,7 +499,7 @@ func (p adminPrice) costs() costs {
 }
 
 // adminCatalog is the part of the family's admin catalog (GET /v1/admin/catalog,
-// hanzo-inc/engine admin.rs) the rates read: each model's route.
+// hanzo-inc/engine admin.rs) the guard reads: each model's route.
 type adminCatalog struct {
 	Models map[string]struct {
 		Disabled bool `json:"disabled"`
@@ -836,46 +540,103 @@ func rungsOf(body []byte) (map[string][]rung, error) {
 	return out, nil
 }
 
-// adminWait bounds one read of the family's admin catalog.
-const adminWait = 20 * time.Second
-
-// readArms reads the Enso family's admin catalog (the engine's GET
-// /v1/admin/catalog, under the admin token ai holds for its families) and keeps
-// its rungs. A read that fails keeps the rungs last read.
-func readArms(ctx context.Context) error {
-	base := strings.TrimRight(ensoFam.baseURL(), "/")
+// readRoute reads the family's admin catalog (the engine's GET /v1/admin/catalog,
+// under the admin token ai holds for its families) into each model's rungs.
+func readRoute(ctx context.Context, f *modelFamily) (map[string][]rung, error) {
+	base := f.baseURL()
 	if base == "" {
-		return fmt.Errorf("enso is not configured")
+		return nil, fmt.Errorf("%s is not configured", f.name)
 	}
 	token := strings.TrimSpace(object.ResolveKey("ZEN_ADMIN_TOKEN"))
 	if token == "" {
-		return fmt.Errorf("ZEN_ADMIN_TOKEN is not set")
+		return nil, fmt.Errorf("ZEN_ADMIN_TOKEN is not set")
 	}
-	ctx, cancel := context.WithTimeout(ctx, adminWait)
+	ctx, cancel := context.WithTimeout(ctx, routeWait)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/admin/catalog", nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := zenDiscoveryClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET /v1/admin/catalog: %d %s", resp.StatusCode, upstreamErrorMessage(body))
+		return nil, fmt.Errorf("GET /v1/admin/catalog: %d %s", resp.StatusCode, upstreamErrorMessage(body))
 	}
-	rs, err := rungsOf(body)
+	return rungsOf(body)
+}
+
+// day is the window the ledger reports.
+const day = 24 * time.Hour
+
+// reckon is what the family's calls did over the last day, read from the usage
+// ledger.
+func reckon(ctx context.Context, f *modelFamily, now time.Time) (Ledger, error) {
+	rows, err := object.RoutedRows(ctx, f.name, now.Add(-day))
 	if err != nil {
-		return err
+		return Ledger{}, err
 	}
-	ladders.Store(&rs)
-	return nil
+	return books(rows, now), nil
+}
+
+// books folds the day's rows: the answers, the arms that failed first, those a
+// reseller's credit bought, what they cost and billed and the margin, and every
+// loss, in all and by model and arm.
+func books(rows []object.Routed, now time.Time) Ledger {
+	l := Ledger{Since: now.Add(-day), Until: now}
+	routes := map[string]*Route{}
+	for _, r := range rows {
+		if r.Status != "success" && r.Status != "failover" {
+			continue
+		}
+		k := r.Model + "\x00" + r.Served + "\x00" + r.Vendor
+		rt := routes[k]
+		if rt == nil {
+			rt = &Route{Model: r.Model, Served: r.Served, Vendor: r.Vendor}
+			routes[k] = rt
+		}
+		n := int(r.Requests)
+		if r.Status == "failover" {
+			l.Failovers += n
+			rt.Failovers += n
+			continue
+		}
+		l.Requests += n
+		if r.Vendor != "" && levies.multiple(r.Vendor).Cmp(decimal.New(1, 0)) > 0 {
+			l.Fallbacks += n
+		}
+		margin := r.KnownNano - r.CostNano
+		l.Uncosted += int(r.Uncosted)
+		l.Losses += int(r.Losses)
+		l.LossNano += r.LossNano
+		l.CostNano += r.CostNano
+		l.BilledNano += r.BilledNano
+		l.MarginNano += margin
+		rt.Requests += n
+		rt.Uncosted += int(r.Uncosted)
+		rt.CostNano += r.CostNano
+		rt.BilledNano += r.BilledNano
+		rt.MarginNano += margin
+		rt.LossNano += r.LossNano
+	}
+	if l.Requests > 0 {
+		l.FallbackShare = float64(l.Fallbacks) / float64(l.Requests)
+	}
+	l.Routes = make([]Route, 0, len(routes))
+	for _, rt := range routes {
+		l.Routes = append(l.Routes, *rt)
+	}
+	slices.SortFunc(l.Routes, func(a, b Route) int {
+		return strings.Compare(a.Model+"\x00"+a.Served+"\x00"+a.Vendor, b.Model+"\x00"+b.Served+"\x00"+b.Vendor)
+	})
+	return l
 }
 
 // armUse is one arm of a call as its row records it (usageRecord.Arms).
@@ -897,29 +658,22 @@ type armUse struct {
 
 // trail is the arms a call of model ran, as JSON: the one that answered, with its
 // rates at the time and the tokens it was paid for, then each that failed first.
-func trail(model string, sv serving, t tokens) string {
-	var rs []rung
-	if p := ladders.Load(); p != nil {
-		rs = (*p)[strings.ToLower(model)]
-	}
+func trail(f *modelFamily, model string, sv serving, t tokens) string {
 	var out []armUse
 	if sv.arm != "" {
 		a := armUse{Upstream: sv.arm, Provider: sv.vendor, Answered: true, Fresh: t.fresh, Cached: t.cached, Written: t.written, Completion: t.completion, Reasoning: t.reasoning}
-		for _, r := range rs {
-			if r.upstream == sv.arm && r.provider == sv.vendor {
-				c := r.cost
-				if r.long != nil && int64(t.prompt()) > r.above {
-					c = *r.long
-				}
-				rate := c.rate()
-				a.Rate, a.Fee = &rate, feePercent(levies.multiple(r.provider))
-				break
+		if r, ok := f.rungOf(model, sv); ok {
+			c := r.cost
+			if r.long != nil && int64(t.prompt()) > r.above {
+				c = *r.long
 			}
+			rate := c.rate()
+			a.Rate, a.Fee = &rate, feePercent(levies.multiple(r.provider))
 		}
 		out = append(out, a)
 	}
-	for _, m := range arms(sv.failover) {
-		out = append(out, armUse{Upstream: m.upstream, Provider: m.provider, Reason: m.reason})
+	for _, a := range arms(sv.failover) {
+		out = append(out, armUse{Upstream: a.upstream, Provider: a.provider, Reason: a.reason})
 	}
 	if len(out) == 0 {
 		return ""
@@ -931,11 +685,46 @@ func trail(model string, sv serving, t tokens) string {
 	return string(b)
 }
 
+// rungOf is the rung of model's route as last read that an answer ran on.
+func (f *modelFamily) rungOf(model string, sv serving) (rung, bool) {
+	m, ok := f.lookup(model)
+	if !ok {
+		return rung{}, false
+	}
+	for _, r := range f.ladder.last()[strings.ToLower(m.ID)] {
+		if r.upstream == sv.arm && r.provider == sv.vendor {
+			return r, true
+		}
+	}
+	return rung{}, false
+}
+
+// answered checks the guard's work after the fact: a priced model that answered on an
+// arm its route as read does not hold, or on one that costs more than the model
+// bills, is said, and its route is read again on the next request. The guard held the
+// route it last read, and the answer is the newer word.
+func (f *modelFamily) answered(model string, sv serving) {
+	m, ok := f.lookup(model)
+	if !ok || !m.priced() || sv.arm == "" {
+		return
+	}
+	r, held := f.rungOf(model, sv)
+	switch {
+	case !held:
+		log.Error("guard: %s answered on %s (%s), which its route as read does not hold", model, sv.arm, sv.vendor)
+	case len(r.over(costs{in: m.Base.In, out: m.Base.Out, read: m.Base.CacheRead, write: m.Base.CacheWrite})) > 0:
+		log.Error("guard: %s answered on %s (%s), which costs more than it bills", model, sv.arm, sv.vendor)
+	default:
+		return
+	}
+	f.ladder.stale()
+}
+
 // depthOf is how hard a request asks its model to think, as the family reads it
 // (hanzo-inc/engine thinking.rs): reasoning_effort (or a Responses reasoning.effort)
 // low, medium, high, or max (xhigh reads max), anything else none; an Anthropic
 // thinking budget by its size, disabled none; "default" when it states no depth and
-// gets its model's own.
+// gets its model's own. The row records it beside the arm that answered.
 func depthOf(body []byte) string {
 	var r struct {
 		Effort    *string `json:"reasoning_effort"`

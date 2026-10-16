@@ -69,10 +69,13 @@ const flagshipWindow = 1_000_000
 // two instances.
 type modelFamily struct {
 	name string // "zen" | "enso" | "openrouter" — the brand label
-	// plus says the family's SKUs are priced at cost: a call bills what its arms
-	// cost us, the platform's fee on top (fee.go, rates.go), and its listed price is
-	// the rates job's (from, typical, up to). Enso's are.
-	plus     bool
+	// prices is the family's own price list: each model it names lists and bills at
+	// its price there, whatever the family's service quotes, and is sent only while
+	// no arm of its route costs more than that (rates.go). Enso's is ensoPrices.
+	prices map[string]tag
+	// ladder is the family's route as its admin catalog was last read, which the
+	// guard holds each model's price to (rates.go).
+	ladder   ladder
 	typ      string   // the object.Provider Type this family serves ("Zen" | "Enso" | "OpenRouter")
 	prefix   string   // public brand prefix for cold-start ownership (before first discovery)
 	owner    string   // public /v1/models owned_by: "zenlm" (Zen LM) | "hanzo" (Hanzo)
@@ -187,7 +190,7 @@ var (
 	}
 	ensoFam = &modelFamily{
 		name: "enso", typ: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
-		plus:       true,
+		prices:     ensoPrices,
 		freeName:   "enso-free",
 		providerFn: object.EnsoProvider,
 		// The flagship windows. Every other SKU, enso-pro among them, is listed and
@@ -981,6 +984,7 @@ func (f *modelFamily) refresh() error {
 	if err != nil {
 		return err
 	}
+	models = f.fix(models)
 	byID := make(map[string]zenModel, len(models))
 	ids := make([]string, 0, len(models))
 	for _, m := range models {
@@ -1246,16 +1250,7 @@ func (f *modelFamily) modelPrice(model string) (modelPrice, bool) {
 	if !ok {
 		return modelPrice{}, false
 	}
-	p, ok := m.price()
-	// A family priced at cost holds at least what its dearest arm costs with every
-	// fee on it (rates.go up to), so no hold reserves less than a call can bill.
-	if f.plus {
-		if q, quoted := Price(model, "", false, false); quoted {
-			p.InputPerMillion = max(p.InputPerMillion, q.UpTo.Input)
-			p.OutputPerMillion = max(p.OutputPerMillion, q.UpTo.Output)
-		}
-	}
-	return p, ok
+	return m.price()
 }
 
 // passthroughRoute routes any family model to its family provider, forwarding the SKU
@@ -1623,6 +1618,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		c.zenError(dialect, msg, http.StatusForbidden)
 		return done()
 	}
+	// The price guard (rates.go): a model sold at a fixed price is sent only while
+	// no arm of its route costs us more than it bills. Ours too, and no other
+	// provider is asked in its place: a route priced above its model is ours to fix.
+	if err := fam.guard(ctx, model); err != nil {
+		c.zenError(dialect, err.Error(), http.StatusServiceUnavailable)
+		return done()
+	}
 	// Forward the model ai RESOLVED, not the caller's raw model id. An
 	// `auto`/`zen-router` request rewrote request.Model to a concrete family SKU, but
 	// the raw body still carries "model":"auto" — and the family serves by the body's
@@ -1855,8 +1857,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			if strings.EqualFold(alt.id, skip) || ctx.Err() != nil || unreached[alt.fam] {
 				continue
 			}
-			// A stand-in answers only a caller its own gate admits.
-			if c.familyRefusal(alt.fam, alt.id, orgId, authUser) != "" {
+			// A stand-in answers only a caller its own gate admits, and only while
+			// its route fits under its price.
+			if c.familyRefusal(alt.fam, alt.id, orgId, authUser) != "" || alt.fam.guard(ctx, alt.id) != nil {
 				continue
 			}
 			// A SECOND bound, on the caller's clock rather than on the count.
@@ -2078,8 +2081,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// receiver for the same reason: with no `c` in scope it cannot reach a request
 	// at all, which is a compile-time property rather than a rule to remember.
 	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam, plan: grantOf(c.Ctx)}
-	if fam.plus {
-		// A family priced at cost is priced by depth too (rates.go).
+	if fam.prices != nil {
+		// The row of a family that sets its own prices says how hard it was asked to
+		// think, beside the arm that answered (rates.go).
 		w.depth = depthOf(rawBody)
 	}
 
@@ -2985,16 +2989,15 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	if status == "success" && !free {
 		if zm, ok := fam.lookup(model); ok {
 			switch {
-			case (fam.plus || sv.maker != nil) && cost != nil:
-				// Priced at cost: what the call's arms cost us, the platform's fee on
-				// top and nothing else (fee.go). A family priced so states its cost on
-				// every answer, and a maker states what it charged (native.go).
+			case sv.maker != nil && cost != nil:
+				// A maker's answer is priced at cost: what it charged, the platform's
+				// fee on top and nothing else (native.go, fee.go).
 				nano = plus(*cost, false)
 			default:
-				// What the call cost is the answer's own statement: a resold SKU
-				// never bills below it. A cost in the headers of any other answer is
-				// its family's record, not a price. A family priced at cost whose
-				// answer stated none bills its listed price, the most a token bills.
+				// The model's price for its tokens. A resold SKU never bills below
+				// the cost its answer states; a cost in the headers of any other
+				// answer is its family's record, not a price. An Enso model bills its
+				// fixed price whatever its arm cost (rates.go).
 				nano = zm.bill(mk.cogs(), t)
 			}
 		} else {
@@ -3011,19 +3014,22 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		exact = &nano
 	}
 	// A call that cost us more than it billed is a loss, and a loss is never
-	// silent: the row says how much (loss_nano), and the rates job counts it.
+	// silent: the row says how much (loss_nano), and the ledger counts it (rates.go).
 	var loss int64
 	if status == "success" && cost != nil && *cost > nano {
 		loss = *cost - nano
 		log.Warn("loss: %s answered by %s (%s) cost %d nano and billed %d", model, sv.arm, sv.vendor, *cost, nano)
 	}
+	var trailed string
+	if fam.prices != nil {
+		trailed = trail(fam, model, sv, t)
+		if status == "success" {
+			fam.answered(model, sv)
+		}
+	}
 	hold.settleNano(nano)
 	if authUser == nil {
 		return nano
-	}
-	var trailed string
-	if fam.plus {
-		trailed = trail(model, sv, t)
 	}
 	origin, via := reached(prov, mk, sv)
 	rec := &usageRecord{

@@ -484,7 +484,6 @@ type modelCatalog struct {
 	cfg    *ModelConfig
 	cfgAt  time.Time
 	fam    []discovery
-	rates  int64 // ratesAt when built
 	models []modelInfo
 	body   []byte
 	err    error
@@ -504,14 +503,13 @@ func (c *modelCatalog) get() ([]modelInfo, []byte, error) {
 		cfgAt = cfg.ChangedAt()
 	}
 	fam := discoveries()
-	rates := ratesAt.Load()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.models == nil || c.cfg != cfg || c.cfgAt != cfgAt || !slices.Equal(c.fam, fam) || c.rates != rates {
+	if c.models == nil || c.cfg != cfg || c.cfgAt != cfgAt || !slices.Equal(c.fam, fam) {
 		c.models = c.build(cfg)
 		c.body, c.err = json.Marshal(modelListEnvelope(c.models))
-		c.cfg, c.cfgAt, c.fam, c.rates = cfg, cfgAt, fam, rates
+		c.cfg, c.cfgAt, c.fam = cfg, cfgAt, fam
 	}
 	return c.models, c.body, c.err
 }
@@ -542,11 +540,6 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 	for i := range models {
 		m := &models[i]
 		m.Pricing = pricingInfo(getModelPriceForOrgOK(m.ID, ""))
-		// A model priced at cost lists the rates job's price (rates.go), the one
-		// /v1/pricing and the quote read too.
-		if q, ok := Price(m.ID, "", false, false); ok {
-			m.Pricing = quotePricing(q)
-		}
 		m.Free = m.Pricing != nil && !m.Pricing.Variable && m.Pricing.InputPerMillion == 0 && m.Pricing.OutputPerMillion == 0
 		slug := canonicalSlug(*m)
 		key := strings.ToLower(slug)

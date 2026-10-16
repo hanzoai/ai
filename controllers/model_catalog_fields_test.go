@@ -59,7 +59,7 @@ const fieldsZen = `{"data":[
 ]}`
 
 const fieldsEnso = `{"data":[
- {"id":"enso","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"4","output":"20"}}
+ {"id":"enso-pro","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"4","output":"20"}}
 ]}`
 
 // fieldsYAML is a config naming kai on the decision service, owned by Hanzo.
@@ -142,7 +142,7 @@ func TestListedRowsNameClassAndFamily(t *testing.T) {
 	byID := withFields(t)
 
 	for id, want := range map[string]struct{ class, family string }{
-		"enso":                      {object.ClassOurs, "enso"},
+		"enso-pro":                  {object.ClassOurs, "enso"},
 		"zen5":                      {object.ClassOurs, "zen"},
 		"kai":                       {object.ClassOurs, "kai"},
 		"typesafe/jev-router":       {object.ClassPremium, ""},
@@ -304,7 +304,7 @@ func TestFamilyRowCarriesVisionModeAndDescription(t *testing.T) {
 		"zen5":          {"text"},
 		"zen-embedding": {"embeddings"},
 		"zen-rerank":    {"rerank"},
-		"enso":          {"text"},
+		"enso-pro":      {"text"},
 	} {
 		if got := byID[id].Outputs; !slices.Equal(got, want) {
 			t.Errorf("%s outputs %v, want %v", id, got, want)

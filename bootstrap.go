@@ -275,9 +275,6 @@ func doBootstrap() (err error) {
 	controllers.WarmFamilies()
 	// Serve each family's newest routing version, and keep serving it (routing.go).
 	controllers.StartRoutingConvergence()
-	// Price each model priced at cost from its arms and its measured calls, and keep
-	// pricing it (rates.go).
-	controllers.StartRates()
 	controllers.StartRouterProbe()
 	controllers.StartRouterTrainer()
 	controllers.StartRouterJudge()

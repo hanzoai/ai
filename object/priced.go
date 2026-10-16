@@ -14,8 +14,9 @@
 
 package object
 
-// priced.go — the usage ledger as the rates job reads it: one row a call, each
-// with what it was routed to, what it cost and what it billed (hanzo.cloud_usage).
+// priced.go — the usage ledger as the price report reads it: a family's calls,
+// grouped by the model asked, the arm that answered and its provider
+// (hanzo.cloud_usage).
 
 import (
 	"context"
@@ -23,81 +24,70 @@ import (
 	"time"
 )
 
-// PricedRow is one call of a family as its row records it.
-type PricedRow struct {
-	ID        string
-	At        time.Time
-	Model     string
-	Reasoning string
-	// Served and Vendor are the arm that answered: its upstream and the provider
-	// whose account ran it.
+// Routed is a family's calls over a window that share a model, the arm that answered
+// (or failed), its provider and a status: how many, and what they cost and billed,
+// nano-dollars.
+type Routed struct {
+	Model string
+	// Served and Vendor are the arm: its upstream and the provider whose account ran
+	// it.
 	Served string
 	Vendor string
 	// Status is "success" for an answer and "failover" for an arm that failed first.
-	Status     string
-	Prompt     int64 // every prompt token, fresh, cached and written
-	Cached     int64
-	Written    int64
-	Completion int64
+	Status   string
+	Requests int64
+	// Uncosted is how many stated no cost: their cost is no fact.
+	Uncosted int64
+	// Losses is how many cost us more than they billed.
+	Losses     int64
 	CostNano   int64
 	BilledNano int64
 	LossNano   int64
-	// Uncosted says nobody stated the call's cost, so CostNano is no fact.
-	Uncosted bool
+	// KnownNano is what the calls whose cost is known billed: the margin is it less
+	// CostNano.
+	KnownNano int64
 }
 
-// pricedColumns are the columns a PricedRow reads, deduplicated by id the way
-// every ledger read is (the table is a ReplacingMergeTree, merged in the
-// background).
-const pricedColumns = "SELECT id, any(timestamp) AS at, any(model) AS model, any(reasoning) AS reasoning, " +
-	"any(served) AS served, any(vendor) AS vendor, any(status) AS status, any(prompt_tokens) AS prompt, " +
-	"any(cache_read_tokens) AS cached, any(cache_write_tokens) AS written, any(completion_tokens) AS completion, " +
-	"any(cost_nano) AS cost, any(billed_nano) AS billed, any(loss_nano) AS loss, any(uncosted) AS uncosted " +
-	"FROM (SELECT * FROM hanzo.cloud_usage WHERE provider = ? AND timestamp >= ?) GROUP BY id "
+// routedQuery groups a family's rows since a time, each deduplicated by id first (the
+// table is a ReplacingMergeTree, merged in the background) and filtered in its own
+// scan below the dedup. The dedup's columns are named apart from the aggregates'
+// aliases, which ClickHouse would otherwise read inside the aggregates.
+const routedQuery = "SELECT model, served, vendor, status, count() AS requests, sum(u) AS uncosted, " +
+	"countIf(l > 0) AS losses, sum(c) AS cost, sum(b) AS billed, sum(l) AS loss, sumIf(b, u = 0) AS known " +
+	"FROM (SELECT id, any(model) AS model, any(served) AS served, any(vendor) AS vendor, any(status) AS status, " +
+	"any(cost_nano) AS c, any(billed_nano) AS b, any(loss_nano) AS l, any(uncosted) AS u " +
+	"FROM (SELECT * FROM hanzo.cloud_usage WHERE provider = ? AND timestamp >= ?) GROUP BY id) " +
+	"GROUP BY model, served, vendor, status"
 
-// PricedRows reads a family's rows since since, newest first, at most limit.
-func PricedRows(ctx context.Context, provider string, since time.Time, limit int) ([]PricedRow, error) {
-	return pricedQuery(ctx, pricedColumns+"ORDER BY at DESC LIMIT ?", provider, since, limit)
-}
-
-// LastPricedRows reads, for each model and reasoning depth of a family, its last n
-// rows since since, newest first.
-func LastPricedRows(ctx context.Context, provider string, since time.Time, n int) ([]PricedRow, error) {
-	return pricedQuery(ctx, pricedColumns+"ORDER BY at DESC LIMIT ? BY model, reasoning", provider, since, n)
-}
-
-func pricedQuery(ctx context.Context, q, provider string, since time.Time, n int) ([]PricedRow, error) {
+// RoutedRows reads a family's calls since since, grouped.
+func RoutedRows(ctx context.Context, provider string, since time.Time) ([]Routed, error) {
 	if !DatastoreEnabled() {
 		return nil, fmt.Errorf("usage ledger unavailable: datastore peer not connected")
 	}
-	rows, err := DatastoreQuery(ctx, q, provider, since.UTC(), n)
+	rows, err := DatastoreQuery(ctx, routedQuery, provider, since.UTC())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]PricedRow, 0, len(rows))
+	out := make([]Routed, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, pricedRow(r))
+		out = append(out, routed(r))
 	}
 	return out, nil
 }
 
-// pricedRow reads one result row, whatever native types the driver decoded.
-func pricedRow(r map[string]any) PricedRow {
-	return PricedRow{
-		ID:         cuString(r["id"]),
-		At:         cuTime(r["at"]),
+// routed reads one result row, whatever native types the driver decoded.
+func routed(r map[string]any) Routed {
+	return Routed{
 		Model:      cuString(r["model"]),
-		Reasoning:  cuString(r["reasoning"]),
 		Served:     cuString(r["served"]),
 		Vendor:     cuString(r["vendor"]),
 		Status:     cuString(r["status"]),
-		Prompt:     cuInt64(r["prompt"]),
-		Cached:     cuInt64(r["cached"]),
-		Written:    cuInt64(r["written"]),
-		Completion: cuInt64(r["completion"]),
+		Requests:   cuInt64(r["requests"]),
+		Uncosted:   cuInt64(r["uncosted"]),
+		Losses:     cuInt64(r["losses"]),
 		CostNano:   cuInt64(r["cost"]),
 		BilledNano: cuInt64(r["billed"]),
 		LossNano:   cuInt64(r["loss"]),
-		Uncosted:   cuBool(r["uncosted"]),
+		KnownNano:  cuInt64(r["known"]),
 	}
 }

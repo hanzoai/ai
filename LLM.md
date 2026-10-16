@@ -886,8 +886,9 @@ credits paid for it. There is exactly one meter and one credential store.
 **Two account modes (one router, one meter):**
 - **Hanzo credits (default).** No org-owned provider for the requested model →
   the global built-in (`Owner == "admin"`) serves it. A route row (models.yaml) bills
-  its token list price; a family's answer (Enso, a resold OpenRouter SKU, a maker's)
-  bills its cost and the platform's fee (Priced at cost, below).
+  its token list price; a resold OpenRouter SKU or a maker's answer bills its cost and
+  the platform's fee, and an Enso SKU its fixed price (A pass-through call carries the
+  fee, below).
 - **Connected third-party account (BYO).** The org connected its OWN OpenAI /
   Anthropic / Google account via `/v1/ai/connections`. The router uses the org's
   KMS-sealed key, the customer pays that provider directly, and Hanzo bills the
@@ -1237,12 +1238,13 @@ so its difference was always exactly zero and it could neither fire honestly nor
 quiet honestly. It now has a cost to compare against, or a flag saying there is none.
 
 
-## Priced at cost: the fee is the margin (`fee.go`, `rates.go`)
+## A pass-through call carries the fee; Enso sells at a fixed price (`fee.go`, `rates.go`)
 
 Owner, 2026-10-15: a model served through the gateway bills the price of the arm that
-actually answered, passed through, and the platform's fee on top: 5.5% (OpenRouter's own
-rate) on Hanzo's accounts, 1% on the org's own provider key. The fee is the margin; there
-is no other markup, and nothing is ever billed below cost.
+answered, passed through, and the platform's fee on top: 5.5% (OpenRouter's own rate) on
+Hanzo's accounts, 1% on the org's own provider key. The fee is the margin there; nothing
+is ever billed below cost. Enso is the exception, decided after: NO adaptive or dynamic
+Enso pricing. Each Enso SKU has one fixed list price, and nothing measured moves it.
 
 - **Fees are the host's** (`object.Fee`, cloud `apps/flags` `SeedFees`, edited at
   admin.hanzo.ai Usage policy): `openrouter` (5.5, the vendor's fee on its credit, part
@@ -1254,42 +1256,65 @@ is no other markup, and nothing is ever billed below cost.
   stated, times the fee of the costliest vendor whose credit bought any arm of it
   (`buyers`: OpenRouter for the resale family's own answers; the answering arm's
   provider and every failed arm's for a family's; none for a maker's, whose price is its
-  own). It is `cost_nano`. A call routed through OpenRouter therefore costs its stated
-  price plus 5.5%, and the platform's fee goes on top of that, never on the bare list.
-- **Enso is priced at cost** (`modelFamily.plus`): an answer bills `plus(cost)`, its cost
-  of record times the platform's fee. An answer whose family stated no cost bills the
-  SKU's listed price (the engine's retail, the dearest rung times the catalog's margin),
-  which is the most a token bills; the hold reserves that same ceiling. A maker's answer
-  (native.go) is priced at cost the same way. A resold OpenRouter SKU bills its vendor's
-  price times `(1 + openrouter fee) × (1 + hanzo fee)` (`openrouterMarkup`), never below
-  its stated cost times that. A BYO call (`providerBYO`) bills the `hanzo_byok` fee alone.
+  own). It is `cost_nano`, on every call, Enso's included.
+- **Pass-through** (not Enso): a resold OpenRouter SKU bills its vendor's price times
+  `(1 + openrouter fee) × (1 + hanzo fee)` (`openrouterMarkup`), never below its stated
+  cost times that. A maker's answer (native.go) bills `plus(cost)`, its cost of record
+  times the platform's fee. A BYO call (`providerBYO`) bills the `hanzo_byok` fee alone.
+- **Enso's price list** (`ensoPrices`, the one catalog): each paid SKU is the list price
+  of the upstream its route typically answers on (the cost the served catalog, universe
+  `charts/app/files/enso/catalog.yaml`, states for its first rung) times 2 to 3, and well
+  under Claude Fable 5.1 and GPT-6 Astra ($10 / $50 at their vendors). Per million
+  tokens, input / output / cache read / cache write:
+
+  | SKU | typical upstream, list | × | price |
+  |---|---|---|---|
+  | enso-flash | GPT-6 Luna, 0.11 / 0.55 / 0.011 / 0.1375 | 3 | 0.33 / 1.65 / 0.033 / 0.4125 |
+  | enso-pro | GPT-6.1 Sol, 2.20 / 11.00 / 0.11 / 2.75 | 2 | 4.40 / 22.00 / 0.22 / 5.50 |
+  | enso-ultra | Claude Sonnet 5.5, 2.20 / 11.00 / 0.11 / 2.75 | 2.5 | 5.50 / 27.50 / 0.275 / 6.875 |
+
+  Flash is 3x because Luna past a 272k prompt costs 0.20 / 0.75; ultra 2.5x because its
+  Opus 5.5 arm (4.40 / 22.00) with OpenRouter's fee would sit above twice Sonnet. A SKU
+  the catalog serves free (enso, enso-auto, hanzo/enso, enso-free) has no line and bills
+  nothing. `modelFamily.fix` lays the list over the family's discovery, so `/v1/models`
+  lists it, `zenModel.bill` bills it, the hold reserves it, and the price list reads it
+  (`Prices`, which cloud lays over `/v1/pricing`): one number in every place. A SKU the
+  service prices that the list does not is dropped from the listing and never served,
+  said in the log at each discovery. A price change is an edit of `ensoPrices` and a
+  release; the engine's own quote (its catalog margins) is not read.
+- **The guard** (`modelFamily.guard`): a SKU is sent only while every arm of its route
+  costs us no more than the SKU bills, in every token class, at a long prompt's price
+  where an arm charges one, and with the fee of a reseller whose credit buys it. The route
+  is the engine's admin catalog (`GET {ENSO_URL}/v1/admin/catalog` under `ZEN_ADMIN_TOKEN`,
+  `modelFamily.route`): the first read is waited for, then read again beside the requests
+  once a minute (`routeEvery`); a failed read keeps the last; a first read that failed
+  answers its failure for 15 s. What cannot be checked is not sent: no price, no route
+  read, or no arm for the SKU is a refusal. A refused SKU answers 503 naming no upstream
+  (`its route costs more than it bills` / `its route cannot be checked`), is asked of no
+  other provider, and is skipped as a stand-in (`pool`); each misfit is a `guard:` error
+  in the log at every read. After the fact, an answer on an arm the route as read does not
+  hold, or that costs more than the SKU bills, is a `guard:` error and reads the route
+  again on the next request (`trail`). The free SKUs pass the same guard at a price of
+  zero, so a free SKU is never sent to a paid arm, and a pod that has never read the route
+  serves no Enso at all. `TestTheServedRoutesFitUnderTheirPrices` holds the list to the
+  served catalog's arms.
 - **Never silent**: a call whose cost exceeds what it billed (a stand-in capped at the
   named model's price, a free rung that cost something) writes `loss_nano` on its row and
-  a `loss:` warning. The rates job counts every one.
+  a `loss:` warning. The ledger counts every one.
 - **The row** (hanzo.cloud_usage, one a call): beside `model` (the SKU), `cost_nano`,
-  `billed_nano` and `margin_nano` (= the fee collected), a family's rows carry `served`
-  and `vendor` (the arm and the provider whose account ran it), `reasoning` (the depth
-  asked, `depthOf`, mirroring hanzo-inc/engine thinking.rs: none, low, medium, high, max,
-  or default), `reasoning_tokens`, `loss_nano`, and on Enso's `arms`: JSON, the arm that
-  answered with its rate at the time (`rate`, the vendor's fee as `fee`) and the tokens it
-  was paid for, then each arm that failed first and why. Failed arms keep their
-  `failover` rows too.
-- **Rates** (`rates.go`): each priced Enso SKU has three prices, each the platform's fee
-  over a cost: `from` (its cheapest arm, class by class), `typical` (what its calls cost
-  over the last day, or its last 50 when the day held fewer: each row's cost of record
-  split between fresh, cached, written and output tokens by its arm's rates, summed and
-  divided by each class's tokens) and `up_to` (its dearest arm, a long prompt's price
-  included). The arms come from the family's admin catalog (`GET {ENSO_URL}/v1/admin/catalog`
-  under `ZEN_ADMIN_TOKEN`, read every 5 minutes, the engine's shape; the long price once
-  the engine publishes it there). Typical is measured at start, every 24 hours and on
-  `Reprice` (cloud: `POST /v1/pricing/sync`), grouped by depth and over every depth.
-  `Prices`, `Price` and `Blend` (a set of models a caller composed: from its cheapest, up
-  to its dearest, nothing typical) read the last board; `/v1/models` lists an Enso SKU at
-  its typical rate (its up-to where nothing was measured), `variable: true`, with
-  `pricing.from`, `pricing.up_to`, `pricing.fee` and `pricing.window` beside it. A
-  SuperAdmin's quote names the arms; no other read does. The board's `Ledger` is the
-  day's answers, failovers, OpenRouter-bought answers (`fallbacks`, `fallback_share`), fee
-  collected, losses, and each by model and vendor (`routes`).
+  `billed_nano` and `margin_nano`, a family's rows carry `served` and `vendor` (the arm and
+  the provider whose account ran it), `reasoning` (the depth asked, `depthOf`, mirroring
+  hanzo-inc/engine thinking.rs: none, low, medium, high, max, or default),
+  `reasoning_tokens`, `loss_nano`, and on Enso's `arms`: JSON, the arm that answered with
+  its rate at the time (`rate`, the vendor's fee as `fee`) and the tokens it was paid for,
+  then each arm that failed first and why. Failed arms keep their `failover` rows too.
+- **The ledger is a report** (`Prices(ctx, admin)`): to a SuperAdmin, each SKU's typical
+  upstream, its list and the multiple, its route as last read with each arm's `over`
+  classes and `refused`, and the last day's `Ledger` read from the usage table on demand
+  (`object.RoutedRows`, one row per SKU, arm, vendor and status, deduplicated by id first):
+  answers, failovers, OpenRouter-bought answers (`fallbacks`, `fallback_share`), cost,
+  billed, `margin_nano` (billed less cost over the answers whose cost is known;
+  `uncosted` counts the rest), losses, and the same by route. Nothing reads it to price.
 - **Resolution is stated** (`resolve.go`): a model is reached on a direct key first (its
   maker's API for a SKU its keys list, native.go, ahead of the family that resells it;
   a route row's own provider), then DigitalOcean's inference (`do-ai`), then OpenRouter,
@@ -1298,21 +1323,17 @@ is no other markup, and nothing is ever billed below cost.
   whether a key serves it. Between a row's own providers a call keeps the row's declared
   order (`candidates`), so every row of `conf/models.yaml` lists its direct provider
   before `do-ai`, held by `TestEveryShippedRouteAsksADirectKeyBeforeDigitalOcean`.
-  `Blend` costs a resold model on its first keyed path: a direct key's price alone,
-  OpenRouter's with OpenRouter's fee. Each quote's arm names its `kind`.
-- **The hold is at least up to**: a family priced at cost holds no less than its dearest
-  arm with every fee on it (`modelPrice`), so no reservation is below what a call bills.
-- **Not yet**: the routing-time check (an arm whose cost would exceed what the request
-  may spend) is the engine's to make; with every call billed at its own cost plus the
-  fee, the margin holds on every arm by construction, and the engine walks rungs in the
-  catalog's order. Direct-key rungs ahead of OpenRouter are catalog data (universe
-  `charts/app/files/enso/catalog.yaml`) and wait on keys and the engine's anthropic kind.
+- **Gone** (v1.833.348): the from / typical / up-to quote, its depth quotes, `Price`,
+  `Blend`, `Reprice`, `StartRates` and the daily measure, and `/v1/models`'
+  `pricing.from`, `pricing.up_to`, `pricing.fee`, `pricing.window` and `variable` on Enso.
+  Cloud's `/v1/pricing/enso` quote and `POST /v1/pricing/sync` read them and go with its
+  next pin of this module.
 
 `routing.go` still reads and writes a family's catalog at `/v1/admin/zen/*`, which the
 Go zen serves and the engine (enso since 1.6.1) does not (`/v1/admin/*`). Moving it is
 not a path edit: convergence applies the newest stored version wherever a family serves
 another, so the first read that succeeds would push the last stored enso version over
-the live catalog. The rates read the engine's path on their own, read-only.
+the live catalog. The guard reads the engine's path on its own, read-only.
 
 ## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
 

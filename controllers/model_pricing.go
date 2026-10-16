@@ -96,49 +96,6 @@ type modelPricingInfo struct {
 	// condition (min_prompt_tokens, or utc_start, utc_end and utc_days for hours of
 	// the day) beside the rates that apply under it.
 	Overrides []map[string]any `json:"overrides,omitempty"`
-	// From and UpTo bound a model priced at cost (rates.go): its cheapest arm and its
-	// dearest, the platform's fee applied. The rates above are then what its calls
-	// typically cost, measured over Window, and the dearest where nothing was
-	// measured; a call bills what its own arm cost, the fee on top.
-	From   *perMillion `json:"from,omitempty"`
-	UpTo   *perMillion `json:"up_to,omitempty"`
-	Fee    string      `json:"fee,omitempty"` // the platform's fee, percent
-	Window *Window     `json:"window,omitempty"`
-}
-
-// perMillion is a price in US dollars a million tokens, by class.
-type perMillion struct {
-	InputPerMillion      float64 `json:"input_per_million"`
-	OutputPerMillion     float64 `json:"output_per_million"`
-	CacheReadPerMillion  float64 `json:"cache_read_per_million,omitempty"`
-	CacheWritePerMillion float64 `json:"cache_write_per_million,omitempty"`
-}
-
-func perMillionOf(r Rate) *perMillion {
-	return &perMillion{InputPerMillion: r.Input, OutputPerMillion: r.Output, CacheReadPerMillion: r.CacheRead, CacheWritePerMillion: r.CacheWrite}
-}
-
-// quotePricing is a model priced at cost as /v1/models lists it: what its calls
-// typically cost (its dearest where nothing was measured), from and up to beside
-// it, marked variable since each call bills what its own arm cost.
-func quotePricing(q Quote) *modelPricingInfo {
-	r := q.UpTo
-	var w *Window
-	if q.Typical != nil {
-		r = *q.Typical
-		w = &q.Window
-	}
-	return &modelPricingInfo{
-		Prompt:           perToken(r.Input),
-		Completion:       perToken(r.Output),
-		InputPerMillion:  r.Input,
-		OutputPerMillion: r.Output,
-		Variable:         true,
-		From:             perMillionOf(q.From),
-		UpTo:             perMillionOf(q.UpTo),
-		Fee:              q.Fee,
-		Window:           w,
-	}
 }
 
 // pricingInfo projects an internal modelPrice into the public pricing block, or

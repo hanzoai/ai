@@ -3,19 +3,17 @@
 package controllers
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/hanzoai/decimal"
 	"gopkg.in/yaml.v3"
 )
 
 // A model its maker sells is reached on the maker's key first and through
-// OpenRouter after; a maker with no key listing it leaves OpenRouter first among the
-// keyed paths, and the quote costs it with OpenRouter's fee.
+// OpenRouter after; a maker with no key listing it leaves OpenRouter the first path a
+// key serves.
 func TestAModelIsReachedOnADirectKeyBeforeOpenRouter(t *testing.T) {
 	fam := resale(t, &accounts{})
 	fam.byID[claudeSKU] = zenModel{ID: claudeSKU, CostIn: decimal.MustParse("1"), CostOut: decimal.MustParse("5"), Base: fam.byID[claudeSKU].Base, Tiers: fam.byID[claudeSKU].Tiers}
@@ -26,22 +24,11 @@ func TestAModelIsReachedOnADirectKeyBeforeOpenRouter(t *testing.T) {
 	if len(got) != 2 || got[0] != (Path{Provider: "anthropic", Kind: direct, Keyed: true}) || got[1].Provider != "openrouter" || got[1].Kind != reseller {
 		t.Fatalf("paths = %+v, want the maker's key, then OpenRouter", got)
 	}
-	q, err := Blend([]string{claudeSKU}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(q.Arms) != 1 || q.Arms[0].Kind != direct || q.Arms[0].Fee != "0" || !near(q.From.Input, 1.055) {
-		t.Errorf("a direct key's quote = %+v, want the vendor's price and the platform's fee alone", q)
-	}
 
 	makerAt(t, &maker{}) // no key
 	got = Paths(claudeSKU, "")
-	if len(got) != 2 || got[0].Keyed || first(got).Provider != "openrouter" {
+	if len(got) != 2 || got[0].Keyed || !got[1].Keyed || got[1].Provider != "openrouter" {
 		t.Fatalf("paths with no maker key = %+v, want OpenRouter the first keyed", got)
-	}
-	q, _ = Blend([]string{claudeSKU}, false)
-	if q.Arms[0].Kind != reseller || q.Arms[0].Fee != "5.5" || !near(q.From.Input, 1.055*1.055) {
-		t.Errorf("OpenRouter's quote = %+v, want the vendor's price, its fee and the platform's", q)
 	}
 }
 
@@ -100,29 +87,6 @@ func providersOf(fbs []FallbackDef) []string {
 		out = append(out, f.Provider)
 	}
 	return out
-}
-
-// A family priced at cost never holds less than its dearest arm costs with every
-// fee on it, whatever its listing says.
-func TestAPricedAtCostHoldIsAtLeastItsDearestArm(t *testing.T) {
-	orFees(t)
-	ensoServiceAt(t)
-	if err := readArms(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	ensoFam.mu.Lock()
-	m := ensoFam.byID["enso-flash"]
-	m.Base.In, m.Base.Out = decimal.MustParse("0.01"), decimal.MustParse("0.02")
-	ensoFam.byID["enso-flash"] = m
-	ensoFam.mu.Unlock()
-	now := time.Now().UTC()
-	b := &board{computed: now, measured: now}
-	compute(b, now)
-	current.Store(b)
-	p, ok := ensoFam.modelPrice("enso-flash")
-	if !ok || !near(p.InputPerMillion, 0.222605) || !near(p.OutputPerMillion, 0.83476875) {
-		t.Errorf("hold price = %+v, want up to's 0.222605 / 0.83476875 over a listing of 0.01 / 0.02", p)
-	}
 }
 
 // withRoute loads a model config holding one route row: model id on provider, and

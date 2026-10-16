@@ -172,8 +172,10 @@ func TestAFamilySKUIsPricedFromDiscoveryOnAColdPod(t *testing.T) {
 	if ModelCostsNothing("enso-flash", "acme") {
 		t.Error("enso-flash on a cold pod costs nothing")
 	}
-	if p, ok := getModelPriceForOrgOK("enso-flash", "acme"); !ok || p.InputPerMillion != 0.42 || p.OutputPerMillion != 1.5 {
-		t.Errorf("enso-flash price %+v (ok=%v), want the discovered 0.42/1.50", p, ok)
+	// Its price is the family's own (rates.go), which a cold pod reaches only once
+	// discovery lists the model: never the 0.42 / 1.50 the service quotes.
+	if p, ok := getModelPriceForOrgOK("enso-flash", "acme"); !ok || p.InputPerMillion != 0.33 || p.OutputPerMillion != 1.65 {
+		t.Errorf("enso-flash price %+v (ok=%v), want its fixed 0.33 / 1.65", p, ok)
 	}
 	if asked != 1 {
 		t.Errorf("discovery was asked %d times, want once", asked)

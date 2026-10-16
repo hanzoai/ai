@@ -3,37 +3,49 @@
 package object
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
 
-// A row reads whatever native types the driver decoded it into.
-func TestAPricedRowReadsTheDriversTypes(t *testing.T) {
-	at := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
-	r := pricedRow(map[string]any{
-		"id": "a", "at": at, "model": "enso-flash", "reasoning": "low", "served": "openai/gpt-6-luna",
-		"vendor": "openrouter", "status": "success", "prompt": uint32(300000), "cached": uint32(200000),
-		"written": uint32(0), "completion": uint32(2000), "cost": int64(26902500), "billed": int64(28382138),
-		"loss": int64(0), "uncosted": uint8(0),
+// A grouped row reads whatever native types the driver decoded.
+func TestARoutedRowReadsTheDriversTypes(t *testing.T) {
+	r := routed(map[string]any{
+		"model": "enso-flash", "served": "openai/gpt-6-luna", "vendor": "openrouter", "status": "success",
+		"requests": uint64(3), "uncosted": uint64(1), "losses": uint64(0), "cost": int64(1_392_600),
+		"billed": int64(1_980_000), "loss": int64(0), "known": int64(1_320_000),
 	})
-	want := PricedRow{ID: "a", At: at, Model: "enso-flash", Reasoning: "low", Served: "openai/gpt-6-luna", Vendor: "openrouter",
-		Status: "success", Prompt: 300000, Cached: 200000, Completion: 2000, CostNano: 26902500, BilledNano: 28382138}
+	want := Routed{
+		Model: "enso-flash", Served: "openai/gpt-6-luna", Vendor: "openrouter", Status: "success",
+		Requests: 3, Uncosted: 1, CostNano: 1_392_600, BilledNano: 1_980_000, KnownNano: 1_320_000,
+	}
 	if r != want {
 		t.Errorf("row = %+v, want %+v", r, want)
 	}
-	if !pricedRow(map[string]any{"uncosted": uint8(1)}).Uncosted {
-		t.Error("an uncosted row read as costed")
-	}
 }
 
-// The reads are deduplicated by id, filtered by family and time before the dedup,
-// and the last-calls read keeps n of each model and depth.
-func TestThePricedReadsDedupAndKeepTheLastOfEachDepth(t *testing.T) {
-	if !strings.Contains(pricedColumns, "WHERE provider = ? AND timestamp >= ?) GROUP BY id") {
-		t.Errorf("the read filters after its dedup: %s", pricedColumns)
+// The read dedups by id below its grouping, filters by family and time before the
+// dedup, and names the dedup's columns apart from the aggregates' aliases.
+func TestTheRoutedReadDedupsBeforeItGroups(t *testing.T) {
+	if !strings.Contains(routedQuery, "WHERE provider = ? AND timestamp >= ?) GROUP BY id) GROUP BY model, served, vendor, status") {
+		t.Errorf("the read groups before its dedup or filters after it: %s", routedQuery)
 	}
-	for _, col := range []string{"reasoning", "served", "vendor", "loss_nano", "cost_nano", "billed_nano"} {
+	outer, inner, ok := strings.Cut(routedQuery, " FROM (SELECT id, ")
+	if !ok {
+		t.Fatalf("no dedup in %s", routedQuery)
+	}
+	inner, _, _ = strings.Cut(inner, " FROM (SELECT * ")
+	named := map[string]bool{}
+	for _, m := range aliases.FindAllStringSubmatch(inner, -1) {
+		named[m[1]] = true
+	}
+	for _, m := range aliases.FindAllStringSubmatch(outer, -1) {
+		if named[m[1]] {
+			t.Errorf("an aggregate is named %s, as a column of the dedup is", m[1])
+		}
+	}
+	for _, col := range []string{"served", "vendor", "loss_nano", "cost_nano", "billed_nano", "uncosted"} {
 		found := false
 		for _, c := range CloudUsageColumns {
 			found = found || c == col
@@ -44,12 +56,14 @@ func TestThePricedReadsDedupAndKeepTheLastOfEachDepth(t *testing.T) {
 	}
 }
 
+var aliases = regexp.MustCompile(`AS (\w+)`)
+
 // Without the datastore the read says so rather than answering nothing.
-func TestThePricedReadNeedsTheLedger(t *testing.T) {
+func TestTheRoutedReadNeedsTheLedger(t *testing.T) {
 	if DatastoreEnabled() {
 		t.Skip("a datastore is connected")
 	}
-	if _, err := PricedRows(t.Context(), "enso", time.Now(), 1); err == nil {
+	if _, err := RoutedRows(t.Context(), "enso", time.Now()); err == nil {
 		t.Error("a read with no ledger answered")
 	}
 }
