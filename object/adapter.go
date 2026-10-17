@@ -197,6 +197,7 @@ func (a *Adapter) createTable() {
 		&ListingEvent{},       // each change a sync read: new, gone, back, repriced
 		&Lease{},              // jobs the fleet runs once an interval
 		&Served{},             // what each vendor account did with each model, by hour
+		&MediaJob{},           // generations a vendor runs for a caller, until billed (media_job.go)
 	}
 	for _, m := range models {
 		if err := a.db.Sync(m); err != nil {

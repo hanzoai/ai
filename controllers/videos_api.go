@@ -188,6 +188,13 @@ func (c *ApiController) VideosGenerations() {
 		return
 	}
 
+	// A video model the resale family lists: its vendor makes the clip, a watcher
+	// keeps it and bills it (video_vendor.go).
+	if m, ok := clipFor(req.Model); ok && provider.Type == openrouterFam.typ {
+		c.vendorClip(m, c.Body(), authUser)
+		return
+	}
+
 	// Zen family: forward to the zen service, billed per clip at the discovered
 	// price. This bypasses ai's own async job store — zen (and its self-hosted
 	// engine upstream) owns the video job. If the upstream returns a job to poll,
@@ -286,6 +293,9 @@ func (c *ApiController) RetrieveVideo() {
 		return
 	}
 	id := c.Param("id")
+	if c.answerClip(token, id) {
+		return
+	}
 
 	job, provider, authUser, ok := c.resolveOwnedVideoJob(token, id)
 	if !ok {
@@ -349,6 +359,9 @@ func (c *ApiController) VideoContent() {
 		return
 	}
 	id := c.Param("id")
+	if c.clipContent(token, id) {
+		return
+	}
 
 	job, provider, authUser, ok := c.resolveOwnedVideoJob(token, id)
 	if !ok {

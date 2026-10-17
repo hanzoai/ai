@@ -46,6 +46,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -74,6 +75,7 @@ var openrouterFam = &modelFamily{
 	spare:       openrouterSpare,
 	aliases:     openrouterAliases,
 	makers:      []*native{anthropicNative, openaiNative},
+	lists:       []string{"/v1/models", "/v1/videos/models"},
 }
 
 // The catalog is read from the store the sync keeps (listing.go); assigned here
@@ -162,6 +164,9 @@ type openrouterWireModel struct {
 	// SupportedParameters are the request fields the SKU honours ("tools",
 	// "reasoning", …): what it can be asked to do.
 	SupportedParameters []string `json:"supported_parameters"`
+	// videoWire is what an entry of GET /v1/videos/models states about a clip:
+	// durations, resolutions, frame images, audio and its price SKUs (video_spec.go).
+	videoWire
 }
 
 // openrouterPricing is a SKU's price list: every rate OpenRouter states, in its own
@@ -338,6 +343,9 @@ func (w openrouterWireModel) vision() bool {
 // and any tier may call it. Stamping the paid floors on a free SKU would refuse a
 // caller over money that is never spent.
 func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
+	if spec, ok := w.spec(); ok {
+		return w.clip(spec, margin)
+	}
 	costIn := w.Pricing.Prompt.Mul(openrouterTokensPerMillion)
 	costOut := w.Pricing.Completion.Mul(openrouterTokensPerMillion)
 	m := zenModel{
@@ -373,6 +381,30 @@ func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 	return m
 }
 
+// clip is a video model as a discovered SKU: it takes a prompt and, where it
+// starts from one, an image, and answers a clip. It is priced by what each clip
+// costs (Variable: the vendor states it, times the markup), so its token rates are
+// zero and its card is the vendor's price SKUs times the markup. Every clip spends
+// real cash, so it takes both paid floors.
+func (w openrouterWireModel) clip(spec *videoSpec, margin decimal.Decimal) zenModel {
+	inputs := []string{"text"}
+	if slices.Contains(spec.Frames, "first_frame") {
+		inputs = append(inputs, "image")
+	}
+	card := &rateCard{Rates: map[string]string{}}
+	for k, v := range spec.rates {
+		card.Rates[k] = v.Mul(margin).String()
+	}
+	return zenModel{
+		ID: w.ID, Created: w.Created, OwnedBy: openrouterOwner(w.ID), Name: w.title(),
+		Description: strings.TrimSpace(w.Description), Expires: strings.TrimSpace(w.Expiration),
+		Inputs: inputs, Outputs: []string{"video"},
+		Margin: margin, Variable: true, Card: card, Video: spec,
+		MinTier: "paid", Funding: "prepaid",
+		Tiers: []zenTier{{}},
+	}
+}
+
 // tiers is the SKU's retail ladder: the base rates up to the first override's prompt
 // size, each override's from its own, the last to the context window. A tier holds
 // prompts up to its MaxCtx (tierFor), so the prompt that reaches an override's size
@@ -401,7 +433,23 @@ func (w openrouterWireModel) tiers(margin decimal.Decimal) []zenTier {
 // variable reports a SKU OpenRouter prices by whatever serves each call — its routers,
 // which it lists at a price of -1 because no one rate describes them.
 func (w openrouterWireModel) variable() bool {
-	return w.Pricing.Prompt.Sign() < 0 || w.Pricing.Completion.Sign() < 0
+	return w.Pricing.Prompt.Sign() < 0 || w.Pricing.Completion.Sign() < 0 || w.perCall()
+}
+
+// perCall reports a model that answers in audio, an image or video and lists no
+// token price: the vendor bills each call at what it made (Lyria's $0.08 a song),
+// so it is a priced SKU billed at the cost its answer states, never a free one.
+func (w openrouterWireModel) perCall() bool {
+	if !w.Pricing.Prompt.IsZero() || !w.Pricing.Completion.IsZero() || strings.HasSuffix(w.ID, ":free") {
+		return false
+	}
+	for _, o := range w.Architecture.OutputModalities {
+		switch strings.ToLower(strings.TrimSpace(o)) {
+		case "audio", "image", "video", "speech":
+			return true
+		}
+	}
+	return false
 }
 
 // openrouterOwner is the vendor an OpenRouter id names ("anthropic/claude-…" →
@@ -428,8 +476,12 @@ func openrouterWire(body []byte) ([]openrouterWireModel, error) {
 	return out.Data, nil
 }
 
-// free reports the SKUs OpenRouter charges nothing for on either side.
+// free reports the SKUs OpenRouter charges nothing for on either side. A video
+// model lists no token price and bills every clip, so it is never one.
 func (w openrouterWireModel) free() bool {
+	if _, clip := w.spec(); clip || w.perCall() {
+		return false
+	}
 	return w.Pricing.Prompt.IsZero() && w.Pricing.Completion.IsZero()
 }
 
@@ -491,6 +543,9 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 	models := make([]zenModel, 0, len(wire))
 	var ceiling zenTier
 	for _, w := range wire {
+		if _, clip := w.spec(); !clip && len(w.SKUs) > 0 {
+			continue // a video model that makes no clip from a prompt: an editor, an upscaler
+		}
 		m := w.model(margin)
 		if !m.variable() {
 			for _, t := range m.Tiers {
@@ -505,7 +560,7 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 	// nothing else in it is priced — is left out rather than listed free.
 	out := models[:0]
 	for _, m := range models {
-		if m.variable() {
+		if m.variable() && m.Video == nil {
 			if ceiling.In.IsZero() && ceiling.Out.IsZero() {
 				continue
 			}

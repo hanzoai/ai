@@ -279,6 +279,9 @@ func doBootstrap() (err error) {
 	// Read each model family's catalog once at boot, so the first request after a
 	// restart is priced from discovery (controllers.WarmFamilies).
 	controllers.WarmFamilies()
+	// Finish, keep and bill every video job a process before this one left
+	// unfinished (controllers.ResumeVideos): the vendor finishes it either way.
+	go controllers.ResumeVideos()
 	// Serve each family's newest routing version, and keep serving it (routing.go).
 	controllers.StartRoutingConvergence()
 	controllers.StartRouterProbe()

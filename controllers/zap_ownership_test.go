@@ -143,6 +143,10 @@ func TestEveryHttpWriteSaysWhoseRowItIs(t *testing.T) {
 		"graph_chat.go:generateChatGraphData": "helper; its caller resolved the graph",
 		// The vendor's model list is the platform's; no caller asks for a sync.
 		"listing.go:sync": "writes the platform's copy of a vendor's public list",
+		// A video job is filed under the billing subject of the caller who paid for
+		// it, and every read is held to that subject (clipOwned).
+		"video_vendor.go:vendorClip": "files the job under its payer's billing subject, which clipOwned holds every read to",
+		"video_vendor.go:set":        "helper; writes the job's own row, filed by vendorClip for its payer",
 	}
 
 	fset := token.NewFileSet()

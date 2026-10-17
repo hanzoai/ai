@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"sort"
 	"strconv"
@@ -188,7 +189,7 @@ func (f *modelFamily) sync(ctx context.Context, p *object.Provider, now time.Tim
 		if err := json.Compact(&item, raw); err != nil {
 			return nil, err
 		}
-		price, err := prices(w.Pricing.All)
+		price, err := prices(w.priceList())
 		if err != nil {
 			return nil, fmt.Errorf("%s %s pricing: %w", f.name, id, err)
 		}
@@ -282,6 +283,20 @@ func prices(all map[string]json.RawMessage) (string, error) {
 	}
 	b, err := json.Marshal(out)
 	return string(b), err
+}
+
+// priceList is every price an entry lists: its token rates and, for a video
+// model, its price SKUs, so a sync sees a clip repriced as it sees a token.
+func (w openrouterWireModel) priceList() map[string]json.RawMessage {
+	if len(w.SKUs) == 0 {
+		return w.Pricing.All
+	}
+	all := make(map[string]json.RawMessage, len(w.Pricing.All)+1)
+	maps.Copy(all, w.Pricing.All)
+	if b, err := json.Marshal(w.SKUs); err == nil {
+		all["pricing_skus"] = b
+	}
+	return all
 }
 
 // listedFamily is the family whose list the store keeps under vendor, or nil.

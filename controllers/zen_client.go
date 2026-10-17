@@ -30,6 +30,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -150,6 +151,11 @@ type modelFamily struct {
 	// it serves it, its price, its floors, its terms — answers for the alias exactly
 	// as for the SKU, and sku is what goes upstream.
 	aliases map[string]string
+
+	// lists are the paths of the family's model lists, read as one catalog
+	// (GET base + each): "/v1/models" when it names none. OpenRouter lists its
+	// video models apart (/v1/videos/models).
+	lists []string
 
 	// load is where the family's catalog body comes from when it is not the family's
 	// own GET /v1/models: a vendor whose list is synced into the store (listing.go)
@@ -696,6 +702,9 @@ type zenModel struct {
 	// Card is the vendor's whole price list as it bills to a caller, for a SKU we
 	// resell: what /v1/models publishes as the SKU's pricing, exactly.
 	Card *rateCard
+	// Video is what a video SKU takes and what a clip of it costs (video_spec.go);
+	// nil for every other SKU.
+	Video *videoSpec
 }
 
 // rateCard is a resold SKU's price list as billed: every rate its vendor states, in
@@ -763,7 +772,7 @@ func (m zenModel) gated() bool { return m.Access == "waitlist" }
 // priced reports whether the family charges for this SKU on either side. It is the
 // one reading of "costs money" the listing takes, so premium and free are answers to
 // the same question rather than two opinions of it.
-func (m zenModel) priced() bool { return !m.Base.In.IsZero() || !m.Base.Out.IsZero() }
+func (m zenModel) priced() bool { return !m.Base.In.IsZero() || !m.Base.Out.IsZero() || m.Video != nil }
 
 // minTier is the SKU's advertised minimum subscription tier on the enso ladder,
 // normalized: "" ⇒ "free" (every tier may use it). One of "free" | "trial" | "paid".
@@ -1016,8 +1025,40 @@ const listWait = 30 * time.Second
 
 // list reads the family's GET /v1/models from its address.
 func (f *modelFamily) list(ctx context.Context, p *object.Provider) ([]byte, error) {
+	paths := f.lists
+	if len(paths) == 0 {
+		paths = []string{"/v1/models"}
+	}
+	if len(paths) == 1 {
+		return f.listAt(ctx, p, paths[0])
+	}
+	// Several lists are one catalog: every entry of each, read whole or not at all,
+	// so a list that could not be read never marks its models gone. A list after the
+	// first that the vendor does not have (404) lists nothing.
+	var all []json.RawMessage
+	for i, path := range paths {
+		body, err := f.listAt(ctx, p, path)
+		if errors.Is(err, errNoList) && i > 0 {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var one struct {
+			Data []json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(body, &one); err != nil {
+			return nil, fmt.Errorf("%s %s: %w", f.name, path, err)
+		}
+		all = append(all, one.Data...)
+	}
+	return json.Marshal(map[string]any{"data": all})
+}
+
+// listAt reads one of the family's lists, GET base + path.
+func (f *modelFamily) listAt(ctx context.Context, p *object.Provider, path string) ([]byte, error) {
 	base := strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1027,11 +1068,17 @@ func (f *modelFamily) list(ctx context.Context, p *object.Provider) ([]byte, err
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%s %s: %w", f.name, path, errNoList)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s /v1/models: status %d", f.name, resp.StatusCode)
+		return nil, fmt.Errorf("%s %s: status %d", f.name, path, resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 }
+
+// errNoList is a vendor that has no list at a path.
+var errNoList = errors.New("no such list")
 
 // open reports whether the family's catalog, as last discovered, opens the paid lane.
 // It reads the snapshot and never waits on the family: discovery keeps it, loaded at
@@ -1343,6 +1390,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			Name: z.Name, Description: z.Description, ContextWindow: window, MaxOutputTokens: z.MaxOut, Expires: z.Expires,
 			Inputs: z.Inputs, Outputs: z.Outputs,
 			SupportsVision: z.Vision, SupportsTools: z.Tools, SupportsReasoning: z.Reasoning,
+			Video: z.Video,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
 		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.

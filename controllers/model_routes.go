@@ -383,6 +383,7 @@ type modelInfo struct {
 	SupportsTools     bool              `json:"supports_tools,omitempty"`     // model supports function/tool calling, as its catalog or a live probe states
 	SupportsReasoning bool              `json:"supports_reasoning,omitempty"` // model takes a reasoning request, as its catalog states
 	Pricing           *modelPricingInfo `json:"pricing,omitempty"`            // per-token and per-1M USD, each key naming its unit; only when ai holds real pricing
+	Video             *videoSpec        `json:"video,omitempty"`              // a video model: the durations (seconds), resolutions, aspect ratios, sizes and frame images it takes and whether it writes audio; served at /v1/videos/generations, each clip billed at what it cost, times the markup
 	Access            *modelAccessInfo  `json:"access,omitempty"`             // present only for a gated (limited-preview) SKU; carries the caller's standing (waitlist|requested|granted)
 }
 

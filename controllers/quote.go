@@ -150,7 +150,11 @@ func quoteOf(c *zip.Ctx, org, model string) quote {
 		_ = json.Unmarshal(body, &r)
 		q.fixed = imageCostCents(model, max(r.N, 1)) * nanoPerCent
 	case path == "/v1/videos/generations":
-		q.fixed = videoCostCents(model, 1) * nanoPerCent
+		if n, ok := clipQuoteNano(model, body); ok {
+			q.fixed = n
+		} else {
+			q.fixed = videoCostCents(model, 1) * nanoPerCent
+		}
 	case path == "/v1/audio/speech":
 		var r struct {
 			Input string `json:"input"`

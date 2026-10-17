@@ -463,6 +463,27 @@ Request flow for a completion:
    `SubType` on every boot from the `initLLMProviders` table — so fixing a stale
    key or upstream URL = edit the seed table and restart (no manual DB edit).
 
+**Vendor video (`video_spec.go`, `video_vendor.go`).** The resale family lists
+OpenRouter's video models too (`lists: /v1/models, /v1/videos/models`, one catalog; a
+second list that answers 404 lists nothing): each entry with price SKUs and durations
+is a clip SKU (`zenModel.Video`, `outputs: ["video"]`, Variable, both paid floors, its
+card the SKUs × markup); an editor or upscaler (no durations) is not listed.
+`/v1/models` carries its `video` object (durations, resolutions, aspect ratios, sizes,
+frame images, audio). `POST /v1/videos/generations` for one is admitted against that
+object (400 names what it takes), reserved at its ceiling (the dearest SKU rate that
+applies to the resolution, audio and images asked, × seconds, × markup: `clipQuoteNano`,
+which the paid lane's quote reads too), and posted to OpenRouter's `POST /v1/videos` on
+the first account not cooling. The job is a row (`object.MediaJob`) and a watcher
+(`clipJob.watch`, every `clipPoll`): done, it copies the file into the host's object
+store (`object.Assets`, Hanzo S3 from cloud), reads duration and frame size from the
+MP4 (`mp4.go`), and bills once what the vendor stated (`usage.cost` × markup; the quote
+when none is stated), on the create's context; failed, it releases the hold and bills
+nothing. `GET /v1/videos/{id}` answers the row (`Accept: text/event-stream` streams each
+change), `/content` 302s to a fresh signed URL, both held to the payer's subject.
+`ResumeVideos` (bootstrap) watches every unsettled row a process before left, billing
+it to the payer's cash. A listed media model with no token price (Lyria) is `perCall`:
+Variable, priced, never free.
+
 **Async video (`/v1/videos`) — Sora-style, NOT sync.** Text-to-video generation
 takes minutes, so `/v1/videos/generations` is ASYNC (the sync handler used to
 hold the request ~104s → console `/ai` proxy timed out → browser 502 while the

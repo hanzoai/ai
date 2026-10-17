@@ -616,7 +616,8 @@ func recordUnpriced(record *usageRecord) bool {
 // since what that resolves to is not yet decided.
 func costsNothing(model, orgId string) bool {
 	p, ok := getModelPriceForOrgOK(model, orgId)
-	return ok && p.InputPerMillion <= 0 && p.OutputPerMillion <= 0
+	// A variable SKU bills what each call costs, whatever its rates read.
+	return ok && !p.Variable && p.InputPerMillion <= 0 && p.OutputPerMillion <= 0
 }
 
 // ModelCostsNothing is costsNothing for the router's balance filter, which runs
