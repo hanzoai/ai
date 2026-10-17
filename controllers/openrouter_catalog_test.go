@@ -42,6 +42,11 @@ func withFamily(t *testing.T, f *modelFamily, body string) *int32 {
 			http.NotFound(w, r)
 			return
 		}
+		// A list by output modality (the speech models) holds none of this vendor's.
+		if r.URL.RawQuery != "" {
+			fmt.Fprint(w, `{"data":[]}`)
+			return
+		}
 		atomic.AddInt32(&hits, 1)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, body)

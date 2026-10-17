@@ -484,6 +484,17 @@ change), `/content` 302s to a fresh signed URL, both held to the payer's subject
 it to the payer's cash. A listed media model with no token price (Lyria) is `perCall`:
 Variable, priced, never free.
 
+**Vendor voice (`voice_vendor.go`, `audio_api.go` `vendorVoice`).** The same family
+reads OpenRouter's speech list (`/v1/models?output_modalities=speech`): each
+speech-only entry is a voice SKU (`zenModel.Voice`: its voices, its per-character and
+per-output rates; Variable and both paid floors unless the vendor serves it free).
+`POST /v1/audio/speech` for one takes the speech admission, reserves the most its text
+can cost (`voiceCeiling`: every character, and the longest the speech can run at its
+output rate), posts OpenRouter's `/v1/audio/speech` on the first account not cooling
+(`orSend`, which `clipCall` uses too), answers the audio, and bills
+`GET /v1/generation`'s `total_cost` × markup, else the listed per-character rate, else
+the reservation.
+
 **Async video (`/v1/videos`) — Sora-style, NOT sync.** Text-to-video generation
 takes minutes, so `/v1/videos/generations` is ASYNC (the sync handler used to
 hold the request ~104s → console `/ai` proxy timed out → browser 502 while the

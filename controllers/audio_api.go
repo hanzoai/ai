@@ -15,16 +15,20 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/stt"
 	"github.com/hanzoai/ai/tts"
+	"github.com/hanzoai/decimal"
 )
 
 // MaxTranscribeUpload bounds the audio one transcription request may carry. It
@@ -163,6 +167,22 @@ func (c *ApiController) AudioSpeech() {
 	}
 	if paying(c.Context(), provider) {
 		c.ResponseAuthError(laneOff(c.Context(), req.Model))
+		return
+	}
+	// A speech model the resale family lists: its vendor speaks it, billed at what
+	// the call cost (voice_vendor.go).
+	if m, ok := voiceFor(req.Model); ok && provider.Type == openrouterFam.typ {
+		if authUser == nil {
+			c.ResponseAuthError(billingError("Speech requires an authenticated Hanzo Cloud account."))
+			return
+		}
+		release, refused := admitSpeech(c.billingOrg(authUser))
+		if refused != nil {
+			c.ResponseErrorWithStatus(statusOf(refused), refused.Error())
+			return
+		}
+		defer release()
+		c.vendorVoice(m, req, authUser, time.Now().UTC())
 		return
 	}
 	// Zen family: /v1/audio/speech is the OpenAI-compat alias of zen's voice verb.
@@ -517,4 +537,83 @@ func (c *ApiController) recordAudioUsage(authUser *iam.User, provider *object.Pr
 	rec.bind(c.Context(), authUser)
 	recordUsage(rec)
 	recordTrace(c.Context(), rec, startTime)
+}
+
+// vendorVoice serves a speech request for the speech SKU m (voice_vendor.go), on
+// the admission its caller took.
+func (c *ApiController) vendorVoice(m zenModel, r audioSpeechRequest, authUser *iam.User, start time.Time) {
+	free := !m.priced()
+	chars := utf8.RuneCountInString(r.Input)
+	quote := nanoUp(m.Voice.voiceCeiling(chars).Mul(m.Margin))
+	ledger := c.billingOrg(authUser)
+	hold, ok := reserveFor(c.Context(), authUser.PayerSubject(ledger), centsUp(quote))
+	if !ok {
+		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "speech cost").Message))
+		return
+	}
+	defer hold.settle(0)
+	format := r.ResponseFormat
+	if format == "" {
+		format = "mp3"
+	}
+	body := map[string]any{"model": m.ID, "input": r.Input, "response_format": format}
+	if r.Voice != "" {
+		body["voice"] = r.Voice
+	}
+	if r.Speed > 0 {
+		body["speed"] = r.Speed
+	}
+	if !free {
+		body["provider"] = map[string]any{"data_collection": collectionDeny}
+	}
+	b, _ := json.Marshal(body)
+	ctx, cancel := context.WithTimeout(c.Context(), 120*time.Second)
+	defer cancel()
+	resp, account, err := orSend(ctx, http.MethodPost, "/v1/audio/speech", b, "")
+	if err != nil {
+		c.ResponseFailure(&apiError{status: http.StatusServiceUnavailable, code: codeExhausted, msg: fmt.Sprintf("model %q is temporarily unavailable; try again shortly", m.ID)})
+		return
+	}
+	defer resp.Body.Close()
+	audio, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity {
+			c.ResponseErrorWithStatus(http.StatusBadRequest, fmt.Sprintf("model %q refused the request: %s", m.ID, upstreamErrorMessage(audio)))
+			return
+		}
+		c.ResponseFailure(&apiError{status: http.StatusServiceUnavailable, code: codeExhausted, msg: fmt.Sprintf("model %q is temporarily unavailable; try again shortly", m.ID)})
+		return
+	}
+	// What it cost, as the vendor states it once the generation is filed: asked
+	// for a few seconds, else the listed rate for what was spoken.
+	var stated *int64
+	if gen := resp.Header.Get("X-Generation-Id"); gen != "" && !free {
+		stated = generationCost(ctx, gen, account)
+	}
+	billed := int64(0)
+	if !free {
+		switch {
+		case stated != nil:
+			billed = m.bill(stated, tokens{})
+		case m.Voice.perOut.Sign() == 0:
+			billed = nanoUp(m.Voice.perChar.Mul(decimal.New(int64(chars), 0)).Mul(m.Margin))
+		default:
+			billed = quote
+		}
+	}
+	hold.settleNano(billed)
+	rec := &usageRecord{
+		Owner: ledger, Organization: authUser.Owner, Model: m.ID, Provider: openrouterFam.name, Origin: "openrouter.ai",
+		Currency: "USD", Premium: !free, Status: "success", AudioChars: chars, ClientIP: c.Fiber().IP(),
+		RequestID: uuid.NewString(), BilledNanoExact: &billed, CostNanoExact: costed(stated, openrouterFam.name), Free: free,
+	}
+	rec.bind(c.Context(), authUser)
+	recordUsage(rec)
+	recordTrace(c.Context(), rec, start)
+	kind := resp.Header.Get("Content-Type")
+	if kind == "" {
+		kind = "audio/mpeg"
+	}
+	contentType, filename := audioResponseLabel(kind, format)
+	c.ResponseAudio(audio, contentType, filename)
 }

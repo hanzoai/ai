@@ -43,6 +43,11 @@ func listingVendor(t *testing.T, body string) (*vendor, *[]object.ListingEvent) 
 			http.NotFound(w, r)
 			return
 		}
+		// A list by output modality (the speech models) holds none of this vendor's.
+		if r.URL.RawQuery != "" {
+			_, _ = io.WriteString(w, `{"data":[]}`)
+			return
+		}
 		v.hits.Add(1)
 		v.mu.Lock()
 		defer v.mu.Unlock()

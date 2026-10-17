@@ -35,7 +35,6 @@ package controllers
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -269,68 +268,18 @@ func (c *ApiController) clipRefused(model string, status int, said []byte, err e
 	}
 }
 
-// clipCall is one request to the resale vendor's video API on our accounts: the
-// account named, or, for a new job, each account in turn until one is not
-// refused for want of credit or as a credential. It answers the status, the body
-// and the name of the account that answered.
+// clipCall is one request to the resale vendor's video API on our accounts
+// (orSend): the account named, or for a new job the first that is not refused for
+// want of credit or as a credential. It answers the status, the body and the name
+// of the account that answered.
 func clipCall(ctx context.Context, method, path string, body []byte, account string) (int, []byte, string, error) {
-	p := openrouterFam.provider()
-	if p == nil {
-		return 0, nil, "", errors.New("the video vendor is not configured")
+	resp, name, err := orSend(ctx, method, path, body, account)
+	if err != nil {
+		return 0, nil, "", err
 	}
-	type key struct{ name, value string }
-	var keys []key
-	if account != "" {
-		keys = []key{{account, object.ResolveKey(account)}}
-	} else {
-		values := openrouterFam.keys()
-		for _, v := range order(values, false) {
-			if !cooling(v, false) {
-				keys = append(keys, key{object.AccountOf(openrouterFam.keyNames, v), v})
-			}
-		}
-		if len(values) == 0 && strings.TrimSpace(p.ClientSecret) != "" {
-			keys = []key{{p.Name, p.ClientSecret}}
-		}
-	}
-	if len(keys) == 0 {
-		return 0, nil, "", errors.New("no account with the video vendor can pay")
-	}
-	base := strings.TrimRight(strings.TrimSpace(p.ProviderUrl), "/")
-	var lastStatus int
-	var last []byte
-	for _, k := range keys {
-		req, err := http.NewRequestWithContext(ctx, method, base+path, bytes.NewReader(body))
-		if err != nil {
-			return 0, nil, "", err
-		}
-		if body != nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
-		pk := *p
-		pk.ClientSecret = k.value
-		upstream.Authorize(req, &pk)
-		resp, err := zenPipeClient.Do(req)
-		if err != nil {
-			return 0, nil, "", err
-		}
-		said, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
-		switch resp.StatusCode {
-		case http.StatusPaymentRequired:
-			cool(k.value, scopePriced)
-			emptied(openrouterFam.name, k.name, "", resp.StatusCode)
-		case http.StatusUnauthorized:
-			cool(k.value, scopeAll)
-		default:
-			return resp.StatusCode, said, k.name, nil
-		}
-		lastStatus, last = resp.StatusCode, said
-		if account != "" {
-			break
-		}
-	}
-	return lastStatus, last, "", nil
+	defer resp.Body.Close()
+	said, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return resp.StatusCode, said, name, nil
 }
 
 // vendorJob is the vendor's word on a job (GET /v1/videos/{id}).

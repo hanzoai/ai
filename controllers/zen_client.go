@@ -705,6 +705,9 @@ type zenModel struct {
 	// Video is what a video SKU takes and what a clip of it costs (video_spec.go);
 	// nil for every other SKU.
 	Video *videoSpec
+	// Voice is what a speech SKU takes and costs (voice_vendor.go); nil for every
+	// other SKU.
+	Voice *voiceSpec
 }
 
 // rateCard is a resold SKU's price list as billed: every rate its vendor states, in
@@ -772,7 +775,9 @@ func (m zenModel) gated() bool { return m.Access == "waitlist" }
 // priced reports whether the family charges for this SKU on either side. It is the
 // one reading of "costs money" the listing takes, so premium and free are answers to
 // the same question rather than two opinions of it.
-func (m zenModel) priced() bool { return !m.Base.In.IsZero() || !m.Base.Out.IsZero() || m.Video != nil }
+func (m zenModel) priced() bool {
+	return !m.Base.In.IsZero() || !m.Base.Out.IsZero() || m.Video != nil || (m.Voice != nil && m.Variable)
+}
 
 // minTier is the SKU's advertised minimum subscription tier on the enso ladder,
 // normalized: "" ⇒ "free" (every tier may use it). One of "free" | "trial" | "paid".
@@ -1390,7 +1395,7 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			Name: z.Name, Description: z.Description, ContextWindow: window, MaxOutputTokens: z.MaxOut, Expires: z.Expires,
 			Inputs: z.Inputs, Outputs: z.Outputs,
 			SupportsVision: z.Vision, SupportsTools: z.Tools, SupportsReasoning: z.Reasoning,
-			Video: z.Video,
+			Video: z.Video, Voice: z.Voice,
 		}
 		// A gated SKU is LISTED but access-controlled; advertise the default standing
 		// ("waitlist"). ListModels upgrades this to the caller's real status when authed.

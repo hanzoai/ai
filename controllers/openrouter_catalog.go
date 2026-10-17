@@ -75,7 +75,7 @@ var openrouterFam = &modelFamily{
 	spare:       openrouterSpare,
 	aliases:     openrouterAliases,
 	makers:      []*native{anthropicNative, openaiNative},
-	lists:       []string{"/v1/models", "/v1/videos/models"},
+	lists:       []string{"/v1/models", "/v1/videos/models", "/v1/models?output_modalities=speech"},
 }
 
 // The catalog is read from the store the sync keeps (listing.go); assigned here
@@ -164,6 +164,8 @@ type openrouterWireModel struct {
 	// SupportedParameters are the request fields the SKU honours ("tools",
 	// "reasoning", …): what it can be asked to do.
 	SupportedParameters []string `json:"supported_parameters"`
+	// SupportedVoices are the voices a speech model speaks in.
+	SupportedVoices []string `json:"supported_voices"`
 	// videoWire is what an entry of GET /v1/videos/models states about a clip:
 	// durations, resolutions, frame images, audio and its price SKUs (video_spec.go).
 	videoWire
@@ -345,6 +347,9 @@ func (w openrouterWireModel) vision() bool {
 func (w openrouterWireModel) model(margin decimal.Decimal) zenModel {
 	if spec, ok := w.spec(); ok {
 		return w.clip(spec, margin)
+	}
+	if w.speaksOnly() {
+		return w.speech(margin)
 	}
 	costIn := w.Pricing.Prompt.Mul(openrouterTokensPerMillion)
 	costOut := w.Pricing.Completion.Mul(openrouterTokensPerMillion)
@@ -547,7 +552,7 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 			continue // a video model that makes no clip from a prompt: an editor, an upscaler
 		}
 		m := w.model(margin)
-		if !m.variable() {
+		if !m.variable() && m.Voice == nil {
 			for _, t := range m.Tiers {
 				ceiling.In = maxDecimal(ceiling.In, t.In)
 				ceiling.Out = maxDecimal(ceiling.Out, t.Out)
@@ -560,7 +565,7 @@ func openrouterCatalog(body []byte) ([]zenModel, error) {
 	// nothing else in it is priced — is left out rather than listed free.
 	out := models[:0]
 	for _, m := range models {
-		if m.variable() && m.Video == nil {
+		if m.variable() && m.Video == nil && m.Voice == nil {
 			if ceiling.In.IsZero() && ceiling.Out.IsZero() {
 				continue
 			}

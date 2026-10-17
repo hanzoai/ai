@@ -161,6 +161,9 @@ func quoteOf(c *zip.Ctx, org, model string) quote {
 		}
 		_ = json.Unmarshal(body, &r)
 		q.fixed = ttsCostNano(model, len(r.Input))
+		if n, ok := voiceQuoteNano(model, body); ok {
+			q.fixed = n
+		}
 	case path == "/v1/audio/transcriptions", path == "/v1/audio/translations", strings.HasPrefix(path, transcriptPath):
 		q.fixed = sttCostNano(model, float64(len(body))/audioBytesPerSecond)
 	default:
