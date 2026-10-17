@@ -21,18 +21,23 @@ package controllers
 // in what order, on which key pool, and whether the paid lane is open. Two
 // families are edited here:
 //
-//	zen   served by the zen service at ZEN_URL, through the same admin routes as
-//	      enso; or, where a host links zen into this process, by that zen (Zen),
-//	      with each edit passed on to the service at ZEN_URL.
-//	enso  served by the enso service at ENSO_URL, whose admin routes take the
-//	      ZEN_ADMIN_TOKEN key.
+//	zen   served by the Go zen service at ZEN_URL, through its admin routes under
+//	      /v1/admin/zen; or, where a host links zen into this process, by that zen
+//	      (Zen), with each edit passed on to the service at ZEN_URL.
+//	enso  served by the engine at ENSO_URL (hanzo-inc/engine), through its admin
+//	      routes under /v1/admin.
 //
-// An edit is proposed (validated nowhere yet, answered with its diff), then applied
-// against the version it was made from: the family takes it or refuses it with the
-// reason, and a version row records the catalog, who applied it, when, and the diff.
+// Both admin surfaces take the ZEN_ADMIN_TOKEN key.
+//
+// An edit is proposed (answered with its diff, and with the reason the family's price
+// guard would refuse it, if it would), then applied against the version it was made
+// from: a catalog the guard would refuse is not sent, the family takes the rest or
+// refuses it with the reason, and a version row records the catalog, who applied it,
+// when, the diff, and the deployment its run of versions was made over (Boot).
 // Rolling back applies an older version's catalog as a new version. Every minute the
 // newest version is compared with what each family serves and applied again where
-// they differ, so a restarted family serves its edited catalog within a minute.
+// the family restarted onto the deployment the version was made over; a family that
+// serves another (a new release of its file) is left standing, and its read says so.
 //
 // Everything here is SuperAdmin only (zapMiscSuperAdmin): the catalogs name the
 // upstreams behind every SKU, which no other caller is shown.
@@ -43,8 +48,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -83,14 +90,14 @@ func routingHost(family string) (*RoutingHost, error) {
 			if base == "" {
 				return nil, fmt.Errorf("zen is not configured")
 			}
-			return remoteRouting(base), nil
+			return remoteRouting(base, zenAdmin), nil
 		}
 		// The zen service at ZEN_URL serves the same family outside this process
 		// and takes every edit after this one.
 		if base == "" {
 			return Zen, nil
 		}
-		standalone := remoteRouting(base)
+		standalone := remoteRouting(base, zenAdmin)
 		return &RoutingHost{
 			Snapshot: Zen.Snapshot,
 			Stats:    Zen.Stats,
@@ -109,14 +116,21 @@ func routingHost(family string) (*RoutingHost, error) {
 		if base == "" {
 			return nil, fmt.Errorf("enso is not configured")
 		}
-		return remoteRouting(base), nil
+		return remoteRouting(base, engineAdmin), nil
 	}
 	return nil, fmt.Errorf("unknown family %q (want zen or enso)", family)
 }
 
-// remoteRouting is a family served by a zen binary at base, through its admin
-// routes and the ZEN_ADMIN_TOKEN key.
-func remoteRouting(base string) *RoutingHost {
+// The admin routes each kind of family service answers under: the Go zen's, and the
+// engine's (hanzo-inc/engine root.rs: /v1/admin/catalog, /keys, /free).
+const (
+	zenAdmin    = "/v1/admin/zen"
+	engineAdmin = "/v1/admin"
+)
+
+// remoteRouting is a family served at base, through its admin routes under prefix
+// and the ZEN_ADMIN_TOKEN key.
+func remoteRouting(base, prefix string) *RoutingHost {
 	call := func(ctx context.Context, method, path string, body []byte) ([]byte, error) {
 		token := strings.TrimSpace(object.ResolveKey("ZEN_ADMIN_TOKEN"))
 		if token == "" {
@@ -146,24 +160,82 @@ func remoteRouting(base string) *RoutingHost {
 	}
 	return &RoutingHost{
 		Snapshot: func(ctx context.Context) ([]byte, error) {
-			return call(ctx, http.MethodGet, "/v1/admin/zen/catalog", nil)
+			return call(ctx, http.MethodGet, prefix+"/catalog", nil)
 		},
 		Apply: func(ctx context.Context, catalog []byte) error {
-			_, err := call(ctx, http.MethodPut, "/v1/admin/zen/catalog", catalog)
+			_, err := call(ctx, http.MethodPut, prefix+"/catalog", catalog)
 			return err
 		},
 		Stats: func(ctx context.Context) ([]byte, error) {
-			keys, err := call(ctx, http.MethodGet, "/v1/admin/zen/keys", nil)
+			keys, err := call(ctx, http.MethodGet, prefix+"/keys", nil)
 			if err != nil {
 				return nil, err
 			}
-			free, _ := call(ctx, http.MethodGet, "/v1/admin/zen/free", nil)
+			free, _ := call(ctx, http.MethodGet, prefix+"/free", nil)
 			if len(free) == 0 {
 				free = []byte("null")
 			}
 			return json.Marshal(map[string]json.RawMessage{"keys": keys, "free": free})
 		},
 	}
+}
+
+// derived are the fields a family's admin view computes rather than holds
+// (hanzo-inc/engine admin.rs): whether a key resolves, the margin in effect, the
+// tier floor and funding a model's providers imply, and each rung's retail and
+// profit. They move with a key or an engine release, never with the deployment.
+var derived = struct{ provider, model, rung []string }{
+	provider: []string{"keyPresent"},
+	model:    []string{"effectiveMargin", "minTier", "funding"},
+	rung:     []string{"retail", "profit"},
+}
+
+// deployment is the digest of what a family serves less every derived field: the
+// catalog its deployment and the edits made to it say, which a restart onto the
+// same file reproduces whatever key resolved or engine reads it.
+func deployment(catalog string) string {
+	return object.CatalogSum(bare(catalog))
+}
+
+// bare is a catalog less every derived field: what an edit says and a family takes
+// back whatever it derives, so an engine that drops or renames a derived field
+// still takes a version stored before it did. A catalog that is not JSON is itself.
+func bare(catalog string) string {
+	var c map[string]any
+	d := json.NewDecoder(strings.NewReader(catalog))
+	d.UseNumber()
+	if err := d.Decode(&c); err != nil {
+		return catalog
+	}
+	drop := func(m any, keys []string) {
+		if o, ok := m.(map[string]any); ok {
+			for _, k := range keys {
+				delete(o, k)
+			}
+		}
+	}
+	if ps, ok := c["providers"].(map[string]any); ok {
+		for _, p := range ps {
+			drop(p, derived.provider)
+		}
+	}
+	if ms, ok := c["models"].(map[string]any); ok {
+		for _, m := range ms {
+			drop(m, derived.model)
+			if o, ok := m.(map[string]any); ok {
+				if rs, ok := o["route"].([]any); ok {
+					for _, r := range rs {
+						drop(r, derived.rung)
+					}
+				}
+			}
+		}
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return catalog
+	}
+	return string(b)
 }
 
 // canonical re-encodes a catalog with sorted keys, so two catalogs that say the
@@ -247,15 +319,19 @@ func lineDiff(a, b string) string {
 	return out.String()
 }
 
-// routingView is what GET /v1/ai/router/catalog answers for one family.
-type routingView struct {
+// RoutingView is what GET /v1/ai/router/catalog answers for one family.
+type RoutingView struct {
 	Family   string                   `json:"family"`
 	Catalog  json.RawMessage          `json:"catalog"`         // what the family serves now
 	Stats    json.RawMessage          `json:"stats,omitempty"` // key balances and free-lane health
 	Version  *object.RoutingVersion   `json:"version"`         // the newest applied version, nil before the first edit
 	Versions []*object.RoutingVersion `json:"versions"`        // history, newest first (catalogs left out)
 	Drift    bool                     `json:"drift"`           // the family serves something other than its newest version
-	Error    string                   `json:"error,omitempty"`
+	// Redeployed is drift on a deployment the newest version was not made over (a
+	// new release of the family's file): convergence leaves it standing, so the
+	// newest version serves again only when it is applied again.
+	Redeployed bool   `json:"redeployed"`
+	Error      string `json:"error,omitempty"`
 }
 
 // The typed HTTP bindings of /v1/ai/router/catalog: one handler per operation, so
@@ -282,11 +358,15 @@ func (c *ApiController) RouterCatalogRollback() { c.RouterConfigBridge() }
 // which upstream wrote it and how long it took. SuperAdmin only.
 func (c *ApiController) RouterCatalogTest() { c.RouterConfigBridge() }
 
-// routingProposal is what a proposal answers.
-type routingProposal struct {
+// RoutingProposal is what a proposal answers.
+type RoutingProposal struct {
 	Family string `json:"family"`
 	Base   int64  `json:"base"`
 	Diff   string `json:"diff"`
+	// Refused is why the family's price guard would refuse a model the catalog
+	// serves (the arm over its price, and in which classes), "" when every priced
+	// model fits. An apply refuses such a catalog with the same reason.
+	Refused string `json:"refused,omitempty"`
 }
 
 // routingProbe is what a test turn answers.
@@ -333,9 +413,9 @@ func zapRoutingHandler(ctx context.Context, method, path, query, auth string, bo
 		if f := routingFamily(query, nil); f != "" {
 			families = []string{f}
 		}
-		out := make([]routingView, 0, len(families))
+		out := make([]RoutingView, 0, len(families))
 		for _, f := range families {
-			out = append(out, routingRead(ctx, f))
+			out = append(out, RoutingRead(ctx, f))
 		}
 		return zapOk(out)
 	case sub == "propose" && method == http.MethodPost:
@@ -343,17 +423,17 @@ func zapRoutingHandler(ctx context.Context, method, path, query, auth string, bo
 		if err := json.Unmarshal(body, &e); err != nil {
 			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
-		diff, base, err := routingPropose(ctx, e)
+		p, err := RoutingPropose(ctx, e.Family, e.Catalog)
 		if err != nil {
 			return zapError(http.StatusBadRequest, err.Error())
 		}
-		return zapOk(routingProposal{Family: e.Family, Base: base, Diff: diff})
+		return zapOk(p)
 	case sub == "" && method == http.MethodPut:
 		var e routingEdit
 		if err := json.Unmarshal(body, &e); err != nil {
 			return zapError(http.StatusBadRequest, "invalid request: "+err.Error())
 		}
-		v, status, err := routingApply(ctx, e.Family, e.Catalog, e.Base, actor, e.Note)
+		v, status, err := RoutingApply(ctx, e.Family, e.Catalog, e.Base, actor, e.Note)
 		if err != nil {
 			return zapError(status, err.Error())
 		}
@@ -371,7 +451,7 @@ func zapRoutingHandler(ctx context.Context, method, path, query, auth string, bo
 		if note == "" {
 			note = "rollback to version " + strconv.FormatInt(old.Id, 10)
 		}
-		v, status, err := routingApply(ctx, e.Family, json.RawMessage(old.Catalog), e.Base, actor, note)
+		v, status, err := RoutingApply(ctx, e.Family, json.RawMessage(old.Catalog), e.Base, actor, note)
 		if err != nil {
 			return zapError(status, err.Error())
 		}
@@ -390,8 +470,11 @@ func zapRoutingHandler(ctx context.Context, method, path, query, auth string, bo
 	return zapError(http.StatusMethodNotAllowed, "method not allowed: "+method+" "+path)
 }
 
-func routingRead(ctx context.Context, family string) routingView {
-	v := routingView{Family: family, Versions: []*object.RoutingVersion{}}
+// RoutingRead is one family's routing as GET /v1/ai/router/catalog answers it: what
+// it serves, its standing, its versions, and whether it serves its newest version.
+// A family that cannot be read says why in Error.
+func RoutingRead(ctx context.Context, family string) RoutingView {
+	v := RoutingView{Family: family, Versions: []*object.RoutingVersion{}}
 	h, err := routingHost(family)
 	if err != nil {
 		v.Error = err.Error()
@@ -421,43 +504,76 @@ func routingRead(ctx context.Context, family string) routingView {
 	if v.Version != nil && len(v.Catalog) > 0 {
 		if live, err := canonicalJSON(v.Catalog); err == nil {
 			v.Drift = object.CatalogSum(live) != v.Version.Sum
+			v.Redeployed = v.Drift && deployment(live) != v.Version.Boot
 		}
 	}
 	return v
 }
 
-// routingPropose answers the diff an edit would apply against what the family
-// serves now, and the version it would be made from.
-func routingPropose(ctx context.Context, e routingEdit) (string, int64, error) {
-	h, err := routingHost(e.Family)
+// RoutingPropose answers the diff catalog would apply to family against what it
+// serves now, the version it would be made from, and why the family's price guard
+// would refuse it, if it would. Nothing is applied.
+func RoutingPropose(ctx context.Context, family string, catalog json.RawMessage) (RoutingProposal, error) {
+	p := RoutingProposal{Family: family}
+	h, err := routingHost(family)
 	if err != nil {
-		return "", 0, err
+		return p, err
 	}
-	next, err := canonicalJSON(e.Catalog)
+	next, err := canonicalJSON(catalog)
 	if err != nil {
-		return "", 0, err
+		return p, err
 	}
 	snap, err := h.Snapshot(ctx)
 	if err != nil {
-		return "", 0, err
+		return p, err
 	}
 	live, err := canonicalJSON(snap)
 	if err != nil {
-		return "", 0, err
+		return p, err
 	}
-	var base int64
-	if latest, _ := object.LatestRoutingVersion(e.Family); latest != nil {
-		base = latest.Id
+	if latest, _ := object.LatestRoutingVersion(family); latest != nil {
+		p.Base = latest.Id
 	}
-	return lineDiff(live, next), base, nil
+	if p.Refused, err = guardRefuses(family, []byte(next)); err != nil {
+		return p, err
+	}
+	p.Diff = lineDiff(live, next)
+	return p, nil
+}
+
+// guardRefuses is why family's price guard would refuse a model catalog serves: the
+// first priced model whose route costs more than it bills, the arm and the classes
+// (misfit). "" when every priced model the catalog serves fits, and for a family
+// priced any other way. It names upstreams, so it is for a SuperAdmin.
+func guardRefuses(family string, catalog []byte) (string, error) {
+	f := familyNamed(family)
+	if f == nil || f.prices == nil {
+		return "", nil
+	}
+	rs, err := rungsOf(catalog)
+	if err != nil {
+		return "", fmt.Errorf("catalog: %w", err)
+	}
+	for _, id := range slices.Sorted(maps.Keys(f.prices)) {
+		route, served := rs[id]
+		if !served {
+			continue
+		}
+		c := f.prices[id].price()
+		m := zenModel{ID: id, Base: zenTier{In: c.in, Out: c.out, CacheRead: c.read, CacheWrite: c.write}}
+		if why := misfit(m, route); why != "" {
+			return why, nil
+		}
+	}
+	return "", nil
 }
 
 // routingMu serializes applies, so the base check and the write are one step.
 var routingMu sync.Mutex
 
-// routingApply applies catalog to family and records it, refusing an edit made from
-// any version but the newest.
-func routingApply(ctx context.Context, family string, catalog json.RawMessage, base int64, actor, note string) (*object.RoutingVersion, int, error) {
+// RoutingApply applies catalog to family and records it, refusing an edit made from
+// any version but the newest and a catalog the family's price guard would refuse.
+func RoutingApply(ctx context.Context, family string, catalog json.RawMessage, base int64, actor, note string) (*object.RoutingVersion, int, error) {
 	routingMu.Lock()
 	defer routingMu.Unlock()
 	h, err := routingHost(family)
@@ -469,17 +585,38 @@ func routingApply(ctx context.Context, family string, catalog json.RawMessage, b
 		return nil, http.StatusBadRequest, err
 	}
 	var latestID int64
-	if latest, _ := object.LatestRoutingVersion(family); latest != nil {
+	latest, _ := object.LatestRoutingVersion(family)
+	if latest != nil {
 		latestID = latest.Id
 	}
 	if base != latestID {
 		return nil, http.StatusConflict, fmt.Errorf("%s changed since this edit was made (version %d is newest, the edit was made from %d); reload and edit again", family, latestID, base)
+	}
+	if why, err := guardRefuses(family, []byte(next)); err != nil {
+		return nil, http.StatusBadRequest, err
+	} else if why != "" {
+		return nil, http.StatusBadRequest, fmt.Errorf("%s would not be served: %s", family, why)
 	}
 	snap, err := h.Snapshot(ctx)
 	if err != nil {
 		return nil, http.StatusBadGateway, err
 	}
 	live, _ := canonicalJSON(snap)
+	// The run this version joins: the newest's, when the family serves the newest;
+	// else what the family serves now, a deployment of its own.
+	boot := deployment(live)
+	if latest != nil && latest.Boot != "" {
+		switch {
+		case object.CatalogSum(live) == latest.Sum:
+			boot = latest.Boot
+		case boot == latest.Boot && unconverged[family] != boot:
+			// Restarted onto the deployment the newest version was made over, and
+			// not yet served it again: an edit made from what serves now would drop
+			// the newest version's own edits. Once convergence has failed to serve
+			// it on this deployment, an edit is the way forward and is let through.
+			return nil, http.StatusConflict, fmt.Errorf("%s restarted and serves its deployment, not version %d yet; it is applied again within a minute: reload and edit again", family, latestID)
+		}
+	}
 	if err := h.Apply(ctx, []byte(next)); err != nil {
 		// The family refused it: the catalog breaks its law (a price, a provider, a
 		// fallback). Nothing was applied and nothing is recorded.
@@ -494,7 +631,7 @@ func routingApply(ctx context.Context, family string, catalog json.RawMessage, b
 		}
 	}
 	v, err := object.AddRoutingVersion(&object.RoutingVersion{
-		Family: family, Catalog: applied, Base: base, Actor: actor, Note: note, Diff: lineDiff(live, applied),
+		Family: family, Catalog: applied, Base: base, Actor: actor, Note: note, Diff: lineDiff(live, applied), Boot: boot,
 	})
 	if err != nil {
 		return nil, http.StatusInternalServerError, fmt.Errorf("%s applied the catalog, and its version was not recorded: %v", family, err)
@@ -557,7 +694,7 @@ func routingTest(ctx context.Context, family, model string) (*routingProbe, erro
 const routingEvery = time.Minute
 
 // StartRoutingConvergence applies each family's newest version wherever the family
-// serves something else — after a restart, or an edit made around this surface.
+// restarted onto the deployment that version was made over.
 func StartRoutingConvergence() {
 	routingOnce.Do(func() {
 		go func() {
@@ -573,7 +710,37 @@ func StartRoutingConvergence() {
 
 var routingOnce sync.Once
 
+// unconverged is, per family, the deployment convergence last failed to serve its
+// newest version on; held under routingMu.
+var unconverged = map[string]string{}
+
+// stood is the catalog each family was last left serving over its newest version,
+// so the warning is written once a deployment, not once a minute.
+var (
+	stoodMu sync.Mutex
+	stood   = map[string]string{}
+)
+
+func leftStanding(family string, version int64, sum string) {
+	stoodMu.Lock()
+	defer stoodMu.Unlock()
+	if stood[family] == sum {
+		return
+	}
+	stood[family] = sum
+	log.Warn("routing: %s serves a deployment version %d was not made over; left standing until it is applied again", family, version)
+}
+
+// converge applies family's newest version when the family serves the deployment
+// that version's run was made over, and nothing else. A family serving another
+// catalog (a new release of its file, or an edit made around this surface) is left
+// standing: overwriting it would undo a deployment nobody here edited, so it serves
+// the newest version again only when that is applied again.
 func converge(ctx context.Context, family string) {
+	// One step with any apply: an edit made between this read and this apply would
+	// otherwise be written over by the version it replaced.
+	routingMu.Lock()
+	defer routingMu.Unlock()
 	latest, err := object.LatestRoutingVersion(family)
 	if err != nil || latest == nil {
 		return
@@ -586,12 +753,23 @@ func converge(ctx context.Context, family string) {
 	if err != nil {
 		return
 	}
-	if live, err := canonicalJSON(snap); err == nil && object.CatalogSum(live) == latest.Sum {
+	live, err := canonicalJSON(snap)
+	if err != nil {
 		return
 	}
-	if err := h.Apply(ctx, []byte(latest.Catalog)); err != nil {
-		log.Warn("routing: %s did not take version %d: %v", family, latest.Id, err)
+	if object.CatalogSum(live) == latest.Sum {
 		return
 	}
+	d := deployment(live)
+	if d != latest.Boot {
+		leftStanding(family, latest.Id, d)
+		return
+	}
+	if err := h.Apply(ctx, []byte(bare(latest.Catalog))); err != nil {
+		unconverged[family] = d
+		log.Warn("routing: %s did not take version %d: %v; an edit made from what it serves is let through", family, latest.Id, err)
+		return
+	}
+	delete(unconverged, family)
 	log.Info("routing: %s serves version %d again", family, latest.Id)
 }

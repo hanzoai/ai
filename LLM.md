@@ -595,7 +595,8 @@ forwards; the service owns which upstream answers. The contract, one address eac
 - `GET /v1/admin/zen/catalog`, `PUT` the same, `GET /v1/admin/zen/keys`, `GET
   /v1/admin/zen/free`, under `Authorization: Bearer <ZEN_ADMIN_TOKEN>`: the catalog a
   SuperAdmin edits at `/v1/ai/router/catalog` (routing.go), for zen whenever no zen is
-  linked into the process.
+  linked into the process. The engine (enso) answers the same under `/v1/admin`
+  (`/v1/admin/catalog`, `/keys`, `/free`), and routing.go asks each family at its own.
 
 What ai does with it: every priced answer settles EXACTLY, in nano-dollars
 (`retailNano`, `unitNano`, rounded up, never floored to a cent): the hold
@@ -1348,11 +1349,37 @@ Enso pricing. Each Enso SKU has one fixed list price, and nothing measured moves
   Cloud's `/v1/pricing/enso` quote and `POST /v1/pricing/sync` read them and go with its
   next pin of this module.
 
-`routing.go` still reads and writes a family's catalog at `/v1/admin/zen/*`, which the
-Go zen serves and the engine (enso since 1.6.1) does not (`/v1/admin/*`). Moving it is
-not a path edit: convergence applies the newest stored version wherever a family serves
-another, so the first read that succeeds would push the last stored enso version over
-the live catalog. The guard reads the engine's path on its own, read-only.
+**The routing catalog** (`routing.go`, `/v1/ai/router/catalog`, SuperAdmin): zen is
+read and written at the Go zen's `/v1/admin/zen/*`, enso at the engine's `/v1/admin/*`
+(until v1.833.351 enso was asked at the zen address and every read answered 404).
+- **An apply the guard would refuse is not sent**: `guardRefuses` holds every priced
+  model the edited catalog serves to `misfit` against `ensoPrices`, the guard's own
+  rule, and an apply answers 400 with the arm and classes; a proposal carries the same
+  sentence as `refused`, so it shows before anyone confirms. Without it an edit that put
+  an arm over its model's price applied cleanly and the model answered 503 within a
+  minute, when the guard re-read the route.
+- **Convergence leaves a new deployment standing.** Each version records `boot`, the
+  `deployment` digest of the catalog its run of versions was made over: the catalog less
+  every field the admin view derives (`keyPresent`; `effectiveMargin`, `minTier`, `funding`;
+  a rung's `retail` and `profit`), so a key that resolves or an engine that derives another
+  figure is no new deployment. A version made while the family served the newest keeps the
+  newest's `boot`, one made over anything else starts a run. `converge` (under `routingMu`,
+  one step with any apply) re-applies the newest version only when the family serves that
+  `boot` (it restarted onto the file the run was made over); a family that restarted onto a
+  new release of its file is left serving it, warned once, and the read says
+  `redeployed: true` beside `drift`. Before, the first stored version would have been pushed
+  over every later release of the family's file, a minute after each restart.
+- **An edit over a restart waits.** An apply made while the family serves the newest
+  version's `boot` but not the version itself (restarted, not yet converged) is refused 409:
+  made from what serves, it would drop the newest version's own edits. Convergence sends the
+  version `bare` (less its derived fields, which a family that dropped or renamed one would
+  refuse), and once it has failed on a deployment (`unconverged`) an edit is let through, so
+  a version the family will no longer take never locks edits out.
+- The engine's admin view carries no `long` price, so neither the guard nor `guardRefuses`
+  sees a rung's long-prompt price; both read the same view, so they agree.
+- `RoutingRead`, `RoutingPropose` and `RoutingApply` are the one implementation, exported
+  for cloud's plane (`ai_routing`, `ai_routing_apply`), which the Enso policy registry
+  (cloud `apps/train` `/v1/train/policies`) promotes through.
 
 ## Enso's router: one tier a request, enso-free when nothing pays (`depth_route.go`, `routers/filter_balance.go`)
 

@@ -78,9 +78,9 @@ func whole(v any) Answer { return Answer{Shape: v} }
 
 var answers = map[string]Answer{
 	// The routing catalog editor (routing.go), in the envelope.
-	"RouterCatalogRead":     data([]routingView{}),
+	"RouterCatalogRead":     data([]RoutingView{}),
 	"RouterCatalogApply":    data(object.RoutingVersion{}),
-	"RouterCatalogPropose":  data(routingProposal{}),
+	"RouterCatalogPropose":  data(RoutingProposal{}),
 	"RouterCatalogRollback": data(object.RoutingVersion{}),
 	"RouterCatalogTest":     data(routingProbe{}),
 	// The OpenAI-compatible surface. These proxy an upstream or rebuild its

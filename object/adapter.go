@@ -217,6 +217,10 @@ func (a *Adapter) createTable() {
 	// one that needs it today: a bool cannot take NULL, so without this every read
 	// of a route written before the column fails outright rather than reading false.
 	backfillNullScalars(a.db, "model_route", &ModelRoute{})
+	// A version written before Boot holds NULL there, which a scan into the string
+	// cannot read; the empty Boot it repairs to is a run no deployment matches, so
+	// convergence leaves whatever serves standing.
+	backfillNullScalars(a.db, "routing_version", &RoutingVersion{})
 	// The message table is the largest here and a whole-model sweep costs a scan per
 	// column, so it is repaired one field at a time. These are the columns added since
 	// message rows existed: a NULL claimed_time would make its row unclaimable — a

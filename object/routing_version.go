@@ -28,14 +28,19 @@ import (
 // made from. The rows of a family, in order, are its history; the newest is what
 // the family serves, and rolling back applies an older row's catalog as a new row.
 type RoutingVersion struct {
-	Id          int64  `db:"pk" json:"id"`
-	Family      string `json:"family"`  // "zen" | "enso"
-	Catalog     string `json:"catalog"` // the family's admin catalog, JSON
-	Sum         string `json:"sum"`     // sha256 of Catalog, hex
-	Base        int64  `json:"base"`    // the version this one was made from; 0 for the first
-	Actor       string `json:"actor"`   // owner/name of the SuperAdmin who applied it
-	Note        string `json:"note"`
-	Diff        string `json:"diff"` // line diff against Base, as shown when it was confirmed
+	Id      int64  `db:"pk" json:"id"`
+	Family  string `json:"family"`  // "zen" | "enso"
+	Catalog string `json:"catalog"` // the family's admin catalog, JSON
+	Sum     string `json:"sum"`     // sha256 of Catalog, hex
+	Base    int64  `json:"base"`    // the version this one was made from; 0 for the first
+	Actor   string `json:"actor"`   // owner/name of the SuperAdmin who applied it
+	Note    string `json:"note"`
+	Diff    string `json:"diff"` // line diff against Base, as shown when it was confirmed
+	// Boot is the sha256 of the catalog the family served when the first of this
+	// run of versions was applied: the deployment the run was made over. A version
+	// made from the newest one keeps its Boot; one applied over anything else (a
+	// new release of the family's file) starts a run of its own.
+	Boot        string `json:"boot"`
 	CreatedTime string `json:"createdTime"`
 }
 
