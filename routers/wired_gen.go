@@ -5,9 +5,6 @@ package routers
 // wired is every hand-written route in this package, with the sentence lifted
 // from the Go doc comment on the handler it names. See cmd/routerdoc.
 var wired = []wire{
-	{"/v1/3d/:id", "GET", "RetrieveThreeD", "Implements GET /v1/3d/:id (Retrieve 3D status).", "Implements GET /v1/3d/:id (Retrieve 3D status)."},
-	{"/v1/3d/:id/content", "GET", "ThreeDContent", "Implements GET /v1/3d/:id/content (Download 3D splat/glb content).", "Implements GET /v1/3d/:id/content (Download 3D splat/glb content)."},
-	{"/v1/3d/generations", "POST", "ThreeDGenerations", "Implements POST /v1/3d/generations (Text/Image to 3D & Gaussian Splats).", "Implements POST /v1/3d/generations (Text/Image to 3D & Gaussian Splats)."},
 	{"/v1/admin/ai/free", "GET", "AdminFree", "Lists every model OpenRouter lists free now, each with what the last 24 hours did with it: the requests answered and failed, the share answered, and which of our accounts served them.", "Lists every model OpenRouter lists free now, each with what the last 24\nhours did with it: the requests answered and failed, the share answered, and which\nof our accounts served them. SuperAdmin only."},
 	{"/v1/admin/ai/model-access", "GET", "AdminListModelAccess", "Lists the gated-model access rows, filtered to one org by ?owner.", "Lists the gated-model access rows, filtered to one org by\n?owner. SuperAdmin only; without ?owner it returns every org's rows."},
 	{"/v1/admin/ai/model-access", "POST", "AdminGrantModelAccess", "Grants — or records a request for — one org or user's access to a gated model.", "Grants — or records a request for — one org or user's access\nto a gated model. SuperAdmin only, at platform scope. The body is {owner, user,\nemail?, model, status?}: an empty user grants the whole org, and status defaults to\n\"granted\"."},

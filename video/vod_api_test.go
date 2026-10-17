@@ -13,12 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !skipCi
-
 package video
 
 import "testing"
 
-func TestGetVideoCoverUrl(t *testing.T) {
-	println(GetVideoCoverUrl(""))
+// A url that could not be read is no url: never the error's text, which a row
+// would store as its address and never ask for again.
+func TestAnUnreadURLIsNoURL(t *testing.T) {
+	prev := VodClient
+	VodClient = nil
+	t.Cleanup(func() { VodClient = prev })
+	if got := GetVideoCoverUrl("v1"); got != "" {
+		t.Errorf("cover url = %q, want none", got)
+	}
+	if got := GetVideoFileUrl("v1"); got != "" {
+		t.Errorf("file url = %q, want none", got)
+	}
 }

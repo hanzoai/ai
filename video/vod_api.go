@@ -126,14 +126,17 @@ func GetVideoCoverUrl(videoId string) string {
 		VideoId: new(videoId),
 	}
 
+	// No url is the answer when none could be read: an error's text is not an
+	// address, and a row that stores one as its url never asks again.
 	if VodClient == nil {
-		return errNoVodClient.Error()
+		slog.Warn("vod: video info not read", "video", videoId, "err", errNoVodClient)
+		return ""
 	}
 
 	resp, err := VodClient.GetVideoInfo(request)
 	if err != nil {
 		slog.Warn("vod: video info not read", "video", videoId, "err", err)
-		return err.Error()
+		return ""
 	}
 	// resp.Body.Video is three dereferences on a response we do not control;
 	// a nil anywhere in that chain is a panic, not a missing cover image.
@@ -150,13 +153,14 @@ func GetVideoFileUrl(videoId string) string {
 	}
 
 	if VodClient == nil {
-		return errNoVodClient.Error()
+		slog.Warn("vod: mezzanine info not read", "video", videoId, "err", errNoVodClient)
+		return ""
 	}
 
 	resp, err := VodClient.GetMezzanineInfo(request)
 	if err != nil {
 		slog.Warn("vod: mezzanine info not read", "video", videoId, "err", err)
-		return err.Error()
+		return ""
 	}
 	if resp == nil || resp.Body == nil || resp.Body.Mezzanine == nil {
 		return ""
