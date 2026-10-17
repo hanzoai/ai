@@ -641,14 +641,28 @@ through wasm2go: guest code stays in the hanzoai/wasm sandbox, which refuses Mem
 wasm2go is ahead-of-time translation: it removes the VM's overhead, not the module's own
 execution cost.
 
-## A model asked of its maker first (`controllers/native.go`, `anthropic_chat.go`)
+## A model asked of its maker first (`controllers/native.go`, `native_chat.go`, `anthropic_chat.go`)
 
 Owner, 2026-10-09/11: "in waterfall we should try all native anthropic api keys, then
-fall to OR, then free models". A resale family may name a `native`: the API of the
-vendor that MAKES some of its SKUs. `openrouterFam.native` is Anthropic's
-(`ANTHROPIC_URL`; unset, the maker is never asked). The SKU, its catalog price and every
-gate are the family's, unchanged. `dispatch` asks the maker first and the family's own
-address only once no key answered:
+fall to OR, then free models". A resale family names `makers`: the APIs of the vendors
+that MAKE some of its SKUs, each asked for the SKUs its prefix names (`maker`).
+`openrouterFam.makers` are Anthropic's (`ANTHROPIC_URL`, `anthropic/`) and OpenAI's
+(`OPENAI_URL`, `openai/`, keys `OPENAI_API_KEY`, `_2`, `_3`, `OPENAI_API_KEYS`); an
+unset address asks that maker nothing. OpenRouter out of credit took every OpenAI SKU and
+Enso's OpenAI rungs down on 2026-10-16; a maker's key is what keeps one empty account
+from doing that again. The SKU, its catalog price and every gate are the family's,
+unchanged. `dispatch` asks the maker first and the family's own address only once no key
+answered:
+
+- **OpenAI speaks the request's own dialect** (`native.chat`): a chat is sent as written
+  under OpenAI's id (dots kept: `gpt-5.4-mini`), its ceiling as `max_completion_tokens`,
+  streamed with `stream_options.include_usage`; the stream comes back as the family's,
+  its cost read from the usage chunk (`chatTap`). 429 `insufficient_quota` and 402 rest
+  the key as an account out of credit; a `messages` body is the reseller's.
+- **An account that cannot pay is said on the host's bus** (`emptied`,
+  `object.PublishDrained`): a maker's key, an OpenRouter key (`sendKeyed`) or a route
+  row, by its NAME, once per ten minutes while it stays so. cloud puts it on the
+  SuperAdmin's feed as a `supply` pulse, which admin.hanzo.ai shows as a critical incident.
 
 - **Paid only, and only the route named.** A maker bills every call, so it is asked only
   by a request seated on the paid lane (`!FreeOnlyFor(ctx)`), for the route the caller

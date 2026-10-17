@@ -75,9 +75,9 @@ func Paths(id, org string) []Path {
 		out = append(out, p)
 	}
 	fam, served := familyServing(id)
-	if zm, ok := familyLookup(id); ok && served && fam.native != nil {
-		if _, makes := fam.native.spelled(zm.ID); makes {
-			add(Path{Provider: fam.native.name, Kind: direct, Keyed: fam.native.serves(zm.ID)})
+	if zm, ok := familyLookup(id); ok && served {
+		if n := fam.maker(zm.ID); n != nil {
+			add(Path{Provider: n.name, Kind: direct, Keyed: n.serves(zm.ID)})
 		}
 	}
 	if r := resolveModelRouteForOrg(id, org); r != nil {

@@ -91,7 +91,7 @@ func (q *quotas) reset() {
 
 func sendQuota(t *testing.T, url string, keys []string, free bool) (int, string) {
 	t.Helper()
-	resp, err := sendKeyed(keyedRequest(t, url), orProvider, keys, free, http.DefaultClient.Do)
+	resp, err := sendKeyed(keyedRequest(t, url), orProvider, nil, keys, free, http.DefaultClient.Do)
 	if err != nil {
 		t.Fatal(err)
 	}

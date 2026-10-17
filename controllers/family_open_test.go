@@ -272,7 +272,7 @@ func TestAKeyWhoseStreamOpensWithItsQuotaSpentHandsOnToTheNextKey(t *testing.T) 
 		"k1": `{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-min. "}}`,
 	}, &asked)
 	send := func() string {
-		resp, err := sendKeyed(keyedRequest(t, s.URL), orProvider, threeKeys, false, func(r *http.Request) (*http.Response, error) {
+		resp, err := sendKeyed(keyedRequest(t, s.URL), orProvider, nil, threeKeys, false, func(r *http.Request) (*http.Response, error) {
 			resp, err := http.DefaultClient.Do(r)
 			if err != nil {
 				return nil, err
@@ -306,7 +306,7 @@ func TestAModelLimitedInsideTheStreamIsAnsweredAsTheRoutes(t *testing.T) {
 	var asked []string
 	busy := `{"error":{"code":429,"message":"Upstream error from Vendor: ResourceExhausted: Worker local total request limit reached (16/16)"}}`
 	s := keyStreams(t, map[string]string{"k1": busy, "k2": busy, "k3": busy}, &asked)
-	resp, err := sendKeyed(keyedRequest(t, s.URL), orProvider, threeKeys, true, func(r *http.Request) (*http.Response, error) {
+	resp, err := sendKeyed(keyedRequest(t, s.URL), orProvider, nil, threeKeys, true, func(r *http.Request) (*http.Response, error) {
 		resp, err := http.DefaultClient.Do(r)
 		if err != nil {
 			return nil, err

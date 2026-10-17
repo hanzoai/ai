@@ -94,7 +94,7 @@ var orProvider = &object.Provider{Owner: "admin", Name: "openrouter", Type: "Ope
 
 func sendOnce(t *testing.T, a *accounts, url string, keys []string, free bool) int {
 	t.Helper()
-	resp, err := sendKeyed(keyedRequest(t, url), orProvider, keys, free, http.DefaultClient.Do)
+	resp, err := sendKeyed(keyedRequest(t, url), orProvider, nil, keys, free, http.DefaultClient.Do)
 	if err != nil {
 		t.Fatal(err)
 	}

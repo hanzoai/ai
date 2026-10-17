@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	metric "github.com/luxfi/metric"
@@ -274,6 +275,7 @@ func announce(model string, a attempt) {
 			a.provider, model, a.err)
 	case a.status == http.StatusPaymentRequired:
 		supplyRefused.WithLabelValues(a.provider, reasonFunding).Inc()
+		emptied(a.provider, "", model, a.status)
 		log.Error("provider=%s is out of money (402) serving model=%s — top it up; failing over: %v",
 			a.provider, model, a.err)
 	default:
@@ -281,6 +283,34 @@ func announce(model string, a attempt) {
 		log.Warn("failover: model=%s provider=%s refused status=%d fault=%s: %v",
 			model, a.provider, a.status, a.fault, a.err)
 	}
+}
+
+// drainedEvery is how often one drained account is said again while it stays drained:
+// once when it is found, and again each drainedEvery after, so a reader who missed
+// the first still hears it and a busy route does not say it on every request.
+const drainedEvery = 10 * time.Minute
+
+var (
+	drainedMu   sync.Mutex
+	drainedSaid = map[string]time.Time{}
+)
+
+// emptied says that one of our accounts with vendor answered it cannot pay — on the
+// host's bus (object.PublishSpent), where the SuperAdmin's feed hears it — once per
+// drainedEvery for each account. account is the key's NAME, never the key; "" when
+// the refusal speaks for every account of the vendor at once.
+func emptied(vendor, account, model string, status int) {
+	now := keyNow()
+	id := vendor + "\x00" + account
+	drainedMu.Lock()
+	last, said := drainedSaid[id]
+	if said && now.Sub(last) < drainedEvery {
+		drainedMu.Unlock()
+		return
+	}
+	drainedSaid[id] = now
+	drainedMu.Unlock()
+	object.PublishDrained(context.Background(), object.Drained{Vendor: vendor, Account: account, Model: model, Status: status, At: now})
 }
 
 // reasons renders the refusals so far for one log line.

@@ -102,6 +102,11 @@ type native struct {
 	urlKey string   // config key for its address; unset, the maker is never asked
 	names  []string // its keys by name, in the order a request tries them
 	list   string   // one more name, holding further keys, one a line
+	// chat says the vendor speaks OpenAI's Chat Completions, which a chat request
+	// already is: it is sent the caller's body under the vendor's id for the model.
+	// Without it the vendor speaks Anthropic's Messages, which a chat is translated
+	// into.
+	chat bool
 
 	mu sync.RWMutex
 	// lists is what each key may be asked for, by keyID: the vendor's own list,
@@ -120,6 +125,28 @@ var anthropicNative = &native{
 	urlKey: "ANTHROPIC_URL",
 	names:  object.AnthropicKeys,
 	list:   object.AnthropicKeyList,
+}
+
+// openaiNative is OpenAI's own API, asked before OpenRouter for the OpenAI models
+// OpenRouter lists: the same model at its maker's price, without the reseller's fee.
+var openaiNative = &native{
+	name:   "openai",
+	prefix: "openai/",
+	urlKey: "OPENAI_URL",
+	names:  object.OpenAIKeys,
+	list:   object.OpenAIKeyList,
+	chat:   true,
+}
+
+// maker is the vendor among f's makers that makes sku (its id has the vendor's
+// prefix and names a model of the vendor's), nil when none does.
+func (f *modelFamily) maker(sku string) *native {
+	for _, n := range f.makers {
+		if _, ok := n.spelled(sku); ok {
+			return n
+		}
+	}
+	return nil
 }
 
 // base is the vendor's address, or "" when the deployment names none.
@@ -179,12 +206,16 @@ func reached(prov *object.Provider, mk *mark, sv serving) (origin, via string) {
 var dated = regexp.MustCompile(`^(.+)-(\d{8})$`)
 
 // spelled is the id a SKU names the vendor's model by: the SKU without the
-// family's prefix, its dots written as dashes. A SKU with a variant after a colon
-// is the reseller's own and names no model of the vendor's.
+// family's prefix, its dots written as dashes where the vendor spells versions so
+// (Anthropic: claude-haiku-5-5); OpenAI keeps them (gpt-5.4-mini). A SKU with a
+// variant after a colon is the reseller's own and names no model of the vendor's.
 func (n *native) spelled(sku string) (string, bool) {
 	id, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(sku)), n.prefix)
 	if !ok || id == "" || strings.Contains(id, ":") {
 		return "", false
+	}
+	if n.chat {
+		return id, true
 	}
 	return strings.ReplaceAll(id, ".", "-"), true
 }
@@ -310,6 +341,9 @@ func (n *native) rest(a object.Account, status int, why string, scope keyScope) 
 		n.name, a.Name, status, why, until.UTC().Format(time.RFC3339)) {
 		supplyRefused.WithLabelValues(n.name, reason).Inc()
 	}
+	if status == http.StatusPaymentRequired {
+		emptied(n.name, a.Name, "", status)
+	}
 }
 
 // revive ends the wait of a key refused as a credential.
@@ -371,9 +405,12 @@ func (n *native) read(ctx context.Context, base string, a object.Account) (map[s
 	exact, released := map[string]bool{}, map[string]string{}
 	after := ""
 	for page := 0; page < 20; page++ {
-		target := base + "/v1/models?limit=1000"
-		if after != "" {
-			target += "&after_id=" + url.QueryEscape(after)
+		target := base + "/v1/models"
+		if !n.chat {
+			target += "?limit=1000"
+			if after != "" {
+				target += "&after_id=" + url.QueryEscape(after)
+			}
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 		if err != nil {
@@ -446,6 +483,10 @@ func (n *native) read(ctx context.Context, base string, a object.Account) (map[s
 // sign puts the vendor's headers on a request: the API version (the caller's
 // where one was stated), each beta the caller turned on, and the key.
 func (n *native) sign(r *http.Request, a object.Account, version string, betas []string) {
+	if n.chat {
+		upstream.Authorize(r, &object.Provider{Type: "OpenAI", ClientSecret: a.Key})
+		return
+	}
 	if version == "" {
 		version = anthropicVersion
 	}
@@ -500,7 +541,11 @@ func (n *native) send(ctx context.Context, c nativeCall) (*http.Response, []miss
 			// Not the maker's to answer on any key.
 			return nil, missed
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/messages", bytes.NewReader(body))
+		path := "/v1/messages"
+		if n.chat {
+			path = "/v1/chat/completions"
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, bytes.NewReader(body))
 		if err != nil {
 			return nil, missed
 		}
@@ -539,13 +584,17 @@ func (n *native) send(ctx context.Context, c nativeCall) (*http.Response, []miss
 			return nil, append(missed, miss{upstream: m.ID, provider: n.name, reason: fmt.Sprintf("key %d: empty answer", a.Place)})
 		}
 		status, kind, why := claudeRefusal(resp.StatusCode, said)
+		broke := unfunded(status, kind, why)
+		if n.chat {
+			status, kind, broke = chatRefusal(resp.StatusCode, said)
+		}
 		missed = append(missed, miss{upstream: m.ID, provider: n.name, reason: fmt.Sprintf("key %d: %d %s", a.Place, status, kind)})
 		switch {
 		case status == http.StatusUnauthorized:
 			n.rest(a, status, kind, scopeAll)
 		case status == http.StatusForbidden:
 			n.rest(a, status, kind, scopePriced)
-		case unfunded(status, kind, why):
+		case broke:
 			n.rest(a, http.StatusPaymentRequired, "the account is out of credit", scopePriced)
 		case status == http.StatusTooManyRequests:
 			wait := retryAfter(resp.Header)
@@ -585,6 +634,9 @@ func (n *native) betas(c nativeCall) []string {
 // prompt like any other the platform sends a Claude model. hide says the caller
 // asked for the model's reasoning not to be written out.
 func (n *native) shape(c nativeCall, m claude) (body []byte, hide bool, err error) {
+	if n.chat {
+		return chatBody(c, m)
+	}
 	if c.path == "chat/completions" {
 		return chatAsMessages(c.body, m)
 	}
@@ -715,6 +767,15 @@ func (n *native) answer(resp *http.Response, c nativeCall, m claude, a object.Ac
 		}
 	}
 	switch {
+	case n.chat:
+		// The vendor's own stream, as the family's would arrive: the pipe puts our
+		// envelope on it. What it cost is read from its usage chunk as it passes.
+		h.Set("Content-Type", "text/event-stream")
+		out.Body = &chatTap{ReadCloser: resp.Body, end: func(t tokens) {
+			if usd, ok := c.costOf(t); ok {
+				out.Trailer.Set(cogsHeader, usd)
+			}
+		}}
 	case c.path == "chat/completions":
 		h.Set("Content-Type", "text/event-stream")
 		out.Body = newClaudeChat(resp.Body, c.sku, hide, stated)
@@ -741,11 +802,18 @@ func (n *native) answer(resp *http.Response, c nativeCall, m claude, a object.Ac
 // cache write counted as the vendor prices it (AnthropicUsage.billed). false for
 // a SKU the family states no price for.
 func (c nativeCall) cost(used AnthropicUsage) (string, bool) {
+	t := used.billed(c.sku)
+	return c.costOf(tokens{fresh: t.in, cached: t.read, written: t.write, completion: t.out})
+}
+
+// costOf is what tokens cost at the vendor's own price, in USD: the rates the
+// family lists the SKU at, less the family's markup. false for a SKU the family
+// states no price for.
+func (c nativeCall) costOf(t tokens) (string, bool) {
 	if !c.price.priced() {
 		return "", false
 	}
-	t := used.billed(c.sku)
-	usd := c.price.retailUSD(tokens{fresh: t.in, cached: t.read, written: t.write, completion: t.out})
+	usd := c.price.retailUSD(t)
 	if c.price.Margin.Sign() > 0 {
 		usd = usd.Quo(c.price.Margin, 18)
 	}

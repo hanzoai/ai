@@ -346,7 +346,7 @@ func (f *modelFamily) send(r *http.Request, p *object.Provider, free, stream boo
 	if free {
 		do = f.counting(r, do)
 	}
-	return sendKeyed(r, p, keys, free, do)
+	return sendKeyed(r, p, f.keyNames, keys, free, do)
 }
 
 // counting is do that counts each request it makes for the store's served hours
@@ -410,8 +410,9 @@ func order(keys []string, free bool) []string {
 
 // sendKeyed issues r on each key in turn until an upstream gives an answer
 // that is not an account refusal. r must carry GetBody so each attempt sends
-// the same body.
-func sendKeyed(r *http.Request, p *object.Provider, keys []string, free bool, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+// the same body. names are the keys' declared names, which a spent account is
+// said by.
+func sendKeyed(r *http.Request, p *object.Provider, names, keys []string, free bool, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 	var last *http.Response
 	for _, k := range order(keys, free) {
 		if cooling(k, free) {
@@ -439,6 +440,7 @@ func sendKeyed(r *http.Request, p *object.Provider, keys []string, free bool, do
 		switch resp.StatusCode {
 		case http.StatusPaymentRequired:
 			cool(k, scopePriced)
+			emptied(p.Name, object.AccountOf(names, k), askedModel(r), resp.StatusCode)
 			// A 402 on a free route is the vendor refusing the account even its free
 			// models (a balance below its floor): the key sits out free routes too.
 			if free {
@@ -478,6 +480,23 @@ func sendKeyed(r *http.Request, p *object.Provider, keys []string, free bool, do
 		return poolCooling(r, keys), nil
 	}
 	return everyKeyCooling(r), nil
+}
+
+// askedModel is the model a request's body names, "" when it names none.
+func askedModel(r *http.Request) string {
+	if r.GetBody == nil {
+		return ""
+	}
+	b, err := r.GetBody()
+	if err != nil {
+		return ""
+	}
+	defer b.Close()
+	var m struct {
+		Model string `json:"model"`
+	}
+	_ = json.NewDecoder(io.LimitReader(b, 1<<20)).Decode(&m)
+	return m.Model
 }
 
 // freeQuota reads a 429 for the one refusal that is about the ACCOUNT's free

@@ -175,6 +175,14 @@ var AnthropicKeys = keySeries("ANTHROPIC_API_KEY", 3)
 // AnthropicKeyList is the entry that holds further Anthropic keys, one a line.
 const AnthropicKeyList = "ANTHROPIC_API_KEYS"
 
+// OpenAIKeys names OpenAI's own API keys in the order a request tries them:
+// OPENAI_API_KEY, then _2 and _3, read as AnthropicKeys are. OpenAIKeyList holds
+// further keys, one a line.
+var OpenAIKeys = keySeries("OPENAI_API_KEY", 3)
+
+// OpenAIKeyList is the entry that holds further OpenAI keys, one a line.
+const OpenAIKeyList = "OPENAI_API_KEYS"
+
 // Account is one credential of a vendor's pool: its place in the pool, counted
 // from 1 in the order the pool is declared, the name it is declared under, and
 // its key. Place and Name say which account a request ran on; Key never leaves

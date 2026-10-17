@@ -245,7 +245,7 @@ func restore(t *testing.T, fam *modelFamily) {
 	providerFn, decode, spare, terms := fam.providerFn, fam.decode, fam.spare, fam.terms
 	windows, byID, ids, spares := fam.windows, fam.byID, fam.ids, fam.spares
 	fetchedAt, loaded, named, paid := fam.fetchedAt, fam.loaded, fam.named, fam.paid
-	maker := fam.native
+	makers := fam.makers
 	fam.mu.RUnlock()
 
 	t.Cleanup(func() {
@@ -256,7 +256,7 @@ func restore(t *testing.T, fam *modelFamily) {
 		fam.providerFn, fam.decode, fam.spare, fam.terms = providerFn, decode, spare, terms
 		fam.windows, fam.byID, fam.ids, fam.spares = windows, byID, ids, spares
 		fam.fetchedAt, fam.loaded, fam.named, fam.paid = fetchedAt, loaded, named, paid
-		fam.native = maker
+		fam.makers = makers
 	})
 }
 

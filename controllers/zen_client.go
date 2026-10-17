@@ -137,10 +137,11 @@ type modelFamily struct {
 	// not define them.
 	terms func(body []byte, m zenModel, free bool, session string) []byte
 
-	// native is the API of the vendor that MAKES some of this family's SKUs, asked
-	// for them before the family's own address (native.go): a model a reseller
-	// lists is its maker's to serve first. nil for a family with none.
-	native *native
+	// makers are the APIs of the vendors that MAKE some of this family's SKUs, each
+	// asked for its own (its prefix) before the family's own address (native.go): a
+	// model a reseller lists is its maker's to serve first. Empty for a family with
+	// none.
+	makers []*native
 
 	// aliases maps an id a caller may send onto the discovered SKU that serves it,
 	// lowercase on both sides, for a vendor whose catalog names none (OpenRouter's,
@@ -1130,8 +1131,8 @@ func WarmFamilies() {
 			if f.load != nil {
 				go f.keepListed()
 			}
-			if f.native != nil {
-				go f.native.watch()
+			for _, n := range f.makers {
+				go n.watch()
 			}
 		}
 	})
@@ -1722,6 +1723,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// made is the answer a maker gave, when one did: what says a maker served this
 	// request is the response dispatch was handed, never a header on it.
 	var made *http.Response
+	var madeBy *native
 
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
@@ -1772,12 +1774,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// And only the route the caller named: a route that stands in for another, or
 		// one out of the pool, is never a maker's, whatever it is priced at.
 		var missed []miss
-		if n := f.native; n != nil && f == fam && s == model && !FreeOnlyFor(ctx) {
+		if n := f.maker(s); n != nil && f == fam && s == model && !FreeOnlyFor(ctx) {
 			if price, listed := f.lookup(s); listed && price.priced() {
 				own, refused := n.send(ctx, nativeCall{path: apiPath, sku: f.sku(s), body: b, stream: stream || assemble,
 					version: version, betas: betas, price: price, start: start})
 				if own != nil {
-					made = own
+					made, madeBy = own, n
 					return own, nil
 				}
 				missed = refused
@@ -2168,7 +2170,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// the vendor and the failed arms never reach the client.
 	sv := servingOf(resp.Header)
 	if made != nil && resp == made {
-		sv.maker = by.native
+		sv.maker = madeBy
 	}
 	// answer is the response whose trailer states what a committed answer cost, read
 	// once its body has ended.
