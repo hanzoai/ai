@@ -80,7 +80,11 @@ func (m *chatMaker) serve(w http.ResponseWriter, r *http.Request) {
 	if refused {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(no.status)
-		fmt.Fprintf(w, `{"error":{"message":"refused","type":"invalid_request_error","param":null,"code":%q}}`, no.code)
+		kind := "invalid_request_error"
+		if no.code == "credit_balance_exhausted" {
+			kind = "insufficient_quota"
+		}
+		fmt.Fprintf(w, `{"error":{"message":"refused","type":%q,"param":null,"code":%q}}`, kind, no.code)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -197,7 +201,8 @@ func TestAnOpenAIAccountOutOfCreditSitsOutAndTheResellerAnswers(t *testing.T) {
 	or := &accounts{}
 	fam := gptResale(t, or)
 	m := chatMakerAt(t, &chatMaker{refuse: map[string]chatRefused{
-		"o1": {status: http.StatusTooManyRequests, code: "insufficient_quota"},
+		// What OpenAI answered our account on 2026-10-17.
+		"o1": {status: http.StatusTooManyRequests, code: "credit_balance_exhausted"},
 	}}, "o1", "o2")
 
 	var heard []object.Drained

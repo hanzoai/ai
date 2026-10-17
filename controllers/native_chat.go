@@ -92,7 +92,11 @@ func chatRefusal(status int, body []byte) (int, string, bool) {
 	if kind == "" {
 		kind = "error"
 	}
-	broke := status == http.StatusPaymentRequired || kind == "insufficient_quota" || kind == "billing_hard_limit_reached"
+	// OpenAI says an account cannot pay by its type (insufficient_quota) and names
+	// which way by its code: credit_balance_exhausted, insufficient_quota,
+	// billing_hard_limit_reached.
+	broke := status == http.StatusPaymentRequired || e.Error.Type == "insufficient_quota" ||
+		kind == "insufficient_quota" || kind == "credit_balance_exhausted" || kind == "billing_hard_limit_reached"
 	return status, kind, broke
 }
 
@@ -184,4 +188,3 @@ func (t *chatTap) finish() {
 	}
 	t.end(used)
 }
-
