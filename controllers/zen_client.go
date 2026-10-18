@@ -83,6 +83,7 @@ type modelFamily struct {
 	urlKey   string   // config key for the base URL ("ZEN_URL" | "ENSO_URL")
 	keyKey   string   // config key for the service key ("ZEN_API_KEY" | "ENSO_API_KEY")
 	keyNames []string // the vendor accounts a request tries in order (family_keys.go); nil = the provider's one key
+	keyList  string   // one more name, holding further accounts' keys, one a line, tried after keyNames
 	// credits reads what one vendor account has left, in USD, from the body of GET
 	// base + creditsPath (family_keys.go). nil for a family whose vendor states none.
 	credits     func([]byte) (float64, error)

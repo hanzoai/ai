@@ -67,6 +67,7 @@ var openrouterFam = &modelFamily{
 	urlKey:      "OPENROUTER_URL",
 	keyKey:      "OPENROUTER_API_KEY",
 	keyNames:    object.OpenRouterKeys,
+	keyList:     object.OpenRouterKeyList,
 	credits:     openrouterCredits,
 	creditsPath: "/v1/credits",
 	providerFn:  object.OpenRouterProvider,

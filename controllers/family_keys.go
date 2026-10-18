@@ -304,7 +304,7 @@ func (f *modelFamily) keys() []string {
 	if len(f.keyNames) == 0 {
 		return nil
 	}
-	return object.FamilyKeys(f.name, f.keyNames)
+	return object.FamilyKeys(f.name, f.keyNames, f.keyList)
 }
 
 // ring is every credential a family with a ring spends: its named keys, or the
@@ -346,7 +346,7 @@ func (f *modelFamily) send(r *http.Request, p *object.Provider, free, stream boo
 	if free {
 		do = f.counting(r, do)
 	}
-	return sendKeyed(r, p, f.keyNames, keys, free, do)
+	return sendKeyed(r, p, f.keyNames, f.keyList, keys, free, do)
 }
 
 // counting is do that counts each request it makes for the store's served hours
@@ -356,7 +356,7 @@ func (f *modelFamily) counting(r *http.Request, do func(*http.Request) (*http.Re
 	return func(rr *http.Request) (*http.Response, error) {
 		resp, err := do(rr)
 		key := strings.TrimPrefix(rr.Header.Get("Authorization"), "Bearer ")
-		f.served(model, object.AccountOf(f.keyNames, key), err == nil && resp.StatusCode/100 == 2)
+		f.served(model, object.AccountOf(f.keyNames, f.keyList, key), err == nil && resp.StatusCode/100 == 2)
 		return resp, err
 	}
 }
@@ -412,7 +412,7 @@ func order(keys []string, free bool) []string {
 // that is not an account refusal. r must carry GetBody so each attempt sends
 // the same body. names are the keys' declared names, which a spent account is
 // said by.
-func sendKeyed(r *http.Request, p *object.Provider, names, keys []string, free bool, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+func sendKeyed(r *http.Request, p *object.Provider, names []string, list string, keys []string, free bool, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 	var last *http.Response
 	for _, k := range order(keys, free) {
 		if cooling(k, free) {
@@ -440,7 +440,7 @@ func sendKeyed(r *http.Request, p *object.Provider, names, keys []string, free b
 		switch resp.StatusCode {
 		case http.StatusPaymentRequired:
 			cool(k, scopePriced)
-			emptied(p.Name, object.AccountOf(names, k), askedModel(r), resp.StatusCode)
+			emptied(p.Name, object.AccountOf(names, list, k), askedModel(r), resp.StatusCode)
 			// A 402 on a free route is the vendor refusing the account even its free
 			// models (a balance below its floor): the key sits out free routes too.
 			if free {

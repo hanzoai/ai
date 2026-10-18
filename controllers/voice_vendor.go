@@ -177,7 +177,7 @@ func orSend(ctx context.Context, method, path string, body []byte, account strin
 		values := openrouterFam.keys()
 		for _, v := range order(values, false) {
 			if !cooling(v, false) {
-				keys = append(keys, key{object.AccountOf(openrouterFam.keyNames, v), v})
+				keys = append(keys, key{object.AccountOf(openrouterFam.keyNames, openrouterFam.keyList, v), v})
 			}
 		}
 		if len(values) == 0 && strings.TrimSpace(p.ClientSecret) != "" {

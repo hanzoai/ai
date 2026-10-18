@@ -307,8 +307,18 @@ func TestProviderKeysReadTheNamedPath(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY_2", "k-env-2")
 	t.Setenv(ProviderKeysPath, "orgs/hanzo/ai@prod")
 	// A key written under a later name joins the pool; an unset name between is skipped.
-	if got := FamilyKeys("openrouter", OpenRouterKeys); strings.Join(got, ",") != "k-path,k-env-2,k-path-3,k-path-5" {
+	if got := FamilyKeys("openrouter", OpenRouterKeys, ""); strings.Join(got, ",") != "k-path,k-env-2,k-path-3,k-path-5" {
 		t.Fatalf("keys = %v, want [k-path k-env-2 k-path-3 k-path-5]", got)
+	}
+	// The list zen and enso walk joins the pool after the numbered names: an account
+	// only the list holds is tried, one the names already hold is tried once, and each
+	// is named by its line.
+	t.Setenv(OpenRouterKeyList, "k-path-3\nk-list-only\n\n")
+	if got := FamilyKeys("openrouter", OpenRouterKeys, OpenRouterKeyList); strings.Join(got, ",") != "k-path,k-env-2,k-path-3,k-path-5,k-list-only" {
+		t.Fatalf("keys with the list = %v, want the four names then k-list-only", got)
+	}
+	if got := AccountOf(OpenRouterKeys, OpenRouterKeyList, "k-list-only"); got != OpenRouterKeyList+"#2" {
+		t.Fatalf("account of the list-only key = %q, want %s#2", got, OpenRouterKeyList)
 	}
 	t.Setenv(ProviderKeysPath, "")
 	if got := resolveKey("OPENROUTER_API_KEY"); got != "k-bare" {

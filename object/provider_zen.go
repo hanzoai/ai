@@ -16,7 +16,6 @@ package object
 
 import (
 	"context"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -121,6 +120,10 @@ func familyRow(name string) *Provider {
 // the next name at the provider keys path (PROVIDER_KEYS_PATH, hanzo/prod:/ai).
 var OpenRouterKeys = keySeries("OPENROUTER_API_KEY", 8)
 
+// OpenRouterKeyList is the entry that holds further OpenRouter keys, one a line:
+// the list zen and enso walk, so every account any family can spend, ai can too.
+const OpenRouterKeyList = "OPENROUTER_API_KEYS"
+
 // keySeries is name, then name_2 through name_n.
 func keySeries(name string, n int) []string {
 	out := []string{name}
@@ -133,33 +136,30 @@ func keySeries(name string, n int) []string {
 // FamilyKeys returns the credentials a family's requests try, in order, each
 // resolved the way familyProvider resolves its one key (resolveKey).
 // A name with no value is skipped and a value repeated under a second name is
-// tried once. It returns nil when the family's admin row supplies the key:
+// tried once. list, when named, holds further keys one a line, tried after names. It returns nil when the family's admin row supplies the key:
 // that key is then the only one, carried on the provider as before.
-func FamilyKeys(family string, names []string) []string {
+func FamilyKeys(family string, names []string, list string) []string {
 	if row := familyRow(family); row != nil && strings.TrimSpace(row.ClientSecret) != "" {
 		return nil
 	}
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		v := strings.TrimSpace(resolveKey(n))
-		if v == "" || slices.Contains(out, v) {
-			continue
-		}
-		out = append(out, v)
+	accounts := Accounts(names, list)
+	out := make([]string, 0, len(accounts))
+	for _, a := range accounts {
+		out = append(out, a.Key)
 	}
 	return out
 }
 
 // AccountOf is the name among names whose key is key — the account a request was
 // sent on, said without its key — or "" when none resolves to it.
-func AccountOf(names []string, key string) string {
+func AccountOf(names []string, list, key string) string {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return ""
 	}
-	for _, n := range names {
-		if strings.TrimSpace(resolveKey(n)) == key {
-			return n
+	for _, a := range Accounts(names, list) {
+		if a.Key == key {
+			return a.Name
 		}
 	}
 	return ""
