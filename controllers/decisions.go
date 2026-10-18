@@ -619,6 +619,9 @@ func Refusing(err error, rid string) (int, []byte, map[string]string) {
 var decisionKeys = map[string]bool{
 	"model": true, "state": true, "questions": true, "observe": true, "handle": true,
 	"provider": true, "session_id": true, "user": true, "trace": true,
+	// evidence: the parts beside the state (kai-1.7's adapters); forwarded as written, read
+	// and bounded by the service, and billed by the tokens it reports.
+	"evidence": true,
 }
 
 // fieldsOf reads a decision body's top level exactly as written, and refuses a body
