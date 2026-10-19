@@ -17,6 +17,7 @@ package object
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 
 	"github.com/valyala/fasthttp"
 )
@@ -30,10 +31,35 @@ import (
 // states it meters the call itself and charges the customer for it, so the call is
 // attributed to Org and debits no wallet here (PaysCaller): the customer is charged
 // once, by the program, and the deployment's wallet not at all.
+//
+// Bill is where the program learns what to charge: every answer the call buys is
+// priced here exactly as it would be for any other caller, and the price is told to
+// Bill instead of being debited. A program that states no Bill is told nothing.
 type Caller struct {
 	Org     string
 	Person  string
 	Project string
+	Bill    *Bill
+}
+
+// Bill is what a program's call cost, in nano-USD: the sum of what each answer it
+// bought would have debited any other caller — a hedge's losing provider included,
+// since that is billed to every caller too. It is told, never estimated: a call
+// that filed no usage leaves it untold, and the program can tell the difference.
+type Bill struct {
+	nanos atomic.Int64
+	told  atomic.Bool
+}
+
+// Add tells the bill one answer's price.
+func (b *Bill) Add(nanos int64) {
+	b.nanos.Add(nanos)
+	b.told.Store(true)
+}
+
+// Nanos is the call's price so far, and whether any answer told one.
+func (b *Bill) Nanos() (int64, bool) {
+	return b.nanos.Load(), b.told.Load()
 }
 
 type callerKey struct{}

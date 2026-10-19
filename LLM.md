@@ -1536,12 +1536,19 @@ code in this process can write. `CallerFilter` moves it onto the context. Then:
 - **Attribution is the customer's**: `TenantContextFilter` takes org, person and
   project from the caller, never headers; `billingOrg` is the caller's org, so the
   usage row is on the customer's books; `tenant` tells a family the caller's org.
-- **Billing happens once, by the program**: the program meters the call and charges
-  the customer itself (cloud `metered_ai.go`), so the gate covers it with a
+- **Billing happens once, by the program, at ai's price**: the program meters the call
+  and charges the customer itself (cloud `metered_ai.go`), so the gate covers it with a
   `PaysCaller` grant (`callerPays`): no wallet is asked, the deployment's whose token
   carried it least of all, the plan is not asked, the paid lane seats it as the
   customer's, and the usage event is `Plan: true`, `PaidBy: "caller"` (no debit),
-  priced as usual for the record.
+  priced as usual for the record. The price is TOLD to the caller: `Caller.Bill`
+  (`object.Bill`) rides the grant (`LimitGrant.Bill`), and `recordUsage` adds each
+  answer's `usageMargin(record).BilledNano` to it — what the same answer debits any
+  other caller, a hedge's losing provider included. The program charges exactly that;
+  it has no rate of its own. `controllers.PriceOf(model, org)` is the billed row as a
+  `Rate`, for a program that must reserve before it calls; an unpriced model answers
+  false, never the conservative default. Pinned by `TestAProgramIsToldWhatItsCallCost`,
+  `TestOnlyACallersGrantIsToldItsPrice`, `TestPriceOfIsTheBilledRow`.
 - A request from the network states no caller whatever headers it carries
   (`TestARequestFromTheNetworkStatesNoCaller`).
 

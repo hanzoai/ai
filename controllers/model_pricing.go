@@ -469,6 +469,23 @@ var aliasPricing = map[string]string{
 	"anthropic/claude-sonnet-4-5-20250929": "claude-sonnet-4-5",
 }
 
+// PriceOf is the price a model is billed at for org, dollars a million tokens by
+// class — the same row every call of it is debited from — and whether a real row
+// priced it. A model nobody priced answers false rather than the conservative
+// default, which is a guess and not a price.
+func PriceOf(model, org string) (Rate, bool) {
+	p, ok := getModelPriceForOrgOK(model, org)
+	if !ok {
+		return Rate{}, false
+	}
+	return Rate{
+		Input:      p.InputPerMillion,
+		Output:     p.OutputPerMillion,
+		CacheRead:  cacheReadRate(p.InputPerMillion, p.CacheReadPerMillion),
+		CacheWrite: cacheWriteRate(p.InputPerMillion, p.CacheWritePerMillion),
+	}, true
+}
+
 // getModelPrice looks up pricing for a user-facing model name.
 // Returns a default price if the model isn't in the pricing table.
 func getModelPrice(model string) modelPrice {

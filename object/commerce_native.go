@@ -180,6 +180,9 @@ type LimitGrant struct {
 	// admission — so nothing it was counted against keeps it: no request window, no
 	// daily cap, no share. Nil when the host counted nothing.
 	Release func()
+	// Bill is told what a call the caller pays for cost (PaysCaller), so the program
+	// that made it charges that price and no other. Nil on every other grant.
+	Bill *Bill
 }
 
 // Covered reports whether the wallet is left out of the request: the plan, a free

@@ -1413,6 +1413,12 @@ func recordUsage(record *usageRecord) error {
 	if record.plan != nil {
 		record.plan.Settle(planUse(record))
 	}
+	// A call a program in this process pays for is told its price — the amount this
+	// record would debit any other caller — so the program charges that and nothing
+	// of its own.
+	if g := record.plan; g != nil && g.Pays == object.PaysCaller && g.Bill != nil {
+		g.Bill.Add(usageMargin(record).BilledNano)
+	}
 	// A call on the paid lane settles its seat, whoever paid: the hold taken at
 	// admission is given back. After the plan's settle, so the payer's next call reads
 	// the host's figure with this one in it before this hold is gone.

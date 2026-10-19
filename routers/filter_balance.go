@@ -553,10 +553,12 @@ func planFull(c *zip.Ctx, g *object.LimitGrant, past *object.LimitHit, org strin
 // callerPays serves a call a program in this process made for who, covered by that
 // program's own meter: the wallet is never asked, the paid lane seats it as who's,
 // and its usage is recorded to who's org with nothing to debit (PaidBy "caller").
+// What the call cost is told to who's Bill, so the program charges the price every
+// caller pays.
 func callerPays(c *zip.Ctx, who object.Caller, subject, model string) error {
 	g := &object.LimitGrant{
 		Plan: object.PaysCaller, Pays: object.PaysCaller, Class: controllers.ClassOf(model),
-		Settle: func(int64) {},
+		Settle: func(int64) {}, Bill: who.Bill,
 	}
 	// Free users get free models, whoever asks for them: a priced model seats a
 	// program's call only for a customer with a paid plan. Unseated, a Hanzo family
