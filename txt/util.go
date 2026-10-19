@@ -16,16 +16,18 @@
 package txt
 
 import (
+	"fmt"
 	"io"
-
+	"net/http"
 	"os"
 	"path/filepath"
 
+	"github.com/hanzoai/ai/proxy"
 	"github.com/hanzoai/ai/util"
 )
 
-// getTempFilePathFromUrl downloads a document to a temp file and returns its
-// path. The caller removes the file; this closes the handle.
+// getTempFilePathFromUrl downloads a document this system stored to a temp file
+// and returns its path. The caller removes the file; this closes the handle.
 //
 // It used to do neither. The handle stayed open for the life of the process, so
 // every remote document parsed leaked a descriptor — and on Unix the caller's
@@ -52,5 +54,30 @@ func getTempFilePathFromUrl(url string) (string, error) {
 		return "", err
 	}
 
+	return file.Name(), nil
+}
+
+// getTempFilePathFromAddress downloads the document at an address a request named
+// to a temp file and returns its path, over proxy.Public — outbound's client — so
+// an address on this network is refused at the dial and so is every redirect to
+// one. The caller removes the file.
+func getTempFilePathFromAddress(address string) (string, error) {
+	resp, err := proxy.Public.Get(address)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("%s answered %s", address, resp.Status)
+	}
+	file, err := os.CreateTemp("", "address-*"+filepath.Ext(resp.Request.URL.Path))
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if _, err = io.Copy(file, resp.Body); err != nil {
+		_ = os.Remove(file.Name())
+		return "", err
+	}
 	return file.Name(), nil
 }

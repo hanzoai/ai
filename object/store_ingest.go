@@ -307,7 +307,8 @@ func ingestUploadSource(owner, store string, req *IngestRequest, stats *IngestSt
 		case f.Content != "":
 			text = f.Content
 		case f.URL != "":
-			text, err = txt.GetParsedTextFromUrl(f.URL, strings.ToLower(filepath.Ext(f.Name)), lang)
+			// The caller's url, so an address it named (txt.GetParsedTextFromAddress).
+			text, err = txt.GetParsedTextFromAddress(f.URL, strings.ToLower(filepath.Ext(f.Name)), lang)
 		default:
 			stats.FilesSkipped++
 			stats.Skipped = append(stats.Skipped, f.Name+" (no content or url)")

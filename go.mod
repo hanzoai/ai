@@ -52,6 +52,7 @@ require (
 	github.com/hanzoai/go-openai v1.41.0
 	github.com/hanzoai/go-openrouter v1.0.0
 	github.com/hanzoai/money v0.2.5
+	github.com/hanzoai/outbound v1.0.0
 	github.com/hanzoai/pdf v1.2.0
 	github.com/hanzoai/search-go v0.36.0
 	github.com/hanzoai/sqlite v0.5.5

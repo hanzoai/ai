@@ -144,7 +144,9 @@ func RagEmbedFile(owner string, req *RagEmbedRequest, lang string) (*RagEmbedRes
 			return nil, fmt.Errorf("either content or url must be provided")
 		}
 		var err error
-		text, err = txt.GetParsedTextFromUrl(req.URL, strings.ToLower(filepath.Ext(name)), lang)
+		// The url arrived on the request: an address the tenant named, read only as
+		// one (txt.GetParsedTextFromAddress), never as a path or a neighbour.
+		text, err = txt.GetParsedTextFromAddress(req.URL, strings.ToLower(filepath.Ext(name)), lang)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}

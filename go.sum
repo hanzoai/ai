@@ -596,6 +596,8 @@ github.com/hanzoai/go-openrouter v1.0.0 h1:oQTSk4mjBhdgbUMdVm6XxPQy4u0QNhQrEBuuE
 github.com/hanzoai/go-openrouter v1.0.0/go.mod h1:wC86avp4HRT7ZrvdwOIs3ZmnwUSkSeX2+HfLAAEYHVo=
 github.com/hanzoai/money v0.2.5 h1:rNtrr9rtcGSf48zFpB/xKVgyhgn7cQIt9f5PiKldcw4=
 github.com/hanzoai/money v0.2.5/go.mod h1:V1/RwypNNDjOArVFkkbNrgUXNUKorAiV1WtDNqfx95Q=
+github.com/hanzoai/outbound v1.0.0 h1:itECYttNivqnYxMq8UVF4GxR/DWUq1vBqZwy8T3GPVU=
+github.com/hanzoai/outbound v1.0.0/go.mod h1:wFzR9DZ+VPtrO6WIESu1k/lUnWsRWaxjnHwoMmsUTo8=
 github.com/hanzoai/pdf v1.2.0 h1:3/zYs4estaf6hpa3Ug/NgfYEQpmkmMClmRcREAP8KUo=
 github.com/hanzoai/pdf v1.2.0/go.mod h1:Lb5LhbMY7QvrxxMeKbI22Kvoz4XQhHgJV7Erq0U8zHU=
 github.com/hanzoai/search-go v0.36.0 h1:bQfbAs/bc/s3qZDCtSqEAxp48koHkb0Z4ezUknt2AQc=

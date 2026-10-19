@@ -1202,6 +1202,22 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   no list, no env override, and `isAdmin` is not part of it — an org admin
   (`hanzo/z`) administers `hanzo` and holds no platform power.
 
+- **A tenant's URL is fetched by ONE rule: `github.com/hanzoai/outbound`.**
+  `proxy.Public` is `outbound.Client` (judged at the dial on the address the
+  socket connects to, so DNS rebinding is refused on the answer that would have
+  been used; every redirect a new dial judged the same way; no proxy; the IANA
+  special-purpose registries, so NAT64 `64:ff9b::a9fe:a9fe`, 6to4, Teredo,
+  `fd00:ec2::254`, CGNAT and 240/4 are refused). It fetches every address a
+  request names: a message's `href` and images, `/v1/ai/rag/embed`'s `url`,
+  `/v1/ai/rag/ingest`'s `files[].url`, and every page the Go scraper crawls;
+  the browser engine (crawl4ai) is handed only what `outbound.Host` finds
+  public. A tenant document goes through `txt.GetParsedTextFromAddress`, which
+  reads http/https only — `txt.GetParsedTextFromUrl` reads a scheme-less string
+  as a LOCAL PATH and is for addresses this system minted (stored files) alone.
+  A test swaps `proxy.Public`; outbound has no switch.
+  `object/address_test.go`, `object/address_redirect_test.go`,
+  `object/scrape_address_test.go`, `proxy/public_test.go`.
+
 - **Authz gate** (`routers/authz_filter.go`) — platform-sensitive endpoints
   (`superAdminEndpoints`) are gated FIRST (before preview-mode + exempt reads).
   There is deliberately NO `adminDomain` Host bypass (a removed full-authz-bypass

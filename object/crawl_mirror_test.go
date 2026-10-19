@@ -30,6 +30,7 @@ package object
 // absence of a delete.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -40,6 +41,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/hanzoai/ai/proxy"
 )
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,7 @@ func serve(t *testing.T, paths ...string) *site {
 	for _, p := range paths {
 		s.pages[p] = "Section " + strings.TrimPrefix(p, "/")
 	}
+	reachable(t)
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -548,6 +552,7 @@ func TestPageBudgetIsReported(t *testing.T) {
 func TestDepthLimitIsReported(t *testing.T) {
 	// A chain: / -> /a -> /b. At depth 1, /b is known and never read.
 	var srv *httptest.Server
+	reachable(t)
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next := map[string]string{"/": "/a", "/a": "/b", "/b": ""}[r.URL.Path]
 		if r.URL.Path == "/robots.txt" {
@@ -580,6 +585,7 @@ func TestMirrorLeavesSiblingPathsAlone(t *testing.T) {
 	f := fakeStores(t)
 	live := map[string]bool{"/docs": true, "/docs/a": true, "/blog": true, "/blog/a": true}
 	var mu sync.Mutex
+	reachable(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/robots.txt" {
 			http.NotFound(w, r)
@@ -672,6 +678,7 @@ func TestLinksAreFoundInEveryContainer(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			reachable(t)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/":
@@ -708,6 +715,7 @@ func TestMarkupChangeNeverPrunesLiveCorpus(t *testing.T) {
 	var mu sync.Mutex
 	wrapped := false
 
+	reachable(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		inList := wrapped
@@ -842,6 +850,7 @@ func TestUnfollowableLinksNeverPruneTheCorpus(t *testing.T) {
 			f := fakeStores(t)
 			var mu sync.Mutex
 			body := `<a href="/a">a</a><a href="/b">b</a>` // build the corpus first
+			reachable(t)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				b := body
@@ -939,6 +948,7 @@ type fakeCrawl struct {
 func startFakeCrawl(t *testing.T, reply func([]string) []Crawl4AIResult) *fakeCrawl {
 	t.Helper()
 	fc := &fakeCrawl{reply: reply}
+	reachable(t)
 	fc.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
@@ -1041,6 +1051,7 @@ func TestBrowserRedirectCollapseIsNotComplete(t *testing.T) {
 // Both engines obey the same robots rules, so which engine ran cannot decide
 // which pages a site keeps.
 func TestBrowserRobotsWithholdsMirror(t *testing.T) {
+	reachable(t)
 	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/robots.txt" {
 			fmt.Fprint(w, "User-agent: *\nDisallow: /docs/secret\n")
@@ -1100,6 +1111,7 @@ func TestBaseHrefMisresolutionNeverPrunes(t *testing.T) {
 	page := func(w http.ResponseWriter, title string) {
 		fmt.Fprintf(w, `<html><head><title>%s</title></head><body><h2>S%s</h2><p>b</p></body></html>`, title, title)
 	}
+	reachable(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/docs":
@@ -1155,6 +1167,7 @@ func newDrainSite(t *testing.T, n int) *drainSite {
 		d.all = append(d.all, p)
 		d.visible[p] = true
 	}
+	reachable(t)
 	d.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/docs" {
 			d.mu.Lock()
@@ -1658,4 +1671,15 @@ func TestPeakKeyIsUnambiguous(t *testing.T) {
 	if peakID("a", "b") == peakID("ab", "") {
 		t.Error("peak key collides on the field boundary")
 	}
+}
+
+// reachable lets this test's crawl reach its own loopback site: the tenant client
+// (proxy.Public) and the browser engine's host check are this module's variables,
+// swapped back after the test. outbound itself has no switch.
+func reachable(t *testing.T) {
+	t.Helper()
+	prevClient, prevJudge := proxy.Public, judgeHost
+	proxy.Public = &http.Client{}
+	judgeHost = func(context.Context, string) error { return nil }
+	t.Cleanup(func() { proxy.Public, judgeHost = prevClient, prevJudge })
 }

@@ -15,6 +15,7 @@ package object
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -23,8 +24,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/outbound"
 	"golang.org/x/net/html"
+
+	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/proxy"
 )
 
 const (
@@ -119,16 +123,12 @@ func ScrapePage(pageURL string) (*ScrapeResult, error) {
 	}
 	req.Header.Set("User-Agent", scraperUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	client := &http.Client{
-		Timeout: scraperRequestTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
-	}
-	resp, err := client.Do(req)
+	// The start URL and every link a crawl follows are the tenant's addresses, so
+	// they are fetched by outbound's client (proxy.Public): judged at the dial, a
+	// redirect re-judged, never a neighbour on this network.
+	ctx, cancel := context.WithTimeout(context.Background(), scraperRequestTimeout)
+	defer cancel()
+	resp, err := proxy.Public.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %w", pageURL, err)
 	}
@@ -297,6 +297,14 @@ func crawlWithBrowserEngine(req *ScrapeRequest) (results []ScrapeResult, crawlEr
 				log.Info("scraper: robots.txt disallows %s", u)
 				// Blocked is not gone. It stays discovered and unread.
 				f.note("robots.txt")
+				continue
+			}
+			// crawl4ai dials what it is handed, and outbound cannot stand in its
+			// dialler, so each address is judged here before it is handed over
+			// (outbound.Host). Refused is not gone: it stays discovered and unread.
+			if err := addressable(u); err != nil {
+				crawlErrors = append(crawlErrors, fmt.Sprintf("%s: %v", u, err))
+				f.note("refused address")
 				continue
 			}
 			submitted = append(submitted, u)
@@ -885,6 +893,25 @@ func normalizeURL(rawURL string) string {
 	return result
 }
 
+// addressable judges an address a crawl is about to hand to the browser engine:
+// http or https, and a host outbound.Host finds on the public internet.
+func addressable(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%w: scheme %q", outbound.ErrRefused, u.Scheme)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return judgeHost(ctx, u.Hostname())
+}
+
+// judgeHost is outbound.Host, a variable so a crawl test can hand the browser
+// engine its loopback site the way it swaps proxy.Public; nothing else assigns it.
+var judgeHost = outbound.Host
+
 // fetchRobotsTxt fetches and parses robots.txt for the given origin.
 func fetchRobotsTxt(origin string) *robotsRules {
 	rules := &robotsRules{}
@@ -894,8 +921,9 @@ func fetchRobotsTxt(origin string) *robotsRules {
 		return rules
 	}
 	req.Header.Set("User-Agent", scraperUserAgent)
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := proxy.Public.Do(req.WithContext(ctx))
 	if err != nil {
 		return rules
 	}
