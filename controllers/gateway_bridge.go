@@ -55,8 +55,11 @@ func (c *ApiController) RouterConfigBridge() {
 	// transport carries it, so a handler scopes this request to the org the HTTP
 	// surface would (zapRPSScope), not to the credential's home org.
 	headers, _ := json.Marshal(map[string]string{"X-Org-Id": c.Header("X-Org-Id")})
+	// And the host's SuperAdmin verdict on THIS request, which the handler's
+	// principal carries (zapPrincipal). It is the bridge's to state because it holds
+	// the request the host boundary judged; a ZAP door holds no such request.
 	msg, handled, err := dispatchGateway(
-		context.WithValue(c.Context(), gatewayHeaders{}, headers),
+		vouch(context.WithValue(c.Context(), gatewayHeaders{}, headers), object.Super(c.Ctx)),
 		nil,
 		c.Method(),
 		path,

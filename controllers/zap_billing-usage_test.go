@@ -98,7 +98,7 @@ func TestZapBackfill_RejectsNonPost(t *testing.T) {
 // controller twin runs; it is exercised directly (no JWT needed) via the ownBrand arg.
 func TestZapResolveCloudUsageScope(t *testing.T) {
 	tenant := &iam.User{Owner: "maxpower", Name: "dave"}
-	super := &iam.User{Owner: "admin", Name: "z"}
+	super := &iam.User{Owner: "admin", Name: "z", Sudo: true}
 
 	cases := []struct {
 		name     string

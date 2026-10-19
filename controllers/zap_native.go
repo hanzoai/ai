@@ -211,6 +211,25 @@ func dispatchGateway(ctx context.Context, router http.Handler, method, path, que
 	return serveGatewayViaRouter(ctx, router, method, path, query, auth, body)
 }
 
+// verdict keys the host's SuperAdmin verdict on a gateway-shaped request that the
+// HTTP bridge built from a real request (RouterConfigBridge, from object.Super). No
+// ZAP door sets it: a door's envelope is whatever its peer framed.
+type verdict struct{}
+
+// vouch carries the host's verdict on the HTTP request a bridge is serving.
+func vouch(ctx context.Context, super bool) context.Context {
+	return context.WithValue(ctx, verdict{}, super)
+}
+
+// bridged is the verdict vouch carried, false when none was.
+func bridged(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	super, _ := ctx.Value(verdict{}).(bool)
+	return super
+}
+
 // gatewayHeaders keys a gateway request's JSON-encoded headers on its context.
 type gatewayHeaders struct{}
 
@@ -641,7 +660,7 @@ func zapResolveAuth(auth string, requestModel string) (*object.Provider, *iam.Us
 	token := strings.TrimPrefix(auth, "Bearer ")
 
 	if isJwtToken(token) {
-		return resolveProviderFromJwt(context.Background(), token, "", requestModel, "en")
+		return resolveProviderFromJwt(context.Background(), nil, token, "", requestModel, "en")
 	}
 
 	// A secret key: the STORE that owns it decides what it is, exactly as

@@ -190,8 +190,10 @@ func TestRequireSuperAdmin_OrgAdminForbidden403(t *testing.T) {
 }
 
 func TestRequireSuperAdmin_SuperAdminPasses(t *testing.T) {
+	host(t)
 	superAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
 	c := toggling(authtest.Bearer(t, *superAdmin))
+	c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 	if !c.RequireSuperAdmin() {
 		t.Error("RequireSuperAdmin() = false for a super admin, want true (pass)")
 	}

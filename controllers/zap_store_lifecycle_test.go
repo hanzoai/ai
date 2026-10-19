@@ -95,17 +95,18 @@ func TestAStoreIsFiledIntoTheCallersOwnOrg(t *testing.T) {
 		t.Errorf("the victim org holds %d stores it never created: %+v", len(theirs), theirs)
 	}
 
-	// The admin org is the one that may name an owner, and it is the seam that
-	// says so rather than the row.
+	// Only the SuperAdmin may name an owner, and the SuperAdmin is the host's
+	// verdict, which a raw ZAP door does not carry — so an admin-org credential
+	// here, a key above all, files the store into its own org like anyone's.
 	root := iamd.asUser(t, &iam.User{Owner: "admin", Name: "root", IsAdmin: true})
 	_, env = call(t, "stores.add", root, `{"owner":"victim","name":"s2","displayName":"placed deliberately"}`)
-	env.ok(t, "add as admin")
+	env.ok(t, "add as an admin-org key")
 	_, env = call(t, "stores.get", victim, `{}`)
-	env.ok(t, "list as victim after admin add")
+	env.ok(t, "list as victim after the admin-org key's add")
 	theirs = nil
 	_ = json.Unmarshal(env.Data, &theirs)
-	if len(theirs) != 1 || theirs[0].Name != "s2" {
-		t.Errorf("admin could not place a store deliberately: %+v", theirs)
+	if len(theirs) != 0 {
+		t.Errorf("an admin-org key placed a store in another org over a ZAP door: %+v", theirs)
 	}
 }
 

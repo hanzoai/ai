@@ -116,7 +116,7 @@ func zapDecisionPrincipal(token, model, asked string) (*iam.User, string, bool, 
 		premium = route.premium
 	}
 	if isJwtToken(token) {
-		_, user, _, err := resolveProviderFromJwt(context.Background(), token, asked, model, "en")
+		_, user, _, err := resolveProviderFromJwt(context.Background(), nil, token, asked, model, "en")
 		if err != nil {
 			return nil, "", false, err
 		}

@@ -206,14 +206,14 @@ func zapMiscRequireAdmin(user *iam.User) *zap.Message {
 }
 
 // zapMiscScopedOwner mirrors ApiController.GetScopedOwner: it requires a signed-in
-// principal (401 when absent) and pins a non-admin-org caller to its own Owner; a
-// member of the admin org may target a specific requested owner. Returns the scoped
+// principal (401 when absent) and pins it to its own Owner. A raw ZAP door carries
+// no SuperAdmin verdict, so the requested owner never retargets it. Returns the scoped
 // owner and nil, or ("", denial).
 func zapMiscScopedOwner(user *iam.User, requestedOwner string) (string, *zap.Message) {
 	if user == nil {
 		return "", zapMiscDeny(401, "Please sign in first")
 	}
-	return util.ScopeOwner(user.Owner, requestedOwner), nil
+	return util.ScopeOwner(user, requestedOwner), nil
 }
 
 // zapMiscListRequest carries the list/pagination + filter params the GET
@@ -245,8 +245,8 @@ func zapMiscDecodeList(body []byte) (zapMiscListRequest, *zap.Message) {
 
 // ── form.go parity ─────────────────────────────────────────────────────────────
 
-func zapGetGlobalFormsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-global-forms", zapPrincipal(auth)); deny != nil {
+func zapGetGlobalFormsHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-global-forms", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	forms, err := object.GetGlobalForms()
@@ -256,8 +256,8 @@ func zapGetGlobalFormsHandler(_ context.Context, auth string, _ []byte) (*zap.Me
 	return zapOk(object.GetMaskedForms(forms, true))
 }
 
-func zapGetFormsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetFormsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("get-forms", user); deny != nil {
 		return deny, nil
 	}
@@ -290,8 +290,8 @@ func zapGetFormsHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	return zapOk(forms, count)
 }
 
-func zapGetFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-form", zapPrincipal(auth)); deny != nil {
+func zapGetFormHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-form", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	req, deny := zapMiscDecodeList(body)
@@ -305,8 +305,8 @@ func zapGetFormHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	return zapOk(object.GetMaskedForm(form, true))
 }
 
-func zapUpdateFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("update-form", zapPrincipal(auth)); deny != nil {
+func zapUpdateFormHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("update-form", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	var form object.Form
@@ -315,7 +315,7 @@ func zapUpdateFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	form.Owner = theirOrg(zapPrincipal(auth))
+	form.Owner = theirOrg(zapPrincipal(ctx, auth))
 	id := util.GetId(form.Owner, form.Name)
 	success, err := object.UpdateForm(id, &form, "en")
 	if err != nil {
@@ -324,8 +324,8 @@ func zapUpdateFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	return zapOk(success)
 }
 
-func zapAddFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("add-form", zapPrincipal(auth)); deny != nil {
+func zapAddFormHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("add-form", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	var form object.Form
@@ -334,7 +334,7 @@ func zapAddFormHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	form.Owner = theirOrg(zapPrincipal(auth))
+	form.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.AddForm(&form)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -342,8 +342,8 @@ func zapAddFormHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	return zapOk(success)
 }
 
-func zapDeleteFormHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("delete-form", zapPrincipal(auth)); deny != nil {
+func zapDeleteFormHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("delete-form", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	var form object.Form
@@ -352,7 +352,7 @@ func zapDeleteFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	form.Owner = theirOrg(zapPrincipal(auth))
+	form.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.DeleteForm(&form)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -362,8 +362,8 @@ func zapDeleteFormHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 // ── form_data.go parity (proxies to the blockchain provider, returns raw JSON) ──
 
-func zapGetFormDataHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetFormDataHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("get-form-data", user); deny != nil {
 		return deny, nil
 	}
@@ -419,8 +419,8 @@ func zapGetFormDataHandler(_ context.Context, auth string, body []byte) (*zap.Me
 
 // ── article.go parity ──────────────────────────────────────────────────────────
 
-func zapGetGlobalArticlesHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-global-articles", zapPrincipal(auth)); deny != nil {
+func zapGetGlobalArticlesHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-global-articles", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	articles, err := object.GetGlobalArticles()
@@ -430,8 +430,8 @@ func zapGetGlobalArticlesHandler(_ context.Context, auth string, _ []byte) (*zap
 	return zapOk(object.GetMaskedArticles(articles, true))
 }
 
-func zapGetArticlesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetArticlesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("get-articles", user); deny != nil {
 		return deny, nil
 	}
@@ -464,8 +464,8 @@ func zapGetArticlesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	return zapOk(articles, count)
 }
 
-func zapGetArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-article", zapPrincipal(auth)); deny != nil {
+func zapGetArticleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-article", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	req, deny := zapMiscDecodeList(body)
@@ -479,8 +479,8 @@ func zapGetArticleHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	return zapOk(object.GetMaskedArticle(article, true))
 }
 
-func zapUpdateArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("update-article", zapPrincipal(auth)); deny != nil {
+func zapUpdateArticleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("update-article", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	var article object.Article
@@ -489,7 +489,7 @@ func zapUpdateArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	article.Owner = theirOrg(zapPrincipal(auth))
+	article.Owner = theirOrg(zapPrincipal(ctx, auth))
 	id := util.GetId(article.Owner, article.Name)
 	success, err := object.UpdateArticle(id, &article)
 	if err != nil {
@@ -498,8 +498,8 @@ func zapUpdateArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 	return zapOk(success)
 }
 
-func zapAddArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("add-article", zapPrincipal(auth)); deny != nil {
+func zapAddArticleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("add-article", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	var article object.Article
@@ -508,7 +508,7 @@ func zapAddArticleHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	article.Owner = theirOrg(zapPrincipal(auth))
+	article.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.AddArticle(&article)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -516,8 +516,8 @@ func zapAddArticleHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	return zapOk(success)
 }
 
-func zapDeleteArticleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("delete-article", zapPrincipal(auth)); deny != nil {
+func zapDeleteArticleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("delete-article", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	var article object.Article
@@ -526,7 +526,7 @@ func zapDeleteArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	article.Owner = theirOrg(zapPrincipal(auth))
+	article.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.DeleteArticle(&article)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -536,8 +536,8 @@ func zapDeleteArticleHandler(_ context.Context, auth string, body []byte) (*zap.
 
 // ── scale.go parity (its own admin/preview/username ownership logic) ────────────
 
-func zapGetGlobalScalesHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-global-scales", zapPrincipal(auth)); deny != nil {
+func zapGetGlobalScalesHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-global-scales", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	scales, err := object.GetGlobalScales()
@@ -547,8 +547,8 @@ func zapGetGlobalScalesHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	return zapOk(object.GetMaskedScales(scales, true))
 }
 
-func zapGetScalesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetScalesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("get-scales", user); deny != nil {
 		return deny, nil
 	}
@@ -591,8 +591,8 @@ func zapGetScalesHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	return zapOk(scales, count)
 }
 
-func zapGetScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetScaleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("get-scale", user); deny != nil {
 		return deny, nil
 	}
@@ -619,8 +619,8 @@ func zapGetScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	return zapOk(object.GetMaskedScale(s, true))
 }
 
-func zapGetPublicScalesHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetPublicScalesHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("get-public-scales", user); deny != nil {
 		return deny, nil
 	}
@@ -635,8 +635,8 @@ func zapGetPublicScalesHandler(_ context.Context, auth string, _ []byte) (*zap.M
 	return zapOk(object.GetMaskedScales(scales, true))
 }
 
-func zapUpdateScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapUpdateScaleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("update-scale", user); deny != nil {
 		return deny, nil
 	}
@@ -646,7 +646,7 @@ func zapUpdateScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	s.Owner = theirOrg(zapPrincipal(auth))
+	s.Owner = theirOrg(zapPrincipal(ctx, auth))
 	id := util.GetId(s.Owner, s.Name)
 	existing, err := object.GetScale(id)
 	if err != nil {
@@ -679,8 +679,8 @@ func zapUpdateScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	return zapOk(success)
 }
 
-func zapAddScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapAddScaleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("add-scale", user); deny != nil {
 		return deny, nil
 	}
@@ -690,7 +690,7 @@ func zapAddScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	s.Owner = theirOrg(zapPrincipal(auth))
+	s.Owner = theirOrg(zapPrincipal(ctx, auth))
 	if !util.IsAdmin(user) {
 		s.State = object.ScaleStatePublic
 	} else if s.State == object.ScaleStateHidden {
@@ -705,8 +705,8 @@ func zapAddScaleHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	return zapOk(success)
 }
 
-func zapDeleteScaleHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapDeleteScaleHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("delete-scale", user); deny != nil {
 		return deny, nil
 	}
@@ -716,7 +716,7 @@ func zapDeleteScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	s.Owner = theirOrg(zapPrincipal(auth))
+	s.Owner = theirOrg(zapPrincipal(ctx, auth))
 	if !util.IsAdmin(user) {
 		username := ""
 		if user != nil {
@@ -742,8 +742,8 @@ func zapDeleteScaleHandler(_ context.Context, auth string, body []byte) (*zap.Me
 
 // ── system_info.go parity ──────────────────────────────────────────────────────
 
-func zapGetSystemInfoHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-system-info", zapPrincipal(auth)); deny != nil {
+func zapGetSystemInfoHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-system-info", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	systemInfo, err := util.GetSystemInfo()
@@ -753,8 +753,8 @@ func zapGetSystemInfoHandler(_ context.Context, auth string, _ []byte) (*zap.Mes
 	return zapOk(systemInfo)
 }
 
-func zapGetVersionInfoHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-version-info", zapPrincipal(auth)); deny != nil {
+func zapGetVersionInfoHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-version-info", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	errInfo := ""
@@ -779,8 +779,8 @@ func zapHealthHandler(_ context.Context, _ string, _ []byte) (*zap.Message, erro
 
 // ── prometheus.go parity (self-guards with RequireAdmin) ────────────────────────
 
-func zapGetPrometheusInfoHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscRequireAdmin(zapPrincipal(auth)); deny != nil {
+func zapGetPrometheusInfoHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscRequireAdmin(zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	prometheusInfo, err := object.GetPrometheusInfo()
@@ -794,8 +794,8 @@ func zapGetPrometheusInfoHandler(_ context.Context, auth string, _ []byte) (*zap
 // exposition. It drives object.MetricsHandler() through an in-memory recorder (no
 // http.ResponseWriter held) and returns the raw exposition body — the console/
 // scraper reads it verbatim, exactly like the the router ServeHTTP path.
-func zapGetMetricsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscRequireAdmin(zapPrincipal(auth)); deny != nil {
+func zapGetMetricsHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscRequireAdmin(zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	rec := httptest.NewRecorder()
@@ -806,8 +806,8 @@ func zapGetMetricsHandler(_ context.Context, auth string, _ []byte) (*zap.Messag
 
 // ── activity.go parity ─────────────────────────────────────────────────────────
 
-func zapGetActivitiesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-activities", zapPrincipal(auth)); deny != nil {
+func zapGetActivitiesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-activities", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	req, deny := zapMiscDecodeList(body)
@@ -839,8 +839,8 @@ func zapGetActivitiesHandler(_ context.Context, auth string, body []byte) (*zap.
 // RouterPrefer/RouterEnabledModels/RouterQualityBias/…. To CLEAR a field, send it
 // explicitly ({"routerPrefer":{}}). This is the fix the old body-only ZAP twin lacked
 // (it could not even see ?owner — the reason this route is now HTTP-shaped).
-func zapOrgSettingsHandler(_ context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("org/settings", zapPrincipal(auth)); deny != nil {
+func zapOrgSettingsHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("org/settings", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 
@@ -935,8 +935,8 @@ func zapOrgSettingsOwner(query string, body []byte) string {
 
 // ── agent.go parity ────────────────────────────────────────────────────────────
 
-func zapGetAgentsDashboardUrlHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if deny := zapMiscAuthz("get-agents-dashboard-url", zapPrincipal(auth)); deny != nil {
+func zapGetAgentsDashboardUrlHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if deny := zapMiscAuthz("get-agents-dashboard-url", zapPrincipal(ctx, auth)); deny != nil {
 		return deny, nil
 	}
 	dashboardUrl := os.Getenv("AGENTS_DASHBOARD_URL")

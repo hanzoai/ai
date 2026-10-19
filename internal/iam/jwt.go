@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/hanzoai/account"
@@ -108,11 +107,14 @@ func (c *Client) ParseJwtToken(token string) (*Claims, error) {
 //
 // A machine token carries no membership set: the application is the
 // principal and `owner` is already its own org.
+//
+// The org is taken VERBATIM. Trimming it folded "admin " onto "admin", and an org
+// is a tenancy key: two spellings that fold together are two tenants read as one.
 func (c *Claims) homeOrg() {
 	if c == nil || len(c.Orgs) == 0 {
 		return
 	}
-	if home := strings.TrimSpace(c.Orgs[0].Org); home != "" {
+	if home := c.Orgs[0].Org; home != "" {
 		c.User.Owner = home
 	}
 }

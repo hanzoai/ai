@@ -335,7 +335,7 @@ func (c *ApiController) RequireAdmin() bool {
 // belt-AND-suspenders: even if the filter is ever bypassed (e.g. a path-normalization
 // disagreement), the controller still refuses. Fail-closed: no principal → 401,
 // authenticated non-super-admin → 403. Unlike RequireAdmin it is NOT relaxed by
-// preview mode and checks GLOBAL (platform) admin, not org admin — these routes
+// preview mode and checks the SuperAdmin, not org admin — these routes
 // govern the primary provider that backs the whole model catalog.
 func (c *ApiController) RequireSuperAdmin() bool {
 	user := c.principalUser()

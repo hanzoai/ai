@@ -43,7 +43,7 @@ func (f *fakeZen) host() *RoutingHost {
 func routingCall(t *testing.T, auth, method, path string, body any) (int, map[string]any) {
 	t.Helper()
 	b, _ := json.Marshal(body)
-	msg, err := zapRoutingHandler(context.Background(), method, path, "family=zen", auth, b)
+	msg, err := zapRoutingHandler(bridgedAs(auth), method, path, "family=zen", auth, b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,27 @@ func routingCall(t *testing.T, auth, method, path string, body any) (int, map[st
 	var out map[string]any
 	_ = json.Unmarshal(raw, &out)
 	return st, out
+}
+
+// vouchedFor holds the tokens whose requests the host vouched for: what the HTTP
+// bridge carries to the handler (vouch) for a request the boundary judged a
+// SuperAdmin's. A token not in it reaches the handler as a raw ZAP door would.
+var vouchedFor sync.Map
+
+// superBearer is the SuperAdmin as the bridge serves one: an admin-org person
+// whose request the host vouched for. The token alone is not one.
+func superBearer(t *testing.T) string {
+	t.Helper()
+	tok := authtest.Bearer(t, iam.User{Owner: "admin", Name: "a"})
+	vouchedFor.Store(tok, true)
+	t.Cleanup(func() { vouchedFor.Delete(tok) })
+	return tok
+}
+
+// bridgedAs is the context the HTTP bridge hands a handler for auth's request.
+func bridgedAs(auth string) context.Context {
+	_, ok := vouchedFor.Load(auth)
+	return vouch(context.Background(), ok)
 }
 
 // A SuperAdmin proposes an edit and sees its diff, applies it against the newest
@@ -71,7 +92,12 @@ func TestRoutingIsVersionedAndSuperAdminOnly(t *testing.T) {
 	if st, _ := routingCall(t, "", http.MethodGet, "/v1/ai/router/catalog", nil); st != http.StatusUnauthorized {
 		t.Fatalf("an anonymous caller got %d", st)
 	}
-	super := authtest.Bearer(t, iam.User{Owner: "admin", Name: "a"})
+	// An admin-org token the host did not vouch for — a raw ZAP door — is no
+	// SuperAdmin: the handler reads the verdict, never the org the token names.
+	if st, _ := routingCall(t, authtest.Bearer(t, iam.User{Owner: "admin", Name: "b"}), http.MethodGet, "/v1/ai/router/catalog", nil); st != http.StatusForbidden {
+		t.Fatalf("an admin-org token with no host verdict read the routing catalogs: %d", st)
+	}
+	super := superBearer(t)
 
 	edit := map[string]any{"family": "zen", "catalog": json.RawMessage(`{"models":{"zen6":{"route":[{"upstream":"b:free"}]}}}`), "note": "b leads"}
 	st, out := routingCall(t, super, http.MethodPost, "/v1/ai/router/catalog/propose", edit)
@@ -187,7 +213,7 @@ func engineAt(t *testing.T) *engineFake {
 func ensoCall(t *testing.T, auth, method, path string, body any) (int, map[string]any) {
 	t.Helper()
 	b, _ := json.Marshal(body)
-	msg, err := zapRoutingHandler(context.Background(), method, path, "family=enso", auth, b)
+	msg, err := zapRoutingHandler(bridgedAs(auth), method, path, "family=enso", auth, b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +252,7 @@ const (
 func TestEnsoIsEditedOnTheEnginesAdminRoutes(t *testing.T) {
 	withStore(t)
 	e := engineAt(t)
-	super := authtest.Bearer(t, iam.User{Owner: "admin", Name: "a"})
+	super := superBearer(t)
 	st, out := ensoCall(t, super, http.MethodGet, "/v1/ai/router/catalog", nil)
 	views, _ := out["data"].([]any)
 	if st != 200 || len(views) != 1 {
@@ -265,7 +291,7 @@ func TestACatalogTheGuardWouldRefuseIsNotApplied(t *testing.T) {
 	withStore(t)
 	orFees(t)
 	e := engineAt(t)
-	super := authtest.Bearer(t, iam.User{Owner: "admin", Name: "a"})
+	super := superBearer(t)
 	over := catalogWith(t, "enso-pro", opus, sonnet)
 
 	st, out := ensoCall(t, super, http.MethodPost, "/v1/ai/router/catalog/propose", map[string]any{"family": "enso", "catalog": over})

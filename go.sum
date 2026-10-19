@@ -574,8 +574,8 @@ github.com/hanzo-ds/native v0.72.0 h1:lQhH2dza3foJCHN6scIVsEpqdj/xzI1N0QlI94vtWh
 github.com/hanzo-ds/native v0.72.0/go.mod h1:11FZtFdtfXMnmpybDEW6+uPRWFeC3TOT59YaV+lED+E=
 github.com/hanzoai/account v0.3.3 h1:Kn45AOIQVS7BuYDKuM1OWsxlPj4EbOSVWTrMknjHVQA=
 github.com/hanzoai/account v0.3.3/go.mod h1:8OzIGRphAhlabOI74O4GoL3RM0y8mbUV0pQUKgXLjkw=
-github.com/hanzoai/authz v1.10.30 h1:UzJlpaC+2XAY8s2Ui3ziWBZmIUOCGIND5EchqbYPmEk=
-github.com/hanzoai/authz v1.10.30/go.mod h1:rhZo/LvDXdUZG3/6+ujfJ1RHgLyfOpw2te+ebX3KSFs=
+github.com/hanzoai/authz v1.10.47 h1:ary/mw4lUYRetRlX+Ou61QXh8ig8EbD/ALR9fpg23EU=
+github.com/hanzoai/authz v1.10.47/go.mod h1:UaE7uejr8GTgosNO/teyBOItT85/T6+L3hpFPkSOzWE=
 github.com/hanzoai/csqlite v0.1.2 h1:4DzdgUfKADhzEP66Y30/HwepuBLrwt7NsemJMfrPGl4=
 github.com/hanzoai/csqlite v0.1.2/go.mod h1:H31a/O6VXuklR9UBkgY++bmAK5uzVfXPqU0F6P9Wsos=
 github.com/hanzoai/dashscopego v0.6.0 h1:sLUepwcnVajaDgzlgfuJWkZblBg9UIalkpFUjXHx0Fg=

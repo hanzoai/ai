@@ -90,7 +90,7 @@ func handleCloudOps(ctx context.Context, from string, msg *zap.Message) (*zap.Me
 
 	// The message carries an auth field because these opcodes act on a cluster.
 	// Reading it is what makes the field mean anything.
-	user := zapPrincipal(auth)
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return buildOpsResponse(401, nil, "auth:Please sign in first")
 	}

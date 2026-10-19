@@ -26,37 +26,29 @@ const (
 	UserTypeVideoNormalUser = "video-normal-user"
 )
 
-// AdminOrg is the reserved IAM organization whose members are Hanzo SUPER admins
-// (platform / cross-tenant). Membership in this ONE org — not a configurable
-// list, not a "built-in" org — is the SOLE definition of super admin
-// across the stack. It matches IAM's conf.AdminOrg (user.IsGlobalAdmin: owner ==
-// AdminOrg) and the console super-admin gate (isSuperAdminAccount: owner ==
-// 'admin'). It is deliberately NOT a TENANT org: a hanzo-org admin (e.g.
-// hanzo/z) is an org admin, not a super admin, and must not read/modify platform
-// provider config (upstream API keys) or cross-tenant data.
-const AdminOrg = "admin"
-
 // ScopeOwner answers WHICH ORG a request acts on: the one it asked for when the
 // caller is entitled to ask, and the caller's own otherwise.
 //
-// The entitlement is membership of the reserved org and nothing else, which is
-// the same predicate IsSuperAdmin reads — a tenant's own admin administers that
-// tenant and may not name another. An owner arriving on a request is therefore a
-// REQUEST rather than a fact, and this is where it stops being one.
+// The entitlement is SuperAdmin and nothing else — the same verdict IsSuperAdmin
+// reads — so a tenant's own admin administers that tenant and may not name
+// another. An owner arriving on a request is therefore a REQUEST rather than a
+// fact, and this is where it stops being one.
 //
-// It takes the two values it needs and no more. How the caller was resolved,
-// where the requested owner arrived — a body, a query, a path — and what a
-// refusal should look like are each the caller's own business; five groups had
-// written this rule out five times to keep those differences local, and had
-// already drifted on whether the reserved org is spelled by its constant. One
-// rule, one place; the shapes around it stay where they are.
-func ScopeOwner(callerOrg, requested string) string {
-	if callerOrg == AdminOrg {
+// It takes the resolved caller and the requested owner. How the caller was
+// resolved, where the requested owner arrived — a body, a query, a path — and what
+// a refusal should look like are each the caller's own business; five groups had
+// written this rule out five times to keep those differences local. One rule, one
+// place; the shapes around it stay where they are.
+func ScopeOwner(caller *iam.User, requested string) string {
+	if caller == nil {
+		return ""
+	}
+	if IsSuperAdmin(caller) {
 		if r := strings.TrimSpace(requested); r != "" {
 			return r
 		}
 	}
-	return callerOrg
+	return caller.Owner
 }
 
 func IsAnonymousUserByUsername(username string) bool {
@@ -87,17 +79,22 @@ func IsAdmin(user *iam.User) bool {
 	return user.IsAdmin || user.Type == UserTypeChatAdmin || user.Tag == "教师"
 }
 
-// IsSuperAdmin reports whether the user is a Hanzo SUPER admin: a member of the
-// reserved `admin` org (AdminOrg). This is the ONE super-admin predicate — no
-// configurable org list, no "built-in" org, no isAdmin flag: membership in the
-// admin org alone is authoritative, matching IAM's user.IsGlobalAdmin (owner ==
-// conf.AdminOrg) and the console isSuperAdminAccount gate. It is strictly
-// narrower than IsAdmin — a tenant-org owner (hanzo/z, maxpower/dave), even one
-// who is isAdmin of their OWN org, is NEVER a super admin. Platform-wide AI ops
-// (provider/upstream-key config, cross-tenant reads, topology disclosure)
-// require this.
+// IsSuperAdmin reports whether the request this user was resolved from carries
+// the host boundary's SuperAdmin verdict (iam.User.Sudo, stamped by object.Verify
+// from object.SetSuper). It is the ONE SuperAdmin predicate here, and it compares
+// no org: the boundary decided it once, from the token it validated — a person
+// whose own org is the reserved admin org (authz.Claims.Sudo) — and this module
+// reading the org a credential names a second time is how an admin-org
+// application, an admin-org person's API key and an org spelled "admin " came to be
+// SuperAdmin here while the boundary refused them. A user resolved with no request
+// behind it — an API key, a raw ZAP door, a principal assembled from strings —
+// carries no verdict and is never one.
+//
+// It is strictly narrower than IsAdmin: a tenant-org owner who administers their
+// OWN org is never a SuperAdmin. Platform-wide AI ops (provider/upstream-key
+// config, cross-tenant reads, topology disclosure) require this.
 func IsSuperAdmin(user *iam.User) bool {
-	return user != nil && user.Owner == AdminOrg
+	return user != nil && user.Sudo
 }
 
 // IsVideoNormalUser checks if the user has the video-normal-user role

@@ -40,7 +40,7 @@ func (c *ApiController) principalUser() *iam.User {
 		return nil
 	}
 	if isJwtToken(token) {
-		claims, err := object.ParseAndValidateJWT(token)
+		claims, err := object.Verify(c.Ctx, token)
 		if err != nil {
 			return nil
 		}
@@ -121,7 +121,7 @@ func (c *ApiController) principalOrgs() []account.OrgRef {
 	if token == "" || !isJwtToken(token) {
 		return nil
 	}
-	claims, err := object.ParseAndValidateJWT(token)
+	claims, err := object.Verify(c.Ctx, token)
 	if err != nil {
 		return nil
 	}

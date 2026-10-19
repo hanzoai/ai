@@ -400,7 +400,7 @@ func routingFamily(query string, body []byte) string {
 // zapRoutingHandler serves /v1/ai/router/catalog and its /propose, /rollback and /test
 // sub-paths.
 func zapRoutingHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+	user := zapPrincipal(ctx, auth)
 	if deny := zapMiscAuthz("routing", user); deny != nil {
 		return deny, nil
 	}

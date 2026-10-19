@@ -65,7 +65,7 @@ func TestNoZapDoorServesAConfinedToken(t *testing.T) {
 	if _, _, _, err := zapResolveAuth(bearer, "zen-e2e"); !errors.Is(err, errZapConfined) {
 		t.Errorf("zapResolveAuth: %v, want %v", err, errZapConfined)
 	}
-	if u := zapPrincipal(bearer); u != nil {
+	if u := zapPrincipal(context.Background(), bearer); u != nil {
 		t.Errorf("zapPrincipal made %s/%s of a confined token", u.Owner, u.Name)
 	}
 

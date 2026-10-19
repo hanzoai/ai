@@ -22,6 +22,7 @@ import (
 
 	"github.com/hanzoai/ai/i18n"
 	"github.com/hanzoai/ai/model"
+	"github.com/hanzoai/authz"
 	"github.com/hanzoai/dbx"
 )
 
@@ -335,7 +336,7 @@ func GetModelProviderByName(name string) (*Provider, error) {
 // route through" — with the global default inherited until they do. An empty or
 // "admin" org has no override and takes the global path directly.
 func GetModelProviderByNameForOrg(orgId, name string) (*Provider, error) {
-	if orgId == "" || orgId == "admin" {
+	if orgId == "" || orgId == authz.AdminOrg {
 		return GetModelProviderByName(name)
 	}
 

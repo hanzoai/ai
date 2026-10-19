@@ -13,8 +13,8 @@ import (
 // SUPER-ADMIN IS ORG MEMBERSHIP AND NOTHING ELSE.
 //
 // There are two admin scopes and conflating them is a privilege escalation, not
-// a naming quibble: an ORG admin administers their own tenant, and a super admin
-// is the platform's own sudo, held by membership of the reserved admin org. A
+// a naming quibble: an ORG admin administers their own tenant, and the SuperAdmin
+// is the platform's own sudo, the host boundary's verdict on a request. A
 // gate that accepted the first for the second would hand every customer's org
 // admin the cross-tenant surface.
 //
@@ -31,8 +31,8 @@ func TestAnOrgAdminIsNotAPlatformSuperAdmin(t *testing.T) {
 		{"an ordinary member of a tenant", &iam.User{Owner: "acme", Name: "alice"}, false},
 		{"that tenant's own admin", &iam.User{Owner: "acme", Name: "boss", IsAdmin: true}, false},
 		{"a chat admin by type", &iam.User{Owner: "acme", Name: "mod", Type: util.UserTypeChatAdmin}, false},
-		{"a member of the reserved org", &iam.User{Owner: util.AdminOrg, Name: "root"}, true},
-		{"a member of the reserved org who is not flagged admin", &iam.User{Owner: util.AdminOrg, Name: "ops"}, true},
+		{"a row of the reserved org with no host verdict", &iam.User{Owner: "admin", Name: "root"}, false},
+		{"the host's verdict", &iam.User{Owner: "admin", Name: "ops", Sudo: true}, true},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
 			if got := util.IsSuperAdmin(tc.user); got != tc.want {
@@ -64,9 +64,15 @@ func TestTheSuperAdminRoutesAreNeverRelaxedByPreviewMode(t *testing.T) {
 				if deny := zapMiscAuthz(name, orgAdmin); deny == nil {
 					t.Errorf("%q let a tenant's own admin through; it is platform sudo", name)
 				}
-				root := &iam.User{Owner: util.AdminOrg, Name: "root"}
-				if deny := zapMiscAuthz(name, root); deny != nil {
-					t.Errorf("%q refused a member of the reserved org", name)
+				// A raw ZAP door resolves no host verdict, so a row of the reserved org
+				// is refused here too; the SuperAdmin reaches these over HTTP.
+				root := &iam.User{Owner: "admin", Name: "root"}
+				if deny := zapMiscAuthz(name, root); deny == nil {
+					t.Errorf("%q let a reserved-org row through with no host verdict", name)
+				}
+				sudo := &iam.User{Owner: "admin", Name: "root", Sudo: true}
+				if deny := zapMiscAuthz(name, sudo); deny != nil {
+					t.Errorf("%q refused the host's verdict", name)
 				}
 			}
 		})

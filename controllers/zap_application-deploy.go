@@ -45,7 +45,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/luxfi/zap"
 
@@ -103,8 +102,8 @@ type zapListAppParams struct {
 	SortOrder string `json:"sortOrder"`
 }
 
-func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetApplicationsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -114,13 +113,10 @@ func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*za
 		_ = json.Unmarshal(body, &p)
 	}
 
-	// GetScopedOwner parity: non-admin is scoped to its own org; the reserved
-	// `admin` org may target a specific owner. The scope decision derives ONLY
-	// from the verified principal, never from a client owner field for a tenant.
-	owner := user.Owner
-	if user.Owner == "admin" && strings.TrimSpace(p.Owner) != "" {
-		owner = strings.TrimSpace(p.Owner)
-	}
+	// GetScopedOwner parity, through the one rule: the scope derives ONLY from the
+	// verified principal, and a raw ZAP door's principal carries no SuperAdmin
+	// verdict, so the client's owner field never retargets it.
+	owner := util.ScopeOwner(user, p.Owner)
 
 	if p.PageSize == "" || p.P == "" {
 		applications, err := object.GetApplications(owner)
@@ -148,8 +144,8 @@ func zapGetApplicationsHandler(_ context.Context, auth string, body []byte) (*za
 
 // ── get-application ──────────────────────────────────────────────────────
 
-func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
+func zapGetApplicationHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapPrincipal(ctx, auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p struct {
@@ -159,7 +155,7 @@ func zapGetApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 		_ = json.Unmarshal(body, &p)
 	}
 
-	if deny := zapReachable(auth, p.Id, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, p.Id, theirOrg); deny != nil {
 		return deny, nil
 	}
 
@@ -194,15 +190,15 @@ func zapAppPayload(body []byte) (string, *object.Application, error) {
 	return id, &application, nil
 }
 
-func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
+func zapUpdateApplicationHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapPrincipal(ctx, auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	id, application, err := zapAppPayload(body)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
-	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, id, theirOrg); deny != nil {
 		return deny, nil
 	}
 
@@ -220,8 +216,8 @@ func zapUpdateApplicationHandler(_ context.Context, auth string, body []byte) (*
 
 // ── add-application ──────────────────────────────────────────────────────
 
-func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
+func zapAddApplicationHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapPrincipal(ctx, auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var application object.Application
@@ -230,7 +226,7 @@ func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 	}
 	// Filed into the caller's own organization — the one the template below is
 	// looked up under, and the one the listing reads back.
-	application.Owner = theirOrg(zapPrincipal(auth))
+	application.Owner = theirOrg(zapPrincipal(ctx, auth))
 
 	if application.Template == "" {
 		return zapError(http.StatusOK, "application:Missing required parameters")
@@ -253,8 +249,8 @@ func zapAddApplicationHandler(_ context.Context, auth string, body []byte) (*zap
 
 // ── delete-application ───────────────────────────────────────────────────
 
-func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
+func zapDeleteApplicationHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapPrincipal(ctx, auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var body_ object.Application
@@ -262,7 +258,7 @@ func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*
 		return zapError(http.StatusOK, err.Error())
 	}
 	id := util.GetIdFromOwnerAndName(body_.Owner, body_.Name)
-	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, id, theirOrg); deny != nil {
 		return deny, nil
 	}
 	// The stored row, not the body's copy: what is torn down is the namespace this
@@ -288,15 +284,15 @@ func zapDeleteApplicationHandler(_ context.Context, auth string, body []byte) (*
 
 // ── deploy-application (update + synchronous deploy) ─────────────────────
 
-func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
+func zapDeployApplicationHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapPrincipal(ctx, auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	id, application, err := zapAppPayload(body)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
 	}
-	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, id, theirOrg); deny != nil {
 		return deny, nil
 	}
 
@@ -337,8 +333,8 @@ func zapDeployApplicationHandler(_ context.Context, auth string, body []byte) (*
 
 // ── undeploy-application (synchronous undeploy) ──────────────────────────
 
-func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if zapPrincipal(auth) == nil {
+func zapUndeployApplicationHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if zapPrincipal(ctx, auth) == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
 	var p struct {
@@ -370,8 +366,8 @@ func zapUndeployApplicationHandler(_ context.Context, auth string, body []byte) 
 
 // ── get-k8s-status (super admin, mirrors RequireSuperAdmin) ──────────────
 
-func zapGetK8sStatusHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetK8sStatusHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}

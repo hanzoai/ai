@@ -35,7 +35,7 @@ import (
 // authed org, delegate, return the {status,msg,data} envelope.
 //
 // Org scoping is authoritative: GetOrg() honors X-Org-Id only for the
-// principal's own org or a global admin, so a caller can only ever touch their own
+// principal's own org or a SuperAdmin, so a caller can only ever touch their own
 // org's jobs.
 
 // createFinetuneRequest is the new-training-job payload from the console.

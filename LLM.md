@@ -1197,10 +1197,30 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   to add credit, and so moving the route cannot silently re-gate them. Exempt
   from balance is not exempt from auth.
 
-- **SuperAdmin** — `util.IsSuperAdmin` = `owner == util.AdminOrg`, the constant
-  `"admin"`. Membership in that one reserved IAM org is the whole definition:
-  no list, no env override, and `isAdmin` is not part of it — an org admin
-  (`hanzo/z`) administers `hanzo` and holds no platform power.
+- **SuperAdmin is the host boundary's verdict, never a reading of an org name.**
+  The host installs it (`object.SetSuper`; hanzo-inc/cloud installs
+  `principal.Super`, which reads the `X-User-IsAdmin` its boundary deletes from
+  every request and re-mints from `authz.Claims.Sudo` — a PERSON whose own org is
+  `admin`). Every HTTP seam that turns a request's token into a principal goes
+  through `object.Verify(c, token)`, which stamps the verdict on `iam.User.Sudo`
+  (`json:"-"`, never decoded); `util.IsSuperAdmin(user)` reads that field and
+  nothing else, and `util.ScopeOwner(user, requested)` asks it. No code here
+  compares an org to `"admin"` to grant authority; the reserved org's NAME
+  (`authz.AdminOrg`) is used only to say which ROWS are the platform's (provider
+  rows, the platform's index). What this replaced decided on its own and
+  disagreed with the boundary: an admin-org application (no `orgs`, `owner`
+  claim `admin`), an admin-org person's `sk-` key, and an org spelled `admin `
+  (the old parse trimmed `orgs[0]`) were each SuperAdmin here and nowhere else.
+  `isAdmin` is not part of it — an org admin (`hanzo/z`) administers `hanzo` and
+  holds no platform power.
+
+  With no host — standalone `aid` — there is no verdict and no SuperAdmin. A ZAP
+  door is not the boundary either: `target` (the one place a ZAP-built request
+  reaches the router) deletes `X-User-IsAdmin`, and `zapPrincipal(ctx, auth)`
+  carries a verdict only when ctx does, which only the HTTP bridge
+  (`RouterConfigBridge`, `vouch`) sets, from `object.Super` on the request it
+  holds. A key is never the SuperAdmin on any path, as at the host.
+  `controllers/superadmin_test.go`, `routers/authz_filter_test.go` (`asSuper`).
 
 - **A tenant's URL is fetched by ONE rule: `github.com/hanzoai/outbound`.**
   `proxy.Public` is `outbound.Client` (judged at the dial on the address the

@@ -25,7 +25,7 @@ import (
 // test that forgets one fails rather than passing by omission.
 func upstream() *Provider {
 	return &Provider{
-		Owner:        util.AdminOrg,
+		Owner:        "admin",
 		Name:         "openrouter",
 		Type:         "OpenRouter",
 		ClientSecret: "sk-client-secret",
@@ -65,13 +65,13 @@ func TestTenantAdminNeverSeesPlatformUpstreamKeys(t *testing.T) {
 	}
 }
 
-// The same row read by a member of the reserved admin org is the operator path:
-// configuring an upstream credential requires seeing it.
+// The same row read by the SuperAdmin is the operator path: configuring an
+// upstream credential requires seeing it.
 func TestSuperAdminStillReadsUpstreamKeys(t *testing.T) {
-	super := &iam.User{Owner: util.AdminOrg, Name: "z", IsAdmin: true}
+	super := &iam.User{Owner: "admin", Name: "z", IsAdmin: true, Sudo: true}
 
 	if !util.IsSuperAdmin(super) {
-		t.Fatal("a member of the admin org is not recognised as super admin")
+		t.Fatal("the host's verdict is not recognised as the SuperAdmin")
 	}
 
 	got := GetMaskedProvider(upstream(), super)

@@ -97,16 +97,16 @@ var brandDefs = map[string]brandDef{
 // path is unchanged.
 const defaultBrand = "hanzo"
 
-// adminBrand is the resolved "brand" for the global-admin consoles (admin.*).
+// adminBrand is the resolved "brand" for the SuperAdmin consoles (admin.*).
 // It is NOT a white-label brand -- it is the ONE operator tenant. Keeping it
 // distinct from defaultBrand makes brandAuthClient build a dedicated confidential
 // client for it (and fail closed if its secret is absent), never silently reusing
 // the hanzo package-global.
 const adminBrand = "admin"
 
-// adminApp is the global-admin IAM app the admin.* consoles exchange their OAuth
+// adminApp is the SuperAdmin IAM app the admin.* consoles exchange their OAuth
 // code as. The admin console SPA authorizes with client_id=admin-console (IAM org
-// "admin" -- the operator tenant, globalAdminOrgs=admin,built-in), so cloud MUST
+// "admin" -- the operator tenant), so cloud MUST
 // redeem the code as admin-console too; redeeming it as the host's <brand>-cloud
 // app is exactly what IAM rejects with "token is for wrong application" (the P0
 // this closes). The operator identity is brand-independent -- one admin org on the
@@ -158,7 +158,7 @@ func brandFromHost(host string) string {
 	return defaultBrand
 }
 
-// isAdminHost reports whether a Host is a global-admin console (admin.hanzo.ai,
+// isAdminHost reports whether a Host is a SuperAdmin console (admin.hanzo.ai,
 // admin.lux.cloud, ...). These authenticate against the ONE admin app (org
 // "admin"), not the host's brand cloud app -- the operator identity is shared
 // across brands. Port/case-insensitive, mirroring brandFromHost's normalization.
@@ -187,7 +187,7 @@ func iamEndpoint(issuer string) string {
 // IAM_APP_NAME / IAM_ORG / IAM_CLIENT_SECRET), so the hanzo signin path is
 // unchanged; only a lux/zoo/pars host resolves to its own client + secret + issuer.
 func resolveBrandIAM(host string) BrandIAM {
-	// The global-admin consoles (admin.*) authorize with the admin-console app
+	// The SuperAdmin consoles (admin.*) authorize with the admin-console app
 	// (org "admin"), so redeem their code as that app -- NOT the host's brand cloud
 	// app. This precedes brandFromHost: admin.hanzo.ai would otherwise suffix-match
 	// hanzo.ai -> hanzo-cloud and IAM would reject the exchange ("wrong application").

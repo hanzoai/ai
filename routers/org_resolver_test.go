@@ -62,10 +62,13 @@ func TestGetOrgOwnOrgHeaderHonored(t *testing.T) {
 // org via the header (platform cross-org access).
 func TestGetOrgSuperAdminCrossOrg(t *testing.T) {
 	admin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
-	q := asUser(t, "POST", "/v1/chat/completions", admin)
-	q = q.with("X-Org-Id", "some-tenant")
+	q := asUser(t, "POST", "/v1/chat/completions", admin).with("X-Org-Id", "some-tenant")
+	if got := GetOrg(q.Ctx); got == "some-tenant" {
+		t.Errorf("an admin-org row with no host verdict acted in %q", got)
+	}
+	q = asSuper(t, "POST", "/v1/chat/completions", admin).with("X-Org-Id", "some-tenant")
 	if got := GetOrg(q.Ctx); got != "some-tenant" {
-		t.Errorf("super-admin cross-org = %q, want some-tenant", got)
+		t.Errorf("SuperAdmin cross-org = %q, want some-tenant", got)
 	}
 }
 

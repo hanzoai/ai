@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/authz"
 
 	"github.com/hanzoai/ai/log"
 )
@@ -101,12 +101,14 @@ type githubRepoResponse struct {
 // has to be the requester's. Falling back to the platform's for everyone spent
 // the platform's own access on a target the caller chose, and put whatever it
 // could reach into the caller's index. The reserved org IS the platform, so its
-// ingests still reach the platform's repositories.
+// ingests still reach the platform's repositories. This names whose INDEX the
+// ingest fills, not who the caller is: it is the tenant the request was already
+// scoped to.
 func resolveGitHubToken(explicit, owner string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if owner != util.AdminOrg {
+	if owner != authz.AdminOrg {
 		return ""
 	}
 	if v := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); v != "" {

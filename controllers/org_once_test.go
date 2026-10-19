@@ -29,11 +29,13 @@ func TestTheRequestsOrgIsResolvedOnce(t *testing.T) {
 	withStore(t)
 	people := withIAM(t)
 
-	// A super admin, because a stated org is honoured for one — which makes a second
+	// The SuperAdmin, because a stated org is honoured for one — which makes a second
 	// resolution observable.
+	host(t)
 	root := people.signedIn(t, &iam.User{Owner: "admin", Name: "root"})
 
 	c := as(visit("GET", "/v1/ai/get-account"), root)
+	c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 	c.Fiber().Request().Header.Set("X-Org-Id", "acme")
 	if got := c.GetOrg(); got != "acme" {
 		t.Fatalf("first answer = %q, want acme", got)
@@ -59,9 +61,11 @@ func TestTheRequestsOrgIsResolvedOnce(t *testing.T) {
 func TestAnOrgReadFromAHeaderIsOurs(t *testing.T) {
 	withStore(t)
 	people := withIAM(t)
+	host(t)
 	root := people.signedIn(t, &iam.User{Owner: "admin", Name: "root"})
 
 	c := as(visit("GET", "/v1/ai/get-account"), root)
+	c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 	c.Fiber().Request().Header.Set("X-Org-Id", "acme")
 	held := c.resolveOrg()
 

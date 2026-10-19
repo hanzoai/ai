@@ -95,7 +95,14 @@ func zapGwError(status uint32, msg string) (*zap.Message, error) {
 // evaluated as one, so a value that is shaped like both cannot be offered to JWT
 // validation after failing as a key. And the token is trimmed, because the space
 // around a credential is not part of it.
-func zapPrincipal(auth string) *iam.User {
+//
+// The person carries the SuperAdmin verdict only when ctx carries one, which only
+// the HTTP bridge can set (vouch, read by bridged, from the host boundary's verdict on the request
+// it was handed). A raw ZAP door is not that boundary — its envelope is whatever
+// the peer framed — so a person it resolves is never the SuperAdmin, and every
+// SuperAdmin gate on that wire refuses, by util.IsSuperAdmin. A key is never one,
+// on either path, as it is never one at the host.
+func zapPrincipal(ctx context.Context, auth string) *iam.User {
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if token == "" || confinedIn(auth) {
 		return nil
@@ -109,6 +116,7 @@ func zapPrincipal(auth string) *iam.User {
 	if isJwtToken(token) {
 		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
 			u := claims.User
+			u.Sudo = bridged(ctx)
 			return &u
 		}
 	}
@@ -118,8 +126,8 @@ func zapPrincipal(auth string) *iam.User {
 // zapRequireSuperAdmin mirrors ApiController.RequireSuperAdmin: no verified
 // principal → 401, authenticated non-super-admin → 403. Returns the user when
 // authorized, else the refusal message to return verbatim.
-func zapRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipal(auth)
+func zapRequireSuperAdmin(ctx context.Context, auth string) (*iam.User, *zap.Message) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		m, _ := zapGwError(401, "auth:Please sign in first")
 		return nil, m
@@ -157,7 +165,7 @@ func zapModelAccessSelfHandler(ctx context.Context, method, path, query, auth st
 		// here is what made that sibling unreachable in production.
 		return nil, errDecline
 	}
-	user := zapPrincipal(auth)
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return zapGwError(401, "auth:Please sign in first")
 	}
@@ -195,7 +203,7 @@ func zapModelFromAccessPath(path string) string {
 // ── Admin access grants (model_access.go, SuperAdmin) ──────────────────────────
 
 func zapAdminModelAccessHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	if _, refuse := zapRequireSuperAdmin(auth); refuse != nil {
+	if _, refuse := zapRequireSuperAdmin(ctx, auth); refuse != nil {
 		return refuse, nil
 	}
 	switch strings.ToUpper(method) {
@@ -239,7 +247,7 @@ func zapAdminGrantModelAccess(body []byte) (*zap.Message, error) {
 // ── Config reload / pricing refresh (model_config.go, SuperAdmin) ──────────────
 
 func zapModelConfigAdminHandler(ctx context.Context, method, path, query, auth string, body []byte) (*zap.Message, error) {
-	if _, refuse := zapRequireSuperAdmin(auth); refuse != nil {
+	if _, refuse := zapRequireSuperAdmin(ctx, auth); refuse != nil {
 		return refuse, nil
 	}
 	cfg := GetModelConfig()

@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/account"
+
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
-	"github.com/hanzoai/ai/util"
 )
 
 // as presents a credential on a request the way a client does.
@@ -138,9 +139,11 @@ func TestTheCrossTenantListingsAskThePlatform(t *testing.T) {
 		}
 	}
 
-	// The reserved org is the platform, and reaches across.
-	sudo := people.signedIn(t, &iam.User{Owner: util.AdminOrg, Name: "z"})
+	// The SuperAdmin is the host's verdict, and reaches across.
+	host(t)
+	sudo := people.signedInOrgs(t, &iam.User{Owner: "admin", Name: "z"}, account.OrgRef{Org: "admin", Role: "owner"})
 	c := as(visit("GET", "/v1/ai/get-global-stores"), sudo)
+	c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 	c.GetGlobalStores()
 	if answered(c) != 200 {
 		t.Errorf("the platform was refused its own listing: %d %s", answered(c), sent(c))

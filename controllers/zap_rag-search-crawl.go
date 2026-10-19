@@ -268,8 +268,8 @@ func stored[T any](c *ApiController, whose func() (string, bool), store func(*T)
 // `whose` names the axis, as stored() does on the other surface: theirOrg where a
 // table belongs to organizations, themselves where it belongs to people. So a row
 // is written where that table's listing looks for it, whichever surface filed it.
-func zapWrite[T any](auth string, body []byte, whose func(*iam.User) string, store func(*T) (bool, error)) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapWrite[T any](ctx context.Context, auth string, body []byte, whose func(*iam.User) string, store func(*T) (bool, error)) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -757,8 +757,8 @@ func ownedBy(row any, owner string) error {
 // handlers here carry the id INSIDE the body, in a wrapper of their own, so there
 // is no id to hand a helper before the body is decoded. Two lines each, and the
 // rule is still written once.
-func zapReachable(auth string, id string, whose func(*iam.User) string) *zap.Message {
-	user := zapPrincipal(auth)
+func zapReachable(ctx context.Context, auth string, id string, whose func(*iam.User) string) *zap.Message {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return msg

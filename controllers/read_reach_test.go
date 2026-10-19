@@ -184,17 +184,25 @@ func TestTheGlobalChatListingStaysInsideTheCallersOrg(t *testing.T) {
 		}
 	}
 
-	// The reserved org reads every organization's.
+	// The SuperAdmin — the host's verdict — reads every organization's; an
+	// admin-org token the host did not vouch for reads its own.
+	host(t)
 	root := people.signedIn(t, &iam.User{Owner: "admin", Name: "root", IsAdmin: true})
 	c := as(visit("GET", "/v1/ai/get-global-chats"), root)
 	c.GetGlobalChats()
+	if strings.Contains(sent(c), "victim-conversation") {
+		t.Errorf("an admin-org token with no host verdict was shown every organization: %s", sent(c))
+	}
+	c = as(visit("GET", "/v1/ai/get-global-chats"), root)
+	c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
+	c.GetGlobalChats()
 	if !strings.Contains(sent(c), "victim-conversation") {
-		t.Errorf("the reserved org was not shown every organization: %s", sent(c))
+		t.Errorf("the SuperAdmin was not shown every organization: %s", sent(c))
 	}
 }
 
 // The listings named "global" were the whole table, and the word was doing the
-// scoping. They show the reserved org everything and everybody else their own.
+// scoping. They show the SuperAdmin everything and everybody else their own.
 func TestAGlobalListingStaysInsideTheCallersOrg(t *testing.T) {
 	withStore(t)
 	people := withIAM(t)
@@ -220,6 +228,7 @@ func TestAGlobalListingStaysInsideTheCallersOrg(t *testing.T) {
 	}
 
 	mallory := people.signedIn(t, &iam.User{Owner: "acme", Name: "mallory", IsAdmin: true})
+	host(t)
 	root := people.signedIn(t, &iam.User{Owner: "admin", Name: "root", IsAdmin: true})
 
 	for _, listing := range []struct {
@@ -243,9 +252,10 @@ func TestAGlobalListingStaysInsideTheCallersOrg(t *testing.T) {
 		}
 
 		c = as(visit("GET", "/v1/ai/"+listing.route), root)
+		c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 		listing.call(c)
 		if !strings.Contains(sent(c), `"victim-row"`) {
-			t.Errorf("%s did not show the reserved org every organization: %s", listing.route, sent(c))
+			t.Errorf("%s did not show the SuperAdmin every organization: %s", listing.route, sent(c))
 		}
 	}
 }

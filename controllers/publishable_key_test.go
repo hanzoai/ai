@@ -3,6 +3,7 @@
 package controllers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +32,7 @@ func TestAPublishableKeyNamesAnOrgAndNeverAPerson(t *testing.T) {
 	}
 
 	// The same key at the secret endpoint names nobody, and says why.
-	if u := zapPrincipal("Bearer " + key); u != nil {
+	if u := zapPrincipal(context.Background(), "Bearer "+key); u != nil {
 		t.Errorf("a publishable key resolved to a person: %+v", u)
 	}
 }

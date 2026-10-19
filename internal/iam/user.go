@@ -222,6 +222,12 @@ type User struct {
 	// unused, and no layer could report an error because each one was doing exactly
 	// what it was told. Prefer u.Payer(ledger) over reading this directly.
 	BillingAccount string `json:"billing_account,omitempty"`
+
+	// Sudo is the host boundary's verdict that this request's principal is the
+	// SuperAdmin (object.Verify, from object.SetSuper). It is never decoded — not
+	// from a token, an IAM response or a request body — and never derived from the
+	// org this row names; util.IsSuperAdmin reads it and nothing else does.
+	Sudo bool `json:"-"`
 }
 
 // GetId returns "<owner>/<name>", the IAM user identifier.

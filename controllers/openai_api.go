@@ -34,6 +34,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hanzoai/account"
 	"github.com/hanzoai/decimal"
+	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/address"
 	"github.com/hanzoai/ai/conf"
@@ -141,10 +142,14 @@ func isPublishableKey(token string) bool {
 // the ONE auth path that can honor an org switch, because it is the one that
 // holds the signed `orgs` claim proving membership — the ledger is resolved here,
 // from those claims, rather than re-parsing the token downstream.
-func resolveProviderFromJwt(ctx context.Context, token string, requested string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
+//
+// req is the HTTP request the token arrived on, whose host verdict says whether
+// the caller is the SuperAdmin (object.Verify); nil for a raw ZAP door, which has
+// none.
+func resolveProviderFromJwt(ctx context.Context, req *zip.Ctx, token string, requested string, requestedModel string, lang string) (*object.Provider, *iam.User, string, error) {
 	// Signature + issuer/audience validation (never raw iam.ParseJwtToken), so a
 	// token minted for a foreign app/issuer cannot authenticate a paid request.
-	claims, err := object.ParseAndValidateJWT(token)
+	claims, err := object.Verify(req, token)
 	if err != nil {
 		return nil, nil, "", authError("invalid access token: %s", err.Error())
 	}
@@ -1704,7 +1709,7 @@ func (c *ApiController) authResolveProvider(token, requestedModel, orgId string)
 		// contract as the IAM key path. The raw X-Org-Id goes in unvalidated: the
 		// resolver holds the signed `orgs` claim and is the only place allowed to
 		// decide whether the request may act — and pay — in that org.
-		provider, authUser, upstreamModel, err = resolveProviderFromJwt(ctx, token, strings.TrimSpace(c.Header("X-Org-Id")), requestedModel, lang)
+		provider, authUser, upstreamModel, err = resolveProviderFromJwt(ctx, c.Ctx, token, strings.TrimSpace(c.Header("X-Org-Id")), requestedModel, lang)
 		if err != nil {
 			err = wrapAuth(err)
 			return

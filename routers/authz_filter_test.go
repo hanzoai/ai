@@ -26,6 +26,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/ai/internal/authtest"
+	"github.com/hanzoai/ai/object"
 )
 
 // asUser builds a request carrying user as the authenticated principal, by SIGNING
@@ -43,9 +44,19 @@ func asUser(t *testing.T, method, path string, user *iam.User) probe {
 	return q
 }
 
-// TestRequiresGlobalAdminClassification locks in which endpoints are platform
-// (super-admin) sensitive and which stay public — crucially get-models stays out.
-func TestRequiresGlobalAdminClassification(t *testing.T) {
+// asSuper is asUser for the SuperAdmin: the seam hanzo-inc/cloud installs
+// (principal.Super) is installed, and the request carries the verdict the way the
+// cloud boundary writes it. Without the seam no request is the SuperAdmin.
+func asSuper(t *testing.T, method, path string, user *iam.User) probe {
+	t.Helper()
+	object.SetSuper(func(c *zip.Ctx) bool { return c.Header("X-User-IsAdmin") == "true" })
+	t.Cleanup(func() { object.SetSuper(nil) })
+	return asUser(t, method, path, user).with("X-User-IsAdmin", "true")
+}
+
+// TestRequiresSuperAdminClassification locks in which endpoints are platform
+// (SuperAdmin) sensitive and which stay public — crucially get-models stays out.
+func TestRequiresSuperAdminClassification(t *testing.T) {
 	sensitive := []string{
 		"get-providers", "get-provider", "get-global-providers",
 		"add-provider", "update-provider", "delete-provider",
@@ -89,10 +100,14 @@ func TestSensitiveOrgAdminForbidden403(t *testing.T) {
 	}
 }
 
-// TestSensitiveGlobalAdminAllowed — a super admin passes the gate untouched.
-func TestSensitiveGlobalAdminAllowed(t *testing.T) {
-	globalAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
-	q := asUser(t, "GET", "/v1/get-providers", globalAdmin)
+// TestSensitiveSuperAdminAllowed — the SuperAdmin passes the gate untouched, and
+// an admin-org row the host did not vouch for does not.
+func TestSensitiveSuperAdminAllowed(t *testing.T) {
+	operator := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
+	if q := asUser(t, "GET", "/v1/get-providers", operator).through(permissionFilter); q.status() != http.StatusForbidden {
+		t.Errorf("an admin-org row with no host verdict: get-providers = %d, want 403", q.status())
+	}
+	q := asSuper(t, "GET", "/v1/get-providers", operator)
 	q = q.through(permissionFilter)
 	if q.status() != http.StatusOK || len(q.said()) != 0 {
 		t.Errorf("super-admin get-providers wrote a denial (code=%d, body=%q); want pass-through", q.status(), q.said())
@@ -361,16 +376,16 @@ func TestAdminRoutesOrgAdminForbidden403_AllVariants(t *testing.T) {
 	}
 }
 
-// TestAdminRoutesGlobalAdminPass_Canonical: the fix must NOT over-block — a global
-// admin still passes the gate untouched on the canonical routes.
-func TestAdminRoutesGlobalAdminPass_Canonical(t *testing.T) {
-	globalAdmin := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
+// TestAdminRoutesSuperAdminPass_Canonical: the fix must NOT over-block — the
+// SuperAdmin still passes the gate untouched on the canonical routes.
+func TestAdminRoutesSuperAdminPass_Canonical(t *testing.T) {
+	operator := &iam.User{Owner: "admin", Name: "admin", IsAdmin: true}
 	for _, p := range []struct{ method, path string }{
 		{"GET", "/v1/admin/ai/providers"},
 		{"POST", "/v1/admin/ai/providers/toggle"},
 		{"POST", "/v1/admin/ai/providers/primary"},
 	} {
-		q := asUser(t, p.method, p.path, globalAdmin)
+		q := asSuper(t, p.method, p.path, operator)
 		q = q.through(permissionFilter)
 		if q.status() != http.StatusOK || len(q.said()) != 0 {
 			t.Errorf("super-admin %s %s wrote a denial (code=%d, body=%q); want pass-through", p.method, p.path, q.status(), q.said())
@@ -593,14 +608,14 @@ func toHost(host string) probe {
 // and a signed-in one who is not are both refused at the filter.
 func TestTheFreeViewIsTheSuperAdmins(t *testing.T) {
 	orgAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true}
-	globalAdmin := &iam.User{Owner: "admin", Name: "root"}
+	operator := &iam.User{Owner: "admin", Name: "root"}
 	if q := asUser(t, "GET", "/v1/admin/ai/free", nil).through(permissionFilter); q.status() != http.StatusUnauthorized {
 		t.Errorf("anonymous GET /v1/admin/ai/free = %d, want 401", q.status())
 	}
 	if q := asUser(t, "GET", "/v1/admin/ai/free", orgAdmin).through(permissionFilter); q.status() != http.StatusForbidden {
 		t.Errorf("an org admin's GET /v1/admin/ai/free = %d, want 403", q.status())
 	}
-	if q := asUser(t, "GET", "/v1/admin/ai/free", globalAdmin).through(permissionFilter); q.status() != http.StatusOK {
+	if q := asSuper(t, "GET", "/v1/admin/ai/free", operator).through(permissionFilter); q.status() != http.StatusOK {
 		t.Errorf("the SuperAdmin's GET /v1/admin/ai/free = %d, want through", q.status())
 	}
 }

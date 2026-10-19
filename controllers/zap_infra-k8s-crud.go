@@ -103,38 +103,36 @@ func registerZapInfraK8s() {
 
 // zapInfraSuperAdmin resolves the principal STRICTLY from the auth token via the
 // shared zapResolveUser seam (sk- IAM keys → getUserByAccessKey, JWTs →
-// object.ParseAndValidateJWT), then enforces util.IsSuperAdmin — the SAME
-// predicate the routers authz_filter applies to every infra CRUD endpoint. It is
-// the controller-side RequireSuperAdmin twin for the stateless ZAP wire:
-// fail-closed, no principal → 401, authenticated non-super-admin → 403. On
-// success it returns the resolved (owner, name).
+// object.ParseAndValidateJWT), then asks util.IsSuperAdmin — the SAME predicate
+// the routers authz_filter applies to every infra CRUD endpoint. Fail-closed: no
+// principal → 401, any other → 403. On success it returns the principal.
+//
+// A raw ZAP door is not the host's identity boundary, so the principal it resolves
+// carries no SuperAdmin verdict and every infra op here is refused: by the one
+// predicate, rather than by deciding again from the org the credential names. The
+// same operations reach a SuperAdmin through the HTTP surface, behind the host.
 //
 // A pk- resolves to no principal and so is refused, which is the correct answer
-// and not an omission: a publishable key names an org, never a person, and this
-// gate asks whether a PERSON is a platform admin. Teaching it to resolve one would
-// hand platform sudo to a credential that ships in page source.
-func zapInfraSuperAdmin(auth string) (owner, name string, reject *zap.Message) {
+// and not an omission: a publishable key names an org, never a person.
+func zapInfraSuperAdmin(auth string) (*iam.User, *zap.Message) {
 	if strings.TrimSpace(auth) == "" {
-		reject, _ = object.BuildCloudResponse(401, nil, "authentication required")
-		return "", "", reject
+		reject, _ := object.BuildCloudResponse(401, nil, "authentication required")
+		return nil, reject
 	}
 	id, err := zapResolveUser(auth)
 	if err != nil {
-		reject, _ = object.BuildCloudResponse(401, nil, err.Error())
-		return "", "", reject
+		reject, _ := object.BuildCloudResponse(401, nil, err.Error())
+		return nil, reject
 	}
-	owner = id
+	user := &iam.User{Owner: id}
 	if before, after, ok := strings.Cut(id, "/"); ok {
-		owner = before
-		name = after
+		user.Owner, user.Name = before, after
 	}
-	// Reconstruct the principal for the ONE super-admin predicate rather than
-	// re-deriving the policy (owner == AdminOrg) inline.
-	if !util.IsSuperAdmin(&iam.User{Owner: owner, Name: name}) {
-		reject, _ = object.BuildCloudResponse(403, nil, "this operation requires super admin privilege")
-		return "", "", reject
+	if !util.IsSuperAdmin(user) {
+		reject, _ := object.BuildCloudResponse(403, nil, "this operation requires super admin privilege")
+		return nil, reject
 	}
-	return owner, name, nil
+	return user, nil
 }
 
 // ── Request/response shapes (STEP 3 / STEP 7) ────────────────────────────────
@@ -197,12 +195,12 @@ func zapActionOk(affected bool, err error) (*zap.Message, error) {
 // ── Nodes ────────────────────────────────────────────────────────────────────
 
 func zapGetNodesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	owner, _, reject := zapInfraSuperAdmin(auth)
+	user, reject := zapInfraSuperAdmin(auth)
 	if reject != nil {
 		return reject, nil
 	}
 	p := decodeInfraListParams(body)
-	owner = util.ScopeOwner(owner, p.Owner)
+	owner := util.ScopeOwner(user, p.Owner)
 
 	if offset, limit, ok := p.paged(); ok {
 		count, err := object.GetNodeCount(owner, p.Field, p.Value)
@@ -223,7 +221,7 @@ func zapGetNodesHandler(ctx context.Context, auth string, body []byte) (*zap.Mes
 }
 
 func zapGetNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, _, reject := zapInfraSuperAdmin(auth); reject != nil {
+	if _, reject := zapInfraSuperAdmin(auth); reject != nil {
 		return reject, nil
 	}
 	node, err := object.GetMaskedNode(object.GetNode(infraId(body)))
@@ -234,7 +232,7 @@ func zapGetNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Mess
 }
 
 func zapAddNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, _, reject := zapInfraSuperAdmin(auth); reject != nil {
+	if _, reject := zapInfraSuperAdmin(auth); reject != nil {
 		return reject, nil
 	}
 	var node object.Node
@@ -245,7 +243,7 @@ func zapAddNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Mess
 }
 
 func zapUpdateNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, _, reject := zapInfraSuperAdmin(auth); reject != nil {
+	if _, reject := zapInfraSuperAdmin(auth); reject != nil {
 		return reject, nil
 	}
 	var node object.Node
@@ -256,7 +254,7 @@ func zapUpdateNodeHandler(ctx context.Context, auth string, body []byte) (*zap.M
 }
 
 func zapDeleteNodeHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, _, reject := zapInfraSuperAdmin(auth); reject != nil {
+	if _, reject := zapInfraSuperAdmin(auth); reject != nil {
 		return reject, nil
 	}
 	var node object.Node

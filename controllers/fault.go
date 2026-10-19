@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanzoai/authz"
+
 	"github.com/hanzoai/ai/object"
 )
 
@@ -759,7 +761,7 @@ func parseProblem(err error) string {
 // we operate (operated).
 func paying(ctx context.Context, p *object.Provider) bool {
 	return p != nil && shut(ctx, p) && p.Type != "Zen" && p.Type != "Enso" &&
-		!(p.Owner == "admin" && operated[p.Name])
+		!(p.Owner == authz.AdminOrg && operated[p.Name])
 }
 
 // operated names the global provider rows that are services we run on our own

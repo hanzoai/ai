@@ -28,6 +28,7 @@ import (
 	"net/http"
 
 	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/authz"
 	"github.com/luxfi/zap/forward"
 
 	"github.com/hanzoai/ai/object"
@@ -52,12 +53,18 @@ import (
 // gateway in zap_native.go, so without this the whole ZAP plane answers 404 to
 // everything. The URL is what such a caller filled in, so that is what the line
 // becomes.
+//
+// It is also where a ZAP-built request loses any SuperAdmin verdict it carries.
+// The verdict is the host boundary's (object.SetSuper reads it off the request),
+// and a ZAP door is not that boundary: whatever peer framed the envelope wrote the
+// header, so it is deleted here rather than believed.
 func target(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.Clone(r.Context())
 		if r.RequestURI == "" && r.URL != nil {
-			r = r.Clone(r.Context())
 			r.RequestURI = r.URL.RequestURI()
 		}
+		r.Header.Del(authz.HeaderUserAdmin)
 		h.ServeHTTP(w, r)
 	})
 }

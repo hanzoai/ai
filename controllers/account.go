@@ -536,15 +536,16 @@ func (c *ApiController) GetAccount() {
 		claims.User.Password = "#NeedToModify#"
 	}
 
-	// Surface the cloud's AUTHORITATIVE super-admin verdict to the browser.
-	// iam.User has no isSuperAdmin field, so wrap the claims (their fields stay
+	// Surface the host's SuperAdmin verdict on THIS request to the browser, the
+	// same answer every gate here reads (object.Super). iam.User carries no
+	// isSuperAdmin field on the wire, so wrap the claims (their fields stay
 	// promoted to the top level — owner, isAdmin, email, … are unchanged) and add
-	// the computed bool alongside. The console gate (isSuperAdminAccount) reads
-	// account.isSuperAdmin off this SAME object. Stamped AFTER redaction (it's a
-	// non-secret bool, and redaction never touches it).
+	// the bool alongside. The console gate (isSuperAdminAccount) reads
+	// account.isSuperAdmin off this SAME object. It is read off the request, not the
+	// row refreshed above, because the verdict is the request's.
 	c.ResponseOk(accountResponse{
 		Claims:       claims,
-		IsSuperAdmin: util.IsSuperAdmin(&claims.User),
+		IsSuperAdmin: object.Super(c.Ctx),
 	})
 }
 

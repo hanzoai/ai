@@ -41,6 +41,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/hanzoai/authz"
+
 	"github.com/hanzoai/ai/conf"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
@@ -174,7 +176,7 @@ func publicScribeProvider() (*object.Provider, string, error) {
 	if err != nil || provider == nil {
 		return nil, "", fmt.Errorf("%s's provider is unavailable", publicScribeModel)
 	}
-	if provider.Owner != "admin" || !operated[provider.Name] {
+	if provider.Owner != authz.AdminOrg || !operated[provider.Name] {
 		return nil, "", fmt.Errorf("%s is served by %q, which is not ours", publicScribeModel, provider.Name)
 	}
 	return provider, route.upstreamModel, nil

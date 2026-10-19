@@ -125,22 +125,22 @@ var zapKnowledgeGateway = map[string]zapKnowledgeHandlerFn{}
 
 // ── Shared seams (identity + response envelope + param parity) ───────────
 
-// zapKSFVScopedOwner mirrors GetScopedOwner: authenticated principal required;
-// the admin org may target another owner via a body "owner" field, every other
-// principal is scoped to its own org. Returns (owner, user, nil) or (…, deny).
-func zapKSFVScopedOwner(auth string, bodyOwner string) (string, *iam.User, *zap.Message) {
-	user := zapPrincipal(auth)
+// zapKSFVScopedOwner mirrors GetScopedOwner: authenticated principal required,
+// scoped to its own org. A raw ZAP door carries no SuperAdmin verdict, so the body
+// "owner" field never retargets it. Returns (owner, user, nil) or (…, deny).
+func zapKSFVScopedOwner(ctx context.Context, auth string, bodyOwner string) (string, *iam.User, *zap.Message) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return "", nil, msg
 	}
-	return util.ScopeOwner(user.Owner, bodyOwner), user, nil
+	return util.ScopeOwner(user, bodyOwner), user, nil
 }
 
 // zapRequireAdmin mirrors ApiController.RequireAdmin (preview passes; else an
 // org-level admin principal is required).
-func zapRequireAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipal(auth)
+func zapRequireAdmin(ctx context.Context, auth string) (*iam.User, *zap.Message) {
+	user := zapPrincipal(ctx, auth)
 	if conf.IsPreviewMode() {
 		return user, nil
 	}
@@ -153,8 +153,8 @@ func zapRequireAdmin(auth string) (*iam.User, *zap.Message) {
 
 // zapRequireSignedIn mirrors RequireSignedIn / RequireSessionOwner: a
 // principal is required, else 401.
-func zapRequireSignedIn(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipal(auth)
+func zapRequireSignedIn(ctx context.Context, auth string) (*iam.User, *zap.Message) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return nil, msg
@@ -257,7 +257,7 @@ func zapAddRecordForFile(user *iam.User, action, sessionId, key, filename string
 
 // ── stores ───────────────────────────────────────────────────────────────
 
-func zapGetGlobalStoresHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+func zapGetGlobalStoresHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
 	paged, offset, limit := zapPaginated(p)
 	if !paged {
@@ -268,7 +268,7 @@ func zapGetGlobalStoresHandler(_ context.Context, auth string, body []byte) (*za
 		return zapOk(stores)
 	}
 
-	if _, deny := zapRequireAdmin(auth); deny != nil {
+	if _, deny := zapRequireAdmin(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	count, err := object.GetStoreCount(p.Name, p.Field, p.Value)
@@ -288,9 +288,9 @@ func zapGetGlobalStoresHandler(_ context.Context, auth string, body []byte) (*za
 	return zapOk(stores, count)
 }
 
-func zapGetStoresHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+func zapGetStoresHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
-	owner, user, deny := zapKSFVScopedOwner(auth, p.Owner)
+	owner, user, deny := zapKSFVScopedOwner(ctx, auth, p.Owner)
 	if deny != nil {
 		return deny, nil
 	}
@@ -347,8 +347,8 @@ func zapDecodeStoreWithId(body []byte) (*object.Store, string, error) {
 	return &store, id, nil
 }
 
-func zapUpdateStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	caller, deny := zapRequireSignedIn(auth)
+func zapUpdateStoreHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	caller, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -390,7 +390,7 @@ func zapUpdateStoreHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	return zapOk(success)
 }
 
-func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+func zapAddStoreHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	var store object.Store
 	if err := json.Unmarshal(body, &store); err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -402,7 +402,7 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	// and a default store names the model every chat answer runs and bills. This is
 	// the scope the controller twin resolves (AddStore, store.go); only the admin org may
 	// name an owner, and it names it through this seam rather than on the row.
-	owner, _, deny := zapKSFVScopedOwner(auth, store.Owner)
+	owner, _, deny := zapKSFVScopedOwner(ctx, auth, store.Owner)
 	if deny != nil {
 		return deny, nil
 	}
@@ -437,8 +437,8 @@ func zapAddStoreHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	return zapOk(success)
 }
 
-func zapDeleteStoreHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	caller, deny := zapRequireSignedIn(auth)
+func zapDeleteStoreHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	caller, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -460,8 +460,8 @@ func zapDeleteStoreHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	return zapOk(success)
 }
 
-func zapRefreshStoreVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapRefreshStoreVectorsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	var store object.Store
@@ -476,9 +476,9 @@ func zapRefreshStoreVectorsHandler(_ context.Context, auth string, body []byte) 
 	return zapOk(ok)
 }
 
-func zapGetStoreNamesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+func zapGetStoreNamesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
-	owner, user, deny := zapKSFVScopedOwner(auth, p.Owner)
+	owner, user, deny := zapKSFVScopedOwner(ctx, auth, p.Owner)
 	if deny != nil {
 		return deny, nil
 	}
@@ -492,8 +492,8 @@ func zapGetStoreNamesHandler(_ context.Context, auth string, body []byte) (*zap.
 
 // ── storage providers ────────────────────────────────────────────────────
 
-func zapGetStorageProvidersHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapGetStorageProvidersHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	providers, err := getStorageProviders()
@@ -505,7 +505,7 @@ func zapGetStorageProvidersHandler(_ context.Context, auth string, _ []byte) (*z
 
 // ── files ────────────────────────────────────────────────────────────────
 
-func zapGetGlobalFilesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+func zapGetGlobalFilesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
 	paged, offset, limit := zapPaginated(p)
 	if !paged {
@@ -516,7 +516,7 @@ func zapGetGlobalFilesHandler(_ context.Context, auth string, body []byte) (*zap
 		return zapOk(files)
 	}
 
-	if _, deny := zapRequireAdmin(auth); deny != nil {
+	if _, deny := zapRequireAdmin(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	count, err := object.GetFileCount("", p.Field, p.Value)
@@ -530,9 +530,9 @@ func zapGetGlobalFilesHandler(_ context.Context, auth string, body []byte) (*zap
 	return zapOk(files, count)
 }
 
-func zapGetFilesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+func zapGetFilesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	p := zapDecodeParams(body)
-	owner, _, deny := zapKSFVScopedOwner(auth, p.Owner)
+	owner, _, deny := zapKSFVScopedOwner(ctx, auth, p.Owner)
 	if deny != nil {
 		return deny, nil
 	}
@@ -558,8 +558,8 @@ func zapGetFileHandler(_ context.Context, _ string, body []byte) (*zap.Message, 
 	return zapOk(file)
 }
 
-func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapUpdateFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -569,10 +569,10 @@ func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	file.Owner = theirOrg(zapPrincipal(auth))
+	file.Owner = theirOrg(zapPrincipal(ctx, auth))
 	id := p.Id
 	// The id names which row, and it names one of the caller's own.
-	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, id, theirOrg); deny != nil {
 		return deny, nil
 	}
 	if id == "" {
@@ -585,8 +585,8 @@ func zapUpdateFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	return zapOk(success)
 }
 
-func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapAddFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	var file object.File
@@ -595,7 +595,7 @@ func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	file.Owner = theirOrg(zapPrincipal(auth))
+	file.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.AddFile(&file)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -603,8 +603,8 @@ func zapAddFileHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 	return zapOk(success)
 }
 
-func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapDeleteFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -614,7 +614,7 @@ func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	file.Owner = theirOrg(zapPrincipal(auth))
+	file.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.DeleteFile(&file, zapKSFVLang(p.Language))
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -622,8 +622,8 @@ func zapDeleteFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 	return zapOk(success)
 }
 
-func zapRefreshFileVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapRefreshFileVectorsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -638,8 +638,8 @@ func zapRefreshFileVectorsHandler(_ context.Context, auth string, body []byte) (
 	return zapOk(ok)
 }
 
-func zapUploadFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRequireSignedIn(auth)
+func zapUploadFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -667,8 +667,8 @@ func zapUploadFileHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 // ── file activation cache ────────────────────────────────────────────────
 
-func zapActivateFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapActivateFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -697,8 +697,8 @@ func zapGetActiveFileHandler(_ context.Context, _ string, body []byte) (*zap.Mes
 
 // ── tree files ───────────────────────────────────────────────────────────
 
-func zapUpdateTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRequireSignedIn(auth)
+func zapUpdateTreeFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -719,8 +719,8 @@ func zapUpdateTreeFileHandler(_ context.Context, auth string, body []byte) (*zap
 	return zapOk(res)
 }
 
-func zapAddTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRequireSignedIn(auth)
+func zapAddTreeFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -756,8 +756,8 @@ func zapAddTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	return zapOk(res)
 }
 
-func zapDeleteTreeFileHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRequireSignedIn(auth)
+func zapDeleteTreeFileHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -786,8 +786,8 @@ func zapGetGlobalVectorsHandler(_ context.Context, _ string, _ []byte) (*zap.Mes
 	return zapOk(vectors)
 }
 
-func zapGetVectorsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user, deny := zapRequireSignedIn(auth)
+func zapGetVectorsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}
@@ -827,8 +827,8 @@ func zapGetVectorHandler(_ context.Context, _ string, body []byte) (*zap.Message
 	return zapOk(vector)
 }
 
-func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapUpdateVectorHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	p := zapDecodeParams(body)
@@ -838,10 +838,10 @@ func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	vector.Owner = theirOrg(zapPrincipal(auth))
+	vector.Owner = theirOrg(zapPrincipal(ctx, auth))
 	id := p.Id
 	// The id names which row, and it names one of the caller's own.
-	if deny := zapReachable(auth, id, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, id, theirOrg); deny != nil {
 		return deny, nil
 	}
 	if id == "" {
@@ -854,8 +854,8 @@ func zapUpdateVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	return zapOk(success)
 }
 
-func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapAddVectorHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	var vector object.Vector
@@ -864,7 +864,7 @@ func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	vector.Owner = theirOrg(zapPrincipal(auth))
+	vector.Owner = theirOrg(zapPrincipal(ctx, auth))
 	if vector.Provider == "" {
 		embeddingProvider, err := object.GetDefaultEmbeddingProvider()
 		if err != nil {
@@ -881,8 +881,8 @@ func zapAddVectorHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 	return zapOk(success)
 }
 
-func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRequireSignedIn(auth); deny != nil {
+func zapDeleteVectorHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRequireSignedIn(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	var vector object.Vector
@@ -891,7 +891,7 @@ func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	vector.Owner = theirOrg(zapPrincipal(auth))
+	vector.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.DeleteVector(&vector)
 	if err != nil {
 		return zapError(http.StatusOK, err.Error())
@@ -899,8 +899,8 @@ func zapDeleteVectorHandler(_ context.Context, auth string, body []byte) (*zap.M
 	return zapOk(success)
 }
 
-func zapDeleteAllVectorsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user, deny := zapRequireSignedIn(auth)
+func zapDeleteAllVectorsHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	user, deny := zapRequireSignedIn(ctx, auth)
 	if deny != nil {
 		return deny, nil
 	}

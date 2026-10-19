@@ -86,7 +86,7 @@ func TestZapMiscSuperAdminGateRejection(t *testing.T) {
 // TestZapMiscAuthz asserts the gate mirrors permissionFilter: super-admin endpoints
 // require the admin org; a write requires an org admin; a preview-mode read is open.
 func TestZapMiscAuthz(t *testing.T) {
-	superAdmin := &iam.User{Owner: "admin", Name: "z", IsAdmin: true}
+	superAdmin := &iam.User{Owner: "admin", Name: "z", IsAdmin: true, Sudo: true}
 	orgAdmin := &iam.User{Owner: "acme", Name: "boss", IsAdmin: true}
 	plain := &iam.User{Owner: "acme", Name: "alice"}
 
@@ -100,6 +100,9 @@ func TestZapMiscAuthz(t *testing.T) {
 	}
 	if deny := zapMiscAuthz("org/settings", superAdmin); deny != nil {
 		t.Errorf("org-settings super-admin gated: status=%d", vmiscStatus(deny))
+	}
+	if deny := zapMiscAuthz("org/settings", &iam.User{Owner: "admin", Name: "z", IsAdmin: true}); deny == nil || vmiscStatus(deny) != 403 {
+		t.Errorf("org-settings let an admin-org row with no host verdict through")
 	}
 
 	// Write endpoint: non-admin → 403, org admin → open.
@@ -121,14 +124,18 @@ func TestZapMiscAuthz(t *testing.T) {
 	}
 }
 
-// TestZapMiscScopedOwner asserts GetScopedOwner parity: nil → 401, a member of the
-// admin org may target a specific owner, everyone else is pinned to their own Owner.
+// TestZapMiscScopedOwner asserts GetScopedOwner parity: nil → 401, the SuperAdmin
+// (the host's verdict) may target a specific owner, everyone else — an admin-org
+// row without the verdict included — is pinned to their own Owner.
 func TestZapMiscScopedOwner(t *testing.T) {
 	if _, deny := zapMiscScopedOwner(nil, "acme"); deny == nil || vmiscStatus(deny) != 401 {
 		t.Errorf("nil principal not denied 401")
 	}
 
-	adminOrg := &iam.User{Owner: "admin", Name: "z"}
+	if owner, deny := zapMiscScopedOwner(&iam.User{Owner: "admin", Name: "z"}, "acme"); deny != nil || owner != "admin" {
+		t.Errorf("an admin-org row with no host verdict got (%q, deny=%v), want (admin, nil)", owner, deny != nil)
+	}
+	adminOrg := &iam.User{Owner: "admin", Name: "z", Sudo: true}
 	if owner, deny := zapMiscScopedOwner(adminOrg, "acme"); deny != nil || owner != "acme" {
 		t.Errorf("admin-org override got (%q, deny=%v), want (acme, nil)", owner, deny != nil)
 	}

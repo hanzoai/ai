@@ -48,8 +48,8 @@ func TestZapWorkspaceScopedOwner(t *testing.T) {
 		t.Errorf("nil user: status = %d, want 401", st)
 	}
 
-	// Super-admin (owner=="admin") with ?owner=maxpower → targets maxpower.
-	admin := &iam.User{Owner: "admin", Name: "z"}
+	// The SuperAdmin (the host's verdict) with ?owner=maxpower → targets maxpower.
+	admin := &iam.User{Owner: "admin", Name: "z", Sudo: true}
 	q := url.Values{}
 	q.Set("owner", "maxpower")
 	if owner, ok, _ := zapScopedOwner(admin, q); !ok || owner != "maxpower" {

@@ -111,15 +111,16 @@ func zapControllerName(path string) string {
 	return strings.TrimPrefix(path, "/v1/")
 }
 
-// zapScopedOwner reproduces ApiController.GetScopedOwner: a super-admin (owner ==
-// "admin") may target a specific ?owner=; everyone else is pinned to their own org.
+// zapScopedOwner reproduces ApiController.GetScopedOwner: the caller is pinned to
+// its own org. A raw ZAP door carries no SuperAdmin verdict, so ?owner= never
+// retargets it.
 // Returns ("", false, refusal) when there is no verified principal (401).
 func zapScopedOwner(user *iam.User, q url.Values) (string, bool, *zap.Message) {
 	if user == nil {
 		m, _ := zapGwError(401, "auth:Please sign in first")
 		return "", false, m
 	}
-	return util.ScopeOwner(user.Owner, q.Get("owner")), true, nil
+	return util.ScopeOwner(user, q.Get("owner")), true, nil
 }
 
 // ── Multipart / form decoding over the gateway body ────────────────────────────

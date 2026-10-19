@@ -52,10 +52,14 @@ func TestWhoSeesAnUpstreamCredential(t *testing.T) {
 		}
 	}
 
-	// The reserved org is the platform.
-	sudo := &iam.User{Owner: util.AdminOrg, Name: "z"}
+	// The SuperAdmin is the host's verdict on the request, which object.Verify
+	// stamps; an admin-org row without it is not one.
+	if row := (&iam.User{Owner: "admin", Name: "z"}); util.IsSuperAdmin(row) {
+		t.Fatal("an admin-org row with no host verdict read as the SuperAdmin")
+	}
+	sudo := &iam.User{Owner: "admin", Name: "z", Sudo: true}
 	if !util.IsSuperAdmin(sudo) {
-		t.Fatal("the test's own idea of a platform admin is wrong")
+		t.Fatal("the test's own idea of the SuperAdmin is wrong")
 	}
 	got := GetMaskedProvider(loaded(), sudo)
 	for _, f := range platform {

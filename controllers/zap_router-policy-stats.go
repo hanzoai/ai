@@ -111,7 +111,7 @@ func init() {
 // for a SuperAdmin. An org the claim does not admit is refused with
 // account.ErrOrgForbidden — never answered with another org's settings.
 func zapRPSScope(ctx context.Context, auth string) (user *iam.User, org string, admin bool, err error) {
-	user = zapPrincipal(auth)
+	user = zapPrincipal(ctx, auth)
 	if user == nil || user.Owner == "" {
 		return user, conf.GetConfigString("IAM_ORG"), util.IsAdmin(user), nil
 	}
@@ -157,8 +157,8 @@ func zapRPSRequireOrgAdmin(ctx context.Context, auth string) (*iam.User, string,
 
 // zapRPSRequireSuperAdmin mirrors ApiController.RequireSuperAdmin: no principal →
 // 401, authenticated non-super-admin → 403.
-func zapRPSRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipal(auth)
+func zapRPSRequireSuperAdmin(ctx context.Context, auth string) (*iam.User, *zap.Message) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		msg, _ := zapError(http.StatusUnauthorized, "auth:Please sign in first")
 		return nil, msg
@@ -172,7 +172,7 @@ func zapRPSRequireSuperAdmin(auth string) (*iam.User, *zap.Message) {
 
 // zapRPSRouterAdminAuthorized mirrors ApiController.routerAdminAuthorized: a
 // service holding ROUTER_ADMIN_TOKEN (constant-time compared) OR a super admin.
-func zapRPSRouterAdminAuthorized(auth string) (*iam.User, *zap.Message) {
+func zapRPSRouterAdminAuthorized(ctx context.Context, auth string) (*iam.User, *zap.Message) {
 	tok := strings.TrimSpace(os.Getenv("ROUTER_ADMIN_TOKEN"))
 	if tok == "" {
 		tok = strings.TrimSpace(conf.GetConfigString("ROUTER_ADMIN_TOKEN"))
@@ -183,7 +183,7 @@ func zapRPSRouterAdminAuthorized(auth string) (*iam.User, *zap.Message) {
 			return nil, nil
 		}
 	}
-	return zapRPSRequireSuperAdmin(auth)
+	return zapRPSRequireSuperAdmin(ctx, auth)
 }
 
 // ── router policy ────────────────────────────────────────────────────────
@@ -300,7 +300,7 @@ func zapResolveStatsWindow(p zapRouterStatsParams) (windowStart, now time.Time, 
 	return windowStart, now, windowStart.Format(time.RFC3339)
 }
 
-func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
+func zapGetRouterStatsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
 	var p zapRouterStatsParams
 	if len(body) > 0 {
 		_ = json.Unmarshal(body, &p)
@@ -317,7 +317,7 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 		return zapOk(stats)
 	}
 
-	user := zapPrincipal(auth)
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}
@@ -345,8 +345,8 @@ func zapGetRouterStatsHandler(_ context.Context, auth string, body []byte) (*zap
 	return zapOk(stats)
 }
 
-func zapPublishRouterArtifactMetaHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRPSRequireSuperAdmin(auth); deny != nil {
+func zapPublishRouterArtifactMetaHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRPSRequireSuperAdmin(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	var meta object.RouterArtifactMeta
@@ -387,8 +387,8 @@ func zapGetRoutingDefaultsHandler(ctx context.Context, auth string, _ []byte) (*
 
 // ── ledger + rewards exports (JSONL, buffered — no HTTP writer) ───────────
 
-func zapExportRoutingLedgerHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRPSRouterAdminAuthorized(auth); deny != nil {
+func zapExportRoutingLedgerHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRPSRouterAdminAuthorized(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	var p zapRouterStatsParams
@@ -407,8 +407,8 @@ func zapExportRoutingLedgerHandler(_ context.Context, auth string, body []byte) 
 	return object.BuildCloudResponse(http.StatusOK, buf.Bytes(), "")
 }
 
-func zapExportRoutingRewardsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	if _, deny := zapRPSRouterAdminAuthorized(auth); deny != nil {
+func zapExportRoutingRewardsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	if _, deny := zapRPSRouterAdminAuthorized(ctx, auth); deny != nil {
 		return deny, nil
 	}
 	var p zapRouterStatsParams
@@ -428,8 +428,8 @@ func zapExportRoutingRewardsHandler(_ context.Context, auth string, body []byte)
 
 // ── routing reward (feedback) ────────────────────────────────────────────
 
-func zapAddRoutingRewardHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapAddRoutingRewardHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return zapError(http.StatusUnauthorized, "auth:Please sign in first")
 	}

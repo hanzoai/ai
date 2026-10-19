@@ -62,7 +62,7 @@ func TestRouterPolicyScope(t *testing.T) {
 		{"owner with no selection stays in the personal org", owner, "", "joshuafl369", true, false},
 		{"a plain member does not administer", staff, "acme", "acme", false, false},
 		{"an org outside the claim is refused, never reinterpreted", staff, "globex", "", false, true},
-		{"SuperAdmin reaches any org", super, "webby-ai", "webby-ai", true, false},
+		{"an admin-org token with no host verdict reaches no other org", super, "webby-ai", "", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,6 +77,11 @@ func TestRouterPolicyScope(t *testing.T) {
 				t.Fatalf("got (%q, admin=%v, %v), want (%q, admin=%v)", org, admin, err, tc.wantOrg, tc.wantAdmin)
 			}
 		})
+	}
+
+	// The SuperAdmin is the host's verdict, which only the HTTP bridge carries.
+	if _, org, admin, err := zapRPSScope(vouch(selecting("webby-ai"), true), "Bearer "+super); err != nil || org != "webby-ai" || !admin {
+		t.Fatalf("a vouched SuperAdmin: got (%q, admin=%v, %v), want (webby-ai, admin=true)", org, admin, err)
 	}
 }
 

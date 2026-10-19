@@ -93,7 +93,7 @@ func isAllowedInDemoMode(method string, urlPath string) bool {
 
 // superAdminEndpoints are platform-sensitive operations — they expose or mutate
 // upstream provider config (which holds upstream API keys), model routing,
-// storage credentials, or cluster topology. They ALWAYS require a GLOBAL admin
+// storage credentials, or cluster topology. They ALWAYS require the SuperAdmin
 // (util.IsSuperAdmin) and are NEVER relaxed by preview mode or the benign-read
 // exempt list. This closes two issues at once:
 //   - preview-mode default-open: with disablePreviewMode=false (the default) the
@@ -268,7 +268,7 @@ func sessionOrBearerUser(c *zip.Ctx) *iam.User {
 		return nil
 	}
 	if isJwtLike(token) {
-		claims, err := object.ParseAndValidateJWT(token)
+		claims, err := object.Verify(c, token)
 		if err != nil {
 			return nil
 		}

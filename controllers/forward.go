@@ -58,6 +58,7 @@ import (
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/upstream"
+	"github.com/hanzoai/authz"
 	openai "github.com/hanzoai/go-openai"
 )
 
@@ -692,7 +693,7 @@ func (c *ApiController) provenUnchanged(p pass, d draft, cand candidate) ([2]str
 // customer's key and not the platform's family.
 func ownRow(org, name string) bool {
 	row, err := object.GetModelProviderByNameForOrg(org, name)
-	return err == nil && row != nil && row.Owner != "admin"
+	return err == nil && row != nil && row.Owner != authz.AdminOrg
 }
 
 // unpiped is the refusal for a relayed request the family pipe cannot carry as sent,

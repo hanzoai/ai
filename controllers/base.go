@@ -104,7 +104,7 @@ func (c *ApiController) resolveClaims() *iam.Claims {
 	if token == "" {
 		return nil
 	}
-	claims, err := object.ParseAndValidateJWT(token)
+	claims, err := object.Verify(c.Ctx, token)
 	if err != nil {
 		return nil
 	}
@@ -152,7 +152,11 @@ func (c *ApiController) SetSessionUser(user *iam.User) {
 	if claims == nil {
 		return
 	}
+	// The verdict is the request's, not the record's: a fresher copy of the row
+	// keeps the SuperAdmin answer the host gave for this request.
+	sudo := claims.User.Sudo
 	claims.User = *user
+	claims.User.Sudo = sudo
 	c.SetSessionClaims(claims)
 }
 
@@ -323,7 +327,7 @@ func (c *ApiController) GetScopedOwner() (string, bool) {
 		return "", false
 	}
 
-	return util.ScopeOwner(user.Owner, c.Input().Get("owner")), true
+	return util.ScopeOwner(user, c.Input().Get("owner")), true
 }
 
 // notYourStore is what a caller bound to one store is told when they ask for

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -149,6 +150,14 @@ func withIAM(t *testing.T) *people {
 		if r.URL.Path == "/v1/iam/.well-known/jwks" {
 			_ = json.NewEncoder(w).Encode(jwks)
 			return
+		}
+		// A person's record, as IAM answers a read of it: who they are and nothing
+		// more, which is what a session refresh asks for.
+		if rest, ok := strings.CutPrefix(r.URL.Path, "/v1/iam/users/"); ok {
+			if owner, name, ok := strings.Cut(rest, "/"); ok && name != "" && !strings.Contains(name, "/") {
+				_ = json.NewEncoder(w).Encode(iam.User{Owner: owner, Name: name})
+				return
+			}
 		}
 		if r.URL.Path != "/v1/iam/keys/principal" && r.URL.Path != "/v1/iam/keys/org" {
 			w.WriteHeader(http.StatusNotFound)

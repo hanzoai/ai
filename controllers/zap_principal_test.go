@@ -3,6 +3,7 @@
 package controllers
 
 import (
+	"context"
 	"testing"
 
 	iam "github.com/hanzoai/ai/internal/iam"
@@ -21,27 +22,27 @@ func TestWhatACredentialHasToLookLikeToNameSomebody(t *testing.T) {
 	key := iamd.asUser(t, alice)
 
 	t.Run("a key names its person", func(t *testing.T) {
-		if u := zapPrincipal(key); u == nil || u.Name != "alice" {
+		if u := zapPrincipal(context.Background(), key); u == nil || u.Name != "alice" {
 			t.Errorf("resolved %+v, want alice", u)
 		}
 	})
 
 	t.Run("the space around it is not part of it", func(t *testing.T) {
-		if u := zapPrincipal(key + "   "); u == nil || u.Name != "alice" {
+		if u := zapPrincipal(context.Background(), key+"   "); u == nil || u.Name != "alice" {
 			t.Errorf("a trailing space cost the credential its person: %+v", u)
 		}
 	})
 
 	t.Run("nothing names nobody", func(t *testing.T) {
 		for _, auth := range []string{"", "Bearer ", "Bearer    "} {
-			if u := zapPrincipal(auth); u != nil {
+			if u := zapPrincipal(context.Background(), auth); u != nil {
 				t.Errorf("%q resolved to %+v", auth, u)
 			}
 		}
 	})
 
 	t.Run("a key IAM does not know names nobody", func(t *testing.T) {
-		if u := zapPrincipal("Bearer sk-not-a-key"); u != nil {
+		if u := zapPrincipal(context.Background(), "Bearer sk-not-a-key"); u != nil {
 			t.Errorf("an unknown key resolved to %+v", u)
 		}
 	})
@@ -55,7 +56,7 @@ func TestWhatACredentialHasToLookLikeToNameSomebody(t *testing.T) {
 		if !isIAMApiKey(both) || !isJwtToken(both) {
 			t.Fatalf("fixture is not shaped like both: key=%v jwt=%v", isIAMApiKey(both), isJwtToken(both))
 		}
-		if u := zapPrincipal("Bearer " + both); u != nil {
+		if u := zapPrincipal(context.Background(), "Bearer "+both); u != nil {
 			t.Errorf("resolved to %+v; an unknown key must name nobody", u)
 		}
 	})

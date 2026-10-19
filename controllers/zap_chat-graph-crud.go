@@ -226,8 +226,8 @@ type zapListChatsRequest struct {
 }
 
 // zapGetGlobalChatsHandler mirrors ApiController.GetGlobalChats.
-func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetGlobalChatsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("get-global-chats", user); deny != nil {
 		return deny, nil
 	}
@@ -271,8 +271,8 @@ func zapGetGlobalChatsHandler(_ context.Context, auth string, body []byte) (*zap
 // zapGetChatsHandler mirrors ApiController.GetChats (admin sees all users; a
 // non-admin is scoped to its own user, store isolation enforced from Homepage,
 // optional time-range filter).
-func zapGetChatsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetChatsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("get-chats", user); deny != nil {
 		return deny, nil
 	}
@@ -308,8 +308,8 @@ type zapIDRequest struct {
 
 // zapGetChatHandler mirrors ApiController.GetChat (ownership check for a non-admin
 // outside preview mode).
-func zapGetChatHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("get-chat", user); deny != nil {
 		return deny, nil
 	}
@@ -350,8 +350,8 @@ type zapUpdateChatRequest struct {
 
 // zapUpdateChatHandler mirrors ApiController.UpdateChat (self-or-admin; in demo
 // mode only ModelProvider is mutable).
-func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapUpdateChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("update-chat", user); deny != nil {
 		return deny, nil
 	}
@@ -399,8 +399,8 @@ func zapUpdateChatHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 // zapAddChatHandler mirrors ApiController.AddChat: self-or-admin, timestamps + IP/
 // user-agent descriptors stamped from the (optional) body-supplied ClientIp/
 // UserAgent, default store filled when absent.
-func zapAddChatHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapAddChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("add-chat", user); deny != nil {
 		return deny, nil
 	}
@@ -441,8 +441,8 @@ func zapAddChatHandler(_ context.Context, auth string, body []byte) (*zap.Messag
 
 // zapDeleteChatHandler mirrors ApiController.DeleteChat (deletes the chat and its
 // messages).
-func zapDeleteChatHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapDeleteChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("delete-chat", user); deny != nil {
 		return deny, nil
 	}
@@ -499,8 +499,8 @@ type zapListMessagesRequest struct {
 
 // zapGetMessagesHandler mirrors ApiController.GetMessages (signed-in; admin sees
 // all users, non-admin scoped to itself; a chat filter returns that chat's turns).
-func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetMessagesHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		return zapError(401, "Please sign in first")
 	}
@@ -533,8 +533,8 @@ func zapGetMessagesHandler(_ context.Context, auth string, body []byte) (*zap.Me
 
 // zapGetMessageHandler mirrors ApiController.GetMessage (ownership check for a
 // non-admin outside preview mode).
-func zapGetMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetMessageHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("get-message", user); deny != nil {
 		return deny, nil
 	}
@@ -575,8 +575,8 @@ type zapUpdateMessageRequest struct {
 
 // zapUpdateMessageHandler mirrors ApiController.UpdateMessage (self-or-admin;
 // sends the notify email when requested, then persists).
-func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapUpdateMessageHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("update-message", user); deny != nil {
 		return deny, nil
 	}
@@ -630,8 +630,8 @@ func zapUpdateMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 // parent chat, exactly like the controller handler. lang is "en" and origin is empty
 // natively (no http host) — file-URL refinement only rewrites base64-embedded
 // images, which the native CRUD path does not carry.
-func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapAddMessageHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("add-message", user); deny != nil {
 		return deny, nil
 	}
@@ -798,8 +798,8 @@ func zapAddMessageHandler(_ context.Context, auth string, body []byte) (*zap.Mes
 
 // zapDeleteMessageHandler mirrors ApiController.DeleteMessage. This route is NOT
 // on the filter's exempt list, so the outer gate requires an org admin.
-func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapDeleteMessageHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("delete-message", user); deny != nil {
 		return deny, nil
 	}
@@ -835,8 +835,8 @@ func zapDeleteMessageHandler(_ context.Context, auth string, body []byte) (*zap.
 // the message's own (signed-in) user may delete it, and only if it is the AI
 // "Welcome" turn. The the router anonymous (u-<hash>) branch is unavailable natively
 // (no client IP / user-agent) — a native caller is its verified Bearer principal.
-func zapDeleteWelcomeMessageHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapDeleteWelcomeMessageHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("delete-welcome-message", user); deny != nil {
 		return deny, nil
 	}
@@ -887,8 +887,8 @@ type zapListGraphsRequest struct {
 }
 
 // zapGetGlobalGraphsHandler mirrors ApiController.GetGlobalGraphs.
-func zapGetGlobalGraphsHandler(_ context.Context, auth string, _ []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetGlobalGraphsHandler(ctx context.Context, auth string, _ []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("get-global-graphs", user); deny != nil {
 		return deny, nil
 	}
@@ -901,8 +901,8 @@ func zapGetGlobalGraphsHandler(_ context.Context, auth string, _ []byte) (*zap.M
 
 // zapGetGraphsHandler mirrors ApiController.GetGraphs: signed-in, owner resolved
 // from the principal (a member of the admin org may target a specific ?owner).
-func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetGraphsHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("get-graphs", user); deny != nil {
 		return deny, nil
 	}
@@ -916,10 +916,7 @@ func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 		}
 	}
 
-	owner := user.Owner
-	if user.Owner == "admin" && req.Owner != "" {
-		owner = req.Owner
-	}
+	owner := util.ScopeOwner(user, req.Owner)
 
 	if req.PageSize == "" || req.Page == "" {
 		graphs, err := object.GetGraphs(owner)
@@ -946,8 +943,8 @@ func zapGetGraphsHandler(_ context.Context, auth string, body []byte) (*zap.Mess
 // generation for an empty "Chats"-category graph (generateChatGraphData, which
 // touches only object/ — invoked on a zero controller since it ignores its
 // receiver, reusing the ONE implementation rather than duplicating it).
-func zapGetGraphHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapGetGraphHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("get-graph", user); deny != nil {
 		return deny, nil
 	}
@@ -958,7 +955,7 @@ func zapGetGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 		}
 	}
 
-	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, req.ID, theirOrg); deny != nil {
 		return deny, nil
 	}
 
@@ -982,8 +979,8 @@ type zapUpdateGraphRequest struct {
 }
 
 // zapUpdateGraphHandler mirrors ApiController.UpdateGraph (org-admin gated).
-func zapUpdateGraphHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapUpdateGraphHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("update-graph", user); deny != nil {
 		return deny, nil
 	}
@@ -992,7 +989,7 @@ func zapUpdateGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 		return zapError(400, "invalid request: "+err.Error())
 	}
 	// The id names which graph, and it names one of the caller's own.
-	if deny := zapReachable(auth, req.ID, theirOrg); deny != nil {
+	if deny := zapReachable(ctx, auth, req.ID, theirOrg); deny != nil {
 		return deny, nil
 	}
 	req.Graph.Owner = theirOrg(user)
@@ -1004,8 +1001,8 @@ func zapUpdateGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 }
 
 // zapAddGraphHandler mirrors ApiController.AddGraph (org-admin gated).
-func zapAddGraphHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapAddGraphHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("add-graph", user); deny != nil {
 		return deny, nil
 	}
@@ -1015,7 +1012,7 @@ func zapAddGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	graph.Owner = theirOrg(zapPrincipal(auth))
+	graph.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.AddGraph(&graph)
 	if err != nil {
 		return zapError(200, err.Error())
@@ -1024,8 +1021,8 @@ func zapAddGraphHandler(_ context.Context, auth string, body []byte) (*zap.Messa
 }
 
 // zapDeleteGraphHandler mirrors ApiController.DeleteGraph (org-admin gated).
-func zapDeleteGraphHandler(_ context.Context, auth string, body []byte) (*zap.Message, error) {
-	user := zapPrincipal(auth)
+func zapDeleteGraphHandler(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
+	user := zapPrincipal(ctx, auth)
 	if deny := zapChatGraphAuthz("delete-graph", user); deny != nil {
 		return deny, nil
 	}
@@ -1035,7 +1032,7 @@ func zapDeleteGraphHandler(_ context.Context, auth string, body []byte) (*zap.Me
 	}
 	// Whose row this is, not what the body said — the same answer this table's
 	// listing uses.
-	graph.Owner = theirOrg(zapPrincipal(auth))
+	graph.Owner = theirOrg(zapPrincipal(ctx, auth))
 	success, err := object.DeleteGraph(&graph)
 	if err != nil {
 		return zapError(200, err.Error())

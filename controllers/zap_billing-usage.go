@@ -69,8 +69,8 @@ func init() { registerZapBillingUsage() }
 // admin-privilege refusal at HTTP 200 (ResponseError parity). Returns the user
 // when authorized, else the refusal message to return verbatim. Admin here is
 // ORG-level (util.IsAdmin) — the same check c.IsAdmin() runs — NOT super admin.
-func zapRequireUsageAdmin(auth string) (*iam.User, *zap.Message) {
-	user := zapPrincipal(auth)
+func zapRequireUsageAdmin(ctx context.Context, auth string) (*iam.User, *zap.Message) {
+	user := zapPrincipal(ctx, auth)
 	if user == nil {
 		m, _ := zapGwError(401, "auth:Please sign in first")
 		return nil, m
@@ -127,7 +127,7 @@ func zapPostBackfillDOUsageHandler(ctx context.Context, method, _, query, auth s
 	if method != "" && !strings.EqualFold(method, "POST") {
 		return zapGwError(404, "not found")
 	}
-	if _, refuse := zapRequireSuperAdmin(auth); refuse != nil {
+	if _, refuse := zapRequireSuperAdmin(ctx, auth); refuse != nil {
 		return refuse, nil
 	}
 

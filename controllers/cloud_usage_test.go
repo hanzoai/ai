@@ -77,10 +77,10 @@ func mintUsageJWT(t *testing.T, owner, name string) string {
 // resolveCloudUsageScope only ever sees the *iam.User (never how it was
 // authenticated), this table holds identically for a session OR a Bearer
 // principal: a non-super-admin is ALWAYS pinned to its own org, and only a
-// super-admin (Owner=="admin") can target another org / the all-orgs view.
+// SuperAdmin (the host's verdict, User.Sudo) can target another org / the all-orgs view.
 func TestResolveCloudUsageScope(t *testing.T) {
 	nonAdmin := &iam.User{Owner: "maxpower", Name: "dave", IsAdmin: true} // org-admin, NOT super
-	superAdmin := &iam.User{Owner: "admin", Name: "z", IsAdmin: true}
+	superAdmin := &iam.User{Owner: "admin", Name: "z", IsAdmin: true, Sudo: true}
 
 	cases := []struct {
 		name       string
@@ -170,7 +170,9 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 
 	t.Run("super-admin bearer god-view", func(t *testing.T) {
 		tok := mintUsageJWT(t, "admin", "z")
+		host(t)
 		c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "")
+		c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 
 		user, ok := c.RequirePrincipal()
 		if !ok || user == nil || user.Owner != "admin" {
@@ -183,7 +185,9 @@ func TestGetCloudUsagesBearerScope(t *testing.T) {
 
 	t.Run("super-admin bearer can target one org", func(t *testing.T) {
 		tok := mintUsageJWT(t, "admin", "z")
+		host(t)
 		c := newUsageController("/v1/get-cloud-usages?org=maxpower", "Bearer "+tok, "")
+		c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 
 		user, ok := c.RequirePrincipal()
 		if !ok || user == nil {
@@ -241,7 +245,9 @@ func TestResolveCloudUsageScope_BrandScopedGodView(t *testing.T) {
 
 	t.Run("same-brand super-admin BEARER (iss=hanzo.id) -> god-view", func(t *testing.T) {
 		tok := mintUsageJWT(t, "admin", "z") // iss=hanzo.id == expectedJWTIssuer()
+		host(t)
 		c := newUsageController("/v1/get-cloud-usages?org=all", "Bearer "+tok, "")
+		c.Fiber().Request().Header.Set("X-User-IsAdmin", "true")
 		user, ok := c.RequirePrincipal()
 		if !ok || user == nil {
 			t.Fatalf("own-brand super-admin bearer not accepted")
