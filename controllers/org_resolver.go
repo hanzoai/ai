@@ -151,27 +151,31 @@ func tenancy(user *iam.User, orgs []account.OrgRef) *authz.Claims {
 // answer one token with one tenant.
 //
 // The SuperAdmin — the host's verdict, util.IsSuperAdmin — acts in any org it
-// selects, else its home. A credential without a membership set (an sk- key, whose
-// org is its holder's; a run key; a program's token) acts in the org that holds it
-// and selects nothing, and so does a delegation IAM confined to one org, whose set
-// IAM stripped of administrative roles. Everyone else acts in the selection their
-// signed set opens, else the first org it opens (authz.Claims.EffectiveOrg): never
-// the admin org, never a brand's directory, never an org the platform runs held as
-// a plain member. That last one is a customer who landed in a brand org, and the
-// brand's shared accounts — its AI connections among them — are its staff's. A set
-// that opens nothing acts in no org, and every org gate refuses.
+// selects, else its home. A credential that names its org itself (held: an sk-
+// key, whose org is its holder's; a run key; a program's token; a delegation IAM
+// confined to one org and stripped of administrative roles) acts in that org and
+// selects nothing. Everyone else acts in the selection their signed set opens,
+// else the first org it opens (authz.Claims.EffectiveOrg): never the admin org,
+// never a brand's directory, never an org the platform runs held as a plain
+// member. That last one is a customer who landed in a brand org, and the brand's
+// shared accounts — its AI connections among them — are its staff's. A set that
+// opens nothing, or a person's token that carries none, acts in no org, and every
+// org gate refuses: that token's `owner` is the application it signed in through.
 //
 // A person of the admin org without the host's verdict is not the SuperAdmin (a
 // process with no host states it of nobody), so they act at home and select nothing.
-func actingOrg(user *iam.User, orgs []account.OrgRef, requested string, confined bool) string {
+func actingOrg(user *iam.User, orgs []account.OrgRef, requested string, held bool) string {
 	if util.IsSuperAdmin(user) {
 		if requested == "" || authz.HasUnsafeRune(requested) {
 			return user.Owner
 		}
 		return requested
 	}
-	if len(orgs) == 0 || confined {
+	if held {
 		return user.Owner
+	}
+	if len(orgs) == 0 {
+		return ""
 	}
 	ac := tenancy(user, orgs)
 	if ac.Sudo() {
@@ -229,7 +233,9 @@ func (c *ApiController) resolveOrg() string {
 		// first, which NARROWS what the request can see, so it is genuinely
 		// fail-closed — unlike the same fallback on the billing path, which would
 		// charge a different account.
-		return actingOrg(user, c.principalOrgs(), requested, iam.Confined(c.presented()))
+		token := c.presented()
+		held := !isJwtToken(token) || iam.Confined(token) || account.IsMachine(user.Type)
+		return actingOrg(user, c.principalOrgs(), requested, held)
 	}
 
 	// A PUBLISHABLE KEY ANSWERS SCOPE AND NOTHING ELSE. It names a tenant without

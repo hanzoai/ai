@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/hanzoai/account"
 
 	iam "github.com/hanzoai/ai/internal/iam"
 )
@@ -99,7 +100,8 @@ func Signing(t testing.TB) *rsa.PrivateKey {
 	return key
 }
 
-// Token is a bearer credential for u, signed so the service will accept it.
+// Token is a bearer credential for u, signed so the service will accept it, with
+// the membership set IAM signs (Home).
 func Token(t testing.TB, u iam.User) string {
 	t.Helper()
 	once.Do(install)
@@ -112,6 +114,7 @@ func Token(t testing.TB, u iam.User) string {
 		Subject:   u.Owner + "/" + u.Name,
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		Orgs:      Home(u),
 	}).SignedString(key)
 	if err != nil {
 		t.Fatalf("authtest: sign: %v", err)
@@ -123,4 +126,18 @@ func Token(t testing.TB, u iam.User) string {
 func Bearer(t testing.TB, u iam.User) string {
 	t.Helper()
 	return "Bearer " + Token(t, u)
+}
+
+// Home is the membership set IAM signs into a person's token: their own org first,
+// as its admin when the account is one and a member otherwise
+// (store.MemberOrgRefs, HomeRole). A program's token carries none.
+func Home(u iam.User) []account.OrgRef {
+	if account.IsMachine(u.Type) || u.Owner == "" {
+		return nil
+	}
+	role := "member"
+	if u.IsAdmin {
+		role = "admin"
+	}
+	return []account.OrgRef{{Org: u.Owner, Role: role}}
 }

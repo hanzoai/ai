@@ -105,32 +105,33 @@ func zapGwError(status uint32, msg string) (*zap.Message, error) {
 // SuperAdmin gate on that wire refuses, by util.IsSuperAdmin. A key is never one,
 // on either path, as it is never one at the host.
 func zapPrincipal(ctx context.Context, auth string) *iam.User {
-	user, _ := zapTenant(ctx, auth)
+	user, _, _ := zapTenant(ctx, auth)
 	return user
 }
 
-// zapTenant is zapPrincipal with the principal's signed membership set, which only
-// a JWT carries: what actingOrg and administers read to answer which org the caller
-// acts in and whether it administers it.
-func zapTenant(ctx context.Context, auth string) (*iam.User, []account.OrgRef) {
+// zapTenant is zapPrincipal with what actingOrg and administers read to answer
+// which org the caller acts in and whether it administers it: the signed
+// membership set, which only a JWT carries, and whether the credential names its
+// org itself (held: an sk- key, a program's token).
+func zapTenant(ctx context.Context, auth string) (*iam.User, []account.OrgRef, bool) {
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if token == "" || confinedIn(auth) {
-		return nil, nil
+		return nil, nil, false
 	}
 	if isIAMApiKey(token) {
 		if user, err := getUserByAccessKey(token); err == nil && user != nil {
-			return user, nil
+			return user, nil, true
 		}
-		return nil, nil
+		return nil, nil, false
 	}
 	if isJwtToken(token) {
 		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
 			u := claims.User
 			u.Sudo = bridged(ctx)
-			return &u, claims.Orgs
+			return &u, claims.Orgs, account.IsMachine(u.Type)
 		}
 	}
-	return nil, nil
+	return nil, nil, false
 }
 
 // zapRequireSuperAdmin mirrors ApiController.RequireSuperAdmin: no verified

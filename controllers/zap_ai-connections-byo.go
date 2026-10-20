@@ -85,11 +85,11 @@ func registerZapAIConnections() {
 // set opens — for a plain member of a brand org, none of the brand's — and a
 // caller that acts in no org is refused.
 func zapConnectionOrg(ctx context.Context, auth string) (string, error) {
-	user, orgs := zapTenant(ctx, auth)
+	user, orgs, held := zapTenant(ctx, auth)
 	if user == nil {
 		return "", fmt.Errorf("authentication required")
 	}
-	org := actingOrg(user, orgs, "", false)
+	org := actingOrg(user, orgs, "", held)
 	if org == "" {
 		return "", fmt.Errorf("authentication required")
 	}
@@ -100,12 +100,12 @@ func zapConnectionOrg(ctx context.Context, auth string) (string, error) {
 // (administers), as on the HTTP surface (requireConnectionAdmin). It answers the
 // refusal to send, or nil.
 func zapConnectionAdmin(ctx context.Context, auth string) (string, *zap.Message) {
-	user, orgs := zapTenant(ctx, auth)
+	user, orgs, held := zapTenant(ctx, auth)
 	if user == nil {
 		m, _ := object.BuildCloudResponse(http.StatusUnauthorized, nil, "authentication required")
 		return "", m
 	}
-	org := actingOrg(user, orgs, "", false)
+	org := actingOrg(user, orgs, "", held)
 	if org == "" {
 		m, _ := object.BuildCloudResponse(http.StatusUnauthorized, nil, "authentication required")
 		return "", m

@@ -64,6 +64,25 @@ func TestGetOrgIsTheSignedSetsAnswer(t *testing.T) {
 	}
 }
 
+// A credential that names its org itself acts in it and selects nothing: a
+// program's token is its application's org. A person's token that carries no
+// membership set acts in no org, as at cloud's boundary — its `owner` claim is the
+// application it signed in through, never the person's tenant.
+func TestGetOrgOfACredentialWithoutAMembershipSet(t *testing.T) {
+	withStore(t)
+	people := withIAM(t)
+	program := people.signedIn(t, &iam.User{Owner: "acme", Name: "provisioner", Type: "application"})
+	c := as(visit(http.MethodGet, "/v1/ai/connections"), program)
+	c.Fiber().Request().Header.Set("X-Org-Id", "victim")
+	if got := c.GetOrg(); got != "acme" {
+		t.Errorf("a program acts in %q, want its application's org acme", got)
+	}
+	legacy := people.signedInOrgs(t, &iam.User{Owner: "hanzo", Name: "bob"})
+	if got := as(visit(http.MethodGet, "/v1/ai/connections"), legacy).GetOrg(); got != "" {
+		t.Errorf("a person's token without a membership set acts in %q, want no org", got)
+	}
+}
+
 // An org's AI connections are the org's keys to third-party accounts, shared by
 // everyone who acts in it, so connecting, reconnecting or disconnecting one is its
 // admins' to do (authz.Claims.OrgAdmin over the signed set). Reading whether one is

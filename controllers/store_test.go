@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/hanzoai/ai/internal/authtest"
 	iam "github.com/hanzoai/ai/internal/iam"
 
 	"github.com/hanzoai/ai/object"
@@ -81,6 +82,7 @@ func (p *people) signedIn(t *testing.T, user *iam.User) string {
 		Subject:   user.Name,
 		IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		Orgs:      authtest.Home(*user),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = p.kid
