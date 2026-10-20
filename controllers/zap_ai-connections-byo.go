@@ -79,27 +79,42 @@ func registerZapAIConnections() {
 
 // ── identity / org scoping (the ONE auth seam) ──────────────────────────────
 
-// zapConnectionOrg resolves the caller's org from the VERIFIED ZAP principal,
-// never from the body. It reuses zapResolveUser (pk-/sk- IAM keys via
-// getUserByAccessKey, JWTs via object.ParseAndValidateJWT) and takes the Owner half
-// of "owner/name" — the exact tenant GetOrg defaults to for a non-admin, so a caller
-// can only ever manage its OWN org's connections.
-func zapConnectionOrg(auth string) (string, error) {
-	if strings.TrimSpace(auth) == "" {
+// zapConnectionOrg resolves the org a ZAP caller's connections live in from its
+// VERIFIED principal, never from the body: the org that principal acts in
+// (actingOrg). The door carries no selection, so that is the first org the signed
+// set opens — for a plain member of a brand org, none of the brand's — and a
+// caller that acts in no org is refused.
+func zapConnectionOrg(ctx context.Context, auth string) (string, error) {
+	user, orgs := zapTenant(ctx, auth)
+	if user == nil {
 		return "", fmt.Errorf("authentication required")
 	}
-	id, err := zapResolveUser(auth)
-	if err != nil {
-		return "", err
-	}
-	owner := id
-	if before, _, ok := strings.Cut(id, "/"); ok {
-		owner = before
-	}
-	if strings.TrimSpace(owner) == "" {
+	org := actingOrg(user, orgs, "", false)
+	if org == "" {
 		return "", fmt.Errorf("authentication required")
 	}
-	return owner, nil
+	return org, nil
+}
+
+// zapConnectionAdmin is zapConnectionOrg for a write, which is the org's admins'
+// (administers), as on the HTTP surface (requireConnectionAdmin). It answers the
+// refusal to send, or nil.
+func zapConnectionAdmin(ctx context.Context, auth string) (string, *zap.Message) {
+	user, orgs := zapTenant(ctx, auth)
+	if user == nil {
+		m, _ := object.BuildCloudResponse(http.StatusUnauthorized, nil, "authentication required")
+		return "", m
+	}
+	org := actingOrg(user, orgs, "", false)
+	if org == "" {
+		m, _ := object.BuildCloudResponse(http.StatusUnauthorized, nil, "authentication required")
+		return "", m
+	}
+	if !administers(user, orgs, org) {
+		m, _ := object.BuildCloudResponse(http.StatusForbidden, nil, "auth:this operation requires admin privilege")
+		return "", m
+	}
+	return org, nil
 }
 
 // ── shared cores (org-scoped, transport-agnostic) ───────────────────────────
@@ -250,7 +265,7 @@ func cloudOutcome(o connOutcome) (*zap.Message, error) {
 // ── native cloud handlers (MsgType 100) ─────────────────────────────────────
 
 func zapConnectionsListCloud(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	org, err := zapConnectionOrg(auth)
+	org, err := zapConnectionOrg(ctx, auth)
 	if err != nil {
 		return object.BuildCloudResponse(http.StatusUnauthorized, nil, err.Error())
 	}
@@ -258,9 +273,9 @@ func zapConnectionsListCloud(ctx context.Context, auth string, body []byte) (*za
 }
 
 func zapConnectionsAddCloud(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	org, err := zapConnectionOrg(auth)
-	if err != nil {
-		return object.BuildCloudResponse(http.StatusUnauthorized, nil, err.Error())
+	org, refused := zapConnectionAdmin(ctx, auth)
+	if refused != nil {
+		return refused, nil
 	}
 	var req struct {
 		Provider string `json:"provider"`
@@ -273,9 +288,9 @@ func zapConnectionsAddCloud(ctx context.Context, auth string, body []byte) (*zap
 }
 
 func zapConnectionsDeleteCloud(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	org, err := zapConnectionOrg(auth)
-	if err != nil {
-		return object.BuildCloudResponse(http.StatusUnauthorized, nil, err.Error())
+	org, refused := zapConnectionAdmin(ctx, auth)
+	if refused != nil {
+		return refused, nil
 	}
 	var req struct {
 		Provider string `json:"provider"`
@@ -289,7 +304,7 @@ func zapConnectionsDeleteCloud(ctx context.Context, auth string, body []byte) (*
 }
 
 func zapConnectionsUsageCloud(ctx context.Context, auth string, body []byte) (*zap.Message, error) {
-	org, err := zapConnectionOrg(auth)
+	org, err := zapConnectionOrg(ctx, auth)
 	if err != nil {
 		return object.BuildCloudResponse(http.StatusUnauthorized, nil, err.Error())
 	}

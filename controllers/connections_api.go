@@ -139,10 +139,10 @@ func connectionView(provider string, row *object.Provider) aiConnResponse {
 }
 
 // requireConnectionOrg resolves the caller's org from the VERIFIED principal
-// (session or signed JWT) and rejects an anonymous request. Connections are
-// org-scoped and self-served — a normal logged-in org user manages THEIR OWN org's
-// connections (not a super-admin operation). GetOrg binds any X-Org-Id
-// to the principal's own org (a non-admin can never target another org).
+// (session or signed JWT) and rejects an anonymous request, or one that acts in no
+// org. GetOrg answers an X-Org-Id with an org the signed set opens, so a caller can
+// never target an org outside it. Reading whether an account is connected is every
+// member's; changing one is requireConnectionAdmin's.
 func (c *ApiController) requireConnectionOrg() (string, bool) {
 	user := c.principalUser()
 	if user == nil || strings.TrimSpace(user.Owner) == "" {
@@ -152,6 +152,23 @@ func (c *ApiController) requireConnectionOrg() (string, bool) {
 	org := c.GetOrg()
 	if strings.TrimSpace(org) == "" {
 		c.ResponseUnauthorized(c.T("auth:Please sign in first"))
+		return "", false
+	}
+	return org, true
+}
+
+// requireConnectionAdmin is requireConnectionOrg for a write. An org's connection
+// is the key to a third-party account that every request acting in the org runs
+// on, so connecting, reconnecting and disconnecting it are the org's admins' to do
+// (administers): a plain member of a brand org must not repoint or switch off the
+// account the brand's staff run on.
+func (c *ApiController) requireConnectionAdmin() (string, bool) {
+	org, ok := c.requireConnectionOrg()
+	if !ok {
+		return "", false
+	}
+	if !administers(c.principalUser(), c.principalOrgs(), org) {
+		c.ResponseForbidden(c.T("auth:this operation requires admin privilege"))
 		return "", false
 	}
 	return org, true
@@ -192,7 +209,7 @@ func (c *ApiController) GetAIConnections() {
 // @Success 200 {object} controllers.aiConnResponse The Response object
 // @router /ai/connections [post]
 func (c *ApiController) AddAIConnection() {
-	org, ok := c.requireConnectionOrg()
+	org, ok := c.requireConnectionAdmin()
 	if !ok {
 		return
 	}
@@ -241,7 +258,7 @@ func (c *ApiController) AddAIConnection() {
 // @Success 200 {object} controllers.aiConnResponse The Response object
 // @router /ai/connections/:provider [delete]
 func (c *ApiController) DeleteAIConnection() {
-	org, ok := c.requireConnectionOrg()
+	org, ok := c.requireConnectionAdmin()
 	if !ok {
 		return
 	}

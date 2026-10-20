@@ -986,6 +986,12 @@ returned, or logged.
 - `POST /v1/ai/connections` `{provider, apiKey}` → seals key, activates the org row; returns metadata only
 - `DELETE /v1/ai/connections/:provider` → deactivates the org row (resolution reverts to Hanzo credits)
 
+The org is the one the caller acts in (`GetOrg`, below). Reads are every member's;
+connect, reconnect, disconnect and the OAuth start are the org's admins'
+(`requireConnectionAdmin` → `administers`: `authz.Claims.OrgAdmin` over the signed
+set, or the SuperAdmin), on HTTP and on the ZAP door (`zapConnectionAdmin`) alike. An
+`sk-` key administers nothing. Pinned by `controllers/acting_test.go`.
+
 **Enforce "even if logged in".** All AI traffic must reach this router; no surface
 bills a third party off-meter. hanzo.app's workspace default was flipped
 `openrouter → hanzo`; hanzo.chat routes via its gateway config; @hanzo/dev defaults
@@ -1213,6 +1219,20 @@ Three distinct products, no overlap. Do NOT add a fourth crawl path.
   (the old parse trimmed `orgs[0]`) were each SuperAdmin here and nowhere else.
   `isAdmin` is not part of it — an org admin (`hanzo/z`) administers `hanzo` and
   holds no platform power.
+
+- **The org a request acts in is the signed set's answer, by cloud's rule.**
+  `GetOrg` → `actingOrg` (`controllers/org_resolver.go`): the SuperAdmin selects any
+  org; a credential with no membership set (`sk-` key, run key, a program's token)
+  and a confined delegation act in the org that holds them; everyone else gets
+  `authz.Claims.EffectiveOrg(X-Org-Id)` over the verified token — the same predicate
+  cloud's `SanitizeIdentity` asks, so embedded and standalone ai agree. A membership
+  opens its org unless it is the admin org, a brand's directory (`hanzo-id`), or an
+  org the platform runs (`hanzo`, `lux`, …) held as a plain member; a set that opens
+  nothing acts in no org. It used to answer `user.Owner` (orgs[0]) whenever nothing
+  was selected and `account.EffectiveOrg` (membership only) otherwise, so a plain
+  member of a brand org acted in the brand's org and could repoint its shared AI
+  connections. The money resolvers (`billingOrg`, `openai_api.go`, `filter_balance.go`,
+  `zap_decisions.go`, `zap_router-policy-stats.go`) still ask `account.EffectiveOrg`.
 
   With no host — standalone `aid` — there is no verdict and no SuperAdmin. A ZAP
   door is not the boundary either: `target` (the one place a ZAP-built request
@@ -1586,7 +1606,9 @@ code in this process can write. `CallerFilter` moves it onto the context. Then:
   false, never the conservative default. Pinned by `TestAProgramIsToldWhatItsCallCost`,
   `TestOnlyACallersGrantIsToldItsPrice`, `TestPriceOfIsTheBilledRow`.
 - A request from the network states no caller whatever headers it carries
-  (`TestARequestFromTheNetworkStatesNoCaller`).
+  (`TestARequestFromTheNetworkStatesNoCaller`), and `For` carries no identity header in
+  (`authz.Headers`, `authz.Retired`): the identity is the caller and the credential
+  (`TestForCarriesNoIdentityHeader`).
 
 ## The paid lane: ONE switch, then the plan that pays
 

@@ -22,6 +22,7 @@ import (
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
+	"github.com/hanzoai/authz"
 )
 
 // principalUser is who is calling, resolved from the credential the request
@@ -117,7 +118,7 @@ func (c *ApiController) principalIsOwnBrand() bool {
 // Called ONLY on the switch path (a request that asked for an org other than its
 // own), so the dominant no-switch request never pays for this parse.
 func (c *ApiController) principalOrgs() []account.OrgRef {
-	token := bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
+	token := c.presented()
 	if token == "" || !isJwtToken(token) {
 		return nil
 	}
@@ -128,14 +129,77 @@ func (c *ApiController) principalOrgs() []account.OrgRef {
 	return claims.Orgs
 }
 
+// presented is the credential the request presents: Authorization: Bearer, or the
+// hanzo_iam_token cookie.
+func (c *ApiController) presented() string {
+	return bearerToken(c.Header("Authorization"), c.Fiber().Cookies(iamTokenCookieName))
+}
+
+// tenancy is a verified principal as the one tenancy rule reads it: authz.Claims,
+// the shape cloud's identity boundary asks the same questions of — the signed
+// membership set, the subject's class, and IAM's org-admin bit for the home org.
+func tenancy(user *iam.User, orgs []account.OrgRef) *authz.Claims {
+	set := make([]authz.Membership, 0, len(orgs))
+	for _, o := range orgs {
+		set = append(set, authz.Membership{Org: o.Org, Role: authz.Role(o.Role)})
+	}
+	return &authz.Claims{Owner: user.Owner, Orgs: set, Type: user.Type, IsAdmin: user.IsAdmin}
+}
+
+// actingOrg is the org a verified principal acts in, by the rule cloud's identity
+// boundary applies (SanitizeIdentity), so ai embedded in cloud and ai on its own
+// answer one token with one tenant.
+//
+// The SuperAdmin — the host's verdict, util.IsSuperAdmin — acts in any org it
+// selects, else its home. A credential without a membership set (an sk- key, whose
+// org is its holder's; a run key; a program's token) acts in the org that holds it
+// and selects nothing, and so does a delegation IAM confined to one org, whose set
+// IAM stripped of administrative roles. Everyone else acts in the selection their
+// signed set opens, else the first org it opens (authz.Claims.EffectiveOrg): never
+// the admin org, never a brand's directory, never an org the platform runs held as
+// a plain member. That last one is a customer who landed in a brand org, and the
+// brand's shared accounts — its AI connections among them — are its staff's. A set
+// that opens nothing acts in no org, and every org gate refuses.
+//
+// A person of the admin org without the host's verdict is not the SuperAdmin (a
+// process with no host states it of nobody), so they act at home and select nothing.
+func actingOrg(user *iam.User, orgs []account.OrgRef, requested string, confined bool) string {
+	if util.IsSuperAdmin(user) {
+		if requested == "" || authz.HasUnsafeRune(requested) {
+			return user.Owner
+		}
+		return requested
+	}
+	if len(orgs) == 0 || confined {
+		return user.Owner
+	}
+	ac := tenancy(user, orgs)
+	if ac.Sudo() {
+		return ac.Home()
+	}
+	org, _ := ac.EffectiveOrg(requested)
+	return org
+}
+
+// administers reports whether a verified principal administers org: the SuperAdmin
+// (the host's verdict), or an owner or admin of org by the signed set
+// (authz.Claims.OrgAdmin). A credential without a membership set administers
+// nothing: an sk- key is a person's, issued for calls, and a program's purpose is
+// not an org's self-service surface.
+func administers(user *iam.User, orgs []account.OrgRef, org string) bool {
+	if user == nil || org == "" {
+		return false
+	}
+	return util.IsSuperAdmin(user) || tenancy(user, orgs).OrgAdmin(org)
+}
+
 // GetOrg resolves the organization a request ACTS IN — data scoping, routing,
 // pricing, usage reads, record attribution — from the VERIFIED request
 // principal, never a raw client header.
 //
-// X-Org-Id is honored when it names the principal's own org, an org the SIGNED
-// `orgs` claim says the principal belongs to (the org switcher), or any org at
-// all for a super admin (cross-tenant platform access). A non-member's request
-// is silently answered with its home org: a spoofed header can never widen
+// X-Org-Id is a SELECTION, answered by actingOrg: any org for the SuperAdmin, an
+// org the SIGNED `orgs` set opens for anyone else (the org switcher), and
+// otherwise the first org that set opens. A spoofed header can never widen
 // scope, and the refusal discloses nothing.
 //
 // This is the SCOPE answer, not the MONEY answer. What a request SPENDS FROM is
@@ -155,26 +219,17 @@ func (c *ApiController) resolveOrg() string {
 	// says it is valid only while the handler runs. An organization read from one
 	// is stored on rows and carried into work that outlives the handler, so it has
 	// to be a value of ours rather than a window onto somebody else's request.
-	requested := strings.Clone(strings.TrimSpace(c.Header("X-Org-Id")))
+	// Verbatim: an org is a tenancy key, and trimming "acme " onto "acme" folds two
+	// of them into one. A selection bearing such a rune is refused by actingOrg.
+	requested := strings.Clone(c.Header("X-Org-Id"))
 
 	user := c.principalUser()
 	if user != nil && user.Owner != "" {
-		if requested == "" || requested == user.Owner {
-			return user.Owner
-		}
-		if util.IsSuperAdmin(user) {
-			return requested
-		}
-		// SCOPE, not money: a refused selection answers with the principal's own
-		// org. Falling back here NARROWS what the request can see, so it is
-		// genuinely fail-closed — unlike the same fallback on the billing path,
-		// which would charge a different account. account.EffectiveOrg refuses
-		// now, and this is the one caller for which home is the right answer.
-		org, err := account.EffectiveOrg(user.Owner, c.principalOrgs(), requested)
-		if err != nil {
-			return user.Owner
-		}
-		return org
+		// SCOPE, not money: a refused selection answers with the org the set opens
+		// first, which NARROWS what the request can see, so it is genuinely
+		// fail-closed — unlike the same fallback on the billing path, which would
+		// charge a different account.
+		return actingOrg(user, c.principalOrgs(), requested, iam.Confined(c.presented()))
 	}
 
 	// A PUBLISHABLE KEY ANSWERS SCOPE AND NOTHING ELSE. It names a tenant without

@@ -53,7 +53,7 @@ func okMsgConn(t *testing.T, msg *zap.Message, err error) *zap.Message {
 // empty or whitespace token is never a principal (no body can grant identity).
 func TestZapConnectionOrg_RejectsAnon(t *testing.T) {
 	for _, tok := range []string{"", "   ", "Bearer "} {
-		if _, err := zapConnectionOrg(tok); err == nil {
+		if _, err := zapConnectionOrg(context.Background(), tok); err == nil {
 			t.Errorf("zapConnectionOrg(%q) = nil err, want rejection", tok)
 		}
 	}

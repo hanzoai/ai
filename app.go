@@ -42,6 +42,7 @@ import (
 	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/routers"
+	"github.com/hanzoai/authz"
 )
 
 // Mount registers AI's HTTP surface per HIP-0106 AND initializes the AI
@@ -216,6 +217,11 @@ func Handler() http.Handler {
 // charges the customer itself (object.Caller). Nothing a request carries can state
 // a caller; only code linked into this process can call For.
 //
+// No identity header the edge writes (authz.Headers, and the Retired names) is
+// carried in: an identity here is the caller the program stated and the credential
+// it presented, never a header a program copied from a request no boundary vouched
+// for this dispatch.
+//
 // The answer is written whole: a streamed one is read to its end first.
 func For(caller object.Caller) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -243,6 +249,9 @@ func For(caller object.Caller) http.Handler {
 				req.Header.Add(k, v)
 			}
 		}
+		for _, h := range identity {
+			req.Header.Del(h)
+		}
 		req.SetBody(body)
 		var fctx fasthttp.RequestCtx
 		fctx.Init(&req, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}, nil)
@@ -259,6 +268,9 @@ func For(caller object.Caller) http.Handler {
 		_, _ = w.Write(fctx.Response.Body())
 	})
 }
+
+// identity is every identity header an edge writes, and the names one used to.
+var identity = append(append([]string{}, authz.Headers...), authz.Retired...)
 
 // Document is the OpenAPI projection of the app this process built, or nil before
 // there is one.

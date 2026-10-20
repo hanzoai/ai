@@ -325,8 +325,9 @@ func persistConnection(org string, spec aiConnSpec, ref string) error {
 // org into a signed state and sends the caller to the provider's authorize URL. By
 // default it 302-redirects (a top-level browser "connect your login" click); a
 // SPA/BFF that needs to drive the redirect itself passes ?format=json and gets
-// {authorizeUrl} in the standard envelope. The org is the VERIFIED principal, so
-// only the caller's own connection can result.
+// {authorizeUrl} in the standard envelope. The org is the VERIFIED principal's, and
+// only its admins may begin one (requireConnectionAdmin), so the state this signs
+// names an org its holder administers.
 // @Title ConnectAIProvider
 // @Tag AI Connections API
 // @Description begin an OAuth connection to a third-party AI account (login manager)
@@ -334,7 +335,7 @@ func persistConnection(org string, spec aiConnSpec, ref string) error {
 // @Success 302 {string} string redirect to the provider authorize URL
 // @router /ai/connections/:provider/authorize [get]
 func (c *ApiController) ConnectAIProvider() {
-	org, ok := c.requireConnectionOrg()
+	org, ok := c.requireConnectionAdmin()
 	if !ok {
 		return
 	}

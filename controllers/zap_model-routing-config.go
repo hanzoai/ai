@@ -34,6 +34,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hanzoai/account"
+
 	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -103,24 +105,32 @@ func zapGwError(status uint32, msg string) (*zap.Message, error) {
 // SuperAdmin gate on that wire refuses, by util.IsSuperAdmin. A key is never one,
 // on either path, as it is never one at the host.
 func zapPrincipal(ctx context.Context, auth string) *iam.User {
+	user, _ := zapTenant(ctx, auth)
+	return user
+}
+
+// zapTenant is zapPrincipal with the principal's signed membership set, which only
+// a JWT carries: what actingOrg and administers read to answer which org the caller
+// acts in and whether it administers it.
+func zapTenant(ctx context.Context, auth string) (*iam.User, []account.OrgRef) {
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if token == "" || confinedIn(auth) {
-		return nil
+		return nil, nil
 	}
 	if isIAMApiKey(token) {
 		if user, err := getUserByAccessKey(token); err == nil && user != nil {
-			return user
+			return user, nil
 		}
-		return nil
+		return nil, nil
 	}
 	if isJwtToken(token) {
 		if claims, err := object.ParseAndValidateJWT(token); err == nil && claims != nil {
 			u := claims.User
 			u.Sudo = bridged(ctx)
-			return &u
+			return &u, claims.Orgs
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // zapRequireSuperAdmin mirrors ApiController.RequireSuperAdmin: no verified

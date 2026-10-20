@@ -32,6 +32,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/authz"
 	"github.com/zap-proto/zip"
 )
 
@@ -78,5 +79,40 @@ func TestForStatesTheCaller(t *testing.T) {
 	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{}`)))
 	if rec.Body.String() != "none" {
 		t.Fatalf("a request through Handler stated %q", rec.Body.String())
+	}
+}
+
+// For's call is its program's, and the identity it carries is the caller the
+// program stated and the credential it presented: no identity header the edge
+// writes reaches the app through it, whoever built the request. A program that
+// copied an inbound request into For would otherwise hand the app an org, a person
+// or the SuperAdmin verdict no boundary decided.
+func TestForCarriesNoIdentityHeader(t *testing.T) {
+	app := zip.New(zip.Config{DisableStartupMessage: true})
+	var seen []string
+	app.Raw(http.MethodPost, "/v1/embeddings", func(c *zip.Ctx) error {
+		for _, h := range append(append([]string{}, authz.Headers...), authz.Retired...) {
+			if v := c.Header(h); v != "" {
+				seen = append(seen, h+"="+v)
+			}
+		}
+		return c.Bytes(http.StatusOK, []byte(c.Header("Authorization")))
+	})
+	prev := built.Load()
+	built.Store(app)
+	t.Cleanup(func() { built.Store(prev) })
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer program")
+	for _, h := range append(append([]string{}, authz.Headers...), authz.Retired...) {
+		req.Header.Set(h, "forged")
+	}
+	rec := httptest.NewRecorder()
+	For(object.Caller{Org: "globex"}).ServeHTTP(rec, req)
+	if len(seen) > 0 {
+		t.Fatalf("identity headers reached the app through For: %v", seen)
+	}
+	if rec.Body.String() != "Bearer program" {
+		t.Fatalf("the program's credential did not reach the app: %q", rec.Body.String())
 	}
 }

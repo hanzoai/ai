@@ -119,7 +119,7 @@ func TestEveryHttpWriteSaysWhoseRowItIs(t *testing.T) {
 		`reaches\(|storeFor\(|applicationFor\(|whose\(|RequireSuperAdmin\(|` +
 		`stored\(c, |replaced\(c, |listed\(c, |ownedBy\(|connectionFor\(|` +
 		`IsCurrentUser\(|requireMemoryIdentity\(|GetSessionUser\(|GetOrg\(|` +
-		`requireIndexAuth\(|RequirePrincipal\(|requireConnectionOrg\(`)
+		`requireIndexAuth\(|RequirePrincipal\(|requireConnectionOrg\(|requireConnectionAdmin\(`)
 	writes := regexp.MustCompile(`object\.(Add|Update|Delete)\w+\(`)
 
 	// NOT YET ANSWERED.
