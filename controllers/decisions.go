@@ -619,6 +619,10 @@ func Refusing(err error, rid string) (int, []byte, map[string]string) {
 var decisionKeys = map[string]bool{
 	"model": true, "state": true, "questions": true, "observe": true, "handle": true,
 	"provider": true, "session_id": true, "user": true, "trace": true,
+	// policy: Nio's declared rule over the body's own typed answers (kai 0.4.7+), read
+	// by the service after the backend answers and never by the model; forwarded as
+	// written, priced as nothing (it holds no text the model reads).
+	"policy": true,
 }
 
 // fieldsOf reads a decision body's top level exactly as written, and refuses a body
