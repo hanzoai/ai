@@ -44,14 +44,17 @@ import (
 // ChatCompletionStreamResponse serialise, the fields of their choices, and of a
 // choice's message or delta — plus `provider`, which is ours. `routing` is ours too,
 // and is set by the mark (stampChat), never relayed. `error` is published
-// too; a refusal is an answer. A name absent from these sets does not go out.
+// too; a refusal is an answer. `images` is the answer of an image model
+// (modalities ["image","text"]): the pictures, as data: URLs, beside content that
+// is often empty, so a message without it is an image call billed and answered
+// with nothing. A name absent from these sets does not go out.
 var (
 	chatFields = fields("id", "object", "created", "model", "provider", "choices",
 		"usage", "error", "system_fingerprint", "prompt_annotations", "prompt_filter_results")
 	choiceFields = fields("index", "message", "delta", "finish_reason", "logprobs",
 		"content_filter_results")
 	messageFields = fields("role", "content", "reasoning_content", "refusal", "name",
-		"function_call", "tool_calls", "tool_call_id")
+		"function_call", "tool_calls", "tool_call_id", "images")
 	// usageFields is what the CUSTOMER consumed. An aggregator hangs our side of
 	// the trade on the same object — what we paid for the call (`cost`,
 	// `cost_details.upstream_inference_cost`), whose account it ran on

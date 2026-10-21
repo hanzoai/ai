@@ -1236,3 +1236,46 @@ func TestTheRouterSaysWhyOnTheFirstEnvelope(t *testing.T) {
 		t.Fatalf("unrouted answer carries routing: %s", plain)
 	}
 }
+
+// An image model answers in `images`, its content empty. The envelope dropped the
+// field, so every picture was paid for and arrived as an empty message.
+func TestAPictureLeavesWithItsAnswer(t *testing.T) {
+	const picture = `data:image/png;base64,iVBORw0KGgo=`
+	t.Run("buffered", func(t *testing.T) {
+		body := `{"id":"gen-1","object":"chat.completion","created":1,"model":"google/gemini-3.1-flash-image","provider":"Google AI Studio",` +
+			`"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"",` +
+			`"images":[{"type":"image_url","image_url":{"url":"` + picture + `"},"index":0}]}}],` +
+			`"usage":{"prompt_tokens":14,"completion_tokens":1120,"total_tokens":1134}}`
+		out := ourMark().stamp([]byte(body))
+		discloses(t, "image answer", out)
+		var env struct {
+			Choices []struct {
+				Message struct {
+					Images []struct {
+						ImageURL struct {
+							URL string `json:"url"`
+						} `json:"image_url"`
+					} `json:"images"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(out, &env); err != nil {
+			t.Fatalf("not JSON: %v", err)
+		}
+		if len(env.Choices) != 1 || len(env.Choices[0].Message.Images) != 1 || env.Choices[0].Message.Images[0].ImageURL.URL != picture {
+			t.Fatalf("the picture did not leave: %s", out)
+		}
+	})
+
+	t.Run("streamed delta", func(t *testing.T) {
+		chunk := `data: {"id":"gen-1","object":"chat.completion.chunk","created":1,"model":"google/gemini-3.1-flash-image","provider":"Google AI Studio",` +
+			`"choices":[{"index":0,"delta":{"role":"assistant","content":"","images":[{"type":"image_url","image_url":{"url":"` + picture + `"}}]}}]}`
+		to := toStream()
+		relayZenStream(to.w, strings.NewReader(chunk+"\n\ndata: [DONE]\n\n"), ourMark(), nil)
+		out := to.String()
+		discloses(t, "streamed image answer", []byte(out))
+		if !strings.Contains(out, `"images"`) || !strings.Contains(out, picture) {
+			t.Fatalf("the streamed picture did not leave:\n%s", out)
+		}
+	})
+}
