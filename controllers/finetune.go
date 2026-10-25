@@ -455,7 +455,7 @@ func (c *ApiController) meterFinetuneTerminal(job *object.FinetuneJob) bool {
 		return true
 	}
 	subject := job.Owner + "/" + firstNonEmptyStr(job.CreatedBy, "admin")
-	cents, err := object.MeterFinetuneGpuHours(subject, gpuSeconds, job.GpuType)
+	cents, err := object.MeterFinetuneGpuHours(subject, gpuSeconds, job.GpuType, "finetune:"+job.Owner+"/"+job.Name)
 	if err != nil {
 		// Leave Metered=false to retry on a later refresh.
 		return false

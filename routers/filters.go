@@ -87,6 +87,7 @@ func InstallFilters(app *zip.App) {
 	app.Use(zip.H(LaneFilter))
 	app.Use(zip.H(TenantContextFilter))
 	app.Use(zip.H(AuthzFilter))
+	app.Use(zip.H(IdempotencyFilter))
 	app.Use(zip.H(PrometheusFilter))
 	app.Use(zip.H(Record))
 }
