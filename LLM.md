@@ -1542,7 +1542,8 @@ no second table). Every place a request can be refused or fail asks it:
   allowance) stands. Router ids keep `rest`, with the same exclusions.
 - **The handlers' own gate and reservation** (`ApiController.fall`, chat/responses and
   messages): a 402, an unreadable balance (`balance_unavailable`), our cash breaker
-  (`supply_unavailable`), and a balance that cannot cover the call's estimate.
+  (`supply_unavailable`), and a balance that cannot cover the call's estimate. Such a
+  request then meets the free allowance (`held`), as one the gate moved does.
 - **The family pipe** (`pipeToFamily`): before a byte reached the caller, a 5xx, 429,
   402 (our account), a timeout, an unreachable family, a family that hid its vendor's
   refusal ("the model could not serve this request", `masked`), an unpriced route (the

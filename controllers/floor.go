@@ -47,10 +47,13 @@ package controllers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	metric "github.com/luxfi/metric"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
@@ -234,7 +237,48 @@ func (c *ApiController) fall(model string, err error) (string, bool) {
 	c.Fiber().Request().SetBody(body)
 	c.Fiber().Request().Header.Del("Content-Encoding")
 	Fell(c.Ctx, model, to, why)
+	c.Locals(fellKey{}, true)
 	return to, true
+}
+
+// fellKey marks a request its handler's own gate moved to its floor (fall).
+type fellKey struct{}
+
+// held holds a request its handler moved to its floor to the free allowance, as the
+// balance gate holds one it moved there: a floor costs nothing, so the allowance is
+// its one bound, counted by the payer u's person as the gate counts it. It reports
+// false when it answered the request itself, in dialect: the allowance is spent (429),
+// or cannot be read (503). The unit is the admission's, as the allowance's own rule
+// says (object.SpentFunc). Any other request is not asked about.
+func (c *ApiController) held(u *iam.User, dialect string) bool {
+	spent := object.Spent()
+	if fell, _ := c.Locals(fellKey{}).(bool); !fell || spent == nil || u == nil {
+		return true
+	}
+	org := c.billingOrg(u)
+	out, err := spent(zip.WithCaller(c.Context(), zip.CallerOf(c.Forward())), u.PayerSubject(org), org)
+	status, msg, body := 0, "", []byte(nil)
+	switch {
+	case err != nil:
+		log.Warn("allowance: unreadable for a fallen request org=%s: %v", org, err)
+		n := object.UsageUnavailable()
+		status, msg, body = n.Status, n.Message, n.ErrorJSON()
+	case out.Spent:
+		n := object.AllowanceSpent(c.Host(), org, out)
+		if wait := n.RetryAfter(time.Now()); wait > 0 {
+			c.SetHeader("Retry-After", strconv.FormatInt(wait, 10))
+		}
+		status, msg, body = n.Status, n.Message, n.ErrorJSON()
+	default:
+		return true
+	}
+	if dialect == "anthropic" {
+		c.respondAnthropicError(anthropicErrorTypeForStatus(status), msg, status)
+		return false
+	}
+	c.SetHeader("Content-Type", "application/json")
+	_ = c.Bytes(status, body)
+	return false
 }
 
 // toolsHeader says what a floor was asked in place of a forced tool choice it may

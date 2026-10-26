@@ -30,6 +30,7 @@ import (
 
 	"github.com/hanzoai/decimal"
 
+	iam "github.com/hanzoai/ai/internal/iam"
 	"github.com/hanzoai/ai/object"
 )
 
@@ -558,4 +559,47 @@ func told(t *testing.T, body string, mk *mark) string {
 	relayZenStream(w, strings.NewReader(body), mk, nil)
 	_ = w.Flush()
 	return out.String()
+}
+
+// A request its handler moved to its floor meets the free allowance there, as one the
+// gate moved does: spent is 429, unreadable is 503, and a request that did not fall
+// is never asked about.
+func TestAFloorTheHandlerChoseMeetsTheFreeAllowance(t *testing.T) {
+	t.Cleanup(func() { object.SetSpent(nil) })
+	alice := &iam.User{Owner: "acme", Name: "alice"}
+	reads := 0
+	for name, tc := range map[string]struct {
+		standing object.Standing
+		err      error
+		status   int
+	}{
+		"room left":      {object.Standing{Limit: 50, Used: 3}, nil, 0},
+		"spent":          {object.Standing{Spent: true, Window: "day", Limit: 50, Used: 50}, nil, http.StatusTooManyRequests},
+		"cannot be read": {object.Standing{}, errors.New("store down"), http.StatusServiceUnavailable},
+	} {
+		object.SetSpent(func(context.Context, string, string) (object.Standing, error) {
+			reads++
+			return tc.standing, tc.err
+		})
+		for _, dialect := range []string{"openai", "anthropic"} {
+			c := visit(http.MethodPost, "/v1/chat/completions")
+			c.Fiber().Request().SetBody([]byte(`{"model":"enso-ultra","messages":[]}`))
+			if !c.held(alice, dialect) {
+				t.Fatalf("%s %s: a request that did not fall met the allowance", name, dialect)
+			}
+			if _, ok := c.fall("enso-ultra", billingError("request cost")); !ok {
+				t.Fatalf("%s: did not fall", name)
+			}
+			got := c.held(alice, dialect)
+			if got != (tc.status == 0) || tc.status != 0 && answered(c) != tc.status {
+				t.Errorf("%s %s: held=%v status %d (%s), want %d", name, dialect, got, answered(c), sent(c), tc.status)
+			}
+			if tc.status == http.StatusTooManyRequests && !strings.Contains(sent(c), "Free tier") {
+				t.Errorf("%s %s: body %s, want the allowance's own sentence", name, dialect, sent(c))
+			}
+		}
+	}
+	if reads != 6 {
+		t.Errorf("the allowance was read %d times, want once a fallen request", reads)
+	}
 }

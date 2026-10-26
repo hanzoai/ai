@@ -712,6 +712,10 @@ func (c *ApiController) AnthropicMessages() {
 		}
 	}
 	defer hold.settle(0)
+	// A request this handler moved to its floor meets the free allowance there.
+	if !c.held(authUser, "anthropic") {
+		return
+	}
 
 	// One request id for the whole request — the response id, the usage-ledger
 	// key, and the id every refusal along the way is filed under, so a failover

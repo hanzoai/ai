@@ -2172,6 +2172,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// from inside its own writer, which runs after this handler has returned, and a
 	// release here would win the one-shot settle before the answer's cost is known.
 	defer func() { hold.settle(0) }()
+	// A request this handler moved to its floor meets the free allowance there.
+	if !c.held(authUser, "openai") {
+		return
+	}
 
 	// ── Model families (Zen, Enso) ─────────────────────
 	// A family model is served by its family service, which owns identity, reasoning,
