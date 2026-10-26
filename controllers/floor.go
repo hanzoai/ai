@@ -65,6 +65,9 @@ const (
 	FallbackReasonHeader = "X-Hanzo-Fallback-Reason"
 )
 
+// paidByHeader says who paid for an answer (the gate's usage); a floor's is nobody.
+const paidByHeader = "X-Hanzo-Paid-By"
+
 // ReasonRoute is why a request falls when every rung of its model refused inside the
 // family serving it, and the family's own catalog answered on the floor: the family
 // says so by naming the floor in X-Hanzo-Served.
@@ -157,10 +160,20 @@ func Fall(model, why string) (string, bool) {
 }
 
 // Fell says on the answer that it is the floor's: the model that answers and why,
-// and counts it. Set before a byte of the answer is written.
+// that it was served on the free lane and paid for by nobody, and counts it. Set
+// before a byte of the answer is written. The gate, which asks the floor again from
+// the top, then states the floor's own lane and payer over these.
 func Fell(c *zip.Ctx, from, to, why string) {
 	c.SetHeader(FallbackHeader, to)
 	c.SetHeader(FallbackReasonHeader, why)
+	h := &c.Fiber().Response().Header
+	if len(h.Peek(LaneHeader)) > 0 {
+		c.SetHeader(LaneHeader, "free")
+	}
+	h.Del(LaneTokensHeader)
+	if len(h.Peek(paidByHeader)) > 0 {
+		c.SetHeader(paidByHeader, object.PaysFree)
+	}
 	fallen.WithLabelValues(to, why).Inc()
 	log.Info("fallback: %s served by %s (%s)", from, to, why)
 }
@@ -424,4 +437,35 @@ func shaped(err error) bool {
 		return true
 	}
 	return false
+}
+
+// freeRoom is what a free route ai sends itself is given beyond a small output limit,
+// as zen gives its free rungs: a model that reasons spends its first tokens thinking,
+// and a probe's max_tokens (20, "reply OK") left it nothing to answer with, so the
+// caller was handed an empty answer. A free route bills nothing.
+const freeRoom = 1024
+
+// room is body with each output limit it states under freeRoom lifted by freeRoom:
+// the caller's limit stays the answer's, and the thinking before it gets its own.
+func room(body []byte) []byte {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil || m == nil {
+		return body
+	}
+	lifted := false
+	for _, k := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
+		var v int
+		if json.Unmarshal(m[k], &v) == nil && v > 0 && v < freeRoom {
+			m[k], _ = json.Marshal(v + freeRoom)
+			lifted = true
+		}
+	}
+	if !lifted {
+		return body
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
 }

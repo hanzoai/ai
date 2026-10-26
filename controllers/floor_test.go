@@ -204,13 +204,21 @@ func (v *floorVendor) serve(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, b)
 			return
 		}
-		if stream {
+		messages := strings.HasSuffix(r.URL.Path, "/messages")
+		switch {
+		case stream && messages:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, anthropicStream)
+		case stream:
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = io.WriteString(w, answerStream)
-			return
+		case messages:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"msg_1","type":"message","role":"assistant","model":"`+floorRoute+`","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}`)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"gen-1","model":"`+floorRoute+`","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"gen-1","model":"`+floorRoute+`","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`)
 	}))
 	t.Cleanup(s.Close)
 	return s
@@ -601,5 +609,73 @@ func TestAFloorTheHandlerChoseMeetsTheFreeAllowance(t *testing.T) {
 	}
 	if reads != 6 {
 		t.Errorf("the allowance was read %d times, want once a fallen request", reads)
+	}
+}
+
+// The Messages API falls the same way, whole and streamed: the floor answers in the
+// caller's dialect, named for itself, and a forced tool is never dropped there either.
+func TestTheMessagesAPIFallsToTheFloor(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		v := &floorVendor{status: http.StatusServiceUnavailable, body: `{"error":{"message":"down"}}`}
+		s := v.serve(t)
+		floorPool(t, s.URL)
+		body := fmt.Sprintf(`{"model":"enso-pro","stream":%v,"max_tokens":20,"tool_choice":{"type":"tool","name":"f"},`+
+			`"tools":[{"name":"f","input_schema":{"type":"object"}},{"name":"g","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":"hi"}]}`, stream)
+		c, out := turn(t, otherFamily(t, s.URL), "enso-pro", "anthropic", body, stream, time.Now())
+		if out != nil || answered(c) != http.StatusOK {
+			t.Fatalf("stream=%v: attempts=%+v status %d body %s", stream, out, answered(c), sent(c))
+		}
+		if !strings.Contains(sent(c), `"model":"enso-free"`) || header(c, FallbackHeader) != "enso-free" || header(c, toolsHeader) != "required" {
+			t.Errorf("stream=%v: body %s fallback %q tools %q", stream, sent(c), header(c, FallbackHeader), header(c, toolsHeader))
+		}
+		if len(v.bodies) != 2 || string(v.bodies[1]["tool_choice"]) != `{"disable_parallel_tool_use":true,"type":"any"}` {
+			t.Errorf("stream=%v: the floor was asked %v", stream, v.bodies)
+		}
+		// A free route has room to think beside the caller's 20 tokens.
+		if len(v.bodies) == 2 && string(v.bodies[1]["max_tokens"]) != fmt.Sprint(20+freeRoom) {
+			t.Errorf("stream=%v: the floor was sent max_tokens %s, want %d", stream, v.bodies[1]["max_tokens"], 20+freeRoom)
+		}
+	}
+}
+
+// A request that fell is said to be on the free lane, paid for by nobody, whatever
+// the gate seated it on before it fell.
+func TestAFallenAnswerIsOnTheFreeLane(t *testing.T) {
+	c := visit(http.MethodPost, "/v1/chat/completions")
+	c.SetHeader(LaneHeader, "paid")
+	c.SetHeader(LaneTokensHeader, "4000")
+	c.SetHeader(paidByHeader, object.PaysCredits)
+	Fell(c.Ctx, "enso-pro", "enso-free", onCapacity)
+	if header(c, LaneHeader) != "free" || header(c, paidByHeader) != object.PaysFree || header(c, LaneTokensHeader) != "" {
+		t.Errorf("lane %q paid-by %q tokens %q, want free, free and none", header(c, LaneHeader), header(c, paidByHeader), header(c, LaneTokensHeader))
+	}
+	plain := visit(http.MethodPost, "/v1/chat/completions")
+	Fell(plain.Ctx, "zen6", "zen-free", onBusy)
+	if header(plain, LaneHeader) != "" || header(plain, paidByHeader) != "" {
+		t.Error("a request the gate named no lane or payer for was given one")
+	}
+}
+
+// A whole answer that says nothing is never a finished one: a model that spent its
+// budget thinking stopped for length, and the answer says so.
+func TestABlankWholeAnswerStoppedForLength(t *testing.T) {
+	thought := `data: {"id":"g","choices":[{"index":0,"delta":{"reasoning":"Let me think about the word"}}]}` + "\n\n"
+	for name, body := range map[string]string{
+		"no stated stop":  thought + "data: [DONE]\n\n",
+		"a stated stop":   thought + `data: {"id":"g","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\ndata: [DONE]\n\n",
+		"a stated length": thought + `data: {"id":"g","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}` + "\n\ndata: [DONE]\n\n",
+	} {
+		var out strings.Builder
+		w := bufio.NewWriter(&out)
+		assembleZenStream(w, io.NopCloser(strings.NewReader(body)), nil, time.Hour, nil, nil)
+		if !strings.Contains(out.String(), `"finish_reason":"length"`) {
+			t.Errorf("%s: %s, want finish_reason length", name, out.String())
+		}
+	}
+	var out strings.Builder
+	w := bufio.NewWriter(&out)
+	assembleZenStream(w, io.NopCloser(strings.NewReader(`data: {"id":"g","choices":[{"index":0,"delta":{"content":"OK"}}]}`+"\n\ndata: [DONE]\n\n")), nil, time.Hour, nil, nil)
+	if !strings.Contains(out.String(), `"finish_reason":"stop"`) {
+		t.Errorf("an answer with content: %s, want stop", out.String())
 	}
 }

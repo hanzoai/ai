@@ -1848,8 +1848,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 		upstream.Authorize(r, p)
 		// The vendor is sent its own id for the SKU. An alias is ours, so it goes
-		// upstream as the SKU it names while the answer still wears the alias.
+		// upstream as the SKU it names while the answer still wears the alias. A
+		// route of the free pool has room to think (room).
 		b := withModel(rawBody, f.sku(s))
+		if inPool(s) {
+			b = room(b)
+		}
 		// A model its maker serves is asked of the maker first, on every key of its
 		// pool, and of this family only once none of them answered (native.go). A
 		// maker's API bills every call, so only a request seated on the paid lane
@@ -2879,8 +2883,14 @@ wait:
 			msg["content"] = nil
 		}
 	}
-	if finish == "" {
+	// An answer that says nothing is never a finished one: a model that spent its
+	// whole budget thinking (reasoning, no content, no call) stopped for length, and
+	// says so, so an agent reads a cut answer rather than an empty success.
+	if finish == "" || finish == "stop" && content.Len() == 0 && len(order) == 0 {
 		finish = "stop"
+		if content.Len() == 0 && len(order) == 0 {
+			finish = "length"
+		}
 	}
 	whole := map[string]any{
 		"id": respID, "object": "chat.completion", "created": created, "model": served,

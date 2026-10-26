@@ -1567,6 +1567,17 @@ carries no plan spend. A forced tool is never dropped: the floor is asked for it
 sentence asking for the call; `X-Hanzo-Fallback-Tools` says which. Counted in
 `cloud_fallback{floor,reason}` on GET /v1/metrics.
 
+The fallen answer also says it was served on the free lane and paid by nobody
+(`X-Hanzo-Lane: free`, `X-Hanzo-Paid-By: free`), whatever the gate seated it on. The body
+names the floor rather than the asked id because `model` is what every OpenAI- and
+Anthropic-compatible client reads as the model that wrote the answer (OpenAI itself
+answers a dated id there); the asked id and the reason ride in the headers.
+
+**A free answer is never blank.** A free route ai sends itself (`room`), and every free
+rung in zen, gets `freeRoom` (1024) beside an output limit under it: a reasoning model
+spent a probe's 20 tokens thinking and answered empty. A whole answer that still says
+nothing finishes `length`, never `stop`.
+
 **A stream that breaks off after its first bytes** is never asked again: it ends with an
 error event in its dialect (`upstream_cut`) and bills the text relayed. Tests:
 `controllers/floor_test.go`, `routers/filter_balance_floor_test.go`.
