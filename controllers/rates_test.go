@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,6 +49,8 @@ type ensoService struct {
 	cogs  string
 	arm   string
 	asked atomic.Int64
+	mu    sync.Mutex
+	sent  []string // the model each chat completion was sent for
 }
 
 func ensoServiceAt(t *testing.T) *ensoService {
@@ -94,6 +97,9 @@ func (e *ensoService) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &in)
+		e.mu.Lock()
+		e.sent = append(e.sent, in.Model)
+		e.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set(servedHeader, in.Model)
 		w.Header().Set(armHeader, e.arm)
@@ -370,8 +376,8 @@ func TestAnEnsoAnswerBillsItsFixedPrice(t *testing.T) {
 }
 
 // The guard sends nothing to a model whose route costs more than it bills, nor to one
-// whose route it cannot check, and names no upstream in its refusal; a model that fits
-// is sent.
+// whose route it cannot check, and names no upstream; the model's floor answers in its
+// place (floor.go), saying why. A model that fits is sent.
 func TestTheGuardSendsNothingItCannotCheckOrThatCostsMore(t *testing.T) {
 	orFees(t)
 	e := ensoServiceAt(t)
@@ -385,19 +391,22 @@ func TestTheGuardSendsNothingItCannotCheckOrThatCostsMore(t *testing.T) {
 		if out := c.pipeToFamily(ensoFam, "chat/completions", "openai", model, body, false, 0, "acme", alice, true, nil, time.Now()); out != nil {
 			t.Fatalf("%s handed on: %+v", model, out)
 		}
+		if why := header(c, FallbackReasonHeader); model != "enso-flash" && why != onUnpriced {
+			t.Errorf("%s: %s = %q, want %q", model, FallbackReasonHeader, why, onUnpriced)
+		}
 		return c.Fiber().Response().StatusCode(), drain(t, c)
 	}
 	// Gemini's output at $40 is past enso-pro's $22 and enso-ultra's $27.50.
 	for _, m := range []string{"enso-pro", "enso-ultra"} {
 		status, body := ask(m)
-		if status != http.StatusServiceUnavailable || !strings.Contains(body, "costs more than it bills") || strings.Contains(body, "gemini") {
-			t.Errorf("%s answered %d %s, want 503 naming no upstream", m, status, body)
+		if status != http.StatusOK || !strings.Contains(body, `"model":"enso-free"`) || strings.Contains(body, "gemini") {
+			t.Errorf("%s answered %d %s, want enso-free's answer naming no upstream", m, status, body)
 		}
 	}
-	if e.asked.Load() != 0 {
-		t.Fatalf("the service was sent %d requests the guard refused", e.asked.Load())
+	if strings.Join(e.sent, ",") != "enso-free,enso-free" {
+		t.Fatalf("the service was sent %v, want the floor alone, never a model the guard refused", e.sent)
 	}
-	if status, _ := ask("enso-flash"); status != http.StatusOK || e.asked.Load() != 1 {
+	if status, _ := ask("enso-flash"); status != http.StatusOK || e.asked.Load() != 3 {
 		t.Errorf("enso-flash, which fits, answered %d after %d sends", status, e.asked.Load())
 	}
 	if err := ensoFam.guard(context.Background(), "enso-nothing"); err == nil {

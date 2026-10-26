@@ -1524,6 +1524,52 @@ universe's enso catalog lists none of the three.
   program's call, a tier named outright), `TestDepthRoute*`, `TestDepthRouting*`,
   `TestTheRouterIdsAreListed`, `TestARouterIdListsAtItsDefaultTiersPrice`.
 
+## An Enso or Zen model never stops: its floor answers (`controllers/floor.go`)
+
+Owner, 2026-10-26: "enso and enso-auto are the same, and even the other enso/zen models
+literally never stop working. They just fall to free models and keep GOING." One rule,
+`controllers.Fall(model, why)`: a chat (`/v1/chat/completions`, `/v1/messages`,
+`/v1/responses`, streamed or whole) naming an Enso or Zen id that cannot be served for a
+reason that is not the caller's is served as the same request by the id's **floor**,
+`Floor(model)`: enso-free for an Enso id, zen-free for a Zen id (the family's `freeName`;
+no second table). Every place a request can be refused or fail asks it:
+
+- **The gate** (`routers/filter_balance.go` `floor`): an empty or unreadable wallet, and
+  every plan refusal of the asked model (`paid_plan_required`, `plan_allowance_used`,
+  `model_cap`, `free_plan_cap`, `usage_cap_exceeded`, `paid_lane_full`), for ANY
+  credential — an API key falls exactly as a person in an app. The floor is asked again
+  from the top, so what the floor meets itself (its own cap, a spent window, the free
+  allowance) stands. Router ids keep `rest`, with the same exclusions.
+- **The handlers' own gate and reservation** (`ApiController.fall`, chat/responses and
+  messages): a 402, an unreadable balance (`balance_unavailable`), our cash breaker
+  (`supply_unavailable`), and a balance that cannot cover the call's estimate.
+- **The family pipe** (`pipeToFamily`): before a byte reached the caller, a 5xx, 429,
+  402 (our account), a timeout, an unreachable family, a family that hid its vendor's
+  refusal ("the model could not serve this request", `masked`), an unpriced route (the
+  guard), or a paid lane closed to the caller. The floor's routes are `floorRoutes`: the
+  floor in its own family's catalog when listed, then the free pool. The floor is always
+  asked once, even after the model used its whole wait. A family whose own catalog fell
+  to the floor (`X-Hanzo-Served` = the floor) is named the same (`route_refused`).
+- **Cloud's Zen** (hanzo-inc/cloud `apps/zen` `floored`): zen* chats are claimed by cloud's
+  in-process zen before this module sees them; its mount asks the same `Fall`.
+
+**Stands, as the caller's:** 401, 400, 403, a model the key may not use or its budget
+(`key_model`, `key_budget`, and cloud's `spend_cap_exceeded`), `allowance_spent`,
+`usage_unavailable`, and any refusal the floor meets. A floor never falls: at most one
+hop. When the floor fails too, its own status is the answer, said as the floor's (a
+borrowed route's prose is never quoted), and nothing is asked after it.
+
+**Honest:** `X-Hanzo-Fallback: <floor>`, `X-Hanzo-Fallback-Reason: <why>`, the body's
+`model` is the floor, `X-Hanzo-Served` the floor; it bills nothing (`whence.fell`) and
+carries no plan spend. A forced tool is never dropped: the floor is asked for it as
+`required` over that tool alone, then, on a refusal of the request's shape, `auto` with a
+sentence asking for the call; `X-Hanzo-Fallback-Tools` says which. Counted in
+`cloud_fallback{floor,reason}` on GET /v1/metrics.
+
+**A stream that breaks off after its first bytes** is never asked again: it ends with an
+error event in its dialect (`upstream_cut`) and bills the text relayed. Tests:
+`controllers/floor_test.go`, `routers/filter_balance_floor_test.go`.
+
 ## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
 
 **A call names the API key it arrived on.** The identity boundary in front of this

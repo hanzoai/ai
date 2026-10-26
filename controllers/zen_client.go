@@ -28,6 +28,7 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -419,10 +420,15 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 	}
 	// A vendor that cannot serve this request moves it: its account with us is
 	// spent, it failed, it could not be reached, or every account it holds is rate
-	// limited. A malformed body (400), a model it has not got (404) and refused
-	// content (422) stay where they are: every vendor would answer them the same.
-	if err == nil || !unserved(err) {
+	// limited, or our own family hid why its vendor refused (masked). A malformed
+	// body (400), a model it has not got (404) and refused content (422) stay where
+	// they are: every vendor would answer them the same.
+	if err == nil || !unserved(err) && !masked(err) {
 		return nil
+	}
+	// An Enso or Zen id falls to its floor, its family's free model (floor.go).
+	if to := Floor(sku); to != "" {
+		return floorRoutes(to)
 	}
 	// A third-party model is served as itself or not at all: its vendor's refusal
 	// stands. Only a Hanzo SKU, or the pool's own name, is ours to route elsewhere.
@@ -430,6 +436,19 @@ func fallback(fam *modelFamily, sku string, err error, body []byte) []spare {
 		return nil
 	}
 	return standIn(fam, sku)
+}
+
+// floorRoutes are the routes that serve the floor to (floor.go), in the order a
+// request naming it is served: the floor itself where its family's catalog lists
+// it, whose service walks its own free chain, then the free pool it is a name for.
+func floorRoutes(to string) []spare {
+	var out []spare
+	if f := familyNamed(FamilyOf(to)); f != nil && f.enabled() {
+		if _, own := f.lookup(to); own {
+			out = append(out, spare{f, to})
+		}
+	}
+	return append(out, freeRoutes()...)
 }
 
 // standIn names the routes that answer for sku when its own vendor does not.
@@ -1623,6 +1642,16 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// the served generation and the test for whether this was a fallback at all.
 	sku, requested := model, ""
 
+	// to is the floor of the model asked (floor.go): its family's free model, which
+	// serves this request when the model cannot, "" for an embedding or a model with
+	// none. fell is why it did, "" while the model asked answers; falling is set while
+	// its routes are asked, so they carry no plan spend: a fallen request bills nothing.
+	to := ""
+	if apiPath != "embeddings" {
+		to = Floor(model)
+	}
+	fell, falling := "", false
+
 	// note records what one refusal says about the account that answered it: the
 	// account rests, and somebody is told. Separate from refused because a refusal
 	// the request RECOVERS from is still a refusal — an empty account nobody logs
@@ -1674,9 +1703,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	}
 	// The price guard (rates.go): a model sold at a fixed price is sent only while
 	// no arm of its route costs us more than it bills. Ours too, and no other
-	// provider is asked in its place: a route priced above its model is ours to fix.
-	if err := fam.guard(ctx, model); err != nil {
-		c.zenError(dialect, err.Error(), http.StatusServiceUnavailable)
+	// provider is asked in its place: a route priced above its model is ours to fix,
+	// and while it is, a model with a floor is answered there (unpriced, below).
+	unpriced := fam.guard(ctx, model)
+	if unpriced != nil && to == "" {
+		c.zenError(dialect, unpriced.Error(), http.StatusServiceUnavailable)
 		return done()
 	}
 	// Forward the model ai RESOLVED, not the caller's raw model id. An
@@ -1808,7 +1839,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if f.ours() && who != "" {
 			r.Header.Set(payerHeader, who)
 		}
-		if spend := spendOf(grant, place, pm, f, s); spend != "" {
+		if spend := spendOf(grant, place, pm, f, s); spend != "" && !falling {
 			r.Header.Set(spendHeader, spend)
 			r.Header.Set("TE", planTE)
 		} else {
@@ -1896,6 +1927,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// answer — and bounded because every try is a round trip the caller waits
 	// through, so worst-case latency is a property of spareTries rather than of how
 	// many free routes a vendor happens to advertise.
+	// balked is how the last route the pool asked refused, nil when it asked none.
+	var balked *balk
 	pool := func(routes []spare, skip string, bounded bool) (*http.Response, spare) {
 		// The pool holds routes that hold a CONVERSATION. An embeddings request has
 		// no free chat route to fall to, and offering it three anyway spends three
@@ -1904,7 +1937,8 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if apiPath == "embeddings" {
 			return nil, spare{}
 		}
-		tried := 0
+		tried, asked := 0, 0
+		balked = nil
 		// unreached holds the families a dispatch could not reach: their other
 		// routes sit behind the same address, so they are not asked again.
 		unreached := map[*modelFamily]bool{}
@@ -1933,7 +1967,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// more local call is the difference between an answer and a refusal —
 			// but that rule is about a SHORT walk, and this only fires where the
 			// walk has already stopped being short.
-			if bounded && time.Since(start) > zenPipeHeader {
+			//
+			// A floor is always asked once, however long the model asked took to fail:
+			// a request that timed out is exactly the one its floor is for.
+			if bounded && (asked > 0 || !falling) && time.Since(start) > zenPipeHeader {
 				break
 			}
 			// The budget bounds how many BORROWED routes we ask, because each is a
@@ -1950,15 +1987,19 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			if borrowed {
 				tried++
 			}
+			asked++
 			r, e := dispatch(alt.fam, alt.id)
 			if e != nil {
 				unreached[alt.fam] = true
+				balked = &balk{by: alt.fam, err: e}
 				continue
 			}
 			if r.StatusCode == http.StatusOK {
 				return r, alt
 			}
+			b, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
 			r.Body.Close()
+			balked = &balk{by: alt.fam, err: &apiError{status: r.StatusCode, msg: upstreamErrorMessage(b)}}
 		}
 		return nil, spare{}
 	}
@@ -1996,10 +2037,37 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// to answer — and bounded because every try is a round trip the caller waits
 	// through, so worst-case latency stays a property of spareTries rather than of
 	// how many free routes a vendor happens to advertise.
+	// tools is what the floor was asked in place of a tool choice it may not honor
+	// (relax), "" when the choice went as sent.
+	tools := ""
+
+	// walk asks the floor's routes for this request, fallen for why: one hop, from
+	// the model asked to its floor, and no further. A choice naming one tool goes as
+	// "required" over that tool; a floor that refuses the request's shape is asked
+	// once more with the choice "auto" and a sentence asking for the call.
+	walk := func(routes []spare, why string) (*http.Response, spare) {
+		fell, falling = why, true
+		if b, did, ok := relax(rawBody, dialect, 1); ok {
+			rawBody, tools = b, did
+		}
+		r, alt := pool(routes, sku, true)
+		if r == nil && balked != nil && shaped(balked.err) && ctx.Err() == nil {
+			if b, did, ok := relax(rawBody, dialect, 2); ok {
+				rawBody, tools = b, did
+				r, alt = pool(routes, sku, true)
+			}
+		}
+		return r, alt
+	}
+
 	spared := func(err error, body []byte) (*http.Response, spare, bool) {
 		routes := fallback(fam, sku, err, body)
 		if len(routes) == 0 || c.Context().Err() != nil {
 			return nil, spare{}, false
+		}
+		if to != "" && strings.EqualFold(sku, model) {
+			r, alt := walk(routes, cmp.Or(cause(err), onUpstream))
+			return r, alt, true
 		}
 		r, alt := pool(routes, sku, true)
 		return r, alt, true
@@ -2046,6 +2114,33 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		return done()
 	}
 
+	// floored serves the request on its floor for why, before the model asked was
+	// sent: its route is unpriced, or the paid lane is closed to the caller.
+	floored := func(why string) (*http.Response, spare) {
+		return walk(floorRoutes(to), why)
+	}
+
+	// floorless answers a request whose floor could not serve it either: the floor's
+	// own refusal, with its status, said as the floor's (Fell), and never another
+	// route after it. A free pool every key of which the vendor benched is the Free
+	// plan's own refusal (poolRefused). With no route of the floor asked at all, the
+	// model's own refusal stands (false).
+	floorless := func() ([]attempt, bool) {
+		if fell == "" || balked == nil || c.Context().Err() != nil {
+			return nil, false
+		}
+		Fell(c.Ctx, model, to, fell)
+		if tools != "" {
+			c.SetHeader(toolsHeader, tools)
+		}
+		if p, ok := pooled(); ok {
+			return poolRefused(p), true
+		}
+		status, said := balked.said(to)
+		c.zenError(dialect, said, status)
+		return done(), true
+	}
+
 	// A free router is served by CHOOSING. The caller named the family's free id,
 	// which is not a model any vendor holds — it is this family's name for
 	// "whichever free route answers" — so the pool decides, and the answer leaves
@@ -2078,6 +2173,30 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		err := laneOff(ctx, model)
 		c.zenError(dialect, err.Error(), statusOf(err))
 		return done()
+	} else if unpriced != nil || to != "" && !lane && FreeOnlyFor(ctx) {
+		// The model asked is not sent: its route costs more than it bills, or the paid
+		// lane is closed to the caller. Its floor answers in its place (floor.go).
+		why := onClosed
+		if unpriced != nil {
+			why = onUnpriced
+		}
+		r, alt := floored(why)
+		if r == nil {
+			if out, ok := floorless(); ok {
+				return out
+			}
+			if c.Context().Err() != nil {
+				return done()
+			}
+			if unpriced != nil {
+				c.zenError(dialect, unpriced.Error(), http.StatusServiceUnavailable)
+				return done()
+			}
+			return refused(&apiError{status: http.StatusServiceUnavailable,
+				msg: fmt.Sprintf("model %q: the paid lane is off and no free route answered", model)})
+		}
+		resp, requested, sku, stood, by = r, model, alt.id, true, alt.fam
+		log.Info("family=%s %s: %s served by %s", fam.name, why, model, alt.id)
 	} else if !lane && FreeOnlyFor(ctx) && (apiPath != "embeddings" || fam.spends(sku)) {
 		// The paid lane is off: a priced Hanzo SKU is never sent to its paid route, and
 		// the Hanzo routes that stand in for it answer in its place. An embedding has no
@@ -2101,6 +2220,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// of whichever provider ends up serving this request uncharged.
 		r, alt, tried := spared(err, nil)
 		if r == nil {
+			if out, ok := floorless(); ok {
+				note(err)
+				return out
+			}
 			if tried && lane && c.Context().Err() == nil {
 				if p, ok := pooled(); ok {
 					note(err)
@@ -2166,6 +2289,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		failed(w, by, sku, servingOf(resp.Header).failover, authUser, isPremium, stream, reqID, start)
 		r, alt, tried := spared(err, b)
 		if r == nil {
+			if out, ok := floorless(); ok {
+				note(err)
+				return out
+			}
 			if tried && lane && c.Context().Err() == nil {
 				if p, ok := pooled(); ok {
 					note(err)
@@ -2203,18 +2330,32 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// X-Hanzo-Served names the Hanzo SKU that answered and nothing behind it: the
 	// family's own word when it is one of the family's SKUs (a priced SKU answered
 	// by its free fallback says so), the stand-in's public name, else the model asked.
+	//
+	// An answer from the model's floor is the floor's, in its body as in its headers,
+	// whether ai moved the request there or the family's own catalog did when every
+	// rung of the model refused (floor.go). It bills nothing (whence.fell).
 	name := model
 	if stood {
 		name = publicName(fam, by, sku)
-		if fam == freeFamily() {
+		if fam == freeFamily() || fell != "" {
 			mk.model = name
 		}
 	} else if said := resp.Header.Get(servedHeader); said != "" && fam != freeFamily() {
 		if _, ok := fam.lookup(said); ok {
 			name = said
 		}
+		if to != "" && strings.EqualFold(said, to) {
+			name, mk.model, fell = to, to, onRoute
+		}
 	}
 	c.SetHeader(servedHeader, name)
+	if fell != "" {
+		Fell(c.Ctx, model, name, fell)
+		if tools != "" {
+			c.SetHeader(toolsHeader, tools)
+		}
+		w.fell = true
+	}
 
 	// The client is told the terms its answer was served under, because a free route
 	// is free in exchange for what the vendor keeps and somebody has to be able to
@@ -2510,6 +2651,31 @@ func failoverRows(w whence, fam *modelFamily, sku, chain string, u *iam.User, pr
 	return out
 }
 
+// balk is how one route of a floor refused: the family that carried it and its
+// error.
+type balk struct {
+	by  *modelFamily
+	err error
+}
+
+// said is the floor to's refusal as the caller reads it: the status the route
+// answered, and its sentence when the route is one of our own services, which
+// speak in our voice. A borrowed route's sentence is its vendor's, so the floor is
+// named instead, by what its status means.
+func (b *balk) said(to string) (int, string) {
+	status := upstreamHTTPStatus(b.err)
+	if status == 0 {
+		status = http.StatusServiceUnavailable
+	}
+	switch {
+	case b.by.ours():
+		return status, b.err.Error()
+	case status == http.StatusTooManyRequests:
+		return status, to + " is busy; try again shortly"
+	}
+	return status, to + " is temporarily unavailable"
+}
+
 // armHeader is the upstream model a family says answered, for our records only.
 const armHeader = "X-Hanzo-Arm"
 
@@ -2773,8 +2939,14 @@ func barred(fam *modelFamily, model, said string, now time.Time) bool {
 // write is the only signal there is. The usage a family states arrives last, so an
 // answer whose usage never arrived — its client left, or the family's stream broke
 // off or ran out its time before stating it — is billed for the text relayed.
+//
+// A stream that ends without its last frame ([DONE], message_stop, or an error the
+// family sent) broke off: bytes are on the wire, so it is never asked again of
+// another model. It ends with an error event in its dialect (cutStream), so a
+// client reads a broken answer as broken rather than as complete.
 func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t tokens, served, respID string, first time.Time) {
-	said := 0 // characters of answer relayed
+	said := 0      // characters of answer relayed
+	ended := false // the stream's last frame was relayed
 	defer func() {
 		if !t.reported && said > 0 {
 			t.completion = said/4 + 1
@@ -2792,6 +2964,7 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t t
 		if bytes.HasPrefix(line, []byte(":")) {
 			line = []byte(":")
 		}
+		ended = ended || closing(line)
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
 			if len(payload) > 0 && payload[0] == '{' {
@@ -2817,7 +2990,62 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t t
 			first = time.Now()
 		}
 	}
+	if !ended && mk != nil {
+		cutStream(w, mk.speaks)
+	}
 	return
+}
+
+// cutWords is what a client reads at the end of an answer whose stream broke off.
+const cutWords = "the answer was cut off before it finished; send the request again"
+
+// closing reports a stream line that ends its answer: [DONE], Anthropic's
+// message_stop, the model saying why it stopped (finish_reason, stop_reason), or an
+// error frame in either dialect. What follows a stop — usage, [DONE] — adds nothing
+// to the answer, so a stream cut after it is whole.
+func closing(line []byte) bool {
+	t := bytes.TrimSpace(line)
+	switch {
+	case bytes.Equal(t, []byte("data: [DONE]")), bytes.Equal(t, []byte("data:[DONE]")),
+		bytes.Equal(t, []byte("event: message_stop")), bytes.Equal(t, []byte("event: error")):
+		return true
+	}
+	payload, ok := bytes.CutPrefix(t, zenDataPrefix)
+	if !ok || !bytes.Contains(payload, []byte(`"error"`)) && !bytes.Contains(payload, []byte(`"message_stop"`)) &&
+		!bytes.Contains(payload, []byte(`"finish_reason":"`)) && !bytes.Contains(payload, []byte(`"stop_reason":"`)) {
+		return false
+	}
+	var f struct {
+		Type    string          `json:"type"`
+		Error   json.RawMessage `json:"error"`
+		Choices []struct {
+			Finish string `json:"finish_reason"`
+		} `json:"choices"`
+		Delta struct {
+			Stop string `json:"stop_reason"`
+		} `json:"delta"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(payload), &f) != nil {
+		return false
+	}
+	for _, c := range f.Choices {
+		if c.Finish != "" {
+			return true
+		}
+	}
+	return f.Type == "message_stop" || f.Type == "error" || f.Delta.Stop != "" || len(f.Error) > 0 && string(f.Error) != "null"
+}
+
+// cutStream ends a stream that broke off with an error event in its dialect.
+func cutStream(w *bufio.Writer, speaks shape) {
+	switch speaks {
+	case messageShape:
+		streamAnthropicError(w, "api_error", cutWords)
+	case chatShape:
+		b, _ := json.Marshal(map[string]any{"error": map[string]string{"message": cutWords, "type": "upstream_error", "code": onCut}})
+		_, _ = w.Write(append(append([]byte("data: "), b...), '\n', '\n'))
+		_ = w.Flush()
+	}
 }
 
 // answerChars is how many characters of answer one stream frame carries, in either
@@ -3007,6 +3235,7 @@ type whence struct {
 	asked  *modelFamily       // the family of the model the caller named
 	plan   *object.LimitGrant // the plan that covers the request, nil for none
 	depth  string             // how hard the request asks its model to think (depthOf)
+	fell   bool               // the model's floor answered (floor.go): it bills nothing
 }
 
 // recordFamilyUsage takes NO RECEIVER, deliberately. It is called from inside a
@@ -3024,7 +3253,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	// the outage. Stated once, on the record, so the hold, the debit, the warehouse
 	// row and the span all read the same zero (see usageCostNano). A priced SKU the
 	// family says it answered from a free rung costs the caller what that rung costs.
-	free := fam.isSpare(model) || inPool(model) || sv.free
+	free := w.fell || fam.isSpare(model) || inPool(model) || sv.free
 	// A free model a family ran on a listed vendor's account counts toward the free
 	// view (listing.go); what ai sent on its own accounts counted as it was sent.
 	if lf := listedFamily(sv.vendor); lf != nil && sv.arm != "" && lf.free(sv.arm) {

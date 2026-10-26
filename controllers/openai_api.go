@@ -349,8 +349,10 @@ func enforceBalanceGate(ctx context.Context, user *iam.User, ledger string, requ
 		// Balance unverifiable (Commerce down, a rejected service token, or an
 		// unset endpoint) → DENY. AI is prepaid: a broken or misconfigured billing
 		// backend must never degrade to free, ungated inference. There is no
-		// fail-open escape and no exempt principal.
-		return serverError("failed to verify account balance: %s", err.Error())
+		// fail-open escape and no exempt principal. The code says which 500 this is,
+		// so a model with a free floor is served there instead (fall).
+		return &apiError{status: http.StatusInternalServerError, code: object.CodeBalanceUnavailable,
+			msg: fmt.Sprintf("failed to verify account balance: %s", err.Error())}
 	}
 	if balance <= 0 {
 		return billingError(
@@ -2060,12 +2062,21 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		isPremium     bool
 		err           error
 	)
-	if from == callerPublic {
-		// No credential to authenticate. The lane already settled who is asking and
-		// what they may run; this settles only who runs it.
-		provider, authUser, upstreamModel, err = c.resolveProviderForPublic()
-	} else {
+	resolve := func() error {
+		if from == callerPublic {
+			// No credential to authenticate. The lane already settled who is asking and
+			// what they may run; this settles only who runs it.
+			provider, authUser, upstreamModel, err = c.resolveProviderForPublic()
+			return err
+		}
 		provider, authUser, upstreamModel, isPremium, err = c.authResolveProvider(token, request.Model, orgId)
+		return err
+	}
+	// An Enso or Zen id its gate refuses for want of payment is served on its floor
+	// (floor.go), resolved like any request naming it.
+	if to, ok := c.fall(request.Model, resolve()); ok {
+		request.Model = to
+		_ = resolve()
 	}
 	if err != nil {
 		c.ResponseAuthError(err)
@@ -2092,11 +2103,14 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// Set the upstream model name on the provider. For JWT/IAM key auth, this
 	// is the translated upstream model from the routing table. For provider
 	// API key auth, fall back to the request model or provider's default.
-	if upstreamModel != "" {
-		provider.SubType = upstreamModel
-	} else if request.Model != "" {
-		provider.SubType = request.Model
+	subtype := func() {
+		if upstreamModel != "" {
+			provider.SubType = upstreamModel
+		} else if request.Model != "" {
+			provider.SubType = request.Model
+		}
 	}
+	subtype()
 
 	// ── Balance reservation ────────────────────────────────────────────
 	// Hold an upper-bound budget for this request so concurrent requests for the
@@ -2124,14 +2138,34 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 			request.MaxTokens = request.MaxCompletionTokens
 		}
 		// On the paid lane the ceiling is never above the one its seat was sized for.
-		request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.Model, request.MaxTokens))
-		// The vendor bills the whole body — tools, schemas and call arguments as well
-		// as message text — so the hold is never priced on less than its size.
-		est := estimateRequestCostCents(request.Model, max(measured, len(c.Body())/4), request.MaxTokens)
-		var ok bool
-		if hold, wide, ok = c.widthFor(authUser, subject, est); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message))
-			return
+		reserve := func() bool {
+			request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.Model, request.MaxTokens))
+			// The vendor bills the whole body — tools, schemas and call arguments as well
+			// as message text — so the hold is never priced on less than its size.
+			est := estimateRequestCostCents(request.Model, max(measured, len(c.Body())/4), request.MaxTokens)
+			var ok bool
+			hold, wide, ok = c.widthFor(authUser, subject, est)
+			return ok
+		}
+		if !reserve() {
+			refusal := billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message)
+			// A balance that cannot cover this call's cost serves an Enso or Zen id on
+			// its floor, which costs nothing (floor.go).
+			to, fell := c.fall(request.Model, refusal)
+			if !fell {
+				c.ResponseAuthError(refusal)
+				return
+			}
+			request.Model = to
+			if err := resolve(); err != nil {
+				c.ResponseAuthError(err)
+				return
+			}
+			subtype()
+			if !reserve() {
+				c.ResponseAuthError(refusal)
+				return
+			}
 		}
 	}
 	// Released on the way out — unless a relayed stream took it. That answer settles

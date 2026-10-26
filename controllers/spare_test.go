@@ -844,12 +844,13 @@ func TestARefusalCrossesToTheFamilyThatStillHasAFreeRoute(t *testing.T) {
 	if refusedBy != nil {
 		t.Errorf("the request was handed on after it had already been served: %v", refusedBy)
 	}
-	// It crossed families and still came back as the SKU that was asked for.
+	// It crossed families and came back named for what answered: the asked model's
+	// floor, never the vendor's route behind it (floor.go).
 	if strings.Contains(sent(c), free) {
 		t.Errorf("the answer names the free family's route:\n%s", sent(c))
 	}
-	if !strings.Contains(sent(c), "enso-flash") {
-		t.Errorf("the answer does not name the SKU the caller asked for:\n%s", sent(c))
+	if !strings.Contains(sent(c), `"model":"enso-free"`) || header(c, FallbackHeader) != "enso-free" {
+		t.Errorf("the answer does not name the floor that wrote it:\n%s", sent(c))
 	}
 }
 

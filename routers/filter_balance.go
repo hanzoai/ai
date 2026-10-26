@@ -282,7 +282,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	rest := func(why, code, upgrade string) {
 		if code != "" {
 			why = "nothing pays for it (" + code + ")"
-			fallBack(c, free, code, namespace, upgrade)
+			fallBack(c, asked, free, code, namespace, upgrade)
 		}
 		c.Fiber().Response().Header.Del(controllers.LaneReasonHeader)
 		name(free)
@@ -361,16 +361,24 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				log.Warning("limits: unreadable, refusing subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
 				return denied(c, object.UsageUnavailable(), subject, namespace, 0, path)
 			}
-			if hit != nil && onTier {
+			// A limit the caller set on its own key, or one the free SKU meets as well,
+			// stands; any other refusal of the tier is answered on the free SKU.
+			if hit != nil && onTier && controllers.Falls(hit.Code) {
 				rest("", hit.Code, hit.Upgrade)
 				continue
 			}
 			if hit != nil {
 				log.Info("limits: %s %s subject=%s namespace=%s actor=%s path=%s model=%s", hit.Code, hit.Name, subject, namespace, userKey, path, model)
+				// An Enso or Zen id is served on its floor (controllers.Fall), asked again,
+				// so the model that answers is still the policy's to admit.
+				if to, ok := floor(c, path, model, hit.Code, namespace, hit.Upgrade); ok {
+					model = to
+					continue
+				}
 				// The free plan hands a conversation in an app to the free model, asked
 				// again, so the model that answers is still the policy's to admit.
 				if priced && !strings.EqualFold(controllers.FreeModel, model) && fallback(c, path, hit.Code) &&
-					fallBack(c, controllers.FreeModel, hit.Code, namespace, hit.Upgrade) {
+					fallBack(c, model, controllers.FreeModel, hit.Code, namespace, hit.Upgrade) {
 					model = controllers.FreeModel
 					continue
 				}
@@ -409,6 +417,15 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				cash, past := pastPlan(c, limits, ask)
 				giveBack(grant)
 				if cash == nil {
+					// An Enso or Zen id the plan has no room for is served on its floor.
+					code := object.CodePlanAllowance
+					if seat == controllers.SeatFull {
+						code = controllers.ReasonFull
+					}
+					if to, ok := floor(c, path, model, code, namespace, ""); ok {
+						model = to
+						continue
+					}
 					return planFull(c, grant, past, subject, namespace, seat == controllers.SeatFull)
 				}
 				grant = cash
@@ -487,15 +504,21 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	}
 	// A routed tier the wallet cannot cover is served on its free SKU, asked again from
 	// the top as the free SKU is.
-	if routed && model == tier && deny.Code == object.CodeInsufficientBalance {
+	if routed && model == tier && controllers.Falls(deny.Code) {
 		rest("", deny.Code, "")
+		return BalanceGateFilter(c)
+	}
+	// An Enso or Zen id the wallet cannot pay for, or whose balance cannot be read, is
+	// served on its floor, whoever asks (controllers.Fall). Asked again from the top,
+	// so the floor is held to the plan's windows and the free allowance.
+	if _, ok := floor(c, path, model, deny.Code, namespace, ""); ok {
 		return BalanceGateFilter(c)
 	}
 	// A conversation the wallet cannot pay for goes on in limited mode, like one the
 	// plan cannot: the free model answers and says why. Asked again from the top, so
 	// the free model is held to the plan's windows and the free allowance.
 	if deny.Code == object.CodeInsufficientBalance && model != "" && !strings.EqualFold(model, controllers.FreeModel) && !paidPlanned &&
-		fallback(c, path, deny.Code) && fallBack(c, controllers.FreeModel, deny.Code, namespace, "") {
+		fallback(c, path, deny.Code) && fallBack(c, model, controllers.FreeModel, deny.Code, namespace, "") {
 		return BalanceGateFilter(c)
 	}
 	return denied(c, deny, subject, namespace, balance, path)
@@ -577,13 +600,14 @@ func callerPays(c *zip.Ctx, who object.Caller, subject, model string) error {
 // pays.
 var paidCustomer = controllers.PaidCustomer
 
-// fallBack hands a chat request to model to and says so on the response: the lane
-// that answers (X-Hanzo-Fallback), why (X-Hanzo-Usage-Reason, the refusal's own
-// code), that the caller is in limited mode, and the two ways out — the wallet's
-// top-up page and the plan that raises the limit (X-Hanzo-Topup-Url,
-// X-Hanzo-Upgrade-Url). The model that actually serves is named by the handler in
-// X-Hanzo-Served. It reports false when the body could not be rewritten.
-func fallBack(c *zip.Ctx, to, code, org, upgrade string) bool {
+// fallBack hands a chat request for from to model to and says so on the response:
+// the model that answers and why (controllers.Fell: X-Hanzo-Fallback,
+// X-Hanzo-Fallback-Reason), the refusal's own code (X-Hanzo-Usage-Reason), that the
+// caller is in limited mode, and the two ways out — the wallet's top-up page and the
+// plan that raises the limit (X-Hanzo-Topup-Url, X-Hanzo-Upgrade-Url). The model
+// that actually serves is named by the handler in X-Hanzo-Served. It reports false
+// when the body could not be rewritten.
+func fallBack(c *zip.Ctx, from, to, code, org, upgrade string) bool {
 	body, ok := controllers.WithModel(c.Body(), to)
 	if !ok {
 		return false
@@ -591,7 +615,7 @@ func fallBack(c *zip.Ctx, to, code, org, upgrade string) bool {
 	c.Fiber().Request().SetBody(body)
 	c.Fiber().Request().Header.Del("Content-Encoding")
 	pay := object.PayURL(c.Host(), org)
-	c.SetHeader("X-Hanzo-Fallback", to)
+	controllers.Fell(c, from, to, code)
 	c.SetHeader("X-Hanzo-Usage-Reason", code)
 	c.SetHeader("X-Hanzo-Usage", "limited")
 	c.SetHeader("X-Hanzo-Topup-Url", pay)
@@ -919,6 +943,23 @@ func modelName(id string) string {
 		return "Zen"
 	}
 	return id
+}
+
+// floor serves a chat request for an Enso or Zen id that the gate refused for code on
+// that id's free model (controllers.Fall), whatever credential asked: an Enso or Zen
+// model never stops for want of payment. What admitted the refused model holds no
+// seat on the paid lane. It reports the model now asked for; false leaves the
+// refusal standing.
+func floor(c *zip.Ctx, path, model, code, org, upgrade string) (string, bool) {
+	if !controllers.ChatPath(path) {
+		return "", false
+	}
+	to, ok := controllers.Fall(model, code)
+	if !ok || !fallBack(c, model, to, code, org, upgrade) {
+		return "", false
+	}
+	c.Fiber().Response().Header.Del(controllers.LaneReasonHeader)
+	return to, true
 }
 
 // fallback reports whether a refused request is answered by another model instead.

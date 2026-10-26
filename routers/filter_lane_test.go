@@ -293,10 +293,11 @@ func held(p probe) (model string, paid bool, status int, said string) {
 	return model, paid, resp.StatusCode, string(raw)
 }
 
-// A PAID PLAN PAST ITS USAGE IS NEVER STOOD IN FOR. Granted credit it chose to spend
-// past the plan, or a model's free daily cap, would leave a chat on the free lane, where
-// a free route answers for a Hanzo SKU: the plan is asked past it instead, and its cash
-// serves the SKU asked for on the paid lane, or it waits or buys credits (429).
+// A PAID PLAN PAST ITS USAGE IS NEVER STOOD IN FOR SILENTLY. Granted credit it chose
+// to spend past the plan, or a model's free daily cap, would leave a chat on the free
+// lane, where a free route answers for a Hanzo SKU: the plan is asked past it instead,
+// and its cash serves the SKU asked for on the paid lane. With no cash an Enso or Zen
+// SKU never stops: its floor answers, named, saying why (controllers.Fall).
 func TestAPaidPlanOnGrantedCreditIsNeverStoodIn(t *testing.T) {
 	paidSwitch(t)
 	reset := time.Now().Add(96 * time.Hour).UTC().Truncate(time.Second)
@@ -315,8 +316,11 @@ func TestAPaidPlanOnGrantedCreditIsNeverStoodIn(t *testing.T) {
 			gateWith(t, 0)
 			p := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", credential).
 				body([]byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)).through(BalanceGateFilter, LaneFilter)
-			if p.status() != http.StatusTooManyRequests || p.handed() != "" || refusalOf(t, p.said()).Error.ResetsAt != reset.Format(time.RFC3339) {
-				t.Fatalf("%s, %s past the plan: %d handed %q (%s), want 429 until %s", pays, who, p.status(), p.handed(), p.said(), reset)
+			if p.status() != http.StatusOK || !strings.Contains(p.handed(), `"model":"enso-free"`) ||
+				p.replied(controllers.FallbackHeader) != "enso-free" || p.replied(controllers.FallbackReasonHeader) != object.CodePlanAllowance ||
+				p.replied(controllers.LaneHeader) == "paid" {
+				t.Fatalf("%s, %s past the plan: %d handed %q fallback %q lane %q (%s), want enso-free on the free lane", pays, who, p.status(), p.handed(),
+					p.replied(controllers.FallbackHeader), p.replied(controllers.LaneHeader), p.said())
 			}
 		}
 		cash = true

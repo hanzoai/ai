@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/hanzoai/ai/controllers"
 	"github.com/hanzoai/ai/internal/authtest"
 	"github.com/hanzoai/ai/object"
 	"github.com/zap-proto/zip"
@@ -292,12 +293,16 @@ func TestACoveredRequestMeetsNoAllowanceAndNoWallet(t *testing.T) {
 	}
 
 	// Without a plan the same request goes on to the gates below: here, priced in this
-	// test's empty catalog, the wallet refuses it at $0.
+	// test's empty catalog, the wallet refuses it at $0, so it falls to its floor,
+	// enso-free, which meets the free allowance this caller has spent: 429.
 	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		return nil, nil, nil
 	})
-	if p := chatWith("enso", "/v1/chat/completions"); p.status() != http.StatusPaymentRequired {
-		t.Errorf("no plan, $0: status %d, want the wallet's 402 (%s)", p.status(), p.said())
+	freeModels(t, "enso-free")
+	p := chatWith("enso", "/v1/chat/completions")
+	if p.status() != http.StatusTooManyRequests || refusalOf(t, p.said()).Error.Code != object.CodeAllowanceSpent ||
+		p.replied(controllers.FallbackHeader) != "enso-free" {
+		t.Errorf("no plan, $0: status %d fallback %q, want the floor's own 429 (%s)", p.status(), p.replied(controllers.FallbackHeader), p.said())
 	}
 }
 

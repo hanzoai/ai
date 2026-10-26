@@ -643,7 +643,31 @@ func (c *ApiController) AnthropicMessages() {
 	orgId := c.GetOrg()
 
 	// Share the exact auth + model-routing policy used by /v1/chat/completions.
-	provider, authUser, upstreamModel, isPremium, err := c.authResolveProvider(token, request.Model, orgId)
+	var (
+		provider      *object.Provider
+		authUser      *iam.User
+		upstreamModel string
+		isPremium     bool
+		err           error
+	)
+	resolve := func() error {
+		provider, authUser, upstreamModel, isPremium, err = c.authResolveProvider(token, request.Model, orgId)
+		if err == nil {
+			// Set upstream model on the provider.
+			if upstreamModel != "" {
+				provider.SubType = upstreamModel
+			} else if request.Model != "" {
+				provider.SubType = request.Model
+			}
+		}
+		return err
+	}
+	// An Enso or Zen id its gate refuses for want of payment is served on its floor
+	// (floor.go), resolved like any request naming it.
+	if to, ok := c.fall(request.Model, resolve()); ok {
+		request.Model = to
+		_ = resolve()
+	}
 	if err != nil {
 		c.respondAnthropicError(anthropicErrorType(err), err.Error(), statusOf(err))
 		return
@@ -654,24 +678,36 @@ func (c *ApiController) AnthropicMessages() {
 		return
 	}
 
-	// Set upstream model on the provider.
-	if upstreamModel != "" {
-		provider.SubType = upstreamModel
-	} else if request.Model != "" {
-		provider.SubType = request.Model
-	}
-
 	// ── Balance reservation (shared by the proxies and the QueryText path) ──
-	// On the paid lane the ceiling is never above the one its seat was sized for.
-	request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.Model, request.MaxTokens))
 	var hold *budgetHold
-	if authUser != nil {
-		ledger := c.billingOrg(authUser)
-		subject := authUser.PayerSubject(ledger)
+	reserve := func() bool {
+		// On the paid lane the ceiling is never above the one its seat was sized for.
+		request.MaxTokens = laneTokens(c.Context(), clampMaxTokens(request.Model, request.MaxTokens))
+		if authUser == nil {
+			return true
+		}
+		subject := authUser.PayerSubject(c.billingOrg(authUser))
 		est := holdCents(request.Model, reservation(c.Body(), completionCeiling(provider, &request)))
 		var ok bool
-		if hold, ok = reserveFor(c.Context(), subject, est); !ok {
-			c.respondAnthropicError("billing_error", object.InsufficientBalance(c.Host(), ledger, "request cost").Message, http.StatusPaymentRequired)
+		hold, ok = reserveFor(c.Context(), subject, est)
+		return ok
+	}
+	if !reserve() {
+		refusal := billingError("%s", object.InsufficientBalance(c.Host(), c.billingOrg(authUser), "request cost").Message)
+		// A balance that cannot cover this call's cost serves an Enso or Zen id on its
+		// floor, which costs nothing (floor.go).
+		to, fell := c.fall(request.Model, refusal)
+		if !fell {
+			c.respondAnthropicError("billing_error", refusal.Error(), http.StatusPaymentRequired)
+			return
+		}
+		request.Model = to
+		if err := resolve(); err != nil {
+			c.respondAnthropicError(anthropicErrorType(err), err.Error(), statusOf(err))
+			return
+		}
+		if !reserve() {
+			c.respondAnthropicError("billing_error", refusal.Error(), http.StatusPaymentRequired)
 			return
 		}
 	}
