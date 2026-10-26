@@ -1763,3 +1763,16 @@ func (c *ApiController) decisionReply(r decisionReply) {
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(r.status, r.body)
 }
+
+// decisionDoor is the refusal a chat earns for naming a model /v1/decisions
+// serves, or "" when the model is not one: a Kai id, routed or versioned, or a Jev
+// id the decision service answers. It names the door and the body that opens it.
+func decisionDoor(model string) string {
+	m := strings.TrimSpace(model)
+	if m == "" || !(decisionRoute(m) || kaiVersion(strings.ToLower(m))) {
+		return ""
+	}
+	return fmt.Sprintf("model %q answers decisions, not chat: POST /v1/decisions with "+
+		`{"model":%q,"state":"<what is true now>","questions":{"next":{"type":"choice","instructions":"<the question>","criteria":{"<label>":"<what it means>"}}}}`+
+		" (a boolean question takes no criteria). The request shape: GET /v1/openapi.json?operation=post_decisions", m, m)
+}

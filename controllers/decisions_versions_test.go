@@ -245,3 +245,20 @@ func TestKaiURLsMalformedRefusesBoot(t *testing.T) {
 		t.Fatal("kai has an address of its own")
 	}
 }
+
+// A chat naming a model /v1/decisions serves is told the door and the body, never
+// passed to the decision service to come back "404 upstream error".
+func TestAChatNamingKaiIsSentToDecisions(t *testing.T) {
+	setupDecisions(t)
+	for _, m := range []string{"kai", "kai-1.8", "kai-0834a74f2d14"} {
+		why := decisionDoor(m)
+		if !strings.Contains(why, "POST /v1/decisions") || !strings.Contains(why, `"model":"`+m+`"`) {
+			t.Errorf("decisionDoor(%q) = %q, want the decisions door with the model filled in", m, why)
+		}
+	}
+	for _, m := range []string{"enso-pro", "zen6", "gpt-4o", ""} {
+		if why := decisionDoor(m); why != "" {
+			t.Errorf("decisionDoor(%q) = %q, want no refusal for a chat model", m, why)
+		}
+	}
+}

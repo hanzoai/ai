@@ -1929,6 +1929,20 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	}
 	request := parsed.ChatCompletionRequest
 
+	// A DECISION MODEL IS NOT A CHAT MODEL. Kai answers POST /v1/decisions; a chat
+	// naming it reached the decision service and came back "404 upstream error",
+	// which told the caller nothing about the right door.
+	if why := decisionDoor(request.Model); why != "" {
+		if from == callerBearer {
+			if authErr := c.authenticate(token); authErr != nil {
+				c.ResponseAuthError(authErr)
+				return
+			}
+		}
+		c.ResponseErrorWithStatus(http.StatusBadRequest, why)
+		return
+	}
+
 	// Resolve org context for per-org model routing and pricing.
 	orgId := c.GetOrg()
 	if from == callerPublic {
