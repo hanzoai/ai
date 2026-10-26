@@ -288,12 +288,41 @@ type Standing struct {
 	Release func()
 }
 
+// Raise is how a refused caller raises its limit, as the host states it: the tier the
+// caller is on, the ceiling that refused it (Limit calls per Window), the host's own
+// sentence (Message), and the ONE API call that lifts it — Method and Path, with the
+// JSON Body the call takes where it takes one. Every field is the host's: this module
+// writes no copy and names no route of its own.
+type Raise struct {
+	Tier    string         `json:"tier"`
+	Limit   int64          `json:"limit,omitempty"`
+	Window  string         `json:"window,omitempty"`
+	Message string         `json:"message"`
+	Method  string         `json:"method"`
+	Path    string         `json:"path"`
+	Body    map[string]any `json:"body,omitempty"`
+}
+
+// RaiseFunc says how a refused caller raises its limit. subject and namespace name the
+// wallet as the gate resolved it; code is the refusal's own error.code
+// (allowance_spent, free_plan_cap, usage_cap_exceeded, paid_plan_required,
+// insufficient_balance, plan_allowance_used, model_cap, …), so the host can name the
+// ceiling that refused. ctx names the person (zip.CallerOf), stated as it is for
+// SpentFunc. nil leaves the refusal as it is: the host answers nil for every caller it
+// does not treat specially.
+//
+// The gate asks it for a refusal a limit lifts (402 or 429) and never for an admitted
+// request. It is bounded: a hook that panics or does not answer in time leaves the
+// refusal exactly as it would be with no hook.
+type RaiseFunc func(ctx context.Context, subject, namespace, code string) *Raise
+
 var (
 	balanceReader BalanceReaderFunc
 	usageRecorder UsageRecorderFunc
 	tierReader    TierReaderFunc
 	limits        LimitFunc
 	spent         SpentFunc
+	raise         RaiseFunc
 )
 
 // SetBalanceReader installs the host's native balance reader (nil clears it).
@@ -311,6 +340,10 @@ func SetLimits(f LimitFunc) { limits = f }
 // SetSpent installs the host's native free-call admission (nil clears it).
 func SetSpent(f SpentFunc) { spent = f }
 
+// SetRaise installs the host's answer to how a refused caller raises its limit (nil
+// clears it).
+func SetRaise(f RaiseFunc) { raise = f }
+
 // BalanceReader returns the installed native reader, or nil when unset (standalone).
 func BalanceReader() BalanceReaderFunc { return balanceReader }
 
@@ -325,3 +358,6 @@ func Limits() LimitFunc { return limits }
 
 // Spent returns the installed native free-call admission, or nil when unset.
 func Spent() SpentFunc { return spent }
+
+// RaiseHook returns the installed raise answer, or nil when unset.
+func RaiseHook() RaiseFunc { return raise }

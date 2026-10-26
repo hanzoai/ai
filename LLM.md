@@ -1565,6 +1565,18 @@ else `topup`. Served calls carry `X-Hanzo-Usage`, `X-Hanzo-Usage-Class`,
 policy decides nothing (the wallet gates). ZAP twins have no gate verdict, so they
 stay wallet-only.
 
+**How a refused caller raises its limit is the host's to say too** (`object.RaiseFunc`,
+`SetRaise` / `RaiseHook`). Every refusal a limit lifts — 429 `allowance_spent`
+(`freeRefused`), every `LimitHit` (`limitReached`), the wallet's 402 (`denied`) — is
+written by `refuse`, which asks the hook once with the person (`person`), subject,
+namespace and the refusal's `code`, bounded by `raiseWait` (500ms; a panic or no answer
+leaves the refusal as it was). A `Raise` adds `error.tier` and
+`error.raise {method, path, body, message}` after the site's own fields, and on a 429
+`X-RateLimit-Limit` = `Raise.Limit` (only when > 0), `Remaining` 0, `Reset` = the
+refusal's reset, unless `standing` already set them. nil — no hook, or a caller the host
+does not single out — is byte-identical to before; a 503 never asks. The path and the
+copy are the host's: this module names neither.
+
 Every priced endpoint asks the host, not only chat (`controllers.Entitled`):
 chat, `/v1/decisions`, embeddings, rerank, speech, transcriptions (the model is a
 form field), the live transcript's open, voice/music/foley, images and videos. A

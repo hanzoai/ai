@@ -374,7 +374,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 					model = controllers.FreeModel
 					continue
 				}
-				return limitReached(c, hit, namespace)
+				return limitReached(c, hit, subject, namespace)
 			}
 			if grant == nil {
 				if onTier {
@@ -409,7 +409,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				cash, past := pastPlan(c, limits, ask)
 				giveBack(grant)
 				if cash == nil {
-					return planFull(c, grant, past, namespace, seat == controllers.SeatFull)
+					return planFull(c, grant, past, subject, namespace, seat == controllers.SeatFull)
 				}
 				grant = cash
 				seat = controllers.Seat(c, grant, namespace, subject, model)
@@ -473,7 +473,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				if out.Spent {
 					log.Info("allowance: free calls spent subject=%s namespace=%s window=%s path=%s",
 						subject, namespace, out.Window, path)
-					return freeRefused(c, object.AllowanceSpent(c.Host(), namespace, out))
+					return freeRefused(c, object.AllowanceSpent(c.Host(), namespace, out), subject, namespace)
 				}
 				defer release(c, out.Release)
 			}
@@ -532,10 +532,10 @@ const busyRetry = 10 * time.Second
 // sent smaller or waits for the plan's usage to reopen; or the plan's usage is used.
 // The last two are the host's refusal past the plan (plan_allowance_used, naming
 // when it reopens). Each may buy usage credits and go on now.
-func planFull(c *zip.Ctx, g *object.LimitGrant, past *object.LimitHit, org string, full bool) error {
+func planFull(c *zip.Ctx, g *object.LimitGrant, past *object.LimitHit, subject, org string, full bool) error {
 	if controllers.Busy(c) {
 		return limitReached(c, &object.LimitHit{Code: controllers.ReasonFull, Class: g.Class, ResetsAt: time.Now().Add(busyRetry),
-			Message: "Your plan is paying for as many of your calls as it does at once. Wait for one of them to be answered, or buy usage credits to go on now."}, org)
+			Message: "Your plan is paying for as many of your calls as it does at once. Wait for one of them to be answered, or buy usage credits to go on now."}, subject, org)
 	}
 	// The plan's usage is the reason, not the lane's room.
 	c.Fiber().Response().Header.Del(controllers.LaneHeader)
@@ -547,7 +547,7 @@ func planFull(c *zip.Ctx, g *object.LimitGrant, past *object.LimitHit, org strin
 	if full {
 		hit.Message = "This call can cost more than your plan has left. Send a shorter prompt or a lower max_tokens."
 	}
-	return limitReached(c, &hit, org)
+	return limitReached(c, &hit, subject, org)
 }
 
 // callerPays serves a call a program in this process made for who, covered by that
@@ -609,8 +609,100 @@ func fallBack(c *zip.Ctx, to, code, org, upgrade string) bool {
 func denied(c *zip.Ctx, deny object.BillingNotice, subject, namespace string, balance int64, path string) error {
 	log.Info("balance_gate: deny subject=%s namespace=%s balance_cents=%d code=%s status=%d path=%s",
 		subject, namespace, balance, deny.Code, deny.Status, path)
+	return refuse(c, deny.Status, deny.Code, deny.ErrorJSON(), subject, namespace, time.Time{})
+}
+
+// raiseWait bounds how long a refusal waits for the host to say how its limit is
+// raised (object.RaiseHook). Past it the refusal goes out as it would with no hook: a
+// slow host never holds a caller who is already refused.
+const raiseWait = 500 * time.Millisecond
+
+// refuse writes a gate refusal as its site built it: status, the code it refuses with
+// and the body. A refusal a limit lifts — 402 or 429, never the 503 of a gate that could
+// not read — carries how the host says the caller raises it (lift): tier and raise in
+// the error object (raised), and on a 429 the ceiling on X-RateLimit-*, unless the
+// allowance already said where the caller stands (standing). reset is when the refusal
+// lifts, zero when it does not say. With no hook, or no answer from it, the refusal is
+// the bytes and headers it was before the hook existed.
+func refuse(c *zip.Ctx, status int, code string, raw []byte, subject, namespace string, reset time.Time) error {
+	if status == http.StatusPaymentRequired || status == http.StatusTooManyRequests {
+		if r := lift(c, subject, namespace, code); r != nil {
+			raw = raised(raw, r)
+			if status == http.StatusTooManyRequests && len(c.Fiber().Response().Header.Peek("X-RateLimit-Limit")) == 0 {
+				standing(c, object.Standing{Spent: true, Limit: r.Limit, Resets: reset})
+			}
+		}
+	}
 	c.SetHeader("Content-Type", "application/json")
-	return c.Bytes(deny.Status, deny.ErrorJSON())
+	return c.Bytes(status, raw)
+}
+
+// lift asks the host how a refused caller raises its limit: nil with no hook, when the
+// host names nothing for this caller, or when the hook panics or has not answered within
+// raiseWait. The hook is handed the person as the allowance hook is (person), with the
+// deadline on it, and runs apart from the request, so one that never returns holds only
+// itself.
+func lift(c *zip.Ctx, subject, namespace, code string) *object.Raise {
+	f := object.RaiseHook()
+	if f == nil {
+		return nil
+	}
+	ctx, cancel := stdcontext.WithTimeout(person(c), raiseWait)
+	defer cancel()
+	got := make(chan *object.Raise, 1)
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				log.Warning("raise: hook panicked subject=%s namespace=%s code=%s: %v", subject, namespace, code, p)
+				got <- nil
+			}
+		}()
+		got <- f(ctx, subject, namespace, code)
+	}()
+	select {
+	case r := <-got:
+		return r
+	case <-ctx.Done():
+		log.Warning("raise: no answer within %v subject=%s namespace=%s code=%s", raiseWait, subject, namespace, code)
+		return nil
+	}
+}
+
+// raiseCall is the call a refusal names to raise the limit, as the body says it.
+type raiseCall struct {
+	Method  string         `json:"method"`
+	Path    string         `json:"path"`
+	Body    map[string]any `json:"body,omitempty"`
+	Message string         `json:"message"`
+}
+
+// raised is a refusal body with the host's way on added to its error object, after
+// every field the site wrote: the tier beside the code, and raise, the one call that
+// lifts the limit with the host's sentence for it. A body that is not an error object,
+// or a Body the host gave that does not encode, is answered unchanged.
+func raised(raw []byte, r *object.Raise) []byte {
+	var env struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil || len(env.Error) < 3 || env.Error[len(env.Error)-1] != '}' {
+		return raw
+	}
+	add, err := json.Marshal(struct {
+		Tier  string    `json:"tier"`
+		Raise raiseCall `json:"raise"`
+	}{r.Tier, raiseCall{Method: r.Method, Path: r.Path, Body: r.Body, Message: r.Message}})
+	if err != nil {
+		log.Warning("raise: the host's call does not encode: %v", err)
+		return raw
+	}
+	merged := append(append(env.Error[:len(env.Error)-1:len(env.Error)-1], ','), add[1:]...)
+	out, err := json.Marshal(struct {
+		Error json.RawMessage `json:"error"`
+	}{merged})
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // costsNothing reports whether a model costs namespace nothing
@@ -684,7 +776,8 @@ func giveBack(g *object.LimitGrant) {
 // A model nothing will pay for — no paid plan, no cash — is 402 paid_plan_required,
 // naming the top-up page. A refusal also names the plan that raises it and, for a
 // capped model, the Hanzo model the caller may choose instead; it never serves one.
-func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
+// Where the host names the call that raises subject's limit, it rides along (refuse).
+func limitReached(c *zip.Ctx, hit *object.LimitHit, subject, org string) error {
 	type action struct {
 		Kind  string `json:"kind"`
 		Label string `json:"label"`
@@ -783,8 +876,7 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, org string) error {
 	if hit.Class != "" {
 		c.SetHeader("X-Hanzo-Usage-Class", hit.Class)
 	}
-	c.SetHeader("Content-Type", "application/json")
-	return c.Bytes(status, raw)
+	return refuse(c, status, code, raw, subject, org, hit.ResetsAt)
 }
 
 // sessionModel is controllers.TranscriptModel, indirected so the gate's tests state
@@ -872,12 +964,11 @@ func standing(c *zip.Ctx, s object.Standing) {
 
 // freeRefused writes a Free-plan refusal with Retry-After when it says when it
 // clears.
-func freeRefused(c *zip.Ctx, n object.FreeNotice) error {
+func freeRefused(c *zip.Ctx, n object.FreeNotice, subject, namespace string) error {
 	if wait := n.RetryAfter(time.Now()); wait > 0 {
 		c.SetHeader("Retry-After", fmt.Sprint(wait))
 	}
-	c.SetHeader("Content-Type", "application/json")
-	return c.Bytes(n.Status, n.ErrorJSON())
+	return refuse(c, n.Status, n.Code, n.ErrorJSON(), subject, namespace, n.Resets)
 }
 
 // limitNoun is how a window is named to a person.
