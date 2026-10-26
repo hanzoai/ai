@@ -404,11 +404,15 @@ func responsesToChatRequest(request *OpenAIResponsesRequest) (*openai.ChatComple
 		add(tool, "")
 	}
 
+	choice, tools, err := responsesToolChoiceToChat(request.ToolChoice, tools, request.spaces)
+	if err != nil {
+		return nil, nil, err
+	}
 	chat := &openai.ChatCompletionRequest{
 		Model:               request.Model,
 		Messages:            messages,
 		Tools:               tools,
-		ToolChoice:          responsesToolChoiceToChat(request.ToolChoice),
+		ToolChoice:          choice,
 		Stream:              request.Stream,
 		MaxCompletionTokens: request.MaxOutputTokens,
 		Store:               request.Store,
@@ -571,24 +575,103 @@ func responsesOutputText(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func responsesToolChoiceToChat(raw json.RawMessage) any {
+// responsesToolChoiceToChat is a Responses tool_choice in Chat Completions' words,
+// over tools, the chat functions the request declared (spaces names the ones a
+// namespace holds): "auto", "none" and "required" as written; a function or custom
+// tool by name as chat's {"type":"function","function":{"name":...}}, under its
+// flat name when a namespace holds it; allowed_tools as its mode over only the
+// tools it allows. A choice naming a tool the request does not declare, a hosted
+// tool chat has no function for, or a word chat does not know is refused: a forced
+// choice is never sent on as one that forces nothing.
+func responsesToolChoiceToChat(raw json.RawMessage, tools []openai.Tool, spaces map[string]spaced) (any, []openai.Tool, error) {
 	if len(raw) == 0 || string(raw) == "null" {
-		return nil
+		return nil, tools, nil
 	}
-	var choice string
-	if json.Unmarshal(raw, &choice) == nil {
-		return choice
-	}
-	var choiceObj struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
-	}
-	if json.Unmarshal(raw, &choiceObj) == nil && choiceObj.Name != "" {
-		return map[string]any{
-			"type": "function", "function": map[string]string{"name": choiceObj.Name},
+	var word string
+	if json.Unmarshal(raw, &word) == nil {
+		switch word {
+		case "auto", "none", "required":
+			return word, tools, nil
 		}
+		return nil, nil, fmt.Errorf("tool_choice %q is not one of auto, none or required", word)
 	}
-	return nil
+	type named struct {
+		Type      string `json:"type"`
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	}
+	var choice struct {
+		named
+		Mode  string  `json:"mode"`
+		Tools []named `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &choice); err != nil {
+		return nil, nil, fmt.Errorf("tool_choice must be a string or an object: %w", err)
+	}
+	// declared is the chat name of a function or custom tool the request declares.
+	declared := func(n named) (string, error) {
+		if (n.Type != "function" && n.Type != "custom") || n.Name == "" {
+			return "", fmt.Errorf("tool_choice names a %q tool, which is served here only as a function or custom tool", n.Type)
+		}
+		want := n.Name
+		if n.Namespace != "" {
+			want = flatName(n.Namespace, n.Name)
+		}
+		for _, t := range tools {
+			if t.Function != nil && t.Function.Name == want {
+				return want, nil
+			}
+		}
+		// A name without its namespace is the one namespaced tool of that name.
+		found := ""
+		for flat, sp := range spaces {
+			if n.Namespace == "" && sp.Name == n.Name {
+				if found != "" {
+					return "", fmt.Errorf("tool_choice names %q, which more than one namespace declares: name its namespace", n.Name)
+				}
+				found = flat
+			}
+		}
+		if found == "" {
+			return "", fmt.Errorf("tool_choice names %q, which the request does not declare", n.Name)
+		}
+		return found, nil
+	}
+	function := func(name string) map[string]any {
+		return map[string]any{"type": "function", "function": map[string]string{"name": name}}
+	}
+	switch choice.Type {
+	case "auto", "none", "required":
+		return choice.Type, tools, nil
+	case "allowed_tools":
+		if choice.Mode != "auto" && choice.Mode != "required" {
+			return nil, nil, fmt.Errorf("allowed_tools mode %q is not auto or required", choice.Mode)
+		}
+		allowed := map[string]bool{}
+		for _, n := range choice.Tools {
+			name, err := declared(n)
+			if err != nil {
+				return nil, nil, err
+			}
+			allowed[name] = true
+		}
+		if len(allowed) == 0 {
+			return nil, nil, errors.New("allowed_tools allows no tool")
+		}
+		kept := make([]openai.Tool, 0, len(allowed))
+		for _, t := range tools {
+			if t.Function != nil && allowed[t.Function.Name] {
+				kept = append(kept, t)
+			}
+		}
+		return choice.Mode, kept, nil
+	default:
+		name, err := declared(choice.named)
+		if err != nil {
+			return nil, nil, err
+		}
+		return function(name), tools, nil
+	}
 }
 
 // responsesBridge reads the chat completion this request was translated into and

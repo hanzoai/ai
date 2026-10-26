@@ -298,6 +298,15 @@ func anthropicToolChoiceToOpenAI(raw json.RawMessage) any {
 	return nil
 }
 
+// anthropicSerial reports an Anthropic tool_choice that asks for one tool call at a
+// time (disable_parallel_tool_use), OpenAI's parallel_tool_calls: false.
+func anthropicSerial(raw json.RawMessage) bool {
+	var tc struct {
+		Serial bool `json:"disable_parallel_tool_use"`
+	}
+	return len(raw) > 0 && json.Unmarshal(raw, &tc) == nil && tc.Serial
+}
+
 // anthropicThinkingToReasoningEffort is the ONE Anthropic→upstream adapter for
 // the extended-thinking config. Anthropic models thinking as a token BUDGET
 // ({"type":"enabled","budget_tokens":N}); every upstream reasons by a coarse

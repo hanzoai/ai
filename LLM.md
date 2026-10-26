@@ -783,6 +783,36 @@ RFC 8785 form (go-json-experiment `jsontext.Canonicalize`) of the client body an
 the upstream body, each without `model` and `stream_options.include_usage`; they
 are equal on every strict answer. `/v1/messages` answers strict requests in its
 own file (anthropic_api.go).
+## A forced tool choice reaches its upstream forced (`forced_test.go`)
+
+`tool_choice: "required"` or a named function forces a call, and every path carries it
+forced or refuses it; none sends it on as a choice that forces nothing.
+
+- **Chat upstreams** (a family: Enso, Zen; OpenAI as maker; the relay): sent as written,
+  with `parallel_tool_calls` and each function's `strict` (`familyBody`, `chatBody`).
+- **Anthropic's Messages API** (`chatAsMessages`): required → `{"type":"any"}`, named →
+  `{"type":"tool","name"}`, `parallel_tool_calls: false` → `disable_parallel_tool_use`,
+  `strict` on the tool where the listing takes a schema; no thinking beside a forced call.
+- **Anthropic in** (`anthropicToolChoiceToOpenAI`, `anthropicSerial`): any → required, tool
+  → named, `disable_parallel_tool_use` → `parallel_tool_calls: false`.
+- **Responses in** (`responsesToolChoiceToChat`): the flat `{"type":"function","name"}` and
+  `custom` become chat's nested form, a namespaced tool by its `flatName` (named with or
+  without its namespace), `allowed_tools` its mode over only the tools it allows. A hosted
+  tool, an MCP server, an undeclared name or an unknown word is a 400.
+- **Which model can be forced is the engine's to know.** Claude Opus 5.5, Sonnet 5.5 and
+  Fable 5.1 answer 400 to any forced choice, thinking or not, and no listing says so; the
+  Enso catalog marks those rungs `unforced` and hanzo-inc/engine walks a forcing request
+  past them. Before that, enso-pro and enso-ultra (whose live supply was Sonnet 5.5 on
+  Anthropic's key once OpenAI and OpenRouter ran dry) answered every forced call
+  `400 the model could not serve this request`: the engine masks any sentence holding
+  `:`, and the vendor's is `tool_choice: type "tool" and "any" are not supported for this
+  model.` The engine now names the field instead. The same tiers refused any
+  `temperature` below 1 (`` `temperature` is deprecated for this model.``, Claude 4.7 and
+  later); the catalog's Claude rungs now `drops: [temperature, top_p]`.
+- **Not done here:** a maker's 400 on `anthropic/claude-sonnet-5.5` (resale family) hands the
+  request to OpenRouter, so with OpenRouter out of credit the caller reads 503
+  `providers_exhausted`, not the vendor's refusal.
+
 ## Decisions — `/v1/decisions`, the one decision path
 
 `controllers/decisions.go`. It reaches the decision service (`KAI_URL`) through one

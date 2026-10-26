@@ -382,6 +382,9 @@ func zapAnthropicProxy(
 	if request.Temperature > 0 {
 		oaiReq.Temperature = request.Temperature
 	}
+	if anthropicSerial(request.ToolChoice) {
+		oaiReq.ParallelToolCalls = false
+	}
 	vocab := thinkingVocabularyForUpstream(provider.SubType)
 	if re := anthropicThinkingToReasoningEffort(request.Thinking, vocab); re != "" {
 		oaiReq.ReasoningEffort = re

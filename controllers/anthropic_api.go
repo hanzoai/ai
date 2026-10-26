@@ -1037,6 +1037,9 @@ func (c *ApiController) proxyAnthropic(
 		if request.Temperature > 0 {
 			oaiReq.Temperature = request.Temperature
 		}
+		if anthropicSerial(request.ToolChoice) {
+			oaiReq.ParallelToolCalls = false
+		}
 		// Forward extended thinking: Anthropic budget_tokens → upstream reasoning_effort,
 		// in the vocabulary THIS upstream model accepts (glm "max"|"high" for
 		// GLM-5.*/DeepSeek V4, openai "low"|"medium"|"high", "" for qwen/kimi which
