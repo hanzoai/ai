@@ -809,6 +809,11 @@ forced or refuses it; none sends it on as a choice that forces nothing.
   model.` The engine now names the field instead. The same tiers refused any
   `temperature` below 1 (`` `temperature` is deprecated for this model.``, Claude 4.7 and
   later); the catalog's Claude rungs now `drops: [temperature, top_p]`.
+- **A refused Enso tier falls to `enso-free` first** (`standIn`), then the pool's routes:
+  the engine judges a free answer and reads a forced call a model wrote out as text
+  (`[[{"name":…,"parameters":{…}}]]`, `<tool_call>` blocks) as the call when it names a
+  declared tool with schema-valid arguments; the pool's routes are relayed as they answer.
+  With no credit anywhere, that is how enso-pro and enso-ultra still return tool_calls.
 - **Not done here:** a maker's 400 on `anthropic/claude-sonnet-5.5` (resale family) hands the
   request to OpenRouter, so with OpenRouter out of credit the caller reads 503
   `providers_exhausted`, not the vendor's refusal.

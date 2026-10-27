@@ -21,8 +21,10 @@ package controllers
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/go-openai"
 )
@@ -298,5 +300,28 @@ func TestTheForcedCallArmFitsUnderEnsoPrices(t *testing.T) {
 	ultra, _ := ensoFam.lookup("enso-ultra")
 	if why := misfit(ultra, rs["opus"]); !strings.Contains(why, "cache") {
 		t.Errorf("Opus 5 under enso-ultra: %q, want it over in the cache", why)
+	}
+}
+
+// A refused Enso tier is answered by enso-free first, whose service reads a forced
+// call a free model wrote out as text as the call; the pool's own routes follow. A
+// refused enso-free does not name itself.
+func TestARefusedEnsoTierFallsToEnsoFreeFirst(t *testing.T) {
+	orFees(t)
+	ensoServiceAt(t)
+	pool := freeFamily()
+	restore(t, pool)
+	restore(t, engineFam)
+	pool.spares = []string{"v/borrowed:free"}
+	pool.loaded, pool.fetchedAt = true, time.Now()
+	engineFam.urlKey = "TEST_ENGINE_URL_UNSET"
+	down := &apiError{status: http.StatusServiceUnavailable, msg: "this model is temporarily unavailable"}
+	for _, sku := range []string{"enso-ultra", "enso-pro", "enso-flash"} {
+		if got := ids(fallback(ensoFam, sku, down, nil)); strings.Join(got, ",") != "enso-free,v/borrowed:free" {
+			t.Errorf("%s falls to %v, want enso-free then the pool", sku, got)
+		}
+	}
+	if got := ids(fallback(ensoFam, "enso-free", down, nil)); strings.Join(got, ",") != "v/borrowed:free" {
+		t.Errorf("enso-free falls to %v, want the pool alone", got)
 	}
 }

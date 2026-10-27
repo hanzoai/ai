@@ -448,6 +448,15 @@ func standIn(fam *modelFamily, sku string) []spare {
 		}
 		return out
 	}
+	// An Enso tier falls to Enso's own free id first, where Enso serves it: its service
+	// judges a free answer and walks on (a call that breaks its schema, an empty answer,
+	// a forced call not made), and reads a forced call a model wrote out as text as the
+	// call, which the pool's own routes, relayed as they answer, do not.
+	if fam == ensoFam {
+		if f, id := freeDoor(); f == ensoFam && !strings.EqualFold(id, sku) {
+			return append([]spare{{f, id}}, freeRoutes()...)
+		}
+	}
 	return freeRoutes()
 }
 
