@@ -1037,7 +1037,7 @@ func (c *ApiController) proxyAnthropic(
 		if request.Temperature > 0 {
 			oaiReq.Temperature = request.Temperature
 		}
-		if anthropicSerial(request.ToolChoice) {
+		if anthropicSerial(request.ToolChoice) && len(oaiReq.Tools) > 0 {
 			oaiReq.ParallelToolCalls = false
 		}
 		// Forward extended thinking: Anthropic budget_tokens → upstream reasoning_effort,

@@ -435,7 +435,8 @@ func responsesToChatRequest(request *OpenAIResponsesRequest) (*openai.ChatComple
 	if request.TopP != nil {
 		chat.TopP = *request.TopP
 	}
-	if request.ParallelToolCalls != nil {
+	// A chat upstream refuses parallel_tool_calls on a request that offers no tools.
+	if request.ParallelToolCalls != nil && len(tools) > 0 {
 		chat.ParallelToolCalls = *request.ParallelToolCalls
 	}
 	return chat, toolKinds, nil
@@ -647,15 +648,24 @@ func responsesToolChoiceToChat(raw json.RawMessage, tools []openai.Tool, spaces 
 		if choice.Mode != "auto" && choice.Mode != "required" {
 			return nil, nil, fmt.Errorf("allowed_tools mode %q is not auto or required", choice.Mode)
 		}
+		// In auto mode a tool chat has no function for is one the model may simply
+		// not call, so it is passed over; in required mode it is refused, since the
+		// call it allows might be the one the caller wants made.
 		allowed := map[string]bool{}
 		for _, n := range choice.Tools {
 			name, err := declared(n)
 			if err != nil {
+				if choice.Mode == "auto" && n.Type != "function" && n.Type != "custom" {
+					continue
+				}
 				return nil, nil, err
 			}
 			allowed[name] = true
 		}
 		if len(allowed) == 0 {
+			if choice.Mode == "auto" && len(choice.Tools) > 0 {
+				return nil, nil, nil
+			}
 			return nil, nil, errors.New("allowed_tools allows no tool")
 		}
 		kept := make([]openai.Tool, 0, len(allowed))

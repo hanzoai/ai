@@ -206,6 +206,26 @@ func TestAResponsesChoiceReachesChatForced(t *testing.T) {
 		t.Errorf("allowed_tools kept %v", kept)
 	}
 
+	// allowed_tools in auto mode passes over a tool chat has no function for; when
+	// nothing it allows remains, the model is offered no tool and no choice.
+	chat, err = responsesChat(t, ask(`{"type":"allowed_tools","mode":"auto","tools":[{"type":"web_search"},{"type":"function","name":"get_time"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	same(t, "allowed auto, hosted passed over", reread(chat.ToolChoice), `"auto"`)
+	if len(chat.Tools) != 1 || chat.Tools[0].Function.Name != "get_time" {
+		t.Errorf("allowed auto kept %d tools", len(chat.Tools))
+	}
+	chat, err = responsesChat(t, ask(`{"type":"allowed_tools","mode":"auto","tools":[{"type":"web_search"}]}`))
+	if err != nil || chat.ToolChoice != nil || len(chat.Tools) != 0 || chat.ParallelToolCalls != nil {
+		t.Errorf("allowed auto, only hosted: choice %#v, %d tools, parallel %#v (%v)", chat.ToolChoice, len(chat.Tools), chat.ParallelToolCalls, err)
+	}
+	// No tools, no parallel_tool_calls: a chat upstream refuses it alone.
+	chat, err = responsesChat(t, `{"model":"m","input":"x","parallel_tool_calls":false}`)
+	if err != nil || chat.ParallelToolCalls != nil {
+		t.Errorf("parallel_tool_calls was sent with no tools: %#v (%v)", chat.ParallelToolCalls, err)
+	}
+
 	// What chat has no function for is refused, never sent on as a choice that
 	// forces nothing.
 	for what, choice := range map[string]string{
@@ -216,7 +236,7 @@ func TestAResponsesChoiceReachesChatForced(t *testing.T) {
 		"an unknown word":    `"any"`,
 		"no allowed tool":    `{"type":"allowed_tools","mode":"required","tools":[]}`,
 		"an unknown mode":    `{"type":"allowed_tools","mode":"some","tools":[{"type":"function","name":"get_time"}]}`,
-		"an allowed hosted":  `{"type":"allowed_tools","mode":"required","tools":[{"type":"web_search"}]}`,
+		"a required hosted":  `{"type":"allowed_tools","mode":"required","tools":[{"type":"web_search"}]}`,
 	} {
 		if _, err := responsesChat(t, ask(choice)); err == nil {
 			t.Errorf("%s: %s was translated", what, choice)
