@@ -2042,8 +2042,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// through, so worst-case latency stays a property of spareTries rather than of
 	// how many free routes a vendor happens to advertise.
 	// tools is what the floor was asked in place of a tool choice it may not honor
-	// (relax), "" when the choice went as sent.
-	tools := ""
+	// (relax), "" when the choice went as sent. stopped is set once the free
+	// allowance answered the request instead of its floor.
+	tools, stopped := "", false
 
 	// walk asks the floor's routes for this request, fallen for why: one hop, from
 	// the model asked to its floor, and no further. A choice naming one tool goes as
@@ -2070,7 +2071,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			return nil, spare{}, false
 		}
 		if to != "" && strings.EqualFold(sku, model) {
-			r, alt := walk(routes, cmp.Or(cause(err), onUpstream))
+			why := cmp.Or(cause(err), onUpstream)
+			// A masked refusal is one a caller's own request can provoke, again and
+			// again, so the floor it falls to is held to the free allowance first, as
+			// a free model is at the gate: it still falls, and is bounded.
+			if why == onMasked && !c.allowance(authUser, dialect) {
+				stopped = true
+				return nil, spare{}, false
+			}
+			r, alt := walk(routes, why)
 			return r, alt, true
 		}
 		r, alt := pool(routes, sku, true)
@@ -2223,6 +2232,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// hold.settle would release the reservation one-shot and leave the cost
 		// of whichever provider ends up serving this request uncharged.
 		r, alt, tried := spared(err, nil)
+		if stopped {
+			note(err)
+			return done()
+		}
 		if r == nil {
 			if out, ok := floorless(); ok {
 				note(err)
@@ -2292,6 +2305,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// whatever answers next, as it would be beside an answer.
 		failed(w, by, sku, servingOf(resp.Header).failover, authUser, isPremium, stream, reqID, start)
 		r, alt, tried := spared(err, b)
+		if stopped {
+			note(err)
+			return done()
+		}
 		if r == nil {
 			if out, ok := floorless(); ok {
 				note(err)
@@ -3022,7 +3039,7 @@ func closing(line []byte) bool {
 	}
 	payload, ok := bytes.CutPrefix(t, zenDataPrefix)
 	if !ok || !bytes.Contains(payload, []byte(`"error"`)) && !bytes.Contains(payload, []byte(`"message_stop"`)) &&
-		!bytes.Contains(payload, []byte(`"finish_reason":"`)) && !bytes.Contains(payload, []byte(`"stop_reason":"`)) {
+		!bytes.Contains(payload, []byte(`"finish_reason"`)) && !bytes.Contains(payload, []byte(`"stop_reason"`)) {
 		return false
 	}
 	var f struct {

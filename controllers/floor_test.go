@@ -356,10 +356,12 @@ func TestARefusalThatIsTheCallersIsNotMoved(t *testing.T) {
 		status int
 		body   string
 	}{
-		"a malformed request": {http.StatusBadRequest, `{"error":{"message":"messages: at least one is required"}}`},
-		"an unknown model":    {http.StatusNotFound, `{"error":{"message":"unknown model"}}`},
-		"refused content":     {http.StatusUnprocessableEntity, `{"error":{"message":"content refused"}}`},
-		"our own billing":     {http.StatusPaymentRequired, `{"error":{"message":"add funds","code":"` + object.CodeInsufficientBalance + `"}}`},
+		"a malformed request":      {http.StatusBadRequest, `{"error":{"message":"messages: at least one is required"}}`},
+		"an unknown model":         {http.StatusNotFound, `{"error":{"message":"unknown model"}}`},
+		"refused content":          {http.StatusUnprocessableEntity, `{"error":{"message":"content refused"}}`},
+		"our own billing":          {http.StatusPaymentRequired, `{"error":{"message":"add funds","code":"` + object.CodeInsufficientBalance + `"}}`},
+		"a masked moderation":      {http.StatusForbidden, `{"error":{"code":403,"message":"the model could not serve this request","type":"zen_error"}}`},
+		"a masked content refusal": {http.StatusUnprocessableEntity, `{"error":{"code":422,"message":"the model could not serve this request","type":"zen_error"}}`},
 	} {
 		v := &floorVendor{status: tc.status, body: tc.body}
 		s := v.serve(t)
@@ -460,6 +462,17 @@ func TestRelaxLoosensAToolChoiceOneStep(t *testing.T) {
 	if _, _, ok := relax(b, "openai", 2); ok {
 		t.Error("auto was loosened again")
 	}
+	// The sentence goes after the caller's own instructions, never ahead of them.
+	withSystem := `{"tool_choice":"required","tools":[{"type":"function","function":{"name":"a"}}],` +
+		`"messages":[{"role":"system","content":"You are terse."},{"role":"user","content":"x"}]}`
+	b, _, ok = relax([]byte(withSystem), "openai", 2)
+	var kept struct {
+		Messages []struct{ Role, Content string }
+	}
+	_ = json.Unmarshal(b, &kept)
+	if !ok || len(kept.Messages) != 2 || kept.Messages[0].Content != "You are terse.\n\nAnswer by calling the tool a." {
+		t.Fatalf("openai with the caller's system message → %s", b)
+	}
 	if _, _, ok := relax([]byte(`{"tool_choice":{"type":"function","function":{"name":"gone"}},"tools":[{"type":"function","function":{"name":"a"}}]}`), "openai", 1); ok {
 		t.Error("a choice naming a tool the request does not offer was rewritten")
 	}
@@ -470,11 +483,11 @@ func TestRelaxLoosensAToolChoiceOneStep(t *testing.T) {
 		t.Fatalf("anthropic forced → %s %q %v", b, did, ok)
 	}
 	b, did, ok = relax(b, "anthropic", 2)
-	if !ok || did != "auto" || !strings.Contains(string(b), `"tool_choice":{"type":"auto"}`) || !strings.Contains(string(b), `"system":"Answer by calling the tool a.\n\nbe brief"`) {
+	if !ok || did != "auto" || !strings.Contains(string(b), `"tool_choice":{"type":"auto"}`) || !strings.Contains(string(b), `"system":"be brief\n\nAnswer by calling the tool a."`) {
 		t.Fatalf("anthropic any → %s %q %v", b, did, ok)
 	}
 	blocks := `{"tool_choice":{"type":"any"},"system":[{"type":"text","text":"be brief"}],"tools":[{"name":"a"},{"name":"b"}],"messages":[]}`
-	if b, _, ok := relax([]byte(blocks), "anthropic", 2); !ok || !strings.Contains(string(b), `"system":[{"text":"Answer by calling one of the provided tools.","type":"text"},{"type":"text","text":"be brief"}]`) {
+	if b, _, ok := relax([]byte(blocks), "anthropic", 2); !ok || !strings.Contains(string(b), `"system":[{"type":"text","text":"be brief"},{"text":"Answer by calling one of the provided tools.","type":"text"}]`) {
 		t.Fatalf("anthropic system blocks → %s", b)
 	}
 }
@@ -552,6 +565,10 @@ func TestAStreamThatBreaksOffEndsWithAnError(t *testing.T) {
 	stopped := cut + `data: {"id":"gen-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\n"
 	if got := told(t, stopped, ourMark()); strings.Contains(got, "upstream_cut") {
 		t.Errorf("a stream cut after its model stopped was marked cut:\n%s", got)
+	}
+	spaced := cut + `data: {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}` + "\n\n"
+	if got := told(t, spaced, ourMark()); strings.Contains(got, "upstream_cut") {
+		t.Errorf("a stop written with a space was marked cut:\n%s", got)
 	}
 	// One the family ended with its own error is ended: nothing is added to it.
 	if got := told(t, cut+`data: {"error":{"message":"upstream failed"}}`+"\n\n", ourMark()); strings.Contains(got, "upstream_cut") {
@@ -646,6 +663,9 @@ func TestAFallenAnswerIsOnTheFreeLane(t *testing.T) {
 	c.SetHeader(LaneTokensHeader, "4000")
 	c.SetHeader(paidByHeader, object.PaysCredits)
 	Fell(c.Ctx, "enso-pro", "enso-free", onCapacity)
+	if header(c, headerCollection) != collectionAllow {
+		t.Errorf("%s = %q, want the free route's terms disclosed", headerCollection, header(c, headerCollection))
+	}
 	if header(c, LaneHeader) != "free" || header(c, paidByHeader) != object.PaysFree || header(c, LaneTokensHeader) != "" {
 		t.Errorf("lane %q paid-by %q tokens %q, want free, free and none", header(c, LaneHeader), header(c, paidByHeader), header(c, LaneTokensHeader))
 	}
@@ -677,5 +697,54 @@ func TestABlankWholeAnswerStoppedForLength(t *testing.T) {
 	assembleZenStream(w, io.NopCloser(strings.NewReader(`data: {"id":"g","choices":[{"index":0,"delta":{"content":"OK"}}]}`+"\n\ndata: [DONE]\n\n")), nil, time.Hour, nil, nil)
 	if !strings.Contains(out.String(), `"finish_reason":"stop"`) {
 		t.Errorf("an answer with content: %s, want stop", out.String())
+	}
+}
+
+// engineMasked is what the family service writes when it hides why its vendor refused
+// a request (hanzo-inc/zen deny over upstreamMessage), byte for byte.
+const engineMasked = `{"error":{"code":400,"message":"the model could not serve this request","type":"zen_error"}}`
+
+// A MASKED REFUSAL FALLS AND IS BOUNDED. A caller's own request can provoke one again
+// and again (a forced tool an upstream cannot take), so its floor meets the free
+// allowance first: spent, every such call is the allowance's 429 and the floor is never
+// asked; with room left, the floor answers and the allowance counts each call.
+func TestAMaskedRefusalFallsWithinTheFreeAllowance(t *testing.T) {
+	t.Cleanup(func() { object.SetSpent(nil) })
+	alice := &iam.User{Owner: "acme", Name: "alice"}
+	for _, spent := range []bool{true, false} {
+		reads := 0
+		object.SetSpent(func(context.Context, string, string) (object.Standing, error) {
+			reads++
+			return object.Standing{Spent: spent, Window: "day", Limit: 50, Used: 50}, nil
+		})
+		v := &floorVendor{status: http.StatusBadRequest, body: engineMasked}
+		s := v.serve(t)
+		floorPool(t, s.URL)
+		for i := 0; i < 3; i++ {
+			body := []byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)
+			c := visit(http.MethodPost, "/v1/chat/completions")
+			c.Fiber().Request().SetBody(body)
+			out := c.pipeToFamily(otherFamily(t, s.URL), "chat/completions", "openai", "enso-pro", body, false, 0, "acme", alice, false, nil, time.Now())
+			switch {
+			case out != nil:
+				t.Fatalf("spent=%v call %d: handed on %+v", spent, i, out)
+			case spent && (answered(c) != http.StatusTooManyRequests || !strings.Contains(sent(c), object.CodeAllowanceSpent)):
+				t.Errorf("spent call %d: %d %s, want the allowance's 429", i, answered(c), sent(c))
+			case !spent && (answered(c) != http.StatusOK || header(c, FallbackReasonHeader) != onMasked):
+				t.Errorf("call %d: %d reason %q %s, want the floor's answer", i, answered(c), header(c, FallbackReasonHeader), sent(c))
+			}
+		}
+		if reads != 3 {
+			t.Errorf("spent=%v: the allowance was read %d times for three masked calls, want 3", spent, reads)
+		}
+		floorAsked := 0
+		for _, m := range v.calls() {
+			if m == floorRoute {
+				floorAsked++
+			}
+		}
+		if spent && floorAsked != 0 || !spent && floorAsked != 3 {
+			t.Errorf("spent=%v: the floor was asked %d times", spent, floorAsked)
+		}
 	}
 }

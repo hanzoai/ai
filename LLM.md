@@ -1547,7 +1547,10 @@ no second table). Every place a request can be refused or fail asks it:
 - **The family pipe** (`pipeToFamily`): before a byte reached the caller, a 5xx, 429,
   402 (our account), a timeout, an unreachable family, a family that hid its vendor's
   refusal ("the model could not serve this request", `masked`), an unpriced route (the
-  guard), or a paid lane closed to the caller. The floor's routes are `floorRoutes`: the
+  guard), or a paid lane closed to the caller. A masked refusal is one the caller's own
+  request can provoke, so it falls only within the free allowance (`allowance`, before
+  the floor is asked); a masked 403 or 422 (moderation, content) stands. The floor's
+  routes are `floorRoutes`: the
   floor in its own family's catalog when listed, then the free pool. The floor is always
   asked once, even after the model used its whole wait. A family whose own catalog fell
   to the floor (`X-Hanzo-Served` = the floor) is named the same (`route_refused`).
@@ -1562,10 +1565,16 @@ borrowed route's prose is never quoted), and nothing is asked after it.
 
 **Honest:** `X-Hanzo-Fallback: <floor>`, `X-Hanzo-Fallback-Reason: <why>`, the body's
 `model` is the floor, `X-Hanzo-Served` the floor; it bills nothing (`whence.fell`) and
-carries no plan spend. A forced tool is never dropped: the floor is asked for it as
-`required` over that tool alone, then, on a refusal of the request's shape, `auto` with a
-sentence asking for the call; `X-Hanzo-Fallback-Tools` says which. Counted in
-`cloud_fallback{floor,reason}` on GET /v1/metrics.
+carries no plan spend, and says `X-Hanzo-Data-Collection: allow` (a free route's vendor
+may keep what it carried; the owner accepts the free floor for paid callers).
+
+**The one place a forced tool choice is relaxed** is the free floor (`relax`), never the
+model asked: the floor is asked for a named tool as `required` over that tool alone (the
+same demand), then, on a refusal of the request's shape, `auto` with one sentence asking
+for the call, appended after the caller's own instructions (the end of its last system or
+developer message, or the end of `system`), never ahead of them. `X-Hanzo-Fallback-Tools`
+says which. No tool is dropped. Counted in `cloud_fallback{floor,reason}` on GET
+/v1/metrics.
 
 The fallen answer also says it was served on the free lane and paid by nobody
 (`X-Hanzo-Lane: free`, `X-Hanzo-Paid-By: free`), whatever the gate seated it on. The body

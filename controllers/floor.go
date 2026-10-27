@@ -166,6 +166,9 @@ func Fall(model, why string) (string, bool) {
 func Fell(c *zip.Ctx, from, to, why string) {
 	c.SetHeader(FallbackHeader, to)
 	c.SetHeader(FallbackReasonHeader, why)
+	// The floor is served free, and a free route is free because its vendor may keep
+	// what it carried: said on every fallen answer (openrouterTerms).
+	c.SetHeader(headerCollection, collectionAllow)
 	h := &c.Fiber().Response().Header
 	if len(h.Peek(LaneHeader)) > 0 {
 		c.SetHeader(LaneHeader, "free")
@@ -211,11 +214,15 @@ func cause(err error) string {
 // buy from, so all that reaches us is that the model could not serve it.
 const mask = "the model could not serve this request"
 
-// masked reports our family's masked refusal: a 4xx whose sentence is mask.
-// Every other 4xx keeps describing the request, and the caller clears it.
+// masked reports our family's masked refusal: a 400 or 404 whose sentence is mask.
+// A masked 403 or 422 is a moderation or a content refusal, which every model would
+// answer alike, so it stands like every other 4xx that describes the request.
 func masked(err error) bool {
-	st := upstreamHTTPStatus(err)
-	return st >= 400 && st < 500 && strings.Contains(strings.ToLower(err.Error()), mask)
+	switch upstreamHTTPStatus(err) {
+	case http.StatusBadRequest, http.StatusNotFound:
+		return strings.Contains(strings.ToLower(err.Error()), mask)
+	}
+	return false
 }
 
 // reason names why a handler's own gate refused a request, from its error: the
@@ -264,8 +271,18 @@ type fellKey struct{}
 // or cannot be read (503). The unit is the admission's, as the allowance's own rule
 // says (object.SpentFunc). Any other request is not asked about.
 func (c *ApiController) held(u *iam.User, dialect string) bool {
+	if fell, _ := c.Locals(fellKey{}).(bool); !fell {
+		return true
+	}
+	return c.allowance(u, dialect)
+}
+
+// allowance takes one call of payer u's free allowance for a request about to be
+// served on its floor, as the gate takes one for a free model. It reports false when
+// it answered the request itself, in dialect: spent (429) or unreadable (503).
+func (c *ApiController) allowance(u *iam.User, dialect string) bool {
 	spent := object.Spent()
-	if fell, _ := c.Locals(fellKey{}).(bool); !fell || spent == nil || u == nil {
+	if spent == nil || u == nil {
 		return true
 	}
 	org := c.billingOrg(u)
@@ -349,8 +366,7 @@ func relax(body []byte, dialect string, step int) ([]byte, string, bool) {
 		if json.Unmarshal(m["messages"], &msgs) != nil {
 			return body, "", false
 		}
-		turn, _ := json.Marshal(map[string]string{"role": "system", "content": instruct(m, false)})
-		set("messages", append([]json.RawMessage{turn}, msgs...))
+		set("messages", after(msgs, instruct(m, false)))
 	case step == 2 && anthropic && named.Type == "any":
 		set("tool_choice", map[string]any{"type": "auto"})
 		said := instruct(m, true)
@@ -360,10 +376,10 @@ func relax(body []byte, dialect string, step int) ([]byte, string, bool) {
 		case len(m["system"]) == 0:
 			set("system", said)
 		case json.Unmarshal(m["system"], &text) == nil:
-			set("system", said+"\n\n"+text)
+			set("system", text+"\n\n"+said)
 		case json.Unmarshal(m["system"], &blocks) == nil:
-			lead, _ := json.Marshal(map[string]string{"type": "text", "text": said})
-			set("system", append([]json.RawMessage{lead}, blocks...))
+			tail, _ := json.Marshal(map[string]string{"type": "text", "text": said})
+			set("system", append(blocks, tail))
 		default:
 			return body, "", false
 		}
@@ -378,6 +394,40 @@ func relax(body []byte, dialect string, step int) ([]byte, string, bool) {
 		return out, "required", true
 	}
 	return out, "auto", true
+}
+
+// after is msgs with said added after the caller's own instructions: at the end of
+// its last system or developer message, so nothing of ours comes ahead of what the
+// caller said. A request with none is given one system message, which precedes no
+// instruction of the caller's.
+func after(msgs []json.RawMessage, said string) []json.RawMessage {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		var turn map[string]json.RawMessage
+		if json.Unmarshal(msgs[i], &turn) != nil {
+			continue
+		}
+		var role string
+		_ = json.Unmarshal(turn["role"], &role)
+		if role != "system" && role != "developer" {
+			continue
+		}
+		var text string
+		var parts []json.RawMessage
+		switch {
+		case json.Unmarshal(turn["content"], &text) == nil:
+			turn["content"], _ = json.Marshal(text + "\n\n" + said)
+		case json.Unmarshal(turn["content"], &parts) == nil:
+			tail, _ := json.Marshal(map[string]string{"type": "text", "text": said})
+			turn["content"], _ = json.Marshal(append(parts, tail))
+		default:
+			continue
+		}
+		out := append([]json.RawMessage(nil), msgs...)
+		out[i], _ = json.Marshal(turn)
+		return out
+	}
+	lead, _ := json.Marshal(map[string]string{"role": "system", "content": said})
+	return append([]json.RawMessage{lead}, msgs...)
 }
 
 // only keeps, of the request's tools, the one named name, and reports whether the
