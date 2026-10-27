@@ -282,7 +282,7 @@ func TestAModelThatCannotServeIsAnsweredByItsFloor(t *testing.T) {
 		"no capacity":       {http.StatusServiceUnavailable, `{"error":{"message":"this model is temporarily unavailable"}}`, onCapacity},
 		"a rate limit":      {http.StatusTooManyRequests, `{"error":{"message":"this model is busy"}}`, onBusy},
 		"a spent account":   {http.StatusPaymentRequired, `{"error":{"message":"Insufficient credits."}}`, onUnfunded},
-		"a masked refusal":  {http.StatusBadRequest, `{"error":{"message":"the model could not serve this request","type":"zen_error","code":400}}`, onMasked},
+		"a masked refusal":  {http.StatusBadRequest, `{"error":{"code":400,"message":"the model could not serve this request","type":"engine_error"}}`, onMasked},
 		"a gateway timeout": {http.StatusGatewayTimeout, `{"error":{"message":"upstream timed out"}}`, onTimeout},
 	}
 	for _, family := range []struct {
@@ -360,8 +360,8 @@ func TestARefusalThatIsTheCallersIsNotMoved(t *testing.T) {
 		"an unknown model":         {http.StatusNotFound, `{"error":{"message":"unknown model"}}`},
 		"refused content":          {http.StatusUnprocessableEntity, `{"error":{"message":"content refused"}}`},
 		"our own billing":          {http.StatusPaymentRequired, `{"error":{"message":"add funds","code":"` + object.CodeInsufficientBalance + `"}}`},
-		"a masked moderation":      {http.StatusForbidden, `{"error":{"code":403,"message":"the model could not serve this request","type":"zen_error"}}`},
-		"a masked content refusal": {http.StatusUnprocessableEntity, `{"error":{"code":422,"message":"the model could not serve this request","type":"zen_error"}}`},
+		"a masked moderation":      {http.StatusForbidden, `{"error":{"code":403,"message":"the model could not serve this request","type":"engine_error"}}`},
+		"a masked content refusal": {http.StatusUnprocessableEntity, `{"error":{"code":422,"message":"the model could not serve this request","type":"engine_error"}}`},
 	} {
 		v := &floorVendor{status: tc.status, body: tc.body}
 		s := v.serve(t)
@@ -700,9 +700,15 @@ func TestABlankWholeAnswerStoppedForLength(t *testing.T) {
 	}
 }
 
-// engineMasked is what the family service writes when it hides why its vendor refused
-// a request (hanzo-inc/zen deny over upstreamMessage), byte for byte.
-const engineMasked = `{"error":{"code":400,"message":"the model could not serve this request","type":"zen_error"}}`
+// engineRefusals are what the family service (hanzo-inc/engine, Response::deny over
+// relay.rs upstream_message and serve.rs) writes, byte for byte, when the model asked
+// cannot take a request another model may: v1.6.5's hidden vendor refusal, and the
+// field-naming and forced-choice refusals after it.
+var engineRefusals = []string{
+	`{"error":{"code":400,"message":"the model could not serve this request","type":"engine_error"}}`,
+	`{"error":{"code":400,"message":"this model does not take the request's tool_choice","type":"engine_error"}}`,
+	`{"error":{"code":400,"message":"enso-pro cannot be made to call a tool: no model it routes to takes a forced tool_choice (\"required\" or a named tool); send tool_choice \"auto\"","type":"engine_error"}}`,
+}
 
 // A MASKED REFUSAL FALLS AND IS BOUNDED. A caller's own request can provoke one again
 // and again (a forced tool an upstream cannot take), so its floor meets the free
@@ -711,40 +717,42 @@ const engineMasked = `{"error":{"code":400,"message":"the model could not serve 
 func TestAMaskedRefusalFallsWithinTheFreeAllowance(t *testing.T) {
 	t.Cleanup(func() { object.SetSpent(nil) })
 	alice := &iam.User{Owner: "acme", Name: "alice"}
-	for _, spent := range []bool{true, false} {
-		reads := 0
-		object.SetSpent(func(context.Context, string, string) (object.Standing, error) {
-			reads++
-			return object.Standing{Spent: spent, Window: "day", Limit: 50, Used: 50}, nil
-		})
-		v := &floorVendor{status: http.StatusBadRequest, body: engineMasked}
-		s := v.serve(t)
-		floorPool(t, s.URL)
-		for i := 0; i < 3; i++ {
-			body := []byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)
-			c := visit(http.MethodPost, "/v1/chat/completions")
-			c.Fiber().Request().SetBody(body)
-			out := c.pipeToFamily(otherFamily(t, s.URL), "chat/completions", "openai", "enso-pro", body, false, 0, "acme", alice, false, nil, time.Now())
-			switch {
-			case out != nil:
-				t.Fatalf("spent=%v call %d: handed on %+v", spent, i, out)
-			case spent && (answered(c) != http.StatusTooManyRequests || !strings.Contains(sent(c), object.CodeAllowanceSpent)):
-				t.Errorf("spent call %d: %d %s, want the allowance's 429", i, answered(c), sent(c))
-			case !spent && (answered(c) != http.StatusOK || header(c, FallbackReasonHeader) != onMasked):
-				t.Errorf("call %d: %d reason %q %s, want the floor's answer", i, answered(c), header(c, FallbackReasonHeader), sent(c))
+	for _, said := range engineRefusals {
+		for _, spent := range []bool{true, false} {
+			reads := 0
+			object.SetSpent(func(context.Context, string, string) (object.Standing, error) {
+				reads++
+				return object.Standing{Spent: spent, Window: "day", Limit: 50, Used: 50}, nil
+			})
+			v := &floorVendor{status: http.StatusBadRequest, body: said}
+			s := v.serve(t)
+			floorPool(t, s.URL)
+			for i := 0; i < 3; i++ {
+				body := []byte(`{"model":"enso-pro","messages":[{"role":"user","content":"hi"}]}`)
+				c := visit(http.MethodPost, "/v1/chat/completions")
+				c.Fiber().Request().SetBody(body)
+				out := c.pipeToFamily(otherFamily(t, s.URL), "chat/completions", "openai", "enso-pro", body, false, 0, "acme", alice, false, nil, time.Now())
+				switch {
+				case out != nil:
+					t.Fatalf("spent=%v call %d: handed on %+v", spent, i, out)
+				case spent && (answered(c) != http.StatusTooManyRequests || !strings.Contains(sent(c), object.CodeAllowanceSpent)):
+					t.Errorf("spent call %d: %d %s, want the allowance's 429", i, answered(c), sent(c))
+				case !spent && (answered(c) != http.StatusOK || header(c, FallbackReasonHeader) != onMasked):
+					t.Errorf("call %d: %d reason %q %s, want the floor's answer", i, answered(c), header(c, FallbackReasonHeader), sent(c))
+				}
 			}
-		}
-		if reads != 3 {
-			t.Errorf("spent=%v: the allowance was read %d times for three masked calls, want 3", spent, reads)
-		}
-		floorAsked := 0
-		for _, m := range v.calls() {
-			if m == floorRoute {
-				floorAsked++
+			if reads != 3 {
+				t.Errorf("spent=%v: the allowance was read %d times for three masked calls, want 3", spent, reads)
 			}
-		}
-		if spent && floorAsked != 0 || !spent && floorAsked != 3 {
-			t.Errorf("spent=%v: the floor was asked %d times", spent, floorAsked)
+			floorAsked := 0
+			for _, m := range v.calls() {
+				if m == floorRoute {
+					floorAsked++
+				}
+			}
+			if spent && floorAsked != 0 || !spent && floorAsked != 3 {
+				t.Errorf("spent=%v: the floor was asked %d times", spent, floorAsked)
+			}
 		}
 	}
 }

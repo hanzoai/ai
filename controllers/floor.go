@@ -83,7 +83,7 @@ const (
 	onCredential  = "credential"        // the vendor refused our credential
 	onCapacity    = "capacity"          // 503: no rung or key could take it
 	onUpstream    = "upstream_error"    // any other 5xx
-	onMasked      = "masked"            // our family's "could not serve this request"
+	onMasked      = "masked"            // our family: the model asked cannot take the request (masks)
 	onUnpriced    = "unpriced"          // its route costs more than it bills, or cannot be read
 	onClosed      = "lane_closed"       // the paid lane is closed to the caller
 	onMissing     = "unconfigured"      // its family is not configured
@@ -209,18 +209,30 @@ func cause(err error) string {
 	return ""
 }
 
-// mask is what our own family service answers when it hides why its vendor
-// refused a request (its upstreamMessage): the vendor's sentence named somebody we
-// buy from, so all that reaches us is that the model could not serve it.
-const mask = "the model could not serve this request"
+// masks are the sentences our own family service (hanzo-inc/engine, relay.rs and
+// serve.rs) answers when the model asked cannot take a request that another model
+// may: its vendor's refusal hidden (`could not serve`), the field it named (`does
+// not take the request's tool_choice`), or a forced tool choice none of its rungs
+// takes (`cannot be made to call a tool`).
+var masks = []string{
+	"the model could not serve this request",
+	"this model does not take the request's",
+	"cannot be made to call a tool",
+}
 
-// masked reports our family's masked refusal: a 400 or 404 whose sentence is mask.
-// A masked 403 or 422 is a moderation or a content refusal, which every model would
-// answer alike, so it stands like every other 4xx that describes the request.
+// masked reports our family's refusal of a request the model asked cannot take: a
+// 400 or 404 saying one of masks. A 403 or 422 so worded is a moderation or a content
+// refusal, which every model would answer alike, so it stands like every other 4xx
+// that describes the request.
 func masked(err error) bool {
 	switch upstreamHTTPStatus(err) {
 	case http.StatusBadRequest, http.StatusNotFound:
-		return strings.Contains(strings.ToLower(err.Error()), mask)
+		said := strings.ToLower(err.Error())
+		for _, m := range masks {
+			if strings.Contains(said, m) {
+				return true
+			}
+		}
 	}
 	return false
 }

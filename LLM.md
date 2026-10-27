@@ -1545,8 +1545,10 @@ no second table). Every place a request can be refused or fail asks it:
   (`supply_unavailable`), and a balance that cannot cover the call's estimate. Such a
   request then meets the free allowance (`held`), as one the gate moved does.
 - **The family pipe** (`pipeToFamily`): before a byte reached the caller, a 5xx, 429,
-  402 (our account), a timeout, an unreachable family, a family that hid its vendor's
-  refusal ("the model could not serve this request", `masked`), an unpriced route (the
+  402 (our account), a timeout, an unreachable family, a 400/404 from our family saying
+  the model asked cannot take the request (`masks`: "the model could not serve this
+  request", "this model does not take the request's <field>", "<id> cannot be made to
+  call a tool"; `masked`), an unpriced route (the
   guard), or a paid lane closed to the caller. A masked refusal is one the caller's own
   request can provoke, so it falls only within the free allowance (`allowance`, before
   the floor is asked); a masked 403 or 422 (moderation, content) stands. The floor's
