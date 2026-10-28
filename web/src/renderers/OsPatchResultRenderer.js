@@ -16,7 +16,6 @@
 import React from "react";
 import {Alert, Space, Table, Tag, Typography} from "antd";
 import i18next from "i18next";
-import * as Setting from "../Setting";
 
 const {Text} = Typography;
 
