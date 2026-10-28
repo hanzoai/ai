@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -260,5 +261,34 @@ func TestAChatNamingKaiIsSentToDecisions(t *testing.T) {
 		if why := decisionDoor(m); why != "" {
 			t.Errorf("decisionDoor(%q) = %q, want no refusal for a chat model", m, why)
 		}
+	}
+}
+
+// A decision naming a chat model is told the chat door, never sent to the service
+// for a completion it cannot answer.
+func TestADecisionNamingChatIsToldTheChatDoor(t *testing.T) {
+	fake, events := setupDecisions(t)
+	for _, m := range []string{"zen6", "zen6-flash"} {
+		status, body := driveDecisions(t, "Bearer "+decisionsKey, askFor(m))
+		if status != http.StatusBadRequest {
+			t.Fatalf("%s => %d, want 400", m, status)
+		}
+		want := string(decisionsFailure(400, fmt.Sprintf(`model %q is a chat model; use POST /v1/chat/completions. Docs: GET /v1/openapi.json?operation=post_chat_completions`, m)))
+		if body != want {
+			t.Fatalf("%s refusal:\n got %s\nwant %s", m, body, want)
+		}
+	}
+	if calls, _, _ := fake.seen(); calls != 0 {
+		t.Fatalf("service saw %d call(s) for a chat model it must never be sent", calls)
+	}
+	if len(*events) != 0 {
+		t.Fatalf("refused calls were debited %d time(s)", len(*events))
+	}
+	if !isChatModel("zen6") || !isChatModel("zen6-flash") {
+		t.Fatalf("bare chat skus are chat models: zen6=%t zen6-flash=%t", isChatModel("zen6"), isChatModel("zen6-flash"))
+	}
+	if isChatModel("kai") || isChatModel("zenlm/zen6") || isChatModel("zen5") {
+		t.Fatalf("decisions and their ids are not chat models: kai=%t zenlm/zen6=%t zen5=%t",
+			isChatModel("kai"), isChatModel("zenlm/zen6"), isChatModel("zen5"))
 	}
 }
