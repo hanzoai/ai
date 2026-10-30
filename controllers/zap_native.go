@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -96,7 +97,7 @@ func handleCloudService(ctx context.Context, from string, msg *zap.Message) (res
 		if auth == "" {
 			return object.BuildCloudResponse(401, nil, "authentication required")
 		}
-		return zapListModelsHandler()
+		return zapListModelsHandler("")
 	case "balance":
 		return zapBalanceHandler(auth)
 	case "chat.completions", "chat.messages":
@@ -163,7 +164,8 @@ func gateway(router http.Handler) zap.Handler {
 				})
 				return object.BuildGatewayResponse(401, errBody, nil)
 			}
-			return zapListModelsHandler()
+			q, _ := url.ParseQuery(query)
+			return zapListModelsHandler(q.Get("id"))
 		case strings.HasPrefix(path, "/v1/balance"):
 			return zapBalanceHandler(auth)
 		}
@@ -401,8 +403,13 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 
 // ── models.list ─────────────────────────────────────────────────────────
 
-func zapListModelsHandler() (*zap.Message, error) {
-	data, err := modelListing(nil)
+func zapListModelsHandler(named string) (*zap.Message, error) {
+	ids, err := namedModels(named)
+	if err != nil {
+		errBody, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return object.BuildGatewayResponse(400, errBody, nil)
+	}
+	data, err := modelListing(nil, ids)
 	if err != nil {
 		return nil, err
 	}

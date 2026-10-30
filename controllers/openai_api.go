@@ -2619,6 +2619,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 // using /v1/models to ask "is my key working?" gets an honest answer, because a key
 // that does not verify annotates nothing rather than reading as accepted.
 //
+// ?id= narrows the listing to the models a page names, comma-separated and at most
+// 100, in the listing's order; an id nothing lists is absent. Without it the
+// listing is whole, which is what every OpenAI-compatible caller reads.
+//
 // @Title ListModels
 // @Tag OpenAI Compatible API
 // @Description Returns a list of all available models. Public — no authentication.
@@ -2634,7 +2638,12 @@ func (c *ApiController) ListModels() {
 	// session, a signature-checked JWT, or a key IAM resolved). So an absent, expired
 	// or forged credential simply yields the un-annotated public catalogue — never a
 	// 401, and never another caller's standing.
-	jsonResponse, err := modelListing(c.principalUser())
+	ids, err := namedModels(c.Input().Get("id"))
+	if err != nil {
+		c.ResponseErrorWithStatus(http.StatusBadRequest, err.Error())
+		return
+	}
+	jsonResponse, err := modelListing(c.principalUser(), ids)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

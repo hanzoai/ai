@@ -387,7 +387,7 @@ func TestCatalogDecodesUnderCodex(t *testing.T) {
 	useCatalog(t, "../conf/models.yaml")
 	withOpenRouter(t, orBody)
 
-	body, err := modelListing(nil)
+	body, err := modelListing(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -706,17 +707,43 @@ func listAvailableModels() []modelInfo {
 
 // modelListing is the /v1/models answer for a caller, as it goes on the wire.
 //
-// Without a verified principal that is the public body, marshalled once per build
-// and handed to everyone. With one it is a copy annotated with that caller's own
-// standing on the gated SKUs, which is theirs alone and so is marshalled for them.
-func modelListing(user *iam.User) ([]byte, error) {
-	if user == nil {
+// Without a verified principal and without ids that is the public body, marshalled
+// once per build and handed to everyone. With one it is a copy annotated with that
+// caller's own standing on the gated SKUs, which is theirs alone and so is
+// marshalled for them. With ids it is the listing narrowed to the rows whose id is
+// one of them, in the listing's order; an id nothing lists is simply absent.
+func modelListing(user *iam.User, ids []string) ([]byte, error) {
+	if user == nil && len(ids) == 0 {
 		_, body, err := listing.get()
 		return body, err
 	}
 	models := listAvailableModels()
-	annotateModelAccess(models, user)
+	if len(ids) > 0 {
+		models = slices.DeleteFunc(models, func(m modelInfo) bool { return !slices.Contains(ids, m.ID) })
+	}
+	if user != nil {
+		annotateModelAccess(models, user)
+	}
 	return json.Marshal(modelListEnvelope(models))
+}
+
+// namedMost is how many ids one /v1/models?id= may name.
+const namedMost = 100
+
+// namedModels is the ids a /v1/models?id= asks for: a comma-separated list, blanks
+// dropped, at most namedMost of them. Absent asks for the whole listing, which is
+// what every OpenAI-compatible caller that lists models reads.
+func namedModels(raw string) ([]string, error) {
+	var ids []string
+	for id := range strings.SplitSeq(raw, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > namedMost {
+		return nil, fmt.Errorf("id names %d models; one request names at most %d", len(ids), namedMost)
+	}
+	return ids, nil
 }
 
 // modelListEnvelope preserves the standard OpenAI model-list response while
