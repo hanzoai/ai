@@ -416,7 +416,7 @@ func (c *ApiController) ChatCompletionsPublic() {
 func (c *ApiController) publicSpent(visitor, by string) {
 	log.Info("public_chat: allowance spent visitor=%s by=%s", visitor, by)
 	c.publicRefuse(http.StatusPaymentRequired, "insufficient_quota", "public_allowance_spent",
-		"You've used today's free messages. They reset at midnight UTC — sign in at https://hanzo.ai to keep going.")
+		"Sign in or Create an account, to continue")
 }
 
 // publicRefuse writes the house error envelope — the shape the balance gate, the
