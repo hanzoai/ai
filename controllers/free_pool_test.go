@@ -374,8 +374,10 @@ func TestAFreeRequestTheExhaustedPoolCannotServeIsToldSo(t *testing.T) {
 	if got.Error.UpgradeURL == "" {
 		t.Error("no upgrade_url — the refusal must carry the way out")
 	}
-	if ra := string(c.Fiber().Response().Header.Peek("Retry-After")); ra == "" {
-		t.Error("no Retry-After on a refusal that knows when it clears")
+	// Midnight is no wait a client should sleep through (object.MaxRetryAfter): it is
+	// said in resets_at, not as Retry-After.
+	if ra := string(c.Fiber().Response().Header.Peek("Retry-After")); ra != "" && time.Until(midnight) > object.MaxRetryAfter*time.Second {
+		t.Errorf("Retry-After %q on a pool spent until midnight", ra)
 	}
 	if sr := string(c.Fiber().Response().Header.Peek("x-should-retry")); sr != "false" {
 		t.Errorf("x-should-retry = %q, want false — a pool spent until midnight is not retried in seconds", sr)
