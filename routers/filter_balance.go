@@ -833,7 +833,9 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, subject, org string) error {
 		body.Error.ResetsAt = reset.Format(time.RFC3339)
 		if wait {
 			c.SetHeader("X-Hanzo-Usage-Resets", body.Error.ResetsAt)
-			if left := int64(math.Ceil(time.Until(reset).Seconds())); left > 0 {
+			// Retry-After only for a wait a client can sit through (object.MaxRetryAfter);
+			// a window that reopens hours away is said by X-Hanzo-Usage-Resets and resets_at.
+			if left := int64(math.Ceil(time.Until(reset).Seconds())); left > 0 && left <= object.MaxRetryAfter {
 				c.SetHeader("Retry-After", fmt.Sprint(left))
 			}
 		}
@@ -962,8 +964,8 @@ func standing(c *zip.Ctx, s object.Standing) {
 	}
 }
 
-// freeRefused writes a Free-plan refusal with Retry-After when it says when it
-// clears.
+// freeRefused writes a Free-plan refusal with Retry-After when it clears within
+// object.MaxRetryAfter.
 func freeRefused(c *zip.Ctx, n object.FreeNotice, subject, namespace string) error {
 	if wait := n.RetryAfter(time.Now()); wait > 0 {
 		c.SetHeader("Retry-After", fmt.Sprint(wait))

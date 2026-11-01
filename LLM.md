@@ -1778,8 +1778,12 @@ OpenRouter accounts named by `object.OpenRouterKeys` (`OPENROUTER_API_KEY`,
   (502s, nothing discovered) keeps its path to the route's alternates. Busy never
   carries a reset past a minute; exhausted carries the refill and
   `x-should-retry: false`. A caller on a paid plan is told to pick a paid model,
-  not to upgrade. A person's own share spent is 402 `allowance_spent`
-  (`object.AllowanceSpent`) naming the window; `object.SpentFunc` answers a
+  not to upgrade. A person's own share spent is 429 `allowance_spent`
+  (`object.AllowanceSpent`) naming the window. No refusal names Retry-After past
+  `object.MaxRetryAfter` (5 min): Hanzo Dev's coding harness honours it to the
+  letter, and told 00:00 UTC it slept inside a fifteen-minute run until the run
+  died. The reset stays in `resets_at`, `X-RateLimit-Reset` and
+  `X-Hanzo-Usage-Resets`; `object.SpentFunc` answers a
   `Standing`. All three codes are `billingNotice`: relayed, they are never moved
   to the pool.
 - **Free is held for seconds, not minutes** (`familyFreeTTL`, `freeTierTTL`, 10s),

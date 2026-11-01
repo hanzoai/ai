@@ -153,8 +153,10 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	if got.Error.UpgradeURL != object.PayURL("", "acme") || got.Error.UpgradeURL == "" {
 		t.Errorf("upgrade_url = %q, want the pay page %q", got.Error.UpgradeURL, object.PayURL("", "acme"))
 	}
-	if ra := p.replied("Retry-After"); ra == "" || ra == "0" {
-		t.Errorf("Retry-After = %q, want the seconds until 00:00 UTC", ra)
+	// 00:00 UTC is said by resets_at and X-RateLimit-Reset. As Retry-After it parked a
+	// coding harness for the rest of the day, so it is named only when minutes away.
+	if ra, soon := p.replied("Retry-After"), time.Until(midnight) <= object.MaxRetryAfter*time.Second; (ra != "") != soon {
+		t.Errorf("Retry-After = %q with 00:00 UTC %s away", ra, time.Until(midnight).Round(time.Second))
 	}
 	for h, want := range map[string]string{
 		"X-RateLimit-Limit":     "50",

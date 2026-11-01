@@ -129,13 +129,28 @@ func clock(t time.Time) string {
 	return u.Format("Jan 2 15:04 UTC")
 }
 
-// RetryAfter is how many whole seconds from now the refusal clears, 0 when it
-// does not say.
+// MaxRetryAfter is the longest wait, in seconds, a refusal names as Retry-After.
+//
+// A day's free calls, a plan's spent window and a spent pool reopen hours away, and
+// a client that honours Retry-After to the letter sleeps that long. Hanzo Dev's
+// coding harness does, inside a run its sandbox ends after fifteen minutes: told to
+// come back at 00:00 UTC (Retry-After: 39305), it waited without a word until the
+// run died with "context deadline exceeded". Past this bound a refusal still says
+// when it reopens — resets_at, X-RateLimit-Reset, X-Hanzo-Usage-Resets and the
+// message — and the client decides; one that clears within minutes still says when
+// to come back.
+const MaxRetryAfter = 5 * 60
+
+// RetryAfter is how many whole seconds from now the refusal clears, as Retry-After:
+// 0 when it does not say, or when that is further off than MaxRetryAfter.
 func (n FreeNotice) RetryAfter(now time.Time) int64 {
 	if n.Resets.IsZero() || !n.Resets.After(now) {
 		return 0
 	}
-	return int64(n.Resets.Sub(now).Seconds() + 0.999)
+	if wait := int64(n.Resets.Sub(now).Seconds() + 0.999); wait <= MaxRetryAfter {
+		return wait
+	}
+	return 0
 }
 
 // ErrorJSON renders the refusal in the OpenAI error envelope, with the reset and
