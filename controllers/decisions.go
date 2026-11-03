@@ -721,6 +721,11 @@ func decisionModel(body []byte) (model, version string, _ *decisionRefusal) {
 	if r == nil && kaiVersion(model) && kaiServed() {
 		return "kai", model, nil
 	}
+	// A chat model is not a decision model: name the door that serves it instead of
+	// reporting an unknown model.
+	if why := chatDoor(model); why != "" {
+		return "", "", decline(http.StatusBadRequest, why)
+	}
 	if r == nil || r.providerName != object.KaiName || (jevNamed(model) && kaiUpstream(r.upstreamModel)) {
 		return "", "", decline(http.StatusBadRequest, fmt.Sprintf("unknown model %q; use one of %s", model, strings.Join(decisionModels(), ", ")))
 	}
@@ -1772,7 +1777,38 @@ func decisionDoor(model string) string {
 	if m == "" || !(decisionRoute(m) || kaiVersion(strings.ToLower(m))) {
 		return ""
 	}
-	return fmt.Sprintf("model %q answers decisions, not chat: POST /v1/decisions with "+
-		`{"model":%q,"state":"<what is true now>","questions":{"next":{"type":"choice","instructions":"<the question>","criteria":{"<label>":"<what it means>"}}}}`+
-		" (a boolean question takes no criteria). The request shape: GET /v1/openapi.json?operation=post_decisions", m, m)
+	return fmt.Sprintf("model %q is served at POST /v1/decisions. Request shape: POST /v1/decisions with {\"model\":%q,\"state\":\"<what is true now>\",\"questions\":{\"next\":{\"type\":\"choice\",\"instructions\":\"<the question>\",\"criteria\":{\"<label>\":\"<what it means>\"}}}} (a boolean question takes no criteria). Docs: GET /v1/openapi.json?operation=post_decisions", m, m)
+}
+
+var coldStartChatSKUs = map[string]struct{}{
+	"zen6":       {},
+	"zen6-flash": {},
+}
+
+// isChatModel reports whether model is a chat model the decision service does not
+// serve, rather than a decision, an unknown id, or some other kind of model. It reads
+// the catalogs — a Hanzo family SKU the discovery resolved — and falls back to the
+// bare chat SKUs above until discovery has named them.
+func isChatModel(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" || decisionRoute(m) || kaiVersion(m) {
+		return false
+	}
+	if _, ok := familyLookup(m); ok {
+		return true
+	}
+	if _, ok := coldStartChatSKUs[m]; ok {
+		return true
+	}
+	return false
+}
+
+// chatDoor is the refusal a decision earns for naming a chat model, or "" when the
+// model is not one: it names the chat endpoint that serves it.
+func chatDoor(model string) string {
+	m := strings.TrimSpace(model)
+	if m == "" || !isChatModel(m) {
+		return ""
+	}
+	return fmt.Sprintf(`model %q is a chat model; use POST /v1/chat/completions. Docs: GET /v1/openapi.json?operation=post_chat_completions`, m)
 }

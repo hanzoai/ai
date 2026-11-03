@@ -1929,20 +1929,6 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	}
 	request := parsed.ChatCompletionRequest
 
-	// A DECISION MODEL IS NOT A CHAT MODEL. Kai answers POST /v1/decisions; a chat
-	// naming it reached the decision service and came back "404 upstream error",
-	// which told the caller nothing about the right door.
-	if why := decisionDoor(request.Model); why != "" {
-		if from == callerBearer {
-			if authErr := c.authenticate(token); authErr != nil {
-				c.ResponseAuthError(authErr)
-				return
-			}
-		}
-		c.ResponseErrorWithStatus(http.StatusBadRequest, why)
-		return
-	}
-
 	// Resolve org context for per-org model routing and pricing.
 	orgId := c.GetOrg()
 	if from == callerPublic {
@@ -1952,6 +1938,22 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		// The assignment is here rather than in the lane because this is the last
 		// point at which the body could still be read.
 		request.Model, orgId = freeID, publicOrg
+	}
+
+	// A DECISION MODEL IS NOT A CHAT MODEL. Kai answers POST /v1/decisions; a chat
+	// naming it reached the decision service and came back "404 upstream error",
+	// which told the caller nothing about the right door. It runs after the public
+	// lane overwrote the model, so the lane's "any model field is ignored" holds: a
+	// public caller naming a decision model is served the free pool, never refused.
+	if why := decisionDoor(request.Model); why != "" {
+		if from == callerBearer {
+			if authErr := c.authenticate(token); authErr != nil {
+				c.ResponseAuthError(authErr)
+				return
+			}
+		}
+		c.ResponseErrorWithStatus(http.StatusBadRequest, why)
+		return
 	}
 
 	// A PUBLIC CALL ACTS UNDER NO AMBIENT IDENTITY. The widget lives on our own
