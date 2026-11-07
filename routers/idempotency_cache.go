@@ -47,6 +47,10 @@ func newIdemCache() *idemCache {
 	}
 }
 
+// @Todo: idemStore is an in-process, per-pod LRU. Idempotency is therefore scoped to a
+// single pod and is NOT shared across replicas: a retry that lands on a
+// different pod re-executes the request. Follow up with a shared store for
+// cross-replica deduplication.
 var idemStore = newIdemCache()
 
 // getOrSet atomically inserts a processing slot. Returns the entry and true

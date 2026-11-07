@@ -54,7 +54,14 @@ func IdempotencyFilter(c *zip.Ctx) error {
 			return nil
 		}
 		if !entry.stored {
-			return c.Continue()
+			status := http.StatusConflict
+			if entry.status >= 400 && entry.status < 500 {
+				status = entry.status
+			}
+			c.Status(status)
+			c.SetHeader("Content-Type", "application/json")
+			c.Fiber().Response().SetBody([]byte(`{"error":"idempotent response too large to replay"}`))
+			return nil
 		}
 		c.Status(entry.status)
 		if entry.contentType != "" {
