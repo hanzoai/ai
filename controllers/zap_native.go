@@ -462,7 +462,8 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	if err := json.Unmarshal(body, &request); err != nil {
 		return object.BuildCloudResponse(400, nil, "invalid request: "+err.Error())
 	}
-	// ZAP has no gate to ask who pays, so a router id is its free SKU.
+	// ZAP has no gate to ask who pays, so a router id is its row's start tier, held to
+	// the balance gate below as a tier named outright is.
 	request.Model = unpaid(request.Model)
 
 	// Auth → provider + user + upstream model.

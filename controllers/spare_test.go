@@ -241,7 +241,7 @@ func restore(t *testing.T, fam *modelFamily) {
 	t.Helper()
 	fam.mu.RLock()
 	name, provider, prefix, owner := fam.name, fam.typ, fam.prefix, fam.owner
-	urlKey, keyKey, freeName := fam.urlKey, fam.keyKey, fam.freeName
+	urlKey, keyKey := fam.urlKey, fam.keyKey
 	providerFn, decode, spare, terms := fam.providerFn, fam.decode, fam.spare, fam.terms
 	windows, byID, ids, spares := fam.windows, fam.byID, fam.ids, fam.spares
 	fetchedAt, loaded, named, paid := fam.fetchedAt, fam.loaded, fam.named, fam.paid
@@ -252,7 +252,7 @@ func restore(t *testing.T, fam *modelFamily) {
 		fam.mu.Lock()
 		defer fam.mu.Unlock()
 		fam.name, fam.typ, fam.prefix, fam.owner = name, provider, prefix, owner
-		fam.urlKey, fam.keyKey, fam.freeName = urlKey, keyKey, freeName
+		fam.urlKey, fam.keyKey = urlKey, keyKey
 		fam.providerFn, fam.decode, fam.spare, fam.terms = providerFn, decode, spare, terms
 		fam.windows, fam.byID, fam.ids, fam.spares = windows, byID, ids, spares
 		fam.fetchedAt, fam.loaded, fam.named, fam.paid = fetchedAt, loaded, named, paid
@@ -301,42 +301,11 @@ func spareFamily(t *testing.T, url, free string, also ...string) *modelFamily {
 func otherFamily(t *testing.T, url string) *modelFamily {
 	t.Helper()
 	return &modelFamily{
-		name: "enso", prefix: "enso", owner: "hanzo", freeName: "enso-free",
+		name: "enso", prefix: "enso", owner: "hanzo",
 		providerFn: func() *object.Provider {
 			return &object.Provider{Owner: "admin", Name: "enso", Type: "Enso", ProviderUrl: url}
 		},
 		loaded: true, fetchedAt: time.Now(),
-	}
-}
-
-// A brand's free door is answered by the platform pool, so it stands whether or not
-// that brand's own service is configured: the pool is what serves it, and the vendor
-// is not. zen-free and enso-free are ours in front of one pool, not routes their
-// vendors publish, so an unreachable vendor has nothing to say about them.
-func TestAFreeDoorStandsWithoutItsVendor(t *testing.T) {
-	spareFamily(t, "http://vendor.invalid", "free-route")
-	fam := otherFamily(t, "") // no base URL: the brand's own service is unreachable
-
-	if fam.enabled() {
-		t.Fatal("want a family whose own service is unconfigured")
-	}
-	if !fam.serves(fam.freeName) {
-		t.Errorf("%q refused while the pool holds routes", fam.freeName)
-	}
-}
-
-// And it closes when there is nothing behind it. A door onto an empty pool is a
-// refusal that arrives later, so it is refused here instead.
-func TestAFreeDoorClosesOnAnEmptyPool(t *testing.T) {
-	pool := freeFamily()
-	restore(t, pool)
-	pool.spares, pool.loaded, pool.fetchedAt = nil, true, time.Now()
-	restore(t, engineFam)
-	engineFam.providerFn = func() *object.Provider { return nil }
-
-	fam := otherFamily(t, "")
-	if fam.serves(fam.freeName) {
-		t.Errorf("%q opened onto an empty pool", fam.freeName)
 	}
 }
 
@@ -523,13 +492,12 @@ func TestTheHeaderStatesTheTermsThatServed(t *testing.T) {
 	}
 }
 
-// The free alias is the same rule from the other side: the caller names an id
-// no vendor holds, the pool picks a route, and the answer comes back wearing the id
-// that was named rather than the route that was chosen.
-func TestTheFreeAliasAnswersInTheNameItWasCalledBy(t *testing.T) {
+// A Hanzo SKU its vendor cannot serve is stood in for by the pool, and the answer
+// comes back wearing the SKU that was named, never the no-cost route that answered.
+func TestAStandInAnswersInTheNameItWasCalledBy(t *testing.T) {
 	cooled.forget()
 	const free = "vendor/big:free"
-	const alias = "enso-free"
+	const alias = "enso-flash"
 	fake := &refuses{status: 500, body: `{"error":{"message":"unused"}}`, free: free}
 	vendor := fake.serve(t)
 	defer vendor.Close()
@@ -539,8 +507,8 @@ func TestTheFreeAliasAnswersInTheNameItWasCalledBy(t *testing.T) {
 
 	c, _ := fake.pipe(t, enso, alias)
 
-	if len(fake.asked) != 1 || fake.asked[0] != free {
-		t.Fatalf("asked=%v — the pool did not choose a route", fake.asked)
+	if n := len(fake.asked); n == 0 || fake.asked[n-1] != free {
+		t.Fatalf("asked=%v — the pool did not stand in", fake.asked)
 	}
 	var got map[string]any
 	if err := json.Unmarshal([]byte(sent(c)), &got); err != nil {
@@ -853,63 +821,27 @@ func TestARefusalCrossesToTheFamilyThatStillHasAFreeRoute(t *testing.T) {
 	}
 }
 
-// A family's free id is served by choosing from the pool, and it is a route the
-// caller may name outright rather than only reach by being refused.
-func TestAFamilysFreeIdIsServedFromThePool(t *testing.T) {
-	cooled.forget()
-	const free = "vendor/big:free"
-	fake := &refuses{status: 500, body: `{"error":{"message":"unused"}}`, free: free}
-	vendor := fake.serve(t)
-	defer vendor.Close()
-
-	spareFamily(t, vendor.URL, free)
-	enso := otherFamily(t, vendor.URL)
-
-	c, refusedBy := fake.pipe(t, enso, "enso-free")
-
-	if len(fake.asked) != 1 || fake.asked[0] != free {
-		t.Fatalf("asked=%v, want exactly the pool's route — a free id is not a model any vendor holds", fake.asked)
+// NO FREE ID IS LISTED. The pool's own id and its no-cost routes are fallback rungs,
+// never models: /v1/models names none of them while the pool can serve, or ever.
+func TestNoFreeIdIsListed(t *testing.T) {
+	spareFamily(t, "http://vendor.invalid", "vendor/a:free")
+	enso := &modelFamily{name: "enso", prefix: "enso", owner: "hanzo", loaded: true, fetchedAt: time.Now()}
+	for _, fam := range []*modelFamily{enso, freeFamily()} {
+		for id := range indexModels(fam.mergeModels(nil)) {
+			if id == freeID || id == "enso-free" || id == "zen-free" || strings.HasSuffix(id, ":free") {
+				t.Errorf("%s lists %q", fam.name, id)
+			}
+		}
 	}
-	if refusedBy != nil {
-		t.Errorf("serving a free id handed the request on: %v", refusedBy)
+	for _, id := range []string{freeID, "vendor/a:free", "Vendor/B:FREE"} {
+		if !Unsold(id) {
+			t.Errorf("%q is sold", id)
+		}
 	}
-	// The pool's route wrote the answer and the answer does not name it — which id
-	// it DOES wear is TestTheFreeAliasAnswersInTheNameItWasCalledBy.
-	if strings.Contains(sent(c), free) {
-		t.Errorf("the answer names the route the pool chose:\n%s", sent(c))
-	}
-}
-
-// The free id is listed, priced at nothing, and absent when the pool is empty — a
-// listed model that answers nothing is worse than an absent one.
-func TestTheFreeIdIsListedOnlyWhileThePoolCanServeIt(t *testing.T) {
-	fam := freeFamily()
-	restore(t, fam)
-	fam.spares = []string{"vendor/a:free"}
-	fam.byID = map[string]zenModel{"vendor/a:free": {ID: "vendor/a:free", MaxCtx: 128000}}
-	fam.ids = []string{"vendor/a:free"}
-	fam.loaded, fam.fetchedAt = true, time.Now()
-
-	enso := &modelFamily{name: "enso", prefix: "enso", owner: "hanzo", freeName: "enso-free", loaded: true, fetchedAt: time.Now()}
-	byID := indexModels(enso.mergeModels(nil))
-	got, ok := byID["enso-free"]
-	if !ok {
-		t.Fatal("the family's free id is not listed while the pool can serve it")
-	}
-	// The listing prices a row from the billing lookup, which reads the family's own.
-	if p, ok := enso.modelPrice("enso-free"); got.Premium || !ok || p.InputPerMillion != 0 || p.OutputPerMillion != 0 {
-		t.Errorf("the free id lists as premium=%v, priced %+v ok=%v", got.Premium, p, ok)
-	}
-	if got.ContextWindow != 128000 {
-		t.Errorf("context = %d, want the narrowest the pool can hold", got.ContextWindow)
-	}
-	if len(got.Outputs) != 1 || got.Outputs[0] != "text" {
-		t.Errorf("outputs = %v, want text", got.Outputs)
-	}
-
-	fam.spares = nil
-	if _, ok := indexModels(enso.mergeModels(nil))["enso-free"]; ok {
-		t.Error("the free id is listed with an empty pool — it would answer nothing")
+	for _, id := range []string{"enso-auto", "enso-flash", "enso-max", "zen6"} {
+		if Unsold(id) {
+			t.Errorf("%q is refused as no-cost routing", id)
+		}
 	}
 }
 
@@ -953,17 +885,12 @@ func TestTheFreeIdCostsNothingEverywhere(t *testing.T) {
 	ensoFam.byID = map[string]zenModel{}
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 
-	p, ok := ensoFam.modelPrice("enso-free")
+	p, ok := fam.modelPrice(freeID)
 	if !ok {
-		t.Fatal("the free id has no price — the balance gate would ask a caller to fund it")
+		t.Fatal("the pool's id has no price — the balance gate would ask the public lane to fund it")
 	}
 	if p.InputPerMillion != 0 || p.OutputPerMillion != 0 {
-		t.Errorf("the free id is priced %+v", p)
-	}
-	if r := ensoFam.passthroughRoute("enso-free"); r == nil {
-		t.Fatal("the free id does not route")
-	} else if r.premium {
-		t.Error("the free id routes as premium — it reads as a model a plan cannot afford")
+		t.Errorf("the pool's id is priced %+v", p)
 	}
 }
 
@@ -992,7 +919,7 @@ func TestAnEmbeddingsRequestDoesNotWalkTheChatPool(t *testing.T) {
 // The platform's own name for the pool. Every surface can send `free` and get a free
 // answer without knowing or caring which family holds the routes — the branded names
 // are the same pool wearing a brand, this is the same pool wearing none.
-func TestThePlatformPublishesOneUnbrandedFreeId(t *testing.T) {
+func TestThePoolsOwnIdServesAndIsNeverListed(t *testing.T) {
 	fam := freeFamily()
 	restore(t, fam)
 	fam.spares = []string{"vendor/a:free"}
@@ -1013,20 +940,17 @@ func TestThePlatformPublishesOneUnbrandedFreeId(t *testing.T) {
 		t.Errorf("the platform free id is priced %+v ok=%v", p, ok)
 	}
 
+	// It is the public lane's route, never a model: it is not listed, and neither is
+	// the no-cost model behind it.
 	byID := indexModels(fam.mergeModels(nil))
-	got, ok := byID[freeID]
-	if !ok {
-		t.Fatal("the platform free id is not listed")
-	}
-	if got.OwnedBy != "hanzo" {
-		t.Errorf("owned_by = %q, want hanzo — it is our product, not the vendor's", got.OwnedBy)
-	}
-	if got.Premium {
-		t.Errorf("the platform free id lists as premium")
+	for _, id := range []string{freeID, "vendor/a:free"} {
+		if _, ok := byID[id]; ok {
+			t.Errorf("%q is listed", id)
+		}
 	}
 
-	// A family that does not hold the pool publishes only its own brand.
-	enso := &modelFamily{name: "enso", owner: "hanzo", freeName: "enso-free"}
+	// A family that does not hold the pool answers to none of it.
+	enso := &modelFamily{name: "enso", owner: "hanzo"}
 	if enso.frontDoor(freeID) {
 		t.Error("a family that does not hold the pool answers to the platform free id")
 	}
@@ -1134,11 +1058,10 @@ func TestTheBudgetBoundsBorrowedRoutesNotOurOwn(t *testing.T) {
 	engineFam.urlKey = "TEST_ENGINE_URL"
 	engineFam.providerFn = nil
 
-	enso := otherFamily(t, vendor.URL)
-	body := []byte(`{"model":"enso-free","messages":[{"role":"user","content":"hi"}]}`)
+	body := []byte(`{"model":"free","messages":[{"role":"user","content":"hi"}]}`)
 	c := visit(http.MethodPost, "/v1/chat/completions")
 	c.Fiber().Request().SetBody(body)
-	c.pipeToFamily(enso, "chat/completions", "openai", "enso-free", body, false, 0, "acme", nil, false, nil, time.Now())
+	c.pipeToFamily(fam, "chat/completions", "openai", freeID, body, false, 0, "acme", nil, false, nil, time.Now())
 
 	if asked[engineModel] == 0 {
 		t.Fatalf("our own compute was never asked: %v — the budget made the one unwithdrawable route unreachable", asked)
@@ -1332,30 +1255,6 @@ func TestAnUnreachableRouteIsSteppedOver(t *testing.T) {
 
 	if askedEngine == 0 {
 		t.Error("an unreachable borrowed route ended the walk; our own route is the one that cannot be withdrawn")
-	}
-}
-
-// A family whose own catalog publishes its free id serves it as a SKU — its catalog's
-// rungs, fallbacks and vision — and lists it once, from its catalog. Without it the
-// id is the platform pool's.
-func TestAFamilyThatPublishesItsFreeIDServesItItself(t *testing.T) {
-	spareFamily(t, "http://vendor.invalid", "free-route")
-	fam := otherFamily(t, "http://enso.invalid")
-	if !fam.frontDoor("enso-free") {
-		t.Fatal("a catalog that does not publish enso-free must leave it to the pool")
-	}
-	fam.byID = map[string]zenModel{"enso-free": {ID: "enso-free"}}
-	fam.ids = []string{"enso-free"}
-	if fam.frontDoor("enso-free") {
-		t.Error("a catalog that publishes enso-free must serve it itself, not the pool")
-	}
-	if !fam.serves("enso-free") {
-		t.Error("the family no longer serves the free id its catalog publishes")
-	}
-	for _, n := range fam.freeNames() {
-		if n.id == "enso-free" {
-			t.Error("enso-free is listed as a pool door while the catalog lists it too")
-		}
 	}
 }
 

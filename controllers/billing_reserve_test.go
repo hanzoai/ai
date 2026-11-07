@@ -140,12 +140,12 @@ func TestEstimateRequestCostMonotonic(t *testing.T) {
 // settling as free; charging it to an ESTIMATE refuses a call that will cost
 // $0.00, which is the free tier locked out of the free routes published for it.
 func TestFreeRouteEstimatesZero(t *testing.T) {
-	if est := estimateRequestCostCents("enso-free", 100, 8192); est != 0 {
+	if est := estimateRequestCostCents(freeID, 100, 8192); est != 0 {
 		t.Errorf("a zero-priced route must estimate zero, got %d", est)
 	}
 	const subject = "billtest/broke"
 	object.GlobalBalanceLedger.SetBalance(subject, 0)
-	if _, ok := reserveBudget(subject, estimateRequestCostCents("enso-free", 100, 8192)); !ok {
+	if _, ok := reserveBudget(subject, estimateRequestCostCents(freeID, 100, 8192)); !ok {
 		t.Error("an empty wallet must still reach a route that costs nothing")
 	}
 	// A priced route on the same empty wallet is still refused.
@@ -160,7 +160,7 @@ func TestFreeRouteEstimatesZero(t *testing.T) {
 func TestOverdrawnWalletStillRefused(t *testing.T) {
 	const subject = "billtest/overdrawn"
 	object.GlobalBalanceLedger.SetBalance(subject, -5)
-	if _, ok := reserveBudget(subject, estimateRequestCostCents("enso-free", 100, 8192)); ok {
+	if _, ok := reserveBudget(subject, estimateRequestCostCents(freeID, 100, 8192)); ok {
 		t.Error("an overdrawn wallet must be refused even on a free route")
 	}
 }

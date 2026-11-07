@@ -16,19 +16,45 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/router"
 	"github.com/hanzoai/thinking"
 	"github.com/zap-proto/zip"
 )
 
-// DepthDefault is the router.depth key for a request that states no reasoning depth.
+// DepthDefault is the router.depth key a request the router decides starts at: the
+// tier it is served at unless the router or Kai judges it needs more.
 const DepthDefault = "default"
+
+// The effort words a request states (chat `reasoning_effort`, Responses
+// `reasoning.effort`), beside the depth words router.depth is keyed by. Auto, or no
+// word at all, leaves the tier to the router; instant asks for no reasoning.
+const (
+	EffortAuto    = "auto"
+	EffortInstant = "instant"
+)
+
+// effort folds an effort word onto the ladder router.depth is keyed by: auto for no
+// word, instant for none, minimal and off, max for xhigh; any other word as written.
+func effort(word string) string {
+	switch w := strings.ToLower(strings.TrimSpace(word)); w {
+	case "", DepthDefault, EffortAuto:
+		return EffortAuto
+	case "none", "minimal", "off", EffortInstant:
+		return EffortInstant
+	case "xhigh":
+		return "max"
+	default:
+		return w
+	}
+}
 
 // foldDepth lower-cases every id and depth key of a router.depth table, so a lookup
 // reads the same row however the file or the caller spelled it.
@@ -47,68 +73,160 @@ func foldDepth(in map[string]map[string]string) map[string]map[string]string {
 	return out
 }
 
-// depthPick is what router.depth says for one request naming a router id: the row it
-// read, the depth the request states and the key it was read at, the tier there,
-// whether the family serves that tier to every caller at a price (why, when it does
-// not), and the family's free SKU, which answers whatever nothing pays a tier for.
+// depthPick is what Enso's router decided for one request naming a router id: the row
+// it read, the depth the request states and the key it read the row at, the tier
+// there, whether the family serves that tier to every caller at a price (why, when it
+// does not), and, for a request that left its effort to the router, the task the
+// router read it as and what chose the tier.
 type depthPick struct {
-	model, depth, key, sku, free string
-	row                          map[string]string
-	served                       bool
-	why                          string
+	model, depth, key, sku string
+	row                    map[string]string
+	served                 bool
+	why                    string
+	// auto: the request stated no effort, or auto, so the router chooses.
+	auto bool
+	// by is what chose the tier: "effort" (the word the request sent), "default"
+	// (the row's start), "router" (its table for the task) or "kai" (its effort
+	// decision).
+	by   string
+	task string
 }
 
-// pickDepth reads router.depth for model at the request's reasoning depth. ok is false
-// when model is no router id: it has no row, or its row's tiers belong to no family
-// with a free SKU.
+// pickDepth reads router.depth for model at the request's effort, before the router
+// weighs it. ok is false when model is no router id: it has no row, or its row's tiers
+// belong to no Hanzo family.
 func pickDepth(model string, body []byte) (depthPick, bool) {
-	cfg := GetModelConfig()
-	if cfg == nil {
+	row := depthRow(model)
+	if !routerRow(row) {
 		return depthPick{}, false
 	}
-	row := cfg.depthTable(model)
-	free := freeOf(row)
-	if free == "" {
-		return depthPick{}, false
+	p := depthPick{model: model, depth: requestDepth(body), row: row}
+	switch {
+	case effort(p.depth) == EffortAuto:
+		p.auto, p.key, p.by = true, DepthDefault, "default"
+	case row[p.depth] != "":
+		p.key, p.by = p.depth, "effort"
+	case row[effort(p.depth)] != "":
+		p.key, p.by = effort(p.depth), "effort"
+	default:
+		// A word the ladder does not hold is no effort the caller can be held to: the
+		// router decides, as for none.
+		p.auto, p.key, p.by = true, DepthDefault, "default"
 	}
-	p := depthPick{model: model, depth: requestDepth(body), row: row, free: free}
-	p.key = p.depth
-	if p.sku = row[p.key]; p.sku == "" {
-		p.key, p.sku = DepthDefault, row[DepthDefault]
-	}
-	if p.sku == "" {
-		return p, true
-	}
-	served, ok := familyLookupFresh(p.sku)
-	if !ok || !served.priced() || served.gated() {
-		p.why = p.sku + " is not a paid model open to every caller"
-		return p, true
-	}
-	p.served = true
+	p.sku = row[p.key]
+	p.check()
 	return p, true
 }
 
-// freeOf is the free SKU of the family a depth row's tiers belong to, "" when no tier
-// names a family that has one.
-func freeOf(row map[string]string) string {
-	for _, sku := range slices.Sorted(maps.Values(row)) {
-		name := FamilyOf(sku)
-		for _, f := range modelFamilies {
-			if name != "" && f.name == name && f.freeName != "" {
-				return f.freeName
-			}
-		}
+// check settles whether the tier is one the family serves to every caller at a price.
+func (p *depthPick) check() {
+	p.served, p.why = false, ""
+	if p.sku == "" {
+		return
 	}
-	return ""
+	served, ok := familyLookupFresh(p.sku)
+	if !ok || !served.priced() || served.gated() {
+		p.why = p.sku + " is not a model open to every caller"
+		return
+	}
+	p.served = true
 }
 
-// DepthRoute resolves a request naming a router id, a router.depth row (enso,
-// enso-auto, hanzo/enso): tier is the paid SKU its reasoning depth names, "" when the
-// row names none the family serves to every caller at a price; free is the family's
-// free SKU, which answers whatever nothing pays tier for. A router id is no SKU, so
-// the request is served as one or the other, never as sent. ok is false for any other
-// model.
-func DepthRoute(model string, body []byte) (tier, free string, ok bool) {
+// routerRow reports whether a depth row is a router's: some tier of it is a Hanzo
+// family's SKU.
+func routerRow(row map[string]string) bool {
+	for _, sku := range row {
+		if FamilyOf(sku) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// rank is each tier of a row by how deep it reads, shallow first.
+func rank(row map[string]string) map[string]int {
+	out := map[string]int{}
+	for i, c := range tiers(row) {
+		out[c.Model] = i
+	}
+	return out
+}
+
+// escalate lets the router move a request that left its effort to it onto a deeper
+// tier, never a shallower one: the tier the router's table (prefer, org > "*" >
+// conf) names first for the task router.Classify reads the request as, and the tier
+// Kai's effort decision names when it answers at its floor. The deepest of those and
+// the row's start serves, and what chose it is said (by). The decision is filed for
+// the router's trainer as auto's are (routingEventSink).
+func (p *depthPick) escalate(ctx context.Context, org, user, rid string, body []byte) {
+	if !p.auto {
+		return
+	}
+	at := rank(p.row)
+	take := func(sku, by string) {
+		if r, ok := at[sku]; ok && (p.sku == "" || r > at[p.sku]) {
+			p.sku, p.by = sku, by
+		}
+	}
+	ask := routerAsk(body)
+	task := router.Classify(ask.req)
+	p.task = string(task)
+	if cfg := GetModelConfig(); cfg != nil {
+		conf, _ := cfg.ConfRouterPolicy()
+		pol := router.Policy{Prefer: effectiveRouterPrefer(org, conf)}
+		if sku := pol.ForTask(task, func(id string) bool { _, ok := at[strings.ToLower(id)]; return ok }); sku != "" {
+			take(strings.ToLower(sku), "router")
+		}
+	}
+	if word, ok := kaiEffort(ctx, org, rid, ask, p.task); ok {
+		take(p.row[effort(word)], "kai")
+	}
+	p.check()
+	routingEventSink(object.RoutingEvent{
+		Owner: org, User: user, RequestId: rid, Task: p.task,
+		RequestedModel: strings.ToLower(strings.TrimSpace(p.model)), RoutedModel: p.sku, Source: "enso-" + p.by,
+	})
+}
+
+// Depth is what Enso's router decided for a request naming a router id.
+type Depth struct{ p depthPick }
+
+// RouteDepth resolves a request naming a router id (router.depth: enso, enso-auto,
+// hanzo/enso) to one tier: the one the effort it states names, or, for one that states
+// none or auto, the one the router chooses (escalate). org, user and rid are the
+// caller's, for the router's table and its ledger. ok is false for any other model.
+func RouteDepth(ctx context.Context, model string, body []byte, org, user, rid string) (*Depth, bool) {
+	p, ok := pickDepth(model, body)
+	if !ok {
+		return nil, false
+	}
+	p.escalate(ctx, org, user, rid, body)
+	return &Depth{p: p}, true
+}
+
+// Tier is the SKU the request is served at, "" when its row names none the family
+// serves to every caller at a price.
+func (d *Depth) Tier() string {
+	if d == nil || !d.p.served {
+		return ""
+	}
+	return d.p.sku
+}
+
+// Routing is the decision as the answer publishes it. unfunded is why nothing pays
+// for the tier, "" when something does.
+func (d *Depth) Routing(unfunded string) *Routing {
+	if d == nil {
+		return nil
+	}
+	return d.p.routing(unfunded)
+}
+
+// DepthRoute resolves a router id at the effort body states, the router not asked:
+// tier is the SKU it names ("" when its row names none the family serves to every
+// caller at a price) and floor the row's start, the tier a request that states no
+// effort is quoted at. ok is false for any other model.
+func DepthRoute(model string, body []byte) (tier, floor string, ok bool) {
 	p, ok := pickDepth(model, body)
 	if !ok {
 		return "", "", false
@@ -116,15 +234,15 @@ func DepthRoute(model string, body []byte) (tier, free string, ok bool) {
 	if p.served {
 		tier = p.sku
 	}
-	return tier, p.free, true
+	return tier, p.row[DepthDefault], true
 }
 
-// unpaid is model as a request no gate decided who pays for is served: a router id
-// is its family's free SKU, since nothing was asked to pay for a tier; any other model
-// is itself.
+// unpaid is model as a request no gate decided who pays for is served: a router id is
+// its row's start, served on the tier's no-cost rungs (no gate marked it otherwise);
+// any other model is itself.
 func unpaid(model string) string {
-	if free := freeOf(depthRow(model)); free != "" {
-		return free
+	if row := depthRow(model); routerRow(row) && row[DepthDefault] != "" {
+		return row[DepthDefault]
 	}
 	return model
 }
@@ -155,6 +273,9 @@ type Routing struct {
 	Inputs RoutingInputs `json:"inputs"`
 	// Reason says, in a sentence, how the inputs led to Chosen.
 	Reason string `json:"reason"`
+	// By is what chose the tier: "effort" (the request's word), "default" (the
+	// router's start), "router" (its table for the task) or "kai".
+	By string `json:"by,omitempty"`
 }
 
 // Candidate is one model a router could have chosen, and the depths that read it.
@@ -164,17 +285,20 @@ type Candidate struct {
 }
 
 // RoutingInputs are what Enso decides on: the reasoning depth the request states, the
-// table key that depth was read at, and whether the tier at that depth is paid for
-// ("funded", "unfunded", or "n/a" where no paid tier is in question).
+// table key that depth was read at, the task the router read the request as (for a
+// request that left its effort to the router), and whether the tier is paid for
+// ("funded"; "unfunded", served on its no-cost rungs; or "n/a" where no tier is in
+// question).
 type RoutingInputs struct {
 	Depth  string `json:"depth"`
 	Key    string `json:"key"`
+	Task   string `json:"task,omitempty"`
 	Policy string `json:"policy"`
 }
 
 // depthOrder is the order a table's rows are read in: shallow to deep. A key the order
 // does not name follows, by name.
-var depthOrder = []string{"off", "none", "minimal", "low", "medium", DepthDefault, "high", "xhigh", "max"}
+var depthOrder = []string{EffortInstant, "off", "none", "minimal", DepthDefault, "low", "medium", "high", "xhigh", "max"}
 
 // tiers are the models a depth row names, each with the depths that read it,
 // shallow to deep.
@@ -205,32 +329,47 @@ func tiers(row map[string]string) []Candidate {
 	return out
 }
 
-// DepthRouting is what Enso's router did for a request naming model, nil when model
-// is no router id. why is "" when the tier the request's depth names answers it, and
-// otherwise why nothing pays for that tier, so the family's free SKU answers instead.
+// DepthRouting is what Enso's router reads for a request naming model at the effort
+// it states, the router not asked; nil when model is no router id. why is "" when
+// something pays for the tier, and otherwise why nothing does, so the tier is served
+// on its no-cost rungs.
 func DepthRouting(model string, body []byte, why string) *Routing {
 	p, ok := pickDepth(model, body)
 	if !ok {
 		return nil
 	}
-	r := &Routing{Router: "enso", Chosen: p.free, Candidates: tiers(p.row),
-		Inputs: RoutingInputs{Depth: p.depth, Key: p.key, Policy: "n/a"}}
-	read := fmt.Sprintf("%s reasoning", p.depth)
-	if p.key != p.depth {
-		read = fmt.Sprintf("%s reasoning (read at %s)", p.depth, p.key)
+	return p.routing(why)
+}
+
+// routing is the decision as the answer publishes it.
+func (p depthPick) routing(why string) *Routing {
+	r := &Routing{Router: "enso", Chosen: p.sku, Candidates: tiers(p.row), By: p.by,
+		Inputs: RoutingInputs{Depth: p.depth, Key: p.key, Task: p.task, Policy: "n/a"}}
+	read := fmt.Sprintf("%s effort", p.depth)
+	if p.auto {
+		read = "the router"
+		if p.task != "" {
+			read = fmt.Sprintf("the router, reading a %s request,", p.task)
+		}
+	} else if p.key != p.depth {
+		read = fmt.Sprintf("%s effort (read at %s)", p.depth, p.key)
 	}
 	switch {
 	case p.sku == "":
-		r.Reason = fmt.Sprintf("The depth table names no model for %s, so %s serves.", read, p.free)
+		r.Reason = fmt.Sprintf("The depth table names no model for %s.", read)
 	case !p.served:
-		r.Reason = fmt.Sprintf("%s names %s, but %s, so %s serves.", read, p.sku, p.why, p.free)
+		r.Reason = fmt.Sprintf("%s names %s, but %s.", read, p.sku, p.why)
 	case why == "":
-		r.Chosen, r.Inputs.Policy = p.sku, "funded"
+		r.Inputs.Policy = "funded"
 		r.Reason = fmt.Sprintf("%s names %s, and your plan or balance pays for it.", read, p.sku)
 	default:
 		r.Inputs.Policy = "unfunded"
-		r.Reason = fmt.Sprintf("%s names %s, but %s, so %s serves at no charge.", read, p.sku, why, p.free)
+		r.Reason = fmt.Sprintf("%s names %s, but %s, so %s serves at no charge on its no-cost rungs.", read, p.sku, why, p.sku)
 	}
+	if p.by == "kai" {
+		r.Reason += " Kai judged the request needs it."
+	}
+	r.Reason = strings.ToUpper(r.Reason[:1]) + r.Reason[1:]
 	return r
 }
 
@@ -270,9 +409,8 @@ func depthListings(cfg *ModelConfig, models []modelInfo) []modelInfo {
 // routes to. ok is false when its row names no family with a free SKU or its default
 // tier is not listed.
 func depthListing(id string, row map[string]string, listed func(string) (modelInfo, bool)) (modelInfo, bool) {
-	free := freeOf(row)
 	info, ok := listed(row[DepthDefault])
-	if free == "" || !ok {
+	if !routerRow(row) || !ok {
 		return modelInfo{}, false
 	}
 	var said []string
@@ -283,16 +421,18 @@ func depthListing(id string, row map[string]string, listed func(string) (modelIn
 		}
 	}
 	info.ID, info.Name, info.Access = id, "Enso", nil
-	info.Description = fmt.Sprintf("Routes each request to one tier by the reasoning depth it asks for: %s. "+
-		"It bills at the price of the tier that answers; the price shown is a request's that states no depth. "+
-		"When nothing pays for that tier it answers on %s, at no charge, and says so.", strings.Join(said, "; "), free)
+	info.Description = fmt.Sprintf("Routes each request to one tier: %s. With no effort, or auto, the router "+
+		"chooses, starting at %s and going deeper only when it or Kai judges the request needs it. "+
+		"It bills at the price of the tier that answers; the price shown is the router's start. "+
+		"When nothing pays for a tier it answers on that tier's no-cost rungs, at no charge, and says so.",
+		strings.Join(said, "; "), row[DepthDefault])
 	return info, true
 }
 
 // listedAs is the id a listed row is priced by: a router id's default tier, any other
 // id itself.
 func listedAs(id string) string {
-	if row := depthRow(id); freeOf(row) != "" && row[DepthDefault] != "" {
+	if row := depthRow(id); routerRow(row) && row[DepthDefault] != "" {
 		return row[DepthDefault]
 	}
 	return id

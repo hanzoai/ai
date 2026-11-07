@@ -47,6 +47,7 @@ func routesAutoTo(t *testing.T, sku string) {
 // The virtual model is resolved before the gate reads the request, so the gate and
 // the plan limits judge the SKU that will serve it, never the virtual id.
 func TestTheGateJudgesTheSKUAutoRoutesTo(t *testing.T) {
+	freeRoute(t)
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/ann")
 	prev := balanceGate
@@ -67,10 +68,10 @@ func TestTheGateJudgesTheSKUAutoRoutesTo(t *testing.T) {
 		return b.Model
 	}
 
-	// A free org whose `auto` routes to a free SKU is served at $0: the plan is asked
+	// A free org whose `auto` routes to a free SKU (zen5) is served at $0: the plan is asked
 	// about the SKU auto chose (it is a Hanzo SKU) and, holding none, leaves it to the
 	// free allowance.
-	routesAutoTo(t, "enso-free")
+	routesAutoTo(t, "zen5")
 	bg.ledger.SetBalance("acme", 0)
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		asked = append(asked, q)
@@ -78,7 +79,7 @@ func TestTheGateJudgesTheSKUAutoRoutesTo(t *testing.T) {
 	})
 	for _, id := range []string{"auto", "zen-router"} {
 		p := post(id)
-		if p.status() != http.StatusOK || servedAs(p) != "enso-free" || len(asked) != 1 || asked[0].Model != "enso-free" {
+		if p.status() != http.StatusOK || servedAs(p) != "zen5" || len(asked) != 1 || asked[0].Model != "zen5" {
 			t.Errorf("free org on %s: status %d, served %q, limits asked %+v (%s)", id, p.status(), servedAs(p), asked, p.said())
 		}
 	}

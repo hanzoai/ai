@@ -114,12 +114,13 @@ func TestAPaidPlanPastItsAllowanceIsRefusedWithoutAFigure(t *testing.T) {
 // paid plan is answered by the free model there, labelled so, and asked of the
 // policy in turn. A program gets 402 paid_plan_required and the top-up page.
 func TestTheFreePlanInAnAppIsAnsweredByTheFreeModel(t *testing.T) {
+	freeRoute(t)
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel)
 	var asked []object.LimitAsk
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		asked = append(asked, q)
-		if q.Model == controllers.FreeModel {
+		if !q.Priced {
 			return nil, nil, nil
 		}
 		return nil, &object.LimitHit{Code: object.CodePaidPlan, Class: object.ClassPremium, Upgrade: "pro",
@@ -131,11 +132,14 @@ func TestTheFreePlanInAnAppIsAnsweredByTheFreeModel(t *testing.T) {
 		p.replied("X-Hanzo-Usage-Reason") != object.CodePaidPlan || p.replied("X-Hanzo-Usage") != "limited" {
 		t.Fatalf("the free plan in an app: %d fallback %q reason %q (%s)", p.status(), p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.said())
 	}
-	if !strings.Contains(p.handed(), `"model":"`+controllers.FreeModel+`"`) {
-		t.Errorf("the handler was handed %s, want the free model", p.handed())
+	if !strings.Contains(p.handed(), `"model":"enso-flash"`) || p.replied(controllers.RoutedModelHeader) != "enso-flash" {
+		t.Errorf("the handler was handed %s, want Enso's router start", p.handed())
 	}
-	if len(asked) != 2 || asked[1].Model != controllers.FreeModel || asked[1].Priced {
-		t.Errorf("the free model was not asked of the policy: %+v", asked)
+	if len(asked) != 2 || asked[1].Model != "enso-flash" || asked[1].Priced {
+		t.Errorf("the router's start was not asked of the policy, unpriced: %+v", asked)
+	}
+	if order, _, free := controllers.Order(p.left()); order != controllers.KindsFree || !free {
+		t.Errorf("limited mode marked %q free %v, want the no-cost rungs at no charge", order, free)
 	}
 
 	p = ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").with("X-Hanzo-Fallback", "allow").
@@ -259,6 +263,7 @@ func TestARefusalOffersCreditsToAPayerWhoHoldsThem(t *testing.T) {
 // model answers, the reason is insufficient_balance, and the response names the ways
 // out. A program gets its 402, whatever it asks for.
 func TestAnEmptyWalletInChatFallsBackToTheFreeModel(t *testing.T) {
+	freeRoute(t)
 	gateWith(t, 0)
 	freeModels(t, controllers.FreeModel)
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
@@ -271,8 +276,8 @@ func TestAnEmptyWalletInChatFallsBackToTheFreeModel(t *testing.T) {
 		t.Fatalf("empty wallet in chat: %d fallback %q reason %q usage %q (%s)", p.status(),
 			p.replied("X-Hanzo-Fallback"), p.replied("X-Hanzo-Usage-Reason"), p.replied("X-Hanzo-Usage"), p.said())
 	}
-	if !strings.Contains(p.handed(), `"model":"`+controllers.FreeModel+`"`) {
-		t.Errorf("the handler was handed %s, want the free model", p.handed())
+	if !strings.Contains(p.handed(), `"model":"enso-flash"`) {
+		t.Errorf("the handler was handed %s, want Enso's router start", p.handed())
 	}
 	if p.replied("X-Hanzo-Topup-Url") == "" || p.replied("X-Hanzo-Upgrade-Url") == "" {
 		t.Errorf("topup %q upgrade %q, want both ways out named", p.replied("X-Hanzo-Topup-Url"), p.replied("X-Hanzo-Upgrade-Url"))
