@@ -18,6 +18,7 @@ import (
 	stdcontext "context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/ai/controllers"
@@ -220,26 +221,39 @@ func TestAnEnsoTierIsServedOnTheRungsItsPayerPays(t *testing.T) {
 }
 
 // FAST MODE is prepaid cash's: a funded caller asking for it is served premium first
-// and fast; a plan with no cash beside it is served as it would be without it.
+// and fast; a plan with no cash beside it is served as it would be without it. It is
+// the multiple of the tier the router resolved the request to that lets it be fast,
+// not the router id the caller named: a tier with no fast mode is not offered it.
 func TestFastModeIsServedOnlyWhereCashPaysIt(t *testing.T) {
 	bg := tierGate(t)
 	paidSwitch(t)
 	object.SetLimits(func(stdcontext.Context, object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
 		return &object.LimitGrant{Plan: "max-20x", Pays: object.PaysPlan, Class: object.ClassOurs, Spend: 5_000_000_000, Settle: func(int64) {}}, nil, nil
 	})
+	isEnso = func(model string) bool { return model == "vendor/priced" || strings.HasPrefix(model, "enso-") }
 	for _, tc := range []struct {
 		name    string
 		balance int64
 		body    string
 		header  string
+		tier    string
 		order   string
 		fast    bool
 	}{
-		{"fast in the body, cash beside the plan", 500, `{"model":"enso-auto","fast":true,"messages":[]}`, "", controllers.KindsFast, true},
-		{"X-Fast, cash beside the plan", 500, `{"model":"enso-auto","messages":[]}`, "1", controllers.KindsFast, true},
-		{"fast with no cash", 0, `{"model":"enso-auto","fast":true,"messages":[]}`, "", controllers.KindsPlan, false},
-		{"no fast asked", 500, `{"model":"enso-auto","messages":[]}`, "", controllers.KindsPaying, false},
+		{"fast in the body, cash beside the plan", 500, `{"model":"enso-auto","fast":true,"messages":[]}`, "", "enso-ultra", controllers.KindsFast, true},
+		{"X-Fast, cash beside the plan", 500, `{"model":"enso-auto","messages":[]}`, "1", "enso-ultra", controllers.KindsFast, true},
+		{"fast with no cash", 0, `{"model":"enso-auto","fast":true,"messages":[]}`, "", "enso-ultra", controllers.KindsPlan, false},
+		{"no fast asked", 500, `{"model":"enso-auto","messages":[]}`, "", "enso-ultra", controllers.KindsPaying, false},
+		{"fast on a tier with no fast mode", 500, `{"model":"enso-auto","fast":true,"messages":[]}`, "", "vendor/priced", controllers.KindsPaying, false},
 	} {
+		routeDepth = func(_ stdcontext.Context, model string, _ []byte, _, _, _ string) (string, func(string) *controllers.Routing, bool) {
+			if model != "enso-auto" {
+				return "", nil, false
+			}
+			return tc.tier, func(why string) *controllers.Routing {
+				return &controllers.Routing{Router: "enso", Chosen: tc.tier, Reason: why}
+			}, true
+		}
 		bg.ledger.SetBalance("acme", tc.balance)
 		r := ask(http.MethodPost, "/v1/chat/completions").with("Authorization", "Bearer tok").body([]byte(tc.body))
 		if tc.header != "" {

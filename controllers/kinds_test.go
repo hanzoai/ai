@@ -120,6 +120,20 @@ func TestBillingFollowsTheKindThatServed(t *testing.T) {
 	}
 }
 
+// FAST MODE BILLS THE TIER THAT ANSWERED. A router id the caller named resolves to a
+// tier before the call, and the tier's multiple applies: enso-auto at max effort is
+// enso-ultra, and enso-ultra's fast answer is 4x, not the router's 2x. The converse
+// holds too: a request that named a dearer tier but was served a cheaper one pays the
+// cheaper one's multiple.
+func TestFastBillsTheTierThatAnswered(t *testing.T) {
+	for _, named := range []string{"enso-auto", "enso-ultra"} {
+		_, _, e := billed(t, kindPremium, true, func(c *ApiController) { Kinds(c.Ctx, KindsFast, true, named) })
+		if !e.Cash || !strings.HasPrefix(e.USD, "9.90") {
+			t.Errorf("named %s, answered by enso-pro: cash %v usd %q, want enso-pro's 3x, 9.9", named, e.Cash, e.USD)
+		}
+	}
+}
+
 // Fast mode's multiple is the owner's: 2x the router and Flash, 3x Pro and Max, 4x
 // Ultra; nothing else has one.
 func TestTheFastMultiples(t *testing.T) {

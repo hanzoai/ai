@@ -308,9 +308,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	}
 	// paying marks a tier something pays for: our credits, then prepaid rungs while
 	// the wallet holds cash (cash), then the no-cost rungs; fast mode puts prepaid
-	// first where cash pays its multiple.
+	// first where cash pays its multiple, the multiple of the tier the request
+	// resolved to (model), not of the router id it asked for.
 	paying := func(cash bool) {
-		fast := cash && controllers.WantsFast(c) && controllers.FastMultiple(asked) > 1
+		fast := cash && controllers.WantsFast(c) && controllers.FastMultiple(model) > 1
 		switch {
 		case fast:
 			controllers.Kinds(c, controllers.KindsFast, true, asked)
