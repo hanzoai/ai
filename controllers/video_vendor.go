@@ -196,7 +196,7 @@ func (c *ApiController) vendorClip(m zenModel, body []byte, authUser *iam.User) 
 	subject := authUser.PayerSubject(ledger)
 	hold, okHold := reserveFor(c.Context(), subject, centsUp(quote))
 	if !okHold {
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "video cost").Message))
+		c.refuseFunds(ledger, "video cost", m.ID)
 		return
 	}
 

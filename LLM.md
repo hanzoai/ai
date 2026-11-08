@@ -1571,6 +1571,22 @@ else `topup`. Served calls carry `X-Hanzo-Usage`, `X-Hanzo-Usage-Class`,
 policy decides nothing (the wallet gates). ZAP twins have no gate verdict, so they
 stay wallet-only.
 
+**One 402, one object.** Every billing refusal is `object.BillingError` — `message`, `type`
+(`billing_error`), `code`, `class`, `model`, `topup_url`, `actions` (`topup` first) — whichever
+rule refused: the wallet's (`denied`, `BillingNotice.ErrorJSON`), the policy's (`limitReached`),
+or the hold inside a handler (`ApiController.refuseFunds`: chat, images, speech, embeddings,
+video). `refuse` puts `X-Hanzo-Usage: limited`, `X-Hanzo-Usage-Reason` (the code) and
+`X-Hanzo-Topup-Url` on every 402 that did not already carry them. `insufficient_balance` is the
+code for "nothing pays this priced call from this wallet": a payer with no plan owes funds, never
+a plan. 503 `balance_unavailable` and `usage_unavailable` name no top-up. `/v1/models` rows carry
+`endpoint`, the path the model is called at (`endpointOf`: text is `/v1/chat/completions`; speech,
+video, image, embeddings, rerank, transcript and decision each have their own).
+
+**The handover is the host's switch** (`object.HandoverFunc`, `SetHandover` / `HandoverHook`).
+`fallback` hands a signed-in app's refused chat to Enso only where the hook says so for the class
+of the model asked (premium, ours, free); no hook is the handover on. Off for a class, the app
+gets the 402 a program gets.
+
 **How a refused caller raises its limit is the host's to say too** (`object.RaiseFunc`,
 `SetRaise` / `RaiseHook`). Every refusal a limit lifts — 429 `allowance_spent`
 (`freeRefused`), every `LimitHit` (`limitReached`), the wallet's 402 (`denied`) — is

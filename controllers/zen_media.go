@@ -156,7 +156,7 @@ func (c *ApiController) serveZenMedia(apiPath, model string, rawBody []byte, uni
 	m := zenMedia(c.Context(), w, apiPath, model, rawBody, units, tenant(c.Context(), orgId, authUser), c.Header("Accept"), authUser, isPremium, start)
 	switch {
 	case m.short:
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), w.ledger, "cost").Message))
+		c.refuseFunds(w.ledger, "cost", model)
 	case m.status != http.StatusOK:
 		c.zenError("openai", m.msg, m.status)
 	default:

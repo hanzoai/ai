@@ -72,12 +72,61 @@ const (
 // for a spend gate — the router balance filter and every controller reservation gate —
 // is built here, so the copy, the code, and the pay link live in exactly one place. The
 // per-surface response ENCODING (the Anthropic error body, the cloud ZAP response, the
-// casibase error envelope, the filter's raw JSON) stays at each call site; only this
-// Message+Code+Status is shared.
+// casibase error envelope) stays at each call site; the OpenAI-dialect surfaces all
+// write ErrorJSON, the one body (BillingError) a limit's refusal writes too.
 type BillingNotice struct {
 	Message string
 	Code    string
 	Status  int
+	// Pay is the wallet page that adds funds, "" where adding funds is not the remedy
+	// (a lookup that failed). With it the refusal names the page in the body
+	// (topup_url, the topup action) and, on the wire, in X-Hanzo-Topup-Url.
+	Pay string
+	// Model and Class say what was refused: the model asked for and the class the
+	// usage policy puts it in. Either may be empty for a call that names no model.
+	Model, Class string
+}
+
+// For names the model a refusal is about and its class, which the body carries so a
+// picker can say which model needs funds.
+func (n BillingNotice) For(model, class string) BillingNotice {
+	n.Model, n.Class = model, class
+	return n
+}
+
+// BillingAction is one way on from a refusal: the page that adds funds (topup), the
+// plan that raises the limit (upgrade), the wait until it reopens (wait), the choice
+// to continue with granted credit (credits), or the Hanzo model to ask instead
+// (switch).
+type BillingAction struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	URL   string `json:"url,omitempty"`
+	Plan  string `json:"plan,omitempty"`
+	Model string `json:"model,omitempty"`
+}
+
+// BillingError is the ONE error object every billing refusal carries, whichever gate
+// refused: a wallet that cannot cover the call, a plan that has not room for it, a
+// model nothing pays for. Clients switch on Code and read TopupURL and Actions to say
+// where to add funds; they never read Message for either.
+type BillingError struct {
+	Message    string          `json:"message"`
+	Type       string          `json:"type"`
+	Code       string          `json:"code"`
+	Class      string          `json:"class,omitempty"`
+	Model      string          `json:"model,omitempty"`
+	Fallback   string          `json:"fallback,omitempty"`
+	Limit      string          `json:"limit,omitempty"`
+	ResetsAt   string          `json:"resets_at,omitempty"`
+	TopupURL   string          `json:"topup_url,omitempty"`
+	UpgradeURL string          `json:"upgrade_url,omitempty"`
+	Actions    []BillingAction `json:"actions,omitempty"`
+}
+
+// TopupAction is the action that adds funds, at the wallet page pay.
+func TopupAction(pay string) BillingAction {
+	return BillingAction{Kind: "topup", Label: "Buy usage credits", URL: pay}
 }
 
 // InsufficientBalance is the denial for a KNOWN balance that cannot cover the request —
@@ -90,8 +139,9 @@ func InsufficientBalance(host, org, noun string) BillingNotice {
 	if noun != "" {
 		msg += " for the estimated " + noun
 	}
-	msg += ". Add credits to your wallet at " + PayURL(host, org)
-	return BillingNotice{Message: msg, Code: CodeInsufficientBalance, Status: http.StatusPaymentRequired}
+	pay := PayURL(host, org)
+	msg += ". Add credits to your wallet at " + pay
+	return BillingNotice{Message: msg, Code: CodeInsufficientBalance, Status: http.StatusPaymentRequired, Pay: pay}
 }
 
 // BalanceUnavailable is the denial for a balance that could NOT be verified — a
@@ -136,26 +186,44 @@ func PayURL(host, org string) string {
 	return payBaseURL
 }
 
-// billingErrorEnvelope is the OpenAI-compatible error shape the gateway's raw-HTTP
-// surfaces emit. Field order (message, type, code) matches the prior hand-written body,
-// so the wire shape is byte-for-byte the same.
-type billingErrorEnvelope struct {
-	Error struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-		Code    string `json:"code"`
-	} `json:"error"`
+// ErrorJSON renders the notice as {"error":{"message":..,"type":"billing_error","code":..}}
+// and, where adding funds is the remedy, the model, class, topup_url and topup action:
+// the same object a limit's refusal writes (BillingError). The wire "type" is always
+// billing_error (both codes are billing errors); clients switch on "code". It is
+// marshaled (not string-concatenated) so the message is always correctly JSON-escaped.
+func (n BillingNotice) ErrorJSON() []byte {
+	e := BillingError{Message: n.Message, Type: "billing_error", Code: n.Code, Class: n.Class, Model: n.Model}
+	if n.Pay != "" {
+		e.TopupURL = n.Pay
+		e.Actions = []BillingAction{TopupAction(n.Pay)}
+	}
+	b, _ := json.Marshal(struct {
+		Error BillingError `json:"error"`
+	}{e})
+	return b
 }
 
-// ErrorJSON renders the notice as {"error":{"message":..,"type":"billing_error","code":..}},
-// the shape the router balance filter writes. The wire "type" is always billing_error
-// (both codes are billing errors); clients switch on "code". It is marshaled (not string-
-// concatenated) so the message is always correctly JSON-escaped.
-func (n BillingNotice) ErrorJSON() []byte {
-	var e billingErrorEnvelope
-	e.Error.Message = n.Message
-	e.Error.Type = "billing_error"
-	e.Error.Code = n.Code
-	b, _ := json.Marshal(e)
-	return b
+// Headers are the response headers a 402 carries beside its body, so a client that
+// reads headers (a streaming relay, an app) routes on them as a client that reads the
+// body does: the usage is limited, the code that limited it, the class of the model,
+// and where funds are added. Empty for a notice that is not a 402.
+func (n BillingNotice) Headers() map[string]string {
+	if n.Status != http.StatusPaymentRequired {
+		return nil
+	}
+	return PaymentHeaders(n.Code, n.Class, n.Pay)
+}
+
+// PaymentHeaders are the headers every 402 carries: X-Hanzo-Usage and
+// X-Hanzo-Usage-Reason (the code), X-Hanzo-Usage-Class where the class is known and
+// X-Hanzo-Topup-Url where funds are added.
+func PaymentHeaders(code, class, pay string) map[string]string {
+	h := map[string]string{"X-Hanzo-Usage": "limited", "X-Hanzo-Usage-Reason": code}
+	if class != "" {
+		h["X-Hanzo-Usage-Class"] = class
+	}
+	if pay != "" {
+		h["X-Hanzo-Topup-Url"] = pay
+	}
+	return h
 }

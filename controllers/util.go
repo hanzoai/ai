@@ -121,6 +121,19 @@ func billingError(format string, a ...any) error {
 	return &apiError{status: http.StatusPaymentRequired, msg: fmt.Sprintf(format, a...), code: object.CodeInsufficientBalance}
 }
 
+// refuseFunds answers 402 insufficient_balance for a call whose hold the wallet cannot
+// cover, in the one billing error object the gate writes (object.BillingNotice:
+// code, class, model, topup_url, actions) with the top-up headers. A caller reads the
+// same refusal whether the gate in front of the handler or the hold inside it refused.
+func (c *ApiController) refuseFunds(ledger, noun, model string) {
+	n := object.InsufficientBalance(c.Host(), ledger, noun).For(model, ClassOf(model))
+	for k, v := range n.Headers() {
+		c.SetHeader(k, v)
+	}
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(n.Status, n.ErrorJSON())
+}
+
 // codeSupply names the refusal where WE cannot buy: our account with a vendor is
 // spent, or our own cash breaker is holding. The caller's wallet is untouched.
 //
