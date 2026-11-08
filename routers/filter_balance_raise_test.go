@@ -73,7 +73,7 @@ func raiseCases() []raiseCase {
 		{
 			code: object.CodeInsufficientBalance, status: http.StatusPaymentRequired, model: "anthropic/claude-opus-5.5",
 			setup:  func(*testing.T) {},
-			golden: `{"error":{"message":"Insufficient balance. Add credits to your wallet at https://hanzo.ai/pay","type":"billing_error","code":"insufficient_balance"}}`,
+			golden: `{"error":{"message":"Insufficient balance. Add credits to your wallet at https://hanzo.ai/pay","type":"billing_error","code":"insufficient_balance","class":"premium","model":"anthropic/claude-opus-5.5","topup_url":"https://hanzo.ai/pay","actions":[{"kind":"topup","label":"Buy usage credits","url":"https://hanzo.ai/pay"}]}}`,
 		},
 	}
 }

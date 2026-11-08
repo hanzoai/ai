@@ -338,7 +338,14 @@ type Raise struct {
 // refusal exactly as it would be with no hook.
 type RaiseFunc func(ctx context.Context, subject, namespace, code string) *Raise
 
+// HandoverFunc says whether a signed-in app's conversation that nothing pays for goes
+// on in Enso's router at no charge (true) or is refused with the top-up (false). class
+// is the class of the model asked for (premium, ours, free). nil leaves the handover
+// on, as it has always been: the host answers false only for the classes it refuses.
+type HandoverFunc func(ctx context.Context, namespace, class string) bool
+
 var (
+	handover      HandoverFunc
 	balanceReader BalanceReaderFunc
 	usageRecorder UsageRecorderFunc
 	tierReader    TierReaderFunc
@@ -362,6 +369,10 @@ func SetLimits(f LimitFunc) { limits = f }
 // SetSpent installs the host's native free-call admission (nil clears it).
 func SetSpent(f SpentFunc) { spent = f }
 
+// SetHandover installs the host's answer to whether a conversation nothing pays for is
+// handed to Enso's router (nil clears it, and the handover stays on).
+func SetHandover(f HandoverFunc) { handover = f }
+
 // SetRaise installs the host's answer to how a refused caller raises its limit (nil
 // clears it).
 func SetRaise(f RaiseFunc) { raise = f }
@@ -380,6 +391,9 @@ func Limits() LimitFunc { return limits }
 
 // Spent returns the installed native free-call admission, or nil when unset.
 func Spent() SpentFunc { return spent }
+
+// HandoverHook returns the installed handover answer, or nil when unset.
+func HandoverHook() HandoverFunc { return handover }
 
 // RaiseHook returns the installed raise answer, or nil when unset.
 func RaiseHook() RaiseFunc { return raise }

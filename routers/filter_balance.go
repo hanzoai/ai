@@ -404,7 +404,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				// The free plan hands a conversation in an app to Enso's router at no
 				// charge, asked again, so the tier that answers is still the policy's to
 				// admit.
-				if priced && fallback(c, path, hit.Code) && handover(c, hit.Code, namespace, hit.Upgrade, &model) {
+				if priced && fallback(c, path, hit.Code, namespace, controllers.ClassOf(model)) && handover(c, hit.Code, namespace, hit.Upgrade, &model) {
 					asked, freed, onTier = controllers.FreeModel, true, false
 					continue
 				}
@@ -536,10 +536,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	// plan cannot: Enso's router answers at no charge and says why. Asked again from
 	// the top, so it is held to the plan's windows and the free allowance.
 	if deny.Code == object.CodeInsufficientBalance && model != "" && !paidPlanned &&
-		fallback(c, path, deny.Code) && handover(c, deny.Code, namespace, "", &model) {
+		fallback(c, path, deny.Code, namespace, controllers.ClassOf(model)) && handover(c, deny.Code, namespace, "", &model) {
 		return BalanceGateFilter(c)
 	}
-	return denied(c, deny, subject, namespace, balance, path)
+	return denied(c, deny.For(model, controllers.ClassOf(model)), subject, namespace, balance, path)
 }
 
 // pastPlan asks the host what pays for a call its plan has no room for (LimitAsk.Past)
@@ -646,10 +646,15 @@ func fallBack(c *zip.Ctx, to, code, org, upgrade string) bool {
 
 // denied writes the gate's refusal. checkBalance decides WHICH: a known-insufficient
 // balance (402, add credits) or a balance it could not verify (503, retry) — both
-// fail-CLOSED.
+// fail-CLOSED. A 402 is written in the one billing error object a limit's refusal
+// writes (object.BillingError: code, class, model, topup_url, actions) with the
+// top-up headers, so a program reads the same refusal whichever rule refused.
 func denied(c *zip.Ctx, deny object.BillingNotice, subject, namespace string, balance int64, path string) error {
 	log.Info("balance_gate: deny subject=%s namespace=%s balance_cents=%d code=%s status=%d path=%s",
 		subject, namespace, balance, deny.Code, deny.Status, path)
+	for k, v := range deny.Headers() {
+		c.SetHeader(k, v)
+	}
 	return refuse(c, deny.Status, deny.Code, deny.ErrorJSON(), subject, namespace, time.Time{})
 }
 
@@ -671,6 +676,15 @@ func refuse(c *zip.Ctx, status int, code string, raw []byte, subject, namespace 
 			raw = raised(raw, r)
 			if status == http.StatusTooManyRequests && len(c.Fiber().Response().Header.Peek("X-RateLimit-Limit")) == 0 {
 				standing(c, object.Standing{Spent: true, Limit: r.Limit, Resets: reset})
+			}
+		}
+	}
+	if status == http.StatusPaymentRequired {
+		// Every 402 says on the wire what limited it and where funds are added, whichever
+		// site refused; a site that already said so (limitReached, handover) keeps its own.
+		for k, v := range object.PaymentHeaders(code, "", object.PayURL(c.Host(), namespace)) {
+			if len(c.Fiber().Response().Header.Peek(k)) == 0 {
+				c.SetHeader(k, v)
 			}
 		}
 	}
@@ -854,28 +868,9 @@ func giveBack(g *object.LimitGrant) {
 // capped model, the Hanzo model the caller may choose instead; it never serves one.
 // Where the host names the call that raises subject's limit, it rides along (refuse).
 func limitReached(c *zip.Ctx, hit *object.LimitHit, subject, org string) error {
-	type action struct {
-		Kind  string `json:"kind"`
-		Label string `json:"label"`
-		URL   string `json:"url,omitempty"`
-		Plan  string `json:"plan,omitempty"`
-		Model string `json:"model,omitempty"`
+	var body struct {
+		Error object.BillingError `json:"error"`
 	}
-	body := struct {
-		Error struct {
-			Message    string   `json:"message"`
-			Type       string   `json:"type"`
-			Code       string   `json:"code"`
-			Class      string   `json:"class,omitempty"`
-			Model      string   `json:"model,omitempty"`
-			Fallback   string   `json:"fallback,omitempty"`
-			Limit      string   `json:"limit,omitempty"`
-			ResetsAt   string   `json:"resets_at,omitempty"`
-			TopupURL   string   `json:"topup_url"`
-			UpgradeURL string   `json:"upgrade_url,omitempty"`
-			Actions    []action `json:"actions,omitempty"`
-		} `json:"error"`
-	}{}
 	pay := object.PayURL(c.Host(), org)
 	code := hit.Code
 	if code == "" {
@@ -917,21 +912,21 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, subject, org string) error {
 		}
 	}
 	if wait && body.Error.ResetsAt != "" {
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "wait", Label: "Wait until " + body.Error.ResetsAt})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "wait", Label: "Wait until " + body.Error.ResetsAt})
 	}
-	body.Error.Actions = append(body.Error.Actions, action{Kind: "topup", Label: "Buy usage credits", URL: pay})
+	body.Error.Actions = append(body.Error.Actions, object.TopupAction(pay))
 	if hit.Credits {
 		// The payer holds granted credit and has not chosen to spend it: the action
 		// turns the choice on (PUT /v1/ai/limits), it moves no money.
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "credits", Label: "Continue with credits", URL: "/v1/ai/limits"})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "credits", Label: "Continue with credits", URL: "/v1/ai/limits"})
 	}
 	if hit.Upgrade != "" {
 		body.Error.UpgradeURL = pay + "/cart?plan=" + url.QueryEscape(hit.Upgrade)
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "upgrade", Label: "Upgrade your plan", URL: body.Error.UpgradeURL, Plan: hit.Upgrade})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "upgrade", Label: "Upgrade your plan", URL: body.Error.UpgradeURL, Plan: hit.Upgrade})
 		c.SetHeader("X-Hanzo-Upgrade-Url", body.Error.UpgradeURL)
 	}
 	if code == object.CodeModelCap && hit.Fallback != "" {
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "switch", Label: "Try " + modelName(hit.Fallback), Model: hit.Fallback})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "switch", Label: "Try " + modelName(hit.Fallback), Model: hit.Fallback})
 	}
 	switch {
 	case wait && body.Error.ResetsAt != "":
@@ -1004,19 +999,26 @@ func modelName(id string) string {
 // cash pays for (paid_plan_required, or an empty wallet with no paid plan behind it),
 // from a request whose validated token was minted for a registered app
 // (controllers.Apps), which shows its person what answered (X-Hanzo-Fallback,
-// X-Hanzo-Usage: limited).
+// X-Hanzo-Usage: limited). The host may refuse a class instead (object.HandoverHook):
+// the app then gets the 402 that names the top-up, as a program does.
 //
 // Never a paid plan, on any surface: one that used what it includes waits until its
 // usage reopens or buys usage credits (limitReached). Never an API key or a token
 // delegated for model calls, whatever it sends: a program named its model, and gets
 // that model or the refusal saying what pays, never another model on a 200.
-func fallback(c *zip.Ctx, path, code string) bool {
+func fallback(c *zip.Ctx, path, code, namespace, class string) bool {
 	if !controllers.ChatPath(path) {
 		return false
 	}
 	switch code {
 	case object.CodePaidPlan, object.CodeInsufficientBalance:
-		return len(controllers.Apps(c)) > 0
+		if len(controllers.Apps(c)) == 0 {
+			return false
+		}
+		if h := object.HandoverHook(); h != nil {
+			return h(person(c), namespace, class)
+		}
+		return true
 	}
 	return false
 }

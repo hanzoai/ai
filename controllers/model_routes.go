@@ -379,6 +379,7 @@ type modelInfo struct {
 	MaxOutputTokens   int               `json:"max_output_tokens,omitempty"`  // max completion tokens (upstream catalog); lets clients cap output honestly
 	Expires           string            `json:"expires,omitempty"`            // the day the model's vendor stops serving it (2006-01-02), where it states one
 	Inputs            []string          `json:"inputs,omitempty"`             // kinds of input the model takes, in OpenRouter's words ("text", "image", "audio", "file", "video"); absent ⇒ not advertised
+	Endpoint          string            `json:"endpoint,omitempty"`           // the path the model is called at: /v1/chat/completions for a chat model (also served at /v1/responses and /v1/messages), and its own for each other kind of answer; absent ⇒ the model states no outputs. A picker for a chat turn lists the rows whose endpoint is the chat one
 	Outputs           []string          `json:"outputs,omitempty"`            // kinds of answer the model produces ("text", "audio", "image", "embeddings", "rerank"); absent ⇒ not advertised. A caller choosing a model for a chat turn needs it: the free lineup carries music models and a classifier beside the chat models, and a price alone cannot tell them apart
 	SupportsVision    bool              `json:"supports_vision,omitempty"`    // model accepts image input, as its family or a live probe states; absent ⇒ not advertised, never a fabricated yes
 	SupportsTools     bool              `json:"supports_tools,omitempty"`     // model supports function/tool calling, as its catalog or a live probe states
@@ -587,8 +588,38 @@ func (c *modelCatalog) build(cfg *ModelConfig) []modelInfo {
 		as := DecisionAs(m.ID)
 		m.Class = ClassOf(as)
 		m.Family = lineage(as, m.OwnedBy)
+		m.Endpoint = endpointOf(m.Outputs)
 	}
 	return models
+}
+
+// endpointOf is the path a model that produces outputs is called at. Text, alone or
+// beside audio or an image, is a chat; any other kind of answer has an endpoint of its
+// own, and one that states none (or an audio-only SKU, whose route is its own) has none
+// listed rather than a guess.
+func endpointOf(outputs []string) string {
+	has := func(k string) bool { return slices.Contains(outputs, k) }
+	switch {
+	case len(outputs) == 0:
+		return ""
+	case has("text"):
+		return "/v1/chat/completions"
+	case has("decision"):
+		return "/v1/decisions"
+	case has("embeddings"):
+		return "/v1/embeddings"
+	case has("rerank"):
+		return "/v1/rerank"
+	case has("speech"):
+		return "/v1/audio/speech"
+	case has("transcript"):
+		return "/v1/audio/transcriptions"
+	case has("video"):
+		return "/v1/videos/generations"
+	case has("image"):
+		return "/v1/images/generations"
+	}
+	return ""
 }
 
 // slugs is every published canonical slug that is not its row's id, lowercased, from

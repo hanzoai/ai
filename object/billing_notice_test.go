@@ -110,3 +110,32 @@ func TestErrorJSONShape(t *testing.T) {
 		}
 	}
 }
+
+// TestInsufficientBalanceNamesTheTopUp: a refusal that adds funds is the remedy for says
+// where, in the body (topup_url and the topup action) and on the wire (the headers), and
+// names the model and class it is about. One that does not (a failed lookup) names none.
+func TestInsufficientBalanceNamesTheTopUp(t *testing.T) {
+	n := InsufficientBalance("api.hanzo.ai", "hanzo", "").For("anthropic/claude-opus-5.5", ClassPremium)
+	var body struct {
+		Error BillingError `json:"error"`
+	}
+	if err := json.Unmarshal(n.ErrorJSON(), &body); err != nil {
+		t.Fatal(err)
+	}
+	pay := PayURL("api.hanzo.ai", "hanzo")
+	e := body.Error
+	if e.Code != CodeInsufficientBalance || e.TopupURL != pay || e.Model != "anthropic/claude-opus-5.5" || e.Class != ClassPremium {
+		t.Errorf("body %+v", e)
+	}
+	if len(e.Actions) != 1 || e.Actions[0] != TopupAction(pay) {
+		t.Errorf("actions %+v, want the top-up alone", e.Actions)
+	}
+	h := n.Headers()
+	if h["X-Hanzo-Usage-Reason"] != CodeInsufficientBalance || h["X-Hanzo-Topup-Url"] != pay || h["X-Hanzo-Usage"] != "limited" || h["X-Hanzo-Usage-Class"] != ClassPremium {
+		t.Errorf("headers %v", h)
+	}
+
+	if u := BalanceUnavailable(); u.Headers() != nil || strings.Contains(string(u.ErrorJSON()), "topup") {
+		t.Errorf("a failed lookup names a top-up: %v %s", u.Headers(), u.ErrorJSON())
+	}
+}

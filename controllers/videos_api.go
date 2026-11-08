@@ -225,7 +225,7 @@ func (c *ApiController) VideosGenerations() {
 	// the job is abandoned.
 	hold, okReserve := reserveFor(c.Context(), subject, videoCostCents(req.Model, 1))
 	if !okReserve {
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "video cost").Message))
+		c.refuseFunds(ledger, "video cost", req.Model)
 		return
 	}
 

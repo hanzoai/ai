@@ -2135,7 +2135,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		est := estimateRequestCostCents(request.Model, max(measured, len(c.Body())/4), request.MaxTokens)
 		var ok bool
 		if hold, wide, ok = c.widthFor(authUser, subject, est); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message))
+			c.refuseFunds(ledger, "request cost", request.Model)
 			return
 		}
 	}
