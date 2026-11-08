@@ -24,7 +24,7 @@ import (
 // for the catalog it serves (universe charts/app/files/enso/catalog.yaml, 2026-10-15):
 // each paid model's arms through OpenRouter's credit, Luna's long prompt's price, and
 // a free model on the free lane; a disabled model is not read.
-const servedRoute = `{"margin":"3.0","providers":{"openrouter":{"base":"https://openrouter.ai/api/v1","funding":"prepaid"},"free":{"base":"https://openrouter.ai/api/v1"}},
+const servedRoute = `{"margin":"3.0","providers":{"openrouter":{"base":"https://openrouter.ai/api/v1","funding":"prepaid"},"anthropic":{"base":"https://api.anthropic.com/v1","funding":"prepaid"},"free":{"base":"https://openrouter.ai/api/v1"}},
 "models":{
  "enso-flash":{"route":[
    {"provider":"openrouter","upstream":"openai/gpt-6-luna","ctx":900000,"cost":{"in":"0.11","out":"0.55","cache_read":"0.011","cache_write":"0.1375"},"long":{"above":272000,"in":"0.2","out":"0.75","cache_read":"0.02","cache_write":"0.25"}},
@@ -32,12 +32,16 @@ const servedRoute = `{"margin":"3.0","providers":{"openrouter":{"base":"https://
  "enso-pro":{"route":[
    {"provider":"openrouter","upstream":"openai/gpt-6.1-sol","ctx":272000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"2.75"}},
    {"provider":"openrouter","upstream":"google/gemini-4-argon","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"0.1875"}},
-   {"provider":"openrouter","upstream":"anthropic/claude-sonnet-5.5","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"2.75"}}]},
+   {"provider":"openrouter","upstream":"anthropic/claude-sonnet-5.5","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"2.75"}},
+   {"provider":"free","upstream":"vendor/x:free","ctx":256000,"cost":{"in":"0","out":"0"}}]},
+ "enso-max":{"route":[
+   {"provider":"anthropic","upstream":"claude-opus-5-5","ctx":1000000,"cost":{"in":"4.00","out":"20.00","cache_read":"0.20","cache_write":"5.00"}},
+   {"provider":"openrouter","upstream":"anthropic/claude-sonnet-5.5","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"2.75"}},
+   {"provider":"openrouter","upstream":"google/gemini-4-argon","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"0.1875"}}]},
  "enso-ultra":{"route":[
    {"provider":"openrouter","upstream":"anthropic/claude-sonnet-5.5","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"2.75"}},
    {"provider":"openrouter","upstream":"anthropic/claude-opus-5.5","ctx":1000000,"cost":{"in":"4.40","out":"22.00","cache_read":"0.22","cache_write":"5.50"}},
    {"provider":"openrouter","upstream":"google/gemini-4-argon","ctx":1000000,"cost":{"in":"2.20","out":"11.00","cache_read":"0.11","cache_write":"0.1875"}}]},
- "enso-free":{"route":[{"provider":"free","upstream":"vendor/x:free","ctx":256000,"cost":{"in":"0","out":"0"}}]},
  "enso-gone":{"disabled":true,"route":[{"provider":"openrouter","upstream":"vendor/y","cost":{"in":"9","out":"9"}}]}}}`
 
 // ensoService is the enso family on httptest: discovery, the admin catalog behind
@@ -84,9 +88,9 @@ func (e *ensoService) serve(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"object":"list","paid":true,"data":[
  {"id":"enso-flash","object":"model","owned_by":"hanzo","mode":"chat","context_window":900000,"pricing":{"input":"0.11","output":"0.55"}},
  {"id":"enso-pro","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"3.3","output":"16.5"}},
+ {"id":"enso-max","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"4.3","output":"21.5"}},
  {"id":"enso-ultra","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"5.236","output":"26.18"}},
- {"id":"enso-rogue","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"9","output":"9"}},
- {"id":"enso-free","object":"model","owned_by":"hanzo","mode":"chat","context_window":256000,"pricing":{"input":"0","output":"0"}}]}`)
+ {"id":"enso-rogue","object":"model","owned_by":"hanzo","mode":"chat","context_window":1000000,"pricing":{"input":"9","output":"9"}}]}`)
 	case "/v1/chat/completions":
 		e.asked.Add(1)
 		var in struct {
@@ -233,19 +237,20 @@ func TestAResoldModelBillsTheVendorsFeeAndThePlatformsOnTop(t *testing.T) {
 	}
 }
 
-// Each Enso model's price is its typical arm's list price times 2 to 3, fixed, and at
-// most 60% of Claude Fable's and GPT-6 Astra's ($10 / $50).
-func TestEnsoPricesAreAMultipleOfTheirTypicalArm(t *testing.T) {
+// Each Enso model's price is the family catalog's quote: its dearest priced arm's list
+// price times the tier's margin, and every one is well under Claude Fable's and GPT-6
+// Astra's ($10.55 / $52.75), at most half of either.
+func TestEnsoPricesAreTheCatalogsQuotes(t *testing.T) {
 	want := map[string][4]string{
 		"enso-flash": {"0.33", "1.65", "0.033", "0.4125"},
-		"enso-pro":   {"4.4", "22", "0.22", "5.5"},
-		"enso-ultra": {"5.5", "27.5", "0.275", "6.875"},
+		"enso-pro":   {"3.3", "16.5", "0.165", "4.125"},
+		"enso-max":   {"4.3", "21.5", "0.215", "5.375"},
+		"enso-ultra": {"5.236", "26.18", "0.2618", "6.545"},
 	}
 	if len(ensoPrices) != len(want) {
 		t.Fatalf("%d models priced, want %d", len(ensoPrices), len(want))
 	}
-	two, three := decimal.New(2, 0), decimal.New(3, 0)
-	frontier := dollars("10", "50", "0", "0")
+	frontier := dollars("10.55", "52.75", "0", "0")
 	for id, w := range want {
 		p, ok := ensoPrices[id]
 		if !ok {
@@ -257,11 +262,18 @@ func TestEnsoPricesAreAMultipleOfTheirTypicalArm(t *testing.T) {
 				t.Errorf("%s class %d = %s, want %s", id, i, got.String(), w[i])
 			}
 		}
-		if p.multiple.Cmp(two) < 0 || p.multiple.Cmp(three) > 0 {
-			t.Errorf("%s sells at %s times its typical arm, outside 2 to 3", id, p.multiple.String())
+		if p.multiple.Cmp(decimal.New(1, 0)) <= 0 {
+			t.Errorf("%s sells at %s times its arm, at or under cost", id, p.multiple.String())
 		}
-		if c.in.Mul(decimal.New(10, 0)).Cmp(frontier.in.Mul(decimal.New(6, 0))) > 0 || c.out.Mul(decimal.New(10, 0)).Cmp(frontier.out.Mul(decimal.New(6, 0))) > 0 {
-			t.Errorf("%s at %s / %s is not well under Fable's and Astra's $10 / $50", id, c.in.String(), c.out.String())
+		if c.in.Mul(decimal.New(2, 0)).Cmp(frontier.in) > 0 || c.out.Mul(decimal.New(2, 0)).Cmp(frontier.out) > 0 {
+			t.Errorf("%s at %s / %s is over half of Fable's and Astra's", id, c.in.String(), c.out.String())
+		}
+	}
+	// Max sits between Pro and Ultra in every class.
+	pro, max, ultra := ensoPrices["enso-pro"].price(), ensoPrices["enso-max"].price(), ensoPrices["enso-ultra"].price()
+	for i, c := range [][3]decimal.Decimal{{pro.in, max.in, ultra.in}, {pro.out, max.out, ultra.out}, {pro.read, max.read, ultra.read}, {pro.write, max.write, ultra.write}} {
+		if c[0].Cmp(c[1]) >= 0 || c[1].Cmp(c[2]) >= 0 {
+			t.Errorf("class %d: pro %s, max %s, ultra %s; want max between", i, c[0].String(), c[1].String(), c[2].String())
 		}
 	}
 }
@@ -275,7 +287,7 @@ func TestTheServedRoutesFitUnderTheirPrices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"enso-flash", "enso-pro", "enso-ultra", "enso-free"} {
+	for _, id := range []string{"enso-flash", "enso-pro", "enso-max", "enso-ultra"} {
 		m, ok := ensoFam.lookup(id)
 		if !ok {
 			t.Fatalf("%s not listed", id)
@@ -293,8 +305,8 @@ func TestTheServedRoutesFitUnderTheirPrices(t *testing.T) {
 }
 
 // The family's listing carries its own price: a model priced here lists and bills
-// at it whatever its service quotes, a free model stays free, and a model the service
-// charges for that has no price here is neither listed nor served.
+// at it whatever its service quotes, and a model the service charges for that has no
+// price here is neither listed nor served.
 func TestTheListingCarriesTheFixedPrice(t *testing.T) {
 	withCatalog(t, "probe-rates")
 	ensoServiceAt(t)
@@ -306,9 +318,6 @@ func TestTheListingCarriesTheFixedPrice(t *testing.T) {
 	if _, ok := ensoFam.lookup("enso-rogue"); ok {
 		t.Error("a model with no price here was listed")
 	}
-	if free, ok := ensoFam.lookup("enso-free"); !ok || free.priced() {
-		t.Errorf("the free model = %+v, %v", free, ok)
-	}
 	var listed *modelInfo
 	models := listAvailableModels()
 	for i := range models {
@@ -317,16 +326,15 @@ func TestTheListingCarriesTheFixedPrice(t *testing.T) {
 			listed = &models[i]
 		case "enso-rogue":
 			t.Error("/v1/models lists a model with no price")
-		case "enso-free":
-			if p := models[i].Pricing; p == nil || p.InputPerMillion != 0 || !models[i].Free {
-				t.Errorf("the free model lists %+v", p)
-			}
 		}
 	}
-	if listed == nil || listed.Pricing == nil || listed.Pricing.Variable || listed.Pricing.InputPerMillion != 4.4 || listed.Pricing.OutputPerMillion != 22 {
-		t.Fatalf("enso-pro lists %+v, want 4.4 / 22, fixed", listed)
+	if listed == nil || listed.Pricing == nil || listed.Pricing.Variable || listed.Pricing.InputPerMillion != 3.3 || listed.Pricing.OutputPerMillion != 16.5 {
+		t.Fatalf("enso-pro lists %+v, want 3.3 / 16.5, fixed", listed)
 	}
-	if p, ok := ensoFam.modelPrice("enso-ultra"); !ok || p.InputPerMillion != 5.5 || p.OutputPerMillion != 27.5 {
+	if p, ok := ensoFam.modelPrice("enso-max"); !ok || p.InputPerMillion != 4.3 || p.OutputPerMillion != 21.5 {
+		t.Errorf("enso-max holds at %+v, want its price", p)
+	}
+	if p, ok := ensoFam.modelPrice("enso-ultra"); !ok || p.InputPerMillion != 5.236 || p.OutputPerMillion != 26.18 {
 		t.Errorf("enso-ultra holds at %+v, want its price", p)
 	}
 }
@@ -423,7 +431,7 @@ func TestTheGuardSendsNothingItCannotCheckOrThatCostsMore(t *testing.T) {
 func TestTheRouteIsReadUnderTheAdminTokenAndKept(t *testing.T) {
 	ensoServiceAt(t)
 	rs, err := ensoFam.route(context.Background())
-	if err != nil || len(rs["enso-pro"]) != 3 {
+	if err != nil || len(rs["enso-pro"]) != 4 || len(rs["enso-max"]) != 3 {
 		t.Fatalf("route = %v, %v", rs, err)
 	}
 	if _, ok := rs["enso-gone"]; ok {
@@ -484,8 +492,10 @@ func TestARouterIdListsAtItsDefaultTiersPrice(t *testing.T) {
 			t.Errorf("%s holds %d, want enso-flash's 900000, the narrowest of its tiers", id, m.ContextWindow)
 		}
 	}
-	if m := rows["enso-free"]; !m.Free {
-		t.Errorf("enso-free lists %+v, want free", m)
+	for id := range rows {
+		if strings.Contains(id, "free") {
+			t.Errorf("%s is listed", id)
+		}
 	}
 }
 
@@ -495,16 +505,16 @@ func TestThePriceListStatesOneNumberAModel(t *testing.T) {
 	orFees(t)
 	ensoServiceAt(t)
 	b := Prices(context.Background(), false)
-	if len(b.Prices) != 3 || b.Prices[0].Model != "enso-flash" || b.Prices[0].Price.Input != 0.33 || b.Prices[2].Price.Output != 27.5 ||
+	if len(b.Prices) != 4 || b.Prices[0].Model != "enso-flash" || b.Prices[0].Price.Input != 0.33 || b.Prices[1].Model != "enso-max" || b.Prices[3].Price.Output != 26.18 ||
 		b.Prices[1].Typical != "" || b.Prices[1].Arms != nil || b.Ledger != nil {
 		t.Fatalf("the price list = %+v", b)
 	}
-	if len(b.Free) != 1 || b.Free[0] != "enso-free" {
-		t.Errorf("free = %v, want [enso-free]", b.Free)
+	if len(b.Free) != 0 {
+		t.Errorf("free = %v, want none: the family names no model for a price", b.Free)
 	}
 	admin := Prices(context.Background(), true)
-	ultra := admin.Prices[2]
-	if ultra.Typical != "anthropic/claude-sonnet-5.5" || ultra.Multiple != "2.5" || ultra.List == nil || ultra.List.Input != 2.2 ||
+	ultra := admin.Prices[3]
+	if ultra.Typical != "anthropic/claude-opus-5.5" || ultra.Multiple != "1.19" || ultra.List == nil || ultra.List.Input != 4.4 ||
 		len(ultra.Arms) != 3 || ultra.Arms[1].Over != nil || ultra.Arms[1].Fee != "5.5" || ultra.Arms[1].Kind != reseller || ultra.Refused != "" {
 		t.Errorf("a SuperAdmin's enso-ultra = %+v", ultra)
 	}

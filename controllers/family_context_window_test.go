@@ -164,14 +164,13 @@ func TestMergeModelsListsOneRowPerID(t *testing.T) {
 
 	fam := &modelFamily{
 		name: "zen", prefix: "zen", owner: "zenlm", urlKey: "TEST_FAM_ZEN_URL",
-		freeName: "zen-free",
 	}
 	fam.loaded = true
 	fam.fetchedAt = time.Now() // fresh, and byID is empty — the empty-lineup path
 
 	// The base already carries the id, as it does when an earlier family or the
 	// priced catalog listed it.
-	base := []modelInfo{{ID: "zen-free", Object: "model", OwnedBy: "hanzo"}}
+	base := []modelInfo{{ID: "zen6", Object: "model", OwnedBy: "zenlm"}}
 	out := fam.mergeModels(base)
 
 	seen := map[string]int{}

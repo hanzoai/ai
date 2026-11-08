@@ -1483,46 +1483,52 @@ read and written at the Go zen's `/v1/admin/zen/*`, enso at the engine's `/v1/ad
   for cloud's plane (`ai_routing`, `ai_routing_apply`), which the Enso policy registry
   (cloud `apps/train` `/v1/train/policies`) promotes through.
 
-## Enso's router: one tier a request, enso-free when nothing pays (`depth_route.go`, `routers/filter_balance.go`)
+## Enso's router and its rungs (`depth_route.go`, `effort.go`, `kinds.go`, `routers/filter_balance.go`)
 
-Owner, 2026-10-15: only `enso-free` is free. `enso`, `enso-auto` and `hanzo/enso` are the
-paid router, and they are ai's, not the engine's: the engine serves leaf SKUs only, and
-universe's enso catalog lists none of the three.
+Owner, 2026-11-07: five Enso models are sold, enso-auto, enso-flash, enso-pro, enso-max
+and enso-ultra, and nothing is named or labelled free. `enso`, `enso-auto` and
+`hanzo/enso` are ai's router; the engine serves the four tiers.
 
-- **The router is `router.depth`** (cloud-api-models, universe `values/hanzo/cloud.yaml`):
-  a row per router id, reasoning depth → tier. Up to low (and a request that states no
-  depth) enso-flash, medium and high enso-pro, xhigh and max enso-ultra. The depth is the
-  request's own (`requestDepth`: `reasoning_effort`, `reasoning.effort`, a token budget,
-  `thinking`). No learned router is in the path: the engine's `POST /route` is empty in
-  `conf/models.yaml` and its policy serves nothing in production.
-- **Resolved before anything prices it** (`BalanceGateFilter`): a request naming a router
-  id is rewritten to its tier and then gated, held, seated, billed and guarded exactly as
-  a request naming the tier, at the tier's fixed price (`ensoPrices`). Explicit tiers and
-  enso-free are unchanged.
-- **Nothing pays the tier, enso-free answers at $0, never a refusal for want of
-  payment**: the family serves the tier to no one at a price; a program in this process
-  made the call (`object.Caller`: its meter charges for the id it named); with no usage
-  policy, the wallet cannot cover it; with one, the paid lane's switch is off, the policy
-  refuses the tier or names nothing, names a payer the paid lane does not seat (the free
-  plan, a free cap, granted credit: `paid_plan_required`), names prepaid cash the wallet
-  cannot cover (`insufficient_balance`), or the paid lane has no room (`paid_lane_full`).
-  A paid plan's included usage and a payer's own prepaid cash pay, plan or none (`owes`).
-  What admitting the tier took is given back; a refusal enso-free meets as well (a
-  request window, the free allowance) is enso-free's.
-- **The answer says so**: `X-Routed-Model` names what answered (the tier or enso-free);
-  the chat envelope's `routing` object says `router: enso`, `chosen`, the depth and key it
-  read, `policy` funded | unfunded | n/a, and a sentence of why. A refusal for want of
-  payment adds limited mode's headers (`fallBack`): `X-Hanzo-Fallback: enso-free`,
-  `X-Hanzo-Usage-Reason` (the code), `X-Hanzo-Usage: limited`, `X-Hanzo-Topup-Url`. The
-  usage row's `model` is the SKU that answered.
-- **ZAP** has no gate, so its chat, responses and messages handlers serve a router id as
-  enso-free (`unpaid`).
-- **Listed** (`depthListings`): each router id is a row of `/v1/models`, its default
-  tier's row and price (`listedAs`) under its own id, the narrowest window of its tiers,
-  and a description of where it routes. Never `free`.
-- Tests: `TestARouterIdIsServedOnItsTierOrItsFreeSKU` (every payer case, the switch, a
-  program's call, a tier named outright), `TestDepthRoute*`, `TestDepthRouting*`,
-  `TestTheRouterIdsAreListed`, `TestARouterIdListsAtItsDefaultTiersPrice`.
+- **The effort ladder** (`router.depth`, universe `values/hanzo/cloud.yaml`): chat
+  `reasoning_effort` / Responses `reasoning.effort` (or a token budget, or `thinking`,
+  `requestDepth`). `instant` (none, minimal, off) enso-flash with thinking off, `low`
+  enso-flash, `medium` enso-pro, `high` enso-max, `max` (xhigh) enso-ultra. Omitted,
+  `auto`, or a word the ladder lacks: the router decides (`escalate`).
+- **The router** starts at the row's `default` (enso-flash) and only ever goes deeper:
+  `router.Classify` reads the request's task and the router's prefer table (org > "*" >
+  conf, trained by the router trainer) names its tier; Kai is asked one `effort` choice
+  over the ladder's words (`effort.go`: `POST {KAI_URL}/v1/decisions`, state = the last
+  user turn ≤ 4,000 chars, turns, tools, tokens, media, task) and counts at 0.9 within
+  600 ms. The deepest wins; `routing.by` says which (effort, default, router, kai). Each
+  decision is a RoutingEvent (`RequestedModel` the router id, `Source` enso-<by>).
+- **Every Enso tier is served to every caller; who pays orders its rungs** (`kinds.go`,
+  `X-Hanzo-Classes` to the engine): paying `ours,premium,free` (premium only while the
+  wallet holds cash; a plan with none `ours,free`), nothing paying `free,ours` at no
+  charge (`Free`, a covering free grant), fast `premium,ours,free` plus `X-Hanzo-Fast`.
+  An unmarked request is `free,ours`. A refusal for want of payment serves the tier on its
+  no-cost rungs in limited mode (`fallBack` naming the tier), never another model;
+  `prepaid_required` (fast with no money of the payer's own) is refused.
+- **Billing follows the rung** (`recordFamilyUsage`): the engine's `X-Hanzo-Class` says
+  what served. ours bills the grant (plan usage at list, or the wallet); premium, and any
+  fast answer, settle the plan at nothing and debit the wallet's cash at list
+  (UsageEvent Plan false, Cash true) on every plan; free, and any freed request, bill
+  nothing. Fast bills `FastMultiple` of the price by the id the caller named: 2x enso-auto
+  and Flash, 3x Pro and Max, 4x Ultra. `UsageEvent.Lane` and `LimitAsk.Lane` (`LaneOf`)
+  name the kind for the host.
+- **Names**: an answer to a router id is named for it (`mark.model`), the tier in
+  `X-Routed-Model` and `routing`; a stand-in for a Hanzo SKU is named for the SKU asked.
+  The pool's id (`free`) and every no-cost model are fallback rungs: never listed, and a
+  caller naming one is refused 404 (`Unsold`). Limited mode and the public lane serve
+  enso-auto's start on its no-cost rungs (`FreeModel`, `freeDoor`).
+- **Prices** (`ensoPrices`, the catalog's quotes): flash 0.33 / 1.65 / 0.033 / 0.4125,
+  pro 3.30 / 16.50 / 0.165 / 4.125, max 4.30 / 21.50 / 0.215 / 5.375, ultra 5.236 / 26.18 /
+  0.2618 / 6.545.
+- Tests: `TestTheEffortLadderNamesEveryTier`, `TestTheRouterEscalatesOnlyWhatItJudgesNeedsMore`,
+  `TestKaiEscalatesAtItsFloorAndNeverDown`, `TestASlowKaiIsNotWaitedFor`,
+  `TestAnEnsoTierIsServedOnTheRungsItsPayerPays`, `TestFastModeIsServedOnlyWhereCashPaysIt`,
+  `TestTheNoCostPoolIsNoModelACallerNames`, `TestBillingFollowsTheKindThatServed`,
+  `TestTheFastMultiples`, `TestEnsoMaxQuote`, `TestEnsoPricesAreTheCatalogsQuotes`,
+  `TestNoFreeIdIsListed`.
 
 ## Who pays is the host's call — `object.Limits` (`routers/filter_balance.go`)
 

@@ -220,8 +220,17 @@ func expand(registered string) []string {
 // its success. A client generated from the document then takes the bounds as
 // arguments of the call rather than as headers a caller has to know to set.
 func budget(o map[string]any) {
+	// The effort and fast-mode prose, on the operation, so every client generated from
+	// the document can send both.
+	desc, _ := o["description"].(string)
+	o["description"] = strings.TrimSpace(desc + "\n\n" + effortProse)
 	params, _ := o["parameters"].([]any)
 	o["parameters"] = append(params,
+		map[string]any{
+			"name": "X-Fast", "in": "header", "required": false,
+			"description": "Fast mode, as the body's `fast`: \"1\" or \"true\".",
+			"schema":      map[string]any{"type": "string"},
+		},
 		map[string]any{
 			"name": controllers.MaxCostHeader, "in": "header", "required": false,
 			"description": "The most this request may cost, in USD per 1,000 tokens. Routing picks only " +
@@ -264,6 +273,16 @@ func budget(o map[string]any) {
 	}
 }
 
+// effortProse is how a routed call states the reasoning it asks for, and fast mode.
+const effortProse = "Reasoning effort is `reasoning_effort` (Responses: `reasoning.effort`). Send `auto`, or nothing, " +
+	"and enso-auto's router decides: it starts at Enso Flash and moves to a deeper tier only when the router or Kai " +
+	"judges the request needs it. The ladder: `instant` (no reasoning; `none` and `minimal` read instant) serves " +
+	"enso-flash with thinking off, `low` enso-flash, `medium` enso-pro, `high` enso-max, `max` enso-ultra (`xhigh` " +
+	"reads max). On a tier named outright the effort sets only how hard it thinks, and `instant` turns thinking off. " +
+	"Fast mode is `fast: true` (or `X-Fast: 1`): billed from prepaid balance on every plan at 2x the price on " +
+	"enso-auto and enso-flash, 3x on enso-pro and enso-max, 4x on enso-ultra, it asks prepaid rungs first, and a " +
+	"payer with no money of its own is refused prepaid_required."
+
 // routingSchema is controllers.Routing: what a router decided for one request, and why.
 var routingSchema = map[string]any{
 	"type": "object",
@@ -273,6 +292,8 @@ var routingSchema = map[string]any{
 	"required": []any{"router", "chosen", "candidates", "inputs", "reason"},
 	"properties": map[string]any{
 		"router": map[string]any{"type": "string", "description": "The router that decided: enso."},
+		"by": map[string]any{"type": "string", "enum": []any{"effort", "default", "router", "kai"},
+			"description": "What chose the tier: the request's effort, the router's start, its table for the task, or Kai's effort decision."},
 		"chosen": map[string]any{"type": "string", "description": "The model the request is served at."},
 		"candidates": map[string]any{
 			"type":        "array",
@@ -292,7 +313,8 @@ var routingSchema = map[string]any{
 			"properties": map[string]any{
 				"depth":  map[string]any{"type": "string", "description": "The reasoning depth the request states; default when it states none."},
 				"key":    map[string]any{"type": "string", "description": "The table row that depth was read at."},
-				"policy": map[string]any{"type": "string", "enum": []any{"funded", "unfunded", "n/a"}, "description": "Whether the caller's plan or credit pays for the paid model at that depth."},
+				"task":   map[string]any{"type": "string", "description": "The task the router read a request that left its effort to it as."},
+				"policy": map[string]any{"type": "string", "enum": []any{"funded", "unfunded", "n/a"}, "description": "Whether the caller's plan or balance pays for the tier; unfunded is served on its no-cost rungs at no charge."},
 			},
 		},
 		"reason": map[string]any{"type": "string", "description": "How the inputs led to chosen, in a sentence."},

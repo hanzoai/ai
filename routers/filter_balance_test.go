@@ -477,6 +477,7 @@ func TestBalanceGateFilterTransientReturns503(t *testing.T) {
 // so does anything this cannot price, because a gate that cannot read the price must
 // not assume it is free.
 func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
+	freeRoute(t)
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
 	bg.ledger.SetBalance("acme", 0) // no wallet at all
@@ -495,7 +496,7 @@ func TestAZeroPricedModelIsNotRefusedByTheWalletGate(t *testing.T) {
 		return p.status()
 	}
 
-	if code := post(`{"model":"enso-free","messages":[]}`); code == http.StatusPaymentRequired {
+	if code := post(`{"model":"zen5","messages":[]}`); code == http.StatusPaymentRequired {
 		t.Error("a route priced at zero was 402'd at $0 balance — the free tier cannot reach the free routes")
 	}
 	if code := post(`{"model":"gpt-4o","messages":[]}`); code != http.StatusPaymentRequired {

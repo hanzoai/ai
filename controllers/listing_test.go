@@ -328,8 +328,8 @@ func TestTheCatalogPublishesEveryRateExactly(t *testing.T) {
 	if o := h.Pricing.Overrides[0]; o["prompt"] != "0.0000006" || fmt.Sprint(o["min_prompt_tokens"]) != "100000" {
 		t.Errorf("haiku's override listed as %v", o)
 	}
-	g := byID["google/gemma-4-31b-it:free"]
-	if g.Expires != "2026-12-31" || g.Premium {
+	// A no-cost model is a fallback rung, never a listed model.
+	if g, ok := byID["google/gemma-4-31b-it:free"]; ok {
 		t.Errorf("gemma listed as %+v", g)
 	}
 }

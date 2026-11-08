@@ -77,6 +77,11 @@ type UsageEvent struct {
 	Class string
 	// Units is what the call consumed in its model's unit: tokens, in and out.
 	Units int64
+	// Lane is the kind of rung that served the call (LaneOurs, LanePremium,
+	// LaneFree): what our own credits served is the plan's usage, what a prepaid
+	// account served is billed at list from the wallet's cash (Plan false, Cash true)
+	// on every plan, and the no-cost pool bills nothing.
+	Lane string
 	// CostUSD is what the call cost us upstream, exact decimal USD; empty when the
 	// provider states no cost. A free call has a cost too, and it is ours.
 	CostUSD string
@@ -137,7 +142,21 @@ type LimitAsk struct {
 	// at once). The host decides what pays past the plan, exactly as for a plan whose
 	// included usage is used, and counts nothing against the plan.
 	Past bool
+	// Lane is the kind of rung the model's route serves on: LaneOurs (our own
+	// credits, NVIDIA's or our engine), LanePremium (a prepaid upstream account) or
+	// LaneFree (the no-cost pool); "" for an Enso tier, whose rungs of every kind the
+	// gate orders by who pays and whose answer names the kind that served
+	// (UsageEvent.Lane). What our own credits serve is the plan's usage; what a
+	// prepaid account serves is billed at list from prepaid on every plan.
+	Lane string
 }
+
+// The kinds of rung a model's answer is served on (LimitAsk.Lane, UsageEvent.Lane).
+const (
+	LaneOurs    = "ours"
+	LanePremium = "premium"
+	LaneFree    = "free"
+)
 
 // The classes a model is sold in. A plan includes usage of the first two, measured
 // at list price; the free class is the free lane.
@@ -223,6 +242,9 @@ const (
 	CodePaidPlan      = "paid_plan_required"
 	CodeFreePlanCap   = "free_plan_cap"
 	CodeModelCap      = "model_cap"
+	// CodePrepaid refuses a request only the payer's own money pays for (fast mode)
+	// from a payer who has none of its own.
+	CodePrepaid = "prepaid_required"
 )
 
 // LimitFunc decides who pays for one request before it is served. The host
