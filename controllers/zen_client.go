@@ -3029,9 +3029,10 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 				nano = min(nano, zm.retailNano(t))
 			}
 		}
-		// Fast mode bills its multiple of the price, by the model the caller named.
+		// Fast mode bills its multiple of the price, by the model that answered: the
+		// tier a router id resolved to, not the router id the caller named.
 		if sv.fast {
-			if x := FastMultiple(w.kinds.named); x > 1 {
+			if x := FastMultiple(model); x > 1 {
 				nano *= x
 			}
 		}
