@@ -366,8 +366,10 @@ func (p pass) call(ctx context.Context, org string, row *object.Provider, c cand
 			}
 			// A 200 whose body is an error and no answer is the vendor refusing, and is
 			// moved like any refusal. Delivered, it would reach the caller as a success
-			// and be billed at the prompt it never answered.
-			if refusedIn(b) {
+			// and be billed at the prompt it never answered. So is a 200 whose body is
+			// not a JSON object at all — an HTML error page or plain text behind the
+			// status — which can never be an answer in the dialect we relay.
+			if refusedIn(b) || !isJSONObject(b) {
 				return declined(errorStatus(b), b)
 			}
 			whole = b
@@ -661,6 +663,15 @@ func refusedIn(body []byte) bool {
 		Choices json.RawMessage `json:"choices"`
 	}
 	return json.Unmarshal(body, &f) == nil && present(f.Error) && !present(f.Choices)
+}
+
+// isJSONObject reports a body that could be one of our answers at all: a JSON
+// object at the top level. An HTML error page or plain text sent behind a 200 —
+// a proxy's verdict wearing the vendor's status — is not, and must move to the
+// next provider instead of reaching the caller as a billed success.
+func isJSONObject(body []byte) bool {
+	t := bytes.TrimLeft(body, " \t\r\n")
+	return len(t) > 0 && t[0] == '{'
 }
 
 // provenUnchanged holds a strict request to the body its first attempt would send,
