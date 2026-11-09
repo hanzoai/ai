@@ -67,8 +67,8 @@ func (p *BaichuanModelProvider) calculatePrice(modelResult *ModelResult, lang st
 	}
 
 	if priceItem, ok := priceTable[p.subType]; ok {
-		inputPrice := getPrice(modelResult.TotalTokenCount, priceItem[0])
-		outputPrice := getPrice(modelResult.TotalTokenCount, priceItem[1])
+		inputPrice := getPrice(modelResult.PromptTokenCount, priceItem[0])
+		outputPrice := getPrice(modelResult.ResponseTokenCount, priceItem[1])
 		price = inputPrice + outputPrice
 	} else {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))

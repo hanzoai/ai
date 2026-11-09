@@ -94,32 +94,36 @@ func (t *Tunnel) Handshake(config *Configuration) (err error) {
 	height := config.GetParameter("height")
 	dpi := config.GetParameter("dpi")
 
+	// A write that fails here ends the handshake with its error. Each of these
+	// used to return nil, which NewTunnel took for success: it kept a dead
+	// connection and handed back a tunnel that was never opened.
+	//
 	// send size
 	if err := t.WriteInstructionAndFlush(NewInstruction("size", width, height, dpi)); err != nil {
-		return nil
+		return err
 	}
 	if err := t.WriteInstructionAndFlush(NewInstruction("audio", "audio/L8", "audio/L16")); err != nil {
-		return nil
+		return err
 	}
 	if err := t.WriteInstructionAndFlush(NewInstruction("video")); err != nil {
-		return nil
+		return err
 	}
 	if err := t.WriteInstructionAndFlush(NewInstruction("image", "image/jpeg", "image/png", "image/webp")); err != nil {
-		return nil
+		return err
 	}
 	if err := t.WriteInstructionAndFlush(NewInstruction("timezone", "Asia/Shanghai")); err != nil {
-		return nil
+		return err
 	}
 
 	// Send Args
 	if err := t.WriteInstructionAndFlush(NewInstruction("connect", argValueS...)); err != nil {
-		return nil
+		return err
 	}
 
 	// Wait for ready, store ID
 	ready, err := t.expect("ready")
 	if err != nil {
-		return
+		return err
 	}
 
 	if len(ready.Args) == 0 {

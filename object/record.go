@@ -425,18 +425,22 @@ func (record *Record) getId() string {
 	return fmt.Sprintf("%s/%s", record.Owner, record.Name)
 }
 
+// updateErrorText stores why a record's commit failed, on the row the record
+// names: by id when it has one, by owner and name when it does not (GetRecord
+// reads it back the same way). The branches were inverted, so a record with no
+// id was updated WHERE id = 0, which matches no row, and the error was lost.
 func (r *Record) updateErrorText(errText string, lang string) (bool, error) {
 	r.ErrorText = errText
 	if r.Id != 0 {
-		affected, err := updateCols(adapter.db, "record", pk2(r.Owner, r.Name), dbx.Params{"error_text": r.ErrorText})
-		if err != nil {
-			return affected > 0, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to update error text for record %s: %s"), r.getId(), err))
-		}
-		return affected > 0, nil
-	} else {
 		affected, err := updateCols(adapter.db, "record", pkID(r.Id), dbx.Params{"error_text": r.ErrorText})
 		if err != nil {
 			return affected > 0, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to update error text for record %s: %s"), r.getUniqueId(), err))
+		}
+		return affected > 0, nil
+	} else {
+		affected, err := updateCols(adapter.db, "record", pk2(r.Owner, r.Name), dbx.Params{"error_text": r.ErrorText})
+		if err != nil {
+			return affected > 0, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "object:failed to update error text for record %s: %s"), r.getId(), err))
 		}
 		return affected > 0, nil
 	}

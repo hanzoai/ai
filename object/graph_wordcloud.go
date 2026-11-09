@@ -79,8 +79,11 @@ func GetMessagesForChats(chats []*Chat) ([]*Message, error) {
 	for _, chat := range chats {
 		chatNames = append(chatNames, chat.Name)
 	}
+	// The messages whose chat is one of these. This was NewExp("{:p0}") with the
+	// names bound as one parameter: a WHERE naming no column, with a []string no
+	// driver can bind, so every word cloud failed here.
 	messages := []*Message{}
-	err := adapter.db.Select().From("message").Where(dbx.NewExp("{:p0}", dbx.Params{"p0": chatNames})).OrderBy("created_time ASC").All(&messages)
+	err := adapter.db.Select().From("message").Where(dbx.In("chat", toInterfaceSlice(chatNames)...)).OrderBy("created_time ASC").All(&messages)
 	if err != nil {
 		return nil, err
 	}

@@ -84,9 +84,12 @@ func UploadVideo(fileId string, filename string, fileBuffer *bytes.Buffer) (stri
 		return "", errNoVodClient
 	}
 
+	// Every failure below returns its error. They used to return "", nil, so the
+	// caller saw success with no id and reported only that the id was empty:
+	// whatever went wrong (VOD, the upload address, OSS) was never said.
 	resp, err := VodClient.CreateUploadVideo(request)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	encodedUploadAddress := tea.StringValue(resp.Body.UploadAddress)
@@ -99,23 +102,23 @@ func UploadVideo(fileId string, filename string, fileBuffer *bytes.Buffer) (stri
 	uploadAddress := &UploadAddress{}
 	err = util.JsonToStruct(uploadAddressStr, uploadAddress)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	uploadAuth := &UploadAuth{}
 	err = util.JsonToStruct(uploadAuthStr, uploadAuth)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	ossClient, err := getOssClient(uploadAddress.Endpoint, uploadAuth.AccessKeyId, uploadAuth.AccessKeySecret, uploadAuth.SecurityToken)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	err = uploadLocalFile(ossClient, uploadAddress.Bucket, uploadAddress.FileName, fileBuffer)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	return videoId, nil

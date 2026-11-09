@@ -57,8 +57,8 @@ func (p *DeepSeekProvider) calculatePrice(modelResult *ModelResult, lang string)
 	}
 
 	if priceItem, ok := priceTable[p.subType]; ok {
-		inputPrice := getPrice(modelResult.TotalTokenCount, priceItem[0])
-		outputPrice := getPrice(modelResult.TotalTokenCount, priceItem[1])
+		inputPrice := getPrice(modelResult.PromptTokenCount, priceItem[0])
+		outputPrice := getPrice(modelResult.ResponseTokenCount, priceItem[1])
 		price = inputPrice + outputPrice
 	} else {
 		return fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "embedding:calculatePrice() error: unknown model type: %s"), p.subType))
@@ -77,6 +77,12 @@ func (p *DeepSeekProvider) QueryText(question string, writer io.Writer, history 
 		localType = "Custom-think"
 	} else if p.subType == "deepseek-chat" {
 		localType = "Custom"
+	} else {
+		// Any other model used to reach the local provider with no type, so no
+		// client, and panicked on the first call. It is refused before the call:
+		// calculatePrice prices only these two, so an answer from any other
+		// would be served and then fail to bill.
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:QueryText() error: unknown model type: %s"), p.subType))
 	}
 	localProvider, err := NewLocalModelProvider(localType, "custom-model", p.apiKey, p.temperature, p.topP, 0, 0, BaseUrl, p.subType, 0, 0, "CNY")
 	if err != nil {
