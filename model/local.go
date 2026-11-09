@@ -195,25 +195,45 @@ func flushDataThink(data string, eventType string, writer io.Writer, lang string
 	return nil
 }
 
-func (p *LocalModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
-	var client *openai.Client
-	var flushData any // Can be either flushData or flushDataThink
+// dialect answers how this provider reaches its upstream and how it writes an
+// answer back, decided once from its type.
+//
+// Exactly one of the two flushes is set. flushThink takes each piece's kind
+// ("reason" or "message"), so a reasoning model's thinking streams too;
+// flushStandard writes the answer only. Both used to be one `any`, asserted to
+// one shape or the other by a second test of p.typ in each loop. When the two
+// tests disagreed, the assertion panicked: a Local or DigitalOcean completion
+// model met the standard assertion holding flushDataThink. With typed values
+// there is nothing to assert.
+//
+// A type not named here gets no client. Zen, Enso and Hanzo were missing (Open
+// builds them as LocalModelProviders of that type), and so was DeepSeek with a
+// model other than chat or reasoner, which arrives with no type at all. Each
+// reached client.CreateChatCompletionStream on a nil client and panicked;
+// QueryText now refuses an absent client instead.
+func (p *LocalModelProvider) dialect() (client *openai.Client, flushThink func(string, string, io.Writer, string) error, flushStandard func(string, io.Writer, string) error) {
+	switch p.typ {
+	case "Local", "DigitalOcean", "Custom-think":
+		return getLocalClientFromUrl(p.secretKey, p.providerUrl), flushDataThink, nil
+	case "Zen", "Enso", "Hanzo":
+		// Hanzo's own upstreams speak the OpenAI dialect and may stream reasoning;
+		// the think flush writes the answer as the same "message" events the
+		// standard one does, and the reasoning as "reason" instead of dropping it.
+		return getLocalClientFromUrl(p.secretKey, p.providerUrl), flushDataThink, nil
+	case "Azure":
+		return getAzureClientFromToken(p.deploymentName, p.secretKey, p.providerUrl, p.apiVersion), nil, flushDataAzure
+	case "GitHub":
+		return getGitHubClientFromToken(p.secretKey, p.providerUrl), nil, flushDataOpenai
+	case "Custom":
+		return getLocalClientFromUrl(p.secretKey, p.providerUrl), nil, flushDataOpenai
+	}
+	return nil, nil, nil
+}
 
-	if p.typ == "Local" || p.typ == "DigitalOcean" {
-		client = getLocalClientFromUrl(p.secretKey, p.providerUrl)
-		flushData = flushDataThink
-	} else if p.typ == "Azure" {
-		client = getAzureClientFromToken(p.deploymentName, p.secretKey, p.providerUrl, p.apiVersion)
-		flushData = flushDataAzure
-	} else if p.typ == "GitHub" {
-		client = getGitHubClientFromToken(p.secretKey, p.providerUrl)
-		flushData = flushDataOpenai
-	} else if p.typ == "Custom" {
-		client = getLocalClientFromUrl(p.secretKey, p.providerUrl)
-		flushData = flushDataOpenai
-	} else if p.typ == "Custom-think" {
-		client = getLocalClientFromUrl(p.secretKey, p.providerUrl)
-		flushData = flushDataThink
+func (p *LocalModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
+	client, flushThink, flushStandard := p.dialect()
+	if client == nil {
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:QueryText() error: unknown provider type: %s"), p.typ))
 	}
 
 	ctx := context.Background()
@@ -321,10 +341,7 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 			}
 
 			// Handle both regular content and reasoning content
-			if p.typ == "Custom-think" || p.typ == "Local" || p.typ == "DigitalOcean" {
-				// For Custom-think type, we'll handle both reasoning and regular content
-				flushThink := flushData.(func(string, string, io.Writer, string) error)
-
+			if flushThink != nil {
 				// Check if we have reasoning content (think_content)
 				if completion.Choices[0].Delta.ReasoningContent != "" {
 					reasoningData := completion.Choices[0].Delta.ReasoningContent
@@ -354,8 +371,6 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 				}
 			} else {
 				// For all other provider types, use the standard flush function
-				flushStandard := flushData.(func(string, io.Writer, string) error)
-
 				data := completion.Choices[0].Delta.Content
 				if isLeadingReturn && len(data) != 0 {
 					if strings.Count(data, "\n") == len(data) {
@@ -448,6 +463,11 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 				return nil, streamErr
 			}
 
+			// A chunk can carry no choice (a usage-only chunk does); the chat loop
+			// above already skips one, and indexing it here panicked.
+			if len(completion.Choices) == 0 {
+				continue
+			}
 			data := completion.Choices[0].Text
 			if isLeadingReturn && len(data) != 0 {
 				if strings.Count(data, "\n") == len(data) {
@@ -457,12 +477,9 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 				}
 			}
 
-			// Here we also need to handle the different flush functions
-			if p.typ == "Custom-think" {
-				flushThink := flushData.(func(string, string, io.Writer, string) error)
+			if flushThink != nil {
 				err = flushThink(data, "message", writer, lang)
 			} else {
-				flushStandard := flushData.(func(string, io.Writer, string) error)
 				err = flushStandard(data, writer, lang)
 			}
 
@@ -476,7 +493,12 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 			}
 		}
 
+		// A count that failed is an error, not a nil result with no error: the
+		// caller prices what comes back and would dereference the nil.
 		modelResult, err = getDefaultModelResult(model, question, response.String())
+		if err != nil {
+			return nil, err
+		}
 		return modelResult, nil
 	} else {
 		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.Translate(lang, "model:QueryText() error: unknown model type: %s"), p.subType))
