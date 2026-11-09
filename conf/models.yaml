@@ -41,20 +41,20 @@ router:
     # from `vision`).
     #
     # EVERY id here is checked against GET /v1/models. It stopped being true and
-    # nothing said so: all eight lists led with a model that no longer exists
-    # (zen4* and zen3* were retired into the zen5 lineup), and `vision` had its
-    # top THREE dead with the live house vision SKU not listed at all. "First
-    # servable wins" is what hid it — the router walks past a dead champion and
-    # answers from a fallback, so the intended model silently never serves and
-    # the only symptom is a preference that does nothing.
-    code: [zen5-coder, zen5-pro, qwen3-coder, gpt-5.3-codex, claude-opus-4-8, claude-sonnet-4-6, gpt-5.4, deepseek-v4-pro]
-    reasoning: [zen5-pro, deepseek-reasoner, o3, gpt-5.5, claude-opus-4-8, deepseek-v4-pro]
-    math: [zen5-pro, deepseek-reasoner, o3, gpt-5.5, deepseek-v4-pro]
-    creative: [zen5, claude-opus-4-8, gpt-5.5, claude-sonnet-4-6]
+    # nothing said so: all eight lists led with retired ids (zen5*, zen4*, and
+    # zen3* were retired into the zen6 lineup), and `vision` had its top THREE
+    # dead with the live house vision SKU not listed at all. "First servable
+    # wins" is what hid it — the router walks past a dead champion and answers
+    # from a fallback, so the intended model silently never serves and the only
+    # symptom is a preference that does nothing.
+    code: [zen6-coder, zen6-max, qwen3-coder, gpt-5.3-codex, claude-opus-4-8, claude-sonnet-4-6, gpt-5.4, deepseek-v4-pro]
+    reasoning: [zen6-max, deepseek-reasoner, o3, gpt-5.5, claude-opus-4-8, deepseek-v4-pro]
+    math: [zen6-max, deepseek-reasoner, o3, gpt-5.5, deepseek-v4-pro]
+    creative: [zen6, claude-opus-4-8, gpt-5.5, claude-sonnet-4-6]
     vision: [zen-vl, claude-sonnet-4-6, gpt-4o, gpt-5.4, llama-4-maverick, nemotron-nano-vl]
-    long_context: [zen5, gpt-5.4, gpt-5.5, gpt-5.6-luna, claude-opus-4-8, deepseek-v4-pro]
-    cheap_chat: [zen5-mini, zen5-flash, gpt-4o-mini, claude-haiku-4-5]
-    default: [zen5, gpt-4o, gpt-4o-mini, kimi-k2.6, glm-5.2]
+    long_context: [zen6, gpt-5.4, gpt-5.5, gpt-5.6-luna, claude-opus-4-8, deepseek-v4-pro]
+    cheap_chat: [zen6-flash, gpt-4o-mini, claude-haiku-4-5]
+    default: [zen6, gpt-4o, gpt-4o-mini, kimi-k2.6, glm-5.2]
 
 default_pricing:
   input_per_million: 1.00
