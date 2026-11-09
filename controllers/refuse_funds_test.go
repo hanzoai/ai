@@ -33,6 +33,7 @@ func TestEndpointOf(t *testing.T) {
 		{[]string{"speech"}, "/v1/audio/speech"},
 		{[]string{"transcript"}, "/v1/audio/transcriptions"},
 		{[]string{"video"}, "/v1/videos/generations"},
+		{[]string{"3d"}, "/v1/3d/generations"},
 		{[]string{"image"}, "/v1/images/generations"},
 		{[]string{"audio"}, ""},
 		{nil, ""},

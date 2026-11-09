@@ -213,9 +213,9 @@ func (c *ApiController) AudioMedia() {
 	switch p := c.Path(); {
 	case strings.HasSuffix(p, "/voice"):
 		verb = "voice"
-	case strings.HasSuffix(p, "/music"):
+	case strings.HasSuffix(p, "/music"), p == "/v1/music/generations":
 		verb = "music"
-	case strings.HasSuffix(p, "/foley"):
+	case strings.HasSuffix(p, "/foley"), p == "/v1/foley/generations":
 		verb = "foley"
 	default:
 		c.ResponseErrorWithStatus(http.StatusNotFound, "unknown audio verb")
