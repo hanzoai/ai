@@ -1952,8 +1952,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	}
 
 	// lane is whether the caller is on the free lane: the route they named costs
-	// nothing. Read before any route stands in, since a stand-in rewrites sku.
-	lane := freeLane(fam, sku)
+	// nothing, or the gate marked the request free (free, ours). Read before any
+	// route stands in, since a stand-in rewrites sku.
+	lane := freeLane(fam, sku) || kindsOn(ctx).free
 
 	// pooled reports whether a free-lane request the pool could not serve is the
 	// POOL's to answer: some account in it is benched by the vendor. Any other

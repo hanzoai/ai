@@ -21,7 +21,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -142,8 +141,8 @@ func TestAPaidPlanPastItsUsageWaitsOrBuysCreditsOnEverySurface(t *testing.T) {
 					t.Errorf("%s, %s: %s = %q, want %q", code, who, name, got, want)
 				}
 			}
-			if after, err := strconv.Atoi(p.replied("Retry-After")); err != nil || after < 71*3600 || after > 72*3600 {
-				t.Errorf("%s, %s: Retry-After %q, want the seconds until %s", code, who, p.replied("Retry-After"), reset)
+			if ra := p.replied("Retry-After"); ra != "" {
+				t.Errorf("%s, %s: Retry-After %q for a window reopening at %s", code, who, ra, reset)
 			}
 			var r struct {
 				Error struct {
@@ -232,7 +231,7 @@ func TestAPlanWithNoRoomIsPaidByCashOrWaits(t *testing.T) {
 		}
 		if r := refusalOf(t, p.said()); r.Error.Code != object.CodePlanAllowance || r.Error.ResetsAt != reset.Format(time.RFC3339) ||
 			!strings.Contains(r.Error.Message, "Send a shorter prompt") || !strings.Contains(r.Error.Message, "Wait until "+reset.Format(time.RFC3339)) ||
-			p.replied("Retry-After") == "" || p.replied("X-Hanzo-Topup-Url") == "" {
+			p.replied("X-Hanzo-Usage-Resets") != reset.Format(time.RFC3339) || p.replied("Retry-After") != "" || p.replied("X-Hanzo-Topup-Url") == "" {
 			t.Errorf("%s, no cash: refusal %s retry-after %q", who, p.said(), p.replied("Retry-After"))
 		}
 		if p.replied(controllers.LaneReasonHeader) != "" {

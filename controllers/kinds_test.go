@@ -109,9 +109,12 @@ func TestBillingFollowsTheKindThatServed(t *testing.T) {
 		t.Errorf("fast on enso-pro: plan %v cash %v usd %q settled %v, want 3x from cash, 9.9", e.Plan, e.Cash, e.USD, settled)
 	}
 
-	_, _, e = billed(t, kindOurs, false, func(c *ApiController) { Free(c.Ctx, "enso-auto") })
-	if !strings.HasPrefix(e.USD, "0") {
-		t.Errorf("a request nothing pays for, served on our credits, billed %q", e.USD)
+	told, _, e = billed(t, kindOurs, false, func(c *ApiController) {
+		Seat(c.Ctx, nil, "acme", "ann", "enso-pro")
+		Free(c.Ctx, "enso-auto")
+	})
+	if told.Get(classesHeader) != KindsFree || !strings.HasPrefix(e.USD, "0") {
+		t.Errorf("a request nothing pays for, served on our credits: kinds %q billed %q", told.Get(classesHeader), e.USD)
 	}
 
 	told, _, _ = billed(t, kindFree, false, func(*ApiController) {})
