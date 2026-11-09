@@ -145,6 +145,12 @@ type doaiImageSizeObj struct {
 // doaiImageSize converts an OpenAI-style "WxH" size (e.g. "1024x1024") into
 // fal's structured image_size object. It returns nil (so image_size is omitted
 // and the model default applies) when the size is empty or not a valid "WxH".
+// DoaiImageSize converts an OpenAI-style "WxH" size (e.g. "1024x1024") into
+// fal's structured image_size object.
+func DoaiImageSize(size string) any {
+	return doaiImageSize(size)
+}
+
 func doaiImageSize(size string) any {
 	size = strings.TrimSpace(size)
 	if size == "" {
