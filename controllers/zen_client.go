@@ -880,6 +880,7 @@ var modeOutputs = map[string][]string{
 	"image":     {"image"},
 	"audio":     {"audio"},
 	"video":     {"video"},
+	"3d":        {"3d"},
 }
 
 // decodeCatalog translates a family's raw /v1/models body into discovered SKUs using

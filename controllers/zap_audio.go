@@ -76,6 +76,8 @@ func registerZapAudio() {
 	registerGatewayPath("/v1/audio/voice", zapAudioVerbHandler("voice"))
 	registerGatewayPath("/v1/audio/music", zapAudioVerbHandler("music"))
 	registerGatewayPath("/v1/audio/foley", zapAudioVerbHandler("foley"))
+	registerGatewayPath("/v1/music/generations", zapAudioVerbHandler("music"))
+	registerGatewayPath("/v1/foley/generations", zapAudioVerbHandler("foley"))
 }
 
 // ── audio.speech — OpenAI-compatible TTS (mirrors ApiController.AudioSpeech) ─

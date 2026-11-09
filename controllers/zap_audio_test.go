@@ -52,7 +52,7 @@ func TestZapAudioRegistration(t *testing.T) {
 	}
 	gatewayPaths := []string{
 		"/v1/audio/speech", "/v1/audio/transcriptions", "/v1/audio/voice",
-		"/v1/audio/music", "/v1/audio/foley",
+		"/v1/audio/music", "/v1/audio/foley", "/v1/music/generations", "/v1/foley/generations",
 	}
 	for _, p := range gatewayPaths {
 		if _, ok := lookupGatewayHandler(p); !ok {

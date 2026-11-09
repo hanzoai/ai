@@ -616,6 +616,8 @@ func endpointOf(outputs []string) string {
 		return "/v1/audio/transcriptions"
 	case has("video"):
 		return "/v1/videos/generations"
+	case has("3d"):
+		return "/v1/3d/generations"
 	case has("image"):
 		return "/v1/images/generations"
 	}

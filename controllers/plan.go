@@ -119,6 +119,9 @@ var meteredPaths = map[string]bool{
 	"/v1/audio/voice":          true,
 	"/v1/audio/music":          true,
 	"/v1/audio/foley":          true,
+	"/v1/music/generations":    true,
+	"/v1/foley/generations":    true,
+	"/v1/3d/generations":       true,
 	"/v1/images/generations":   true,
 	"/v1/videos/generations":   true,
 }
