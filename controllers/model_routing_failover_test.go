@@ -341,3 +341,67 @@ func TestStreamFailsOverBeforeItsFirstByte(t *testing.T) {
 		t.Errorf("asked a=%d b=%d, want one each", w.a.asked(), w.b.asked())
 	}
 }
+
+// TestToolsAndSystemPromptSurviveFailover extends the fidelity property to the
+// tool-calling contract. A primary answering 500 moves the WHOLE conversation to the
+// backup — the system prompt, every turn (the assistant tool_calls and the tool
+// result included), and the tools / tool_choice / parallel_tool_calls the caller
+// defined. A backup served a stripped request would answer a different question than
+// the one asked, and the tool it was handed would not be the tool it may call. The
+// existing fidelity test proves this reaches the PRIMARY; this proves it survives the
+// MOVE, which is the path a tool-calling caller actually depends on when a vendor falls.
+func TestToolsAndSystemPromptSurviveFailover(t *testing.T) {
+	quick(t)
+	w := newRelayWorld(t, declines(http.StatusInternalServerError, "internal server error"),
+		completes(`{"a":"ok"}`, 30, 0, 5))
+
+	c := w.chat(conversation)
+	if answered(c) != http.StatusOK {
+		t.Fatalf("status %d: %s", answered(c), sent(c))
+	}
+	if w.a.asked() != 1 || w.b.asked() != 1 {
+		t.Fatalf("asked a=%d b=%d, want one each", w.a.asked(), w.b.asked())
+	}
+
+	// The backup received the caller's own request, byte-for-meaning: only the fields
+	// the relay may decide (model id, ceiling, stream_options) are allowed to differ.
+	up := w.b.sent(t, 0)
+	if got, want := canonical(t, up, ourFields...), canonical(t, []byte(conversation), ourFields...); got != want {
+		t.Errorf("the fallback was sent a different request\ncaller:   %s\nupstream: %s", conversation, up)
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(up, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["model"]) != `"b-up"` {
+		t.Errorf("model = %s, want the backup's own id", fields["model"])
+	}
+	for _, key := range []string{"tools", "tool_choice", "parallel_tool_calls"} {
+		if _, ok := fields[key]; !ok {
+			t.Errorf("%s did not survive the failover: %s", key, up)
+		}
+	}
+	var msgs []map[string]any
+	if err := json.Unmarshal(fields["messages"], &msgs); err != nil || len(msgs) != 7 {
+		t.Fatalf("messages = %s, want all seven turns", fields["messages"])
+	}
+	if msgs[0]["role"] != "system" || msgs[0]["content"] != "Answer in JSON. <be terse> & exact." {
+		t.Errorf("the system prompt did not survive the move: %s", fields["messages"])
+	}
+
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(sent(c)), &env); err != nil {
+		t.Fatal(err)
+	}
+	if got := field(t, env, "model"); got != relaySku {
+		t.Errorf("model = %q, want the SKU — the caller never learns which vendor served", got)
+	}
+	if !cooled.cooling(credential{"relayco", "relay-a"}) {
+		t.Error("the provider that answered 500 was not rested")
+	}
+	debit := w.paid(t)
+	if debit.Provider != "relay-b" || debit.Model != relaySku {
+		t.Errorf("billed provider=%q model=%q, want relay-b under the SKU", debit.Provider, debit.Model)
+	}
+}
