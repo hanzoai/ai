@@ -49,3 +49,4 @@ object/*.db
 # the cmd/openapi binary
 /openapi
 /aid
+.aider*
