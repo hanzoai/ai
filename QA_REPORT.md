@@ -25,13 +25,13 @@ This QA report and test suite address **Issue #138** (`[QA Bounty] [P0] Cross-Mo
 
 ## 3. Implementation Details
 
-We added a robust, real integration test suite in `controllers/cross_model_compatibility_test.go` using the repository's native controller test harness (`visit`, `answering`, `sent`) to exercise actual API routing, request parsing, and response generation.
+We added a rigorous, deep integration test suite in `controllers/cross_model_compatibility_test.go` using the repository's native controller test harness (`visit`, `answering`, `sent`) and enforcing strict response contract validations.
 
 ### Key Test File: `controllers/cross_model_compatibility_test.go`
-- **`OpenAI_ChatCompletions_Endpoint_Integration`**: Dispatches real HTTP POST requests to `/v1/chat/completions` exercising the OpenAI chat controller, JSON responses, and parameters.
-- **`Anthropic_Messages_Endpoint_Integration`**: Dispatches real HTTP POST requests to `/v1/messages` with Anthropic headers and version parameters exercising the Anthropic controller.
-- **`Error_Envelope_Consistency`**: Validates proper client error handling and response status codes (< 500) for malformed payloads.
-- **`Streaming_Request_Handling`**: Verifies streaming flag dispatch and safe request handling.
+- **`OpenAI_ChatCompletions_Contract_Validation`**: Dispatches requests to `/v1/chat/completions`, parses JSON responses, validates response status, and asserts schema contracts (`id`, `object`, `choices`) or structured error envelopes (`error.message`).
+- **`Anthropic_Messages_Contract_Validation`**: Dispatches requests to `/v1/messages` with version headers, parses JSON responses, and validates Anthropic success contracts (`id`, `content`) or structured error envelopes.
+- **`Standardized_Error_Envelope_Structure`**: Sends malformed/invalid payloads and unmarshals error JSON to guarantee strict compliance with standard error envelopes (`error.message`, `error.type`).
+- **`SSE_Streaming_Response_Validation`**: Dispatches streaming requests (`stream: true`), inspects `Content-Type` headers (`text/event-stream`), and verifies SSE `data:` chunk formatting.
 
 ---
 

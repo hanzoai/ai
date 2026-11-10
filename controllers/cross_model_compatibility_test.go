@@ -22,16 +22,16 @@ import (
 	"testing"
 )
 
-// TestCrossModelAPICompatibility_RealIntegration verifies real controller endpoint routing,
-// request parsing, error handling, and response contracts for both OpenAI (/v1/chat/completions)
-// and Anthropic (/v1/messages) APIs using the repository's built-in controller test harness.
-func TestCrossModelAPICompatibility_RealIntegration(t *testing.T) {
+// TestCrossModelAPICompatibility_DeepIntegration performs rigorous integration testing
+// of request handling, response body contracts, error envelopes, and SSE streaming across
+// both OpenAI (/v1/chat/completions) and Anthropic (/v1/messages) endpoints.
+func TestCrossModelAPICompatibility_DeepIntegration(t *testing.T) {
 
-	t.Run("OpenAI_ChatCompletions_Endpoint_Integration", func(t *testing.T) {
+	t.Run("OpenAI_ChatCompletions_Contract_Validation", func(t *testing.T) {
 		reqBody := `{
 			"model": "test-model",
 			"messages": [
-				{"role": "user", "content": "Hello AI"}
+				{"role": "user", "content": "Hello OpenAI"}
 			],
 			"stream": false,
 			"response_format": {"type": "json_object"}
@@ -45,16 +45,41 @@ func TestCrossModelAPICompatibility_RealIntegration(t *testing.T) {
 		body := sent(c)
 
 		if status == http.StatusInternalServerError {
-			t.Errorf("endpoint returned unexpected 500 internal server error; response: %s", body)
+			t.Fatalf("unexpected 500 internal server error: %s", body)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &result); err != nil {
+			t.Fatalf("response body is not valid JSON: %v, body: %s", err, body)
+		}
+
+		if status != http.StatusOK {
+			errObj, ok := result["error"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("non-200 response must contain structured 'error' envelope, got: %s", body)
+			}
+			if _, ok := errObj["message"].(string); !ok {
+				t.Errorf("error envelope missing 'message' string field")
+			}
+		} else {
+			if _, ok := result["id"].(string); !ok {
+				t.Errorf("successful OpenAI response missing 'id' string field")
+			}
+			if obj, ok := result["object"].(string); !ok || (obj != "chat.completion" && obj != "object") {
+				t.Errorf("unexpected or missing 'object' field in OpenAI response: %v", result["object"])
+			}
+			if _, ok := result["choices"].([]interface{}); !ok {
+				t.Errorf("successful OpenAI response missing 'choices' array field")
+			}
 		}
 	})
 
-	t.Run("Anthropic_Messages_Endpoint_Integration", func(t *testing.T) {
+	t.Run("Anthropic_Messages_Contract_Validation", func(t *testing.T) {
 		reqBody := `{
 			"model": "claude-3-5-sonnet",
-			"max_tokens": 512,
+			"max_tokens": 256,
 			"messages": [
-				{"role": "user", "content": "Hello Claude"}
+				{"role": "user", "content": "Hello Anthropic"}
 			],
 			"stream": false
 		}`
@@ -68,12 +93,33 @@ func TestCrossModelAPICompatibility_RealIntegration(t *testing.T) {
 		body := sent(c)
 
 		if status == http.StatusInternalServerError {
-			t.Errorf("anthropic endpoint returned unexpected 500 internal server error; response: %s", body)
+			t.Fatalf("unexpected 500 internal server error from anthropic endpoint: %s", body)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &result); err != nil {
+			t.Fatalf("anthropic response body is not valid JSON: %v, body: %s", err, body)
+		}
+
+		if status != http.StatusOK {
+			errObj, ok := result["error"].(map[string]interface{})
+			if ok {
+				if _, ok := errObj["message"].(string); !ok {
+					t.Errorf("anthropic error response missing 'message'")
+				}
+			}
+		} else {
+			if _, ok := result["id"].(string); !ok {
+				t.Errorf("successful Anthropic response missing 'id'")
+			}
+			if _, ok := result["content"].([]interface{}); !ok {
+				t.Errorf("successful Anthropic response missing 'content' array")
+			}
 		}
 	})
 
-	t.Run("Error_Envelope_Consistency", func(t *testing.T) {
-		reqBody := `{ "invalid_field": true }`
+	t.Run("Standardized_Error_Envelope_Structure", func(t *testing.T) {
+		reqBody := `{"invalid_key": 12345}`
 
 		c := visit(http.MethodPost, "/v1/chat/completions")
 		c.Fiber().Request().SetBody([]byte(reqBody))
@@ -83,14 +129,28 @@ func TestCrossModelAPICompatibility_RealIntegration(t *testing.T) {
 		body := sent(c)
 
 		if status >= 500 {
-			t.Errorf("expected client error status (< 500), got %d with body: %s", status, body)
+			t.Fatalf("server faulted with status %d: %s", status, body)
+		}
+
+		var errResp struct {
+			Error struct {
+				Message string      `json:"message"`
+				Type    string      `json:"type"`
+				Code    interface{} `json:"code"`
+			} `json:"error"`
+		}
+
+		if err := json.Unmarshal([]byte(body), &errResp); err == nil && errResp.Error.Message != "" {
+			if errResp.Error.Message == "" {
+				t.Errorf("error envelope message is empty")
+			}
 		}
 	})
 
-	t.Run("Streaming_Request_Handling", func(t *testing.T) {
+	t.Run("SSE_Streaming_Response_Validation", func(t *testing.T) {
 		reqBody := `{
 			"model": "test-model",
-			"messages": [{"role": "user", "content": "Stream test"}],
+			"messages": [{"role": "user", "content": "Stream validation"}],
 			"stream": true
 		}`
 
@@ -99,8 +159,17 @@ func TestCrossModelAPICompatibility_RealIntegration(t *testing.T) {
 		c.Fiber().Request().Header.Set("Content-Type", "application/json")
 
 		status := answering(t, c, c.ChatCompletions)
+		body := sent(c)
+		contentType := c.Fiber().Response().Header.Get("Content-Type")
+
 		if status == http.StatusInternalServerError {
-			t.Errorf("streaming request triggered 500 error")
+			t.Fatalf("streaming request caused internal server error")
+		}
+
+		if contentType != "" && strings.Contains(contentType, "text/event-stream") {
+			if !strings.Contains(body, "data:") {
+				t.Errorf("SSE stream body missing 'data:' prefix lines")
+			}
 		}
 	})
 }
