@@ -42,7 +42,14 @@ type sseStreamChunk struct {
 				} `json:"function"`
 			} `json:"tool_calls"`
 		} `json:"delta"`
+		// FinishReason is read only for whether the vendor said how its answer ended.
+		// A stream that says so and then hangs up without `[DONE]` owes the caller the
+		// sentinel; one that never says so was cut off, and says so instead.
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	// Error is read only for whether the frame is one. A vendor that ends its stream
+	// with an error frame has said why it ended, and nothing is owed on top of that.
+	Error json.RawMessage `json:"error"`
 	// Usage is read here only for whether it is there. Its counts are read by
 	// sniffZenUsage, the one reader of usage in both dialects, because the split
 	// between a fresh and a cached prompt token is what the price turns on.
@@ -55,7 +62,9 @@ type sseStreamChunk struct {
 // forced usage-only chunk (usage present, no choices) is suppressed when the
 // client did not request usage; otherwise its envelope is fixed up for SDK
 // clients. This is the billing-critical core of the streaming relay: it
-// guarantees a streamed answer yields real token counts to bill.
+// guarantees a streamed answer yields real token counts to bill. A stream whose
+// vendor hangs up without closing it is ended honestly (mark.closing), which is
+// also what keeps a cut-off answer from reaching its caller as a whole one.
 //
 // mk is what stamps every event on the way out (envelope.go): each chunk goes out in
 // our envelope, stamped from the one mark, so the id holds for the whole stream.
@@ -67,6 +76,10 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	var sb strings.Builder
+	// What the vendor left unsaid by the time its body reached EOF: whether an answer
+	// began at all, whether it stated how it ended, and whether it closed with the
+	// sentinel every OpenAI client reads as "that was the whole answer".
+	var began, saidHow, sawDone, sawError, clientGone bool
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -78,13 +91,22 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 
 		if after, ok := strings.CutPrefix(line, "data: "); ok {
 			raw := after
-			if strings.TrimSpace(raw) != "[DONE]" {
+			if trimmed := strings.TrimSpace(raw); trimmed == "[DONE]" {
+				sawDone = true
+			} else if strings.HasPrefix(trimmed, "{") {
+				began = true
 				var chunk sseStreamChunk
 				if json.Unmarshal([]byte(raw), &chunk) == nil {
+					if present(chunk.Error) {
+						sawError = true
+					}
 					if chunk.Usage != nil {
 						sniffZenUsage([]byte(raw), &t)
 					}
 					for _, ch := range chunk.Choices {
+						if ch.FinishReason != "" {
+							saidHow = true
+						}
 						sb.WriteString(ch.Delta.Content)
 						for _, tc := range ch.Delta.ToolCalls {
 							sb.WriteString(tc.Function.Arguments)
@@ -124,13 +146,62 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 		// A write that fails is the client gone: return, and the caller's close of r
 		// hangs up on the vendor so its model stops. The text so far is what bills.
 		if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+			clientGone = true
 			break
 		}
 		if flush != nil && flush() != nil {
+			clientGone = true
 			break
 		}
 	}
+
+	// The vendor's body reached its end. Two things it can owe and not have paid, and
+	// the caller cannot tell them apart without us: an answer that stated how it ended
+	// and then hung up without `[DONE]` (a proxy that drops the last frame) leaves
+	// every OpenAI SDK waiting on a sentinel that is never coming; an answer cut off
+	// mid-sentence leaves it holding a truncated answer it takes for a whole one. So a
+	// stream ends with whichever is true — the sentinel owed, or `length` and the
+	// reason — never silence, and never `[DONE]` over an answer that was cut. A vendor
+	// that closed its own stream (sentinel or error frame) is not answered for; a client
+	// that hung up first is owed nothing more; and a vendor that wrote no answer at all
+	// is left exactly as it came.
+	if !clientGone && began && !sawDone && !sawError {
+		for _, frame := range mk.closing(saidHow) {
+			if _, err := fmt.Fprintf(w, "%s", frame); err != nil {
+				break
+			}
+		}
+		if flush != nil {
+			_ = flush()
+		}
+	}
 	return t, sb.String()
+}
+
+// closing is how a chat SSE stream ends when the vendor's body ended without saying
+// how its answer ended: `[DONE]` for one that named its finish reason and owes the
+// sentinel, or the `length` finish and the reason for one cut off mid-sentence — the
+// same pair claudeChat.broken ends a broken stream with (anthropic_chat.go). Stamped
+// like every other event of the stream, so its id and model match the frames before
+// it. A nil mark relays a dialect with no envelope and writes its own words.
+func (m *mark) closing(saidHow bool) []string {
+	if saidHow {
+		return []string{"data: [DONE]\n\n"}
+	}
+	var out []string
+	for _, env := range []map[string]any{
+		{"object": "chat.completion.chunk", "choices": []any{
+			map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "length"}}},
+		{"object": "chat.completion.chunk", "choices": []any{},
+			"error": map[string]any{"message": "the answer was cut off upstream", "type": "upstream_error"}},
+	} {
+		raw, err := json.Marshal(env)
+		if err != nil {
+			return out
+		}
+		out = append(out, "data: "+string(m.stamp(raw))+"\n\n")
+	}
+	return out
 }
 
 const (
