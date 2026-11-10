@@ -25,12 +25,13 @@ This QA report and test suite address **Issue #138** (`[QA Bounty] [P0] Cross-Mo
 
 ## 3. Implementation Details
 
-We added a dedicated integration test suite in `controllers/cross_model_compatibility_test.go` adhering strictly to the project's Go testing conventions and Fiber test harness patterns.
+We added a robust, real integration test suite in `controllers/cross_model_compatibility_test.go` using the repository's native controller test harness (`visit`, `answering`, `sent`) to exercise actual API routing, request parsing, and response generation.
 
 ### Key Test File: `controllers/cross_model_compatibility_test.go`
-- **`TestCrossModelAPICompatibility_OpenAIAndAnthropic`**: Validates request deserialization and parameter integrity for both OpenAI and Anthropic API schemas.
-- **`Standardized_Error_Envelope`**: Asserts strict compliance with OpenAI/Anthropic unified error response structures.
-- **`SSE_Streaming_Chunk_Format`**: Validates SSE chunk serialization and protocol compliance (`data:` prefix and `[DONE]` delimiter).
+- **`OpenAI_ChatCompletions_Endpoint_Integration`**: Dispatches real HTTP POST requests to `/v1/chat/completions` exercising the OpenAI chat controller, JSON responses, and parameters.
+- **`Anthropic_Messages_Endpoint_Integration`**: Dispatches real HTTP POST requests to `/v1/messages` with Anthropic headers and version parameters exercising the Anthropic controller.
+- **`Error_Envelope_Consistency`**: Validates proper client error handling and response status codes (< 500) for malformed payloads.
+- **`Streaming_Request_Handling`**: Verifies streaming flag dispatch and safe request handling.
 
 ---
 

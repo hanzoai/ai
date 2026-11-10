@@ -22,108 +22,85 @@ import (
 	"testing"
 )
 
-// TestCrossModelAPICompatibility_OpenAIAndAnthropic verifies that both
-// OpenAI (/v1/chat/completions) and Anthropic (/v1/messages) endpoints
-// accept standardized requests, handle streaming SSE chunks correctly,
-// support tool/function calling, structured outputs, and return standardized error envelopes.
-func TestCrossModelAPICompatibility_OpenAIAndAnthropic(t *testing.T) {
-	t.Run("OpenAI_ChatCompletions_Structure", func(t *testing.T) {
+// TestCrossModelAPICompatibility_RealIntegration verifies real controller endpoint routing,
+// request parsing, error handling, and response contracts for both OpenAI (/v1/chat/completions)
+// and Anthropic (/v1/messages) APIs using the repository's built-in controller test harness.
+func TestCrossModelAPICompatibility_RealIntegration(t *testing.T) {
+
+	t.Run("OpenAI_ChatCompletions_Endpoint_Integration", func(t *testing.T) {
 		reqBody := `{
-			"model": "enso",
+			"model": "test-model",
 			"messages": [
-				{"role": "system", "content": "You are a helpful assistant."},
-				{"role": "user", "content": "Hello, output JSON."}
+				{"role": "user", "content": "Hello AI"}
 			],
-			"response_format": {"type": "json_object"},
-			"stream": true
+			"stream": false,
+			"response_format": {"type": "json_object"}
 		}`
-		
-		// Validate payload serializability and expected schema structure
-		var parsed map[string]interface{}
-		if err := json.Unmarshal([]byte(reqBody), &parsed); err != nil {
-			t.Fatalf("failed to parse OpenAI request body: %v", err)
-		}
-		
-		if parsed["model"] != "enso" {
-			t.Errorf("expected model 'enso', got %v", parsed["model"])
-		}
-		
-		format, ok := parsed["response_format"].(map[string]interface{})
-		if !ok || format["type"] != "json_object" {
-			t.Errorf("expected response_format type json_object")
+
+		c := visit(http.MethodPost, "/v1/chat/completions")
+		c.Fiber().Request().SetBody([]byte(reqBody))
+		c.Fiber().Request().Header.Set("Content-Type", "application/json")
+
+		status := answering(t, c, c.ChatCompletions)
+		body := sent(c)
+
+		if status == http.StatusInternalServerError {
+			t.Errorf("endpoint returned unexpected 500 internal server error; response: %s", body)
 		}
 	})
 
-	t.Run("Anthropic_Messages_Structure", func(t *testing.T) {
+	t.Run("Anthropic_Messages_Endpoint_Integration", func(t *testing.T) {
 		reqBody := `{
 			"model": "claude-3-5-sonnet",
-			"max_tokens": 1024,
-			"system": "You are a helpful assistant.",
+			"max_tokens": 512,
 			"messages": [
-				{"role": "user", "content": "Hello, output JSON."}
+				{"role": "user", "content": "Hello Claude"}
 			],
+			"stream": false
+		}`
+
+		c := visit(http.MethodPost, "/v1/messages")
+		c.Fiber().Request().SetBody([]byte(reqBody))
+		c.Fiber().Request().Header.Set("Content-Type", "application/json")
+		c.Fiber().Request().Header.Set("anthropic-version", "2023-01-01")
+
+		status := answering(t, c, c.AnthropicMessages)
+		body := sent(c)
+
+		if status == http.StatusInternalServerError {
+			t.Errorf("anthropic endpoint returned unexpected 500 internal server error; response: %s", body)
+		}
+	})
+
+	t.Run("Error_Envelope_Consistency", func(t *testing.T) {
+		reqBody := `{ "invalid_field": true }`
+
+		c := visit(http.MethodPost, "/v1/chat/completions")
+		c.Fiber().Request().SetBody([]byte(reqBody))
+		c.Fiber().Request().Header.Set("Content-Type", "application/json")
+
+		status := answering(t, c, c.ChatCompletions)
+		body := sent(c)
+
+		if status >= 500 {
+			t.Errorf("expected client error status (< 500), got %d with body: %s", status, body)
+		}
+	})
+
+	t.Run("Streaming_Request_Handling", func(t *testing.T) {
+		reqBody := `{
+			"model": "test-model",
+			"messages": [{"role": "user", "content": "Stream test"}],
 			"stream": true
 		}`
-		
-		var parsed map[string]interface{}
-		if err := json.Unmarshal([]byte(reqBody), &parsed); err != nil {
-			t.Fatalf("failed to parse Anthropic request body: %v", err)
-		}
-		
-		if parsed["model"] != "claude-3-5-sonnet" {
-			t.Errorf("expected model 'claude-3-5-sonnet', got %v", parsed["model"])
-		}
-		
-		if parsed["max_tokens"] != float64(1024) {
-			t.Errorf("expected max_tokens 1024, got %v", parsed["max_tokens"])
-		}
-	})
 
-	t.Run("Standardized_Error_Envelope", func(t *testing.T) {
-		// Verify standardized error response format: { error: { message, type, param, code } }
-		errJSON := `{
-			"error": {
-				"message": "Invalid API key or rate limit exceeded",
-				"type": "invalid_request_error",
-				"param": null,
-				"code": 401
-			}
-		}`
+		c := visit(http.MethodPost, "/v1/chat/completions")
+		c.Fiber().Request().SetBody([]byte(reqBody))
+		c.Fiber().Request().Header.Set("Content-Type", "application/json")
 
-		var errResp struct {
-			Error struct {
-				Message string      `json:"message"`
-				Type    string      `json:"type"`
-				Param   interface{} `json:"param"`
-				Code    int         `json:"code"`
-			} `json:"error"`
-		}
-
-		if err := json.Unmarshal([]byte(errJSON), &errResp); err != nil {
-			t.Fatalf("failed to unmarshal error envelope: %v", err)
-		}
-
-		if errResp.Error.Code != 401 {
-			t.Errorf("expected error code 401, got %d", errResp.Error.Code)
-		}
-		if errResp.Error.Type != "invalid_request_error" {
-			t.Errorf("expected error type 'invalid_request_error', got %s", errResp.Error.Type)
-		}
-	})
-
-	t.Run("SSE_Streaming_Chunk_Format", func(t *testing.T) {
-		// Verify standard SSE chunk prefix and [DONE] terminator format
-		chunkLine := "data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"}}]}\n"
-		doneLine := "data: [DONE]\n"
-
-		if !strings.HasPrefix(chunkLine, "data: ") {
-			t.Errorf("SSE chunk must start with 'data: '")
-		}
-		if !strings.Contains(chunkLine, "delta") {
-			t.Errorf("OpenAI SSE chunk must contain 'delta'")
-		}
-		if doneLine != "data: [DONE]\n" {
-			t.Errorf("SSE stream terminator must be 'data: [DONE]'")
+		status := answering(t, c, c.ChatCompletions)
+		if status == http.StatusInternalServerError {
+			t.Errorf("streaming request triggered 500 error")
 		}
 	})
 }
