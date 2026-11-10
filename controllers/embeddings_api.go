@@ -113,7 +113,7 @@ func (c *ApiController) Embeddings() {
 			}
 			var ok2 bool
 			if hold, ok2 = reserveFor(c.Context(), subject, est); !ok2 {
-				c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "cost").Message))
+				c.refuseFunds(ledger, "cost", head.Model)
 				return
 			}
 			// The fail-safe every other reserving surface already has: whatever

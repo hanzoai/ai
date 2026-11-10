@@ -130,9 +130,9 @@ func TestOpenRouterRowCarriesItsCatalogFields(t *testing.T) {
 		}
 	}
 
-	// A name with no vendor lead is kept whole.
-	if got := byID["vendor/small:free"].Name; got != "Small (free)" {
-		t.Errorf("a name with no lead lists as %q", got)
+	// A no-cost model is a fallback rung, never a listed model.
+	if m, ok := byID["vendor/small:free"]; ok {
+		t.Errorf("a no-cost model is listed: %+v", m)
 	}
 }
 
@@ -147,7 +147,6 @@ func TestListedRowsNameClassAndFamily(t *testing.T) {
 		"kai":                       {object.ClassOurs, "kai"},
 		"typesafe/jev-router":       {object.ClassPremium, ""},
 		"anthropic/claude-sonnet-4": {object.ClassPremium, ""},
-		"free":                      {object.ClassFree, "enso"},
 		"bge-m3":                    {object.ClassPremium, ""},
 	} {
 		m, ok := byID[id]

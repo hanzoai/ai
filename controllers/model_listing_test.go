@@ -74,14 +74,14 @@ func lists(t *testing.T, id string) bool {
 func TestListingIsHeldBetweenBuilds(t *testing.T) {
 	withCatalog(t, "probe-held")
 
-	first, err := modelListing(nil)
+	first, err := modelListing(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(first) == 0 {
 		t.Fatal("empty listing")
 	}
-	second, err := modelListing(nil)
+	second, err := modelListing(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestListingIsPerCaller(t *testing.T) {
 		t.Error("one caller's listing reached another's")
 	}
 
-	body, err := modelListing(nil)
+	body, err := modelListing(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

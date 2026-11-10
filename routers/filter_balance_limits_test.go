@@ -22,6 +22,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -232,8 +233,12 @@ func TestASpentWindowIs429WithTheUpgrade(t *testing.T) {
 	if !strings.Contains(r.Error.Message, "Wait until "+reset.Format(time.RFC3339)+", or buy usage credits") || strings.Contains(p.said(), `"kind":"credits"`) {
 		t.Errorf("a spent window's refusal: %q", p.said())
 	}
-	if p.replied("Retry-After") == "" {
-		t.Error("429 carries no Retry-After")
+	// Ninety minutes is said by resets_at and X-Hanzo-Usage-Resets, not as a wait.
+	if ra := p.replied("Retry-After"); ra != "" {
+		t.Errorf("Retry-After %q for a window ninety minutes from reopening", ra)
+	}
+	if p.replied("X-Hanzo-Usage-Resets") != reset.Format(time.RFC3339) {
+		t.Errorf("X-Hanzo-Usage-Resets %q, want %s", p.replied("X-Hanzo-Usage-Resets"), reset.Format(time.RFC3339))
 	}
 
 	// At the top plan there is no upgrade to offer.
@@ -420,5 +425,22 @@ func TestACoveredRequestSettlesWhenItsAnswerIsWhole(t *testing.T) {
 	}
 	if len(settled) != 0 {
 		t.Fatalf("the filter settled a streamed answer's grant: %v", settled)
+	}
+}
+
+// A window that reopens within minutes still says when to come back
+// (object.MaxRetryAfter); only a wait no client should sit through is left out.
+func TestASpentWindowThatReopensSoonSaysWhen(t *testing.T) {
+	gateWith(t, 0)
+	reset := time.Now().Add(2 * time.Minute).UTC().Truncate(time.Second)
+	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		return nil, &object.LimitHit{Name: "session", ResetsAt: reset, Upgrade: "max-20x"}, nil
+	})
+	p := chatWith("enso", "/v1/chat/completions")
+	if p.status() != http.StatusTooManyRequests {
+		t.Fatalf("status %d, want 429 (%s)", p.status(), p.said())
+	}
+	if ra, err := strconv.Atoi(p.replied("Retry-After")); err != nil || ra <= 0 || ra > 120 {
+		t.Errorf("Retry-After %q for a window two minutes from reopening", p.replied("Retry-After"))
 	}
 }

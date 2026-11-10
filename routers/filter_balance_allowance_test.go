@@ -41,6 +41,7 @@ import (
 // the route costs nothing, so an unanswerable allowance hands out our own compute
 // and never a paid vendor call.
 func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
+	freeRoute(t)
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user") // resolveBillingKey → subject "acme"
 	bg.ledger.SetBalance("acme", 0)                            // no wallet at all — the free caller
@@ -50,7 +51,7 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	t.Cleanup(func() { balanceGate = prev })
 	t.Cleanup(func() { object.SetSpent(nil) }) // never leak the hook into other tests
 
-	free := `{"model":"enso-free","messages":[]}`
+	free := `{"model":"zen5","messages":[]}`
 	call := func() probe {
 		// The identity boundary in front stamps the person; the probe stands in for it.
 		return ask(http.MethodPost, "/v1/chat/completions").
@@ -153,8 +154,10 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 	if got.Error.UpgradeURL != object.PayURL("", "acme") || got.Error.UpgradeURL == "" {
 		t.Errorf("upgrade_url = %q, want the pay page %q", got.Error.UpgradeURL, object.PayURL("", "acme"))
 	}
-	if ra := p.replied("Retry-After"); ra == "" || ra == "0" {
-		t.Errorf("Retry-After = %q, want the seconds until 00:00 UTC", ra)
+	// 00:00 UTC is said by resets_at and X-RateLimit-Reset. As Retry-After it parked a
+	// coding harness for the rest of the day, so it is named only when minutes away.
+	if ra, soon := p.replied("Retry-After"), time.Until(midnight) <= object.MaxRetryAfter*time.Second; (ra != "") != soon {
+		t.Errorf("Retry-After = %q with 00:00 UTC %s away", ra, time.Until(midnight).Round(time.Second))
 	}
 	for h, want := range map[string]string{
 		"X-RateLimit-Limit":     "50",
@@ -176,7 +179,7 @@ func TestAllowanceBoundsTheFreeRoute(t *testing.T) {
 			with("Authorization", "Bearer tok").
 			with(zip.HeaderUserOwner, "acme").
 			with(zip.HeaderUser, "u-ann").
-			body([]byte(`{"model":"enso-free","input":"x"}`)).
+			body([]byte(`{"model":"zen5","input":"x"}`)).
 			through(BalanceGateFilter)
 		if p.status() != http.StatusOK || p.replied("X-RateLimit-Limit") != "" {
 			t.Errorf("%s with the day spent: status %d, X-RateLimit-Limit %q — retrieval must not spend or be refused by the allowance",
@@ -234,6 +237,7 @@ func TestAllowanceLeavesThePaywallAlone(t *testing.T) {
 // A free call that was not served gives its unit back: an answer of 400 or above
 // releases what the host took, and a served one keeps it.
 func TestAnUnservedFreeCallGivesBackItsUnit(t *testing.T) {
+	freeRoute(t)
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
 	bg.ledger.SetBalance("acme", 0)
@@ -254,7 +258,7 @@ func TestAnUnservedFreeCallGivesBackItsUnit(t *testing.T) {
 			with("Authorization", "Bearer tok").
 			with(zip.HeaderUserOwner, "acme").
 			with(zip.HeaderUser, "u-ann").
-			body([]byte(`{"model":"enso-free","messages":[]}`)).
+			body([]byte(`{"model":"zen5","messages":[]}`)).
 			through(BalanceGateFilter, answer(code))
 	}
 	call(http.StatusBadGateway)

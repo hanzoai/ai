@@ -54,24 +54,41 @@ import (
 )
 
 // ensoPrices is what a million tokens of each Enso model the family charges for
-// bill: the list price of the upstream its route typically answers on (the catalog's
-// cost of its first rung, universe charts/app/files/enso/catalog.yaml) times a
-// multiple of 2 to 3. A model the catalog serves at no charge has no line and bills
-// nothing. Claude Fable 5.1 and GPT-6 Astra list at $10 / $50; the dearest here is
-// 55% of either. Owner, 2026-10-15.
+// bill: the list price of the upstream that sets its quote (the dearest priced rung
+// of its chain in the family's catalog, universe charts/app/files/enso/catalog.yaml)
+// times the tier's margin, the same figures the catalog quotes. A model the catalog
+// serves at no charge has no line and bills nothing. Claude Fable 5.1 and GPT-6 Astra
+// list at $10.55 / $52.75; the dearest here is half of either. Owner, 2026-10-15 and
+// 2026-11-07 (enso-max).
 var ensoPrices = map[string]tag{
-	// GPT-6 Luna, three times: past a 272k-token prompt Luna costs $0.20 / $0.75 /
-	// $0.02 / $0.25, which twice its short price would cover by 4% of input once
-	// OpenRouter's fee is on it.
+	// GPT-6 Luna on OpenRouter, three times: past a 272k-token prompt Luna costs
+	// $0.20 / $0.75 / $0.02 / $0.25, which the price covers.
 	"enso-flash": {typical: "openai/gpt-6-luna", list: dollars("0.11", "0.55", "0.011", "0.1375"), multiple: decimal.New(3, 0)},
-	// GPT-6.1 Sol, twice. Every arm of the route (Sol, Gemini 4 Argon, Claude Sonnet
-	// 5.5) costs Sol's price.
-	"enso-pro": {typical: "openai/gpt-6.1-sol", list: dollars("2.20", "11.00", "0.11", "2.75"), multiple: decimal.New(2, 0)},
-	// Claude Sonnet 5.5, which answers most of its calls, two and a half times: the
-	// Claude Opus 5.5 arm behind it costs twice Sonnet, so twice Sonnet would leave
-	// that arm, with OpenRouter's fee, above the price.
-	"enso-ultra": {typical: "anthropic/claude-sonnet-5.5", list: dollars("2.20", "11.00", "0.11", "2.75"), multiple: decimal.MustParse("2.5")},
+	// GPT-6.1 Sol and Claude Sonnet 5.5 on OpenRouter, the dearest of its chain, one and
+	// a half times: above Sonnet 5.5's list, below Opus 5.5's.
+	"enso-pro": {typical: "openai/gpt-6.1-sol", list: dollars("2.20", "11.00", "0.11", "2.75"), multiple: decimal.MustParse("1.5")},
+	// Claude Opus 5.5 on Anthropic's own key, which leads it, 1.075 times: $4.30 /
+	// $21.50, Opus 5.5's own list on this API being $4.22 / $21.10. OpenRouter's Opus
+	// ($4.40 in) bills above it and is no arm of this model.
+	"enso-max": {typical: "claude-opus-5-5", list: dollars("4.00", "20.00", "0.20", "5.00"), multiple: decimal.MustParse("1.075")},
+	// Claude Opus 5.5 on OpenRouter, the dearest arm, 1.19 times: under Claude Fable 5.1
+	// in every class; Claude Sonnet 5.5 answers most of its calls.
+	"enso-ultra": {typical: "anthropic/claude-opus-5.5", list: dollars("4.40", "22.00", "0.22", "5.50"), multiple: decimal.MustParse("1.19")},
 }
+
+// ensoFast is fast mode's multiple of an Enso model's price, by the id the caller
+// named: the router and Flash twice, Pro and Max three times, Ultra four (owner,
+// 2026-11-07). A fast answer is always extra: it bills from the payer's prepaid cash
+// on every plan, Unlimited included.
+var ensoFast = map[string]int64{
+	"enso-auto": 2, "enso": 2, "hanzo/enso": 2,
+	"enso-flash": 2,
+	"enso-pro":   3, "enso-max": 3,
+	"enso-ultra": 4,
+}
+
+// FastMultiple is fast mode's multiple for model, 0 for a model that has no fast mode.
+func FastMultiple(model string) int64 { return ensoFast[strings.ToLower(strings.TrimSpace(model))] }
 
 // tag is how one model's price was set: the upstream it typically routes to, that
 // upstream's list price, and the multiple of it the model sells at.

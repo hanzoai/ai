@@ -548,7 +548,7 @@ func (c *ApiController) vendorVoice(m zenModel, r audioSpeechRequest, authUser *
 	ledger := c.billingOrg(authUser)
 	hold, ok := reserveFor(c.Context(), authUser.PayerSubject(ledger), centsUp(quote))
 	if !ok {
-		c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "speech cost").Message))
+		c.refuseFunds(ledger, "speech cost", m.ID)
 		return
 	}
 	defer hold.settle(0)

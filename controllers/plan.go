@@ -95,9 +95,9 @@ func ClassOf(model string) string {
 	return object.ClassPremium
 }
 
-// FreeModel is the free lane's model id: what a conversation in limited mode is
-// answered by.
-const FreeModel = freeID
+// FreeModel is what a conversation in limited mode is answered by: Enso's router,
+// on its tier's no-cost rungs at no charge.
+const FreeModel = freeAs
 
 // Entitled reports whether path is one whose requests the usage policy decides: a
 // conversation, or a decision.
@@ -119,6 +119,9 @@ var meteredPaths = map[string]bool{
 	"/v1/audio/voice":          true,
 	"/v1/audio/music":          true,
 	"/v1/audio/foley":          true,
+	"/v1/music/generations":    true,
+	"/v1/foley/generations":    true,
+	"/v1/3d/generations":       true,
 	"/v1/images/generations":   true,
 	"/v1/videos/generations":   true,
 }

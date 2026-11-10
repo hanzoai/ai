@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -229,6 +230,13 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 	model := requestedModel(c)
+	// The no-cost pool and its models are fallback rungs inside a tier, never a model a
+	// caller asks for.
+	if controllers.Unsold(model) {
+		return refuse(c, http.StatusNotFound, "model_not_found",
+			[]byte(`{"error":{"message":"The model `+strconv.Quote(model)+` does not exist; ask for enso-auto.","type":"invalid_request_error","code":"model_not_found"}}`),
+			subject, namespace, time.Time{})
+	}
 	// A decision is gated as it is priced: a Kai version is Kai (controllers.DecisionAs).
 	if controllers.DecisionPath(path) {
 		model = controllers.DecisionAs(model)
@@ -243,26 +251,33 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	}
 	// THE ENSO ROUTER. A router id (router.depth: enso, enso-auto, hanzo/enso) is no
 	// SKU, and no request is served as one: each is resolved here, before anything
-	// prices it, to the one tier its reasoning depth names, then gated, held, seated and
-	// billed as that tier, exactly as a request naming the tier is. A request nothing
-	// pays that tier for is resolved to the family's free SKU instead (enso-free), billed
-	// nothing and never refused for want of payment, and the answer says which:
-	// X-Routed-Model and the `routing` object name what answered and why, and a refusal
-	// for want of payment adds limited mode's headers (fallBack).
+	// prices it, to the one tier the effort it states names, or, with none or auto, the
+	// one the router chooses (controllers.RouteDepth), then gated, held, seated and
+	// billed as that tier, exactly as a request naming the tier is.
 	//
-	// Nothing pays the tier when the family serves it to no one at a price; when a
-	// program in this process made the call (its own meter charges the customer for the
-	// id it named); with no usage policy, when the wallet cannot cover it; with one, when
-	// the paid lane's switch is off, the policy refuses the tier or names nothing, names
-	// a payer the paid lane does not seat (the free plan, a free cap, granted credit),
-	// names prepaid cash the wallet cannot cover, or the paid lane has no room for it.
-	// What admitting the tier took is given back first. A refusal the free SKU meets as
-	// well (a request window, the free allowance) is the free SKU's.
-	tier, free, routed := depthRoute(model, c.Body())
+	// AN ENSO TIER IS SERVED TO EVERY CALLER, and who pays decides which of its rungs
+	// (controllers.Kinds): a paid plan's included usage or prepaid cash serves it on
+	// our credits first, then prepaid rungs while the wallet holds cash, then the
+	// no-cost rungs; a request nothing pays the tier for is served on its no-cost rungs
+	// and our credits at no charge (rest), held to the plan's request windows and the
+	// free allowance, and the answer says so: the `routing` object and, for a refusal
+	// for want of payment, limited mode's headers (fallBack).
+	//
+	// Nothing pays the tier when a program in this process made the call (its own
+	// meter charges the customer for the id it named); with no usage policy, when the
+	// wallet cannot cover it; with one, when the paid lane's switch is off, the policy
+	// refuses the tier or names nothing, names a payer the paid lane does not seat (the
+	// free plan, a free cap, granted credit), names prepaid cash the wallet cannot
+	// cover, or the paid lane has no room for it. What admitting the tier took is given
+	// back first.
+	asked := model
+	tier, routing, routed := routeDepth(c.Context(), model, c.Body(), namespace, userKey, controllers.RequestID(c.Header("X-Request-Id")))
 	_, stated := object.CallerOf(c.Context())
-	asked, sent := model, append([]byte(nil), c.Body()...)
-	// onTier: the request names its router's tier, which the policy has yet to pay for.
+	// onTier: the request names an Enso tier, which the policy has yet to pay for.
 	onTier := false
+	// freed: nothing pays for the tier, so it is served on its no-cost rungs. A request
+	// asked again from the top (rest, handover) keeps what it was marked.
+	_, _, freed := controllers.Order(c.Context())
 	// paidPlanned: the host named a paid plan behind the grant that went on to the
 	// wallet. Such a payer is never handed to the free model when the wallet refuses.
 	paidPlanned := false
@@ -276,41 +291,57 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 		return ok
 	}
-	// rest serves a routed request on its free SKU. why is what kept it off its tier;
-	// code, when a refusal for want of payment did, is said as limited mode, with the
-	// plan that lifts it (upgrade).
+	// rest serves the tier on its no-cost rungs at no charge. why is what kept it off
+	// its paid rungs; code, when a refusal for want of payment did, is said as limited
+	// mode, with the plan that lifts it (upgrade).
 	rest := func(why, code, upgrade string) {
 		if code != "" {
 			why = "nothing pays for it (" + code + ")"
-			fallBack(c, free, code, namespace, upgrade)
+			fallBack(c, model, code, namespace, upgrade)
 		}
 		c.Fiber().Response().Header.Del(controllers.LaneReasonHeader)
-		name(free)
-		onTier = false
-		controllers.SetRouting(c, controllers.DepthRouting(asked, sent, why))
-	}
-	if routed {
-		paid := func(ok bool) {
-			if ok && name(tier) {
-				controllers.SetRouting(c, controllers.DepthRouting(asked, sent, ""))
-			}
+		controllers.Free(c, asked)
+		freed, onTier = true, false
+		if routed {
+			controllers.SetRouting(c, routing(why))
 		}
+	}
+	// paying marks a tier something pays for: our credits, then prepaid rungs while
+	// the wallet holds cash (cash), then the no-cost rungs; fast mode puts prepaid
+	// first where cash pays its multiple, the multiple of the tier the request
+	// resolved to (model), not of the router id it asked for.
+	paying := func(cash bool) {
+		fast := cash && controllers.WantsFast(c) && controllers.FastMultiple(model) > 1
 		switch {
-		case tier == "":
-			rest("", "", "")
+		case fast:
+			controllers.Kinds(c, controllers.KindsFast, true, asked)
+		case cash:
+			controllers.Kinds(c, controllers.KindsPaying, false, asked)
+		default:
+			controllers.Kinds(c, controllers.KindsPlan, false, asked)
+		}
+	}
+	if routed && tier != "" {
+		name(tier)
+		controllers.SetRouting(c, routing(""))
+	}
+	if !freed && isEnso(model) {
+		switch {
 		case stated:
-			rest("a program in this process meters its own call", "", "")
+			// A program in this process meters its own call and charges the customer the
+			// tier's price: it is served as paying.
+			paying(true)
 		case object.Limits() == nil:
 			ok, deny, _ := balanceGate.checkBalance(c.Host(), subject, namespace, userKey)
 			if !ok {
 				rest("", deny.Code, "")
+			} else {
+				paying(true)
 			}
-			paid(ok)
 		case controllers.FreeOnly():
 			rest("the paid lane is closed", "", "")
 		default:
-			paid(true)
-			onTier = model == tier
+			onTier = true
 		}
 	}
 	// WHO PAYS IS THE HOST'S CALL. Its usage policy puts every model in a class and
@@ -350,10 +381,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	}
 	if limits := object.Limits(); limits != nil && model != "" && controllers.Entitled(path) {
 		for try := 0; try < 4; try++ {
-			priced := !costsNothing(model, namespace)
+			priced := !freed && !costsNothing(model, namespace)
 			ask := object.LimitAsk{
 				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
-				Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: priced,
+				Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: priced, Lane: controllers.LaneOf(model),
 				Apps: controllers.Apps(c), Spend: controllers.ChatPath(path), Session: session,
 			}
 			grant, hit, err := limits(c.Context(), ask)
@@ -361,17 +392,20 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				log.Warning("limits: unreadable, refusing subject=%s namespace=%s path=%s: %v", subject, namespace, path, err)
 				return denied(c, object.UsageUnavailable(), subject, namespace, 0, path)
 			}
-			if hit != nil && onTier {
+			// Fast mode only the payer's own money pays for is refused, never served
+			// slower for nothing (the host's prepaid_required); any other refusal for
+			// want of payment serves the tier on its no-cost rungs.
+			if hit != nil && onTier && hit.Code != object.CodePrepaid {
 				rest("", hit.Code, hit.Upgrade)
 				continue
 			}
 			if hit != nil {
 				log.Info("limits: %s %s subject=%s namespace=%s actor=%s path=%s model=%s", hit.Code, hit.Name, subject, namespace, userKey, path, model)
-				// The free plan hands a conversation in an app to the free model, asked
-				// again, so the model that answers is still the policy's to admit.
-				if priced && !strings.EqualFold(controllers.FreeModel, model) && fallback(c, path, hit.Code) &&
-					fallBack(c, controllers.FreeModel, hit.Code, namespace, hit.Upgrade) {
-					model = controllers.FreeModel
+				// The free plan hands a conversation in an app to Enso's router at no
+				// charge, asked again, so the tier that answers is still the policy's to
+				// admit.
+				if priced && fallback(c, path, hit.Code, namespace, controllers.ClassOf(model)) && handover(c, hit.Code, namespace, hit.Upgrade, &model) {
+					asked, freed, onTier = controllers.FreeModel, true, false
 					continue
 				}
 				return limitReached(c, hit, subject, namespace)
@@ -383,7 +417,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				}
 				break
 			}
-			// A routed tier is paid for only by a paid plan's included usage, or by prepaid
+			// An Enso tier is paid for only by a paid plan's included usage, or by prepaid
 			// cash its wallet covers, and only on a seat of the paid lane; the wallet is
 			// read before the seat holds anything.
 			if onTier {
@@ -415,6 +449,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 				seat = controllers.Seat(c, grant, namespace, subject, model)
 			}
 			paidPlanned = paidPlan(grant)
+			// Who pays orders the tier's rungs: cash beside a plan pays its prepaid rungs.
+			if onTier {
+				paying(grant.Pays == object.PaysPrepaid || balanceGate.funds(c, subject, namespace, userKey))
+			}
 			defer controllers.Unseat(c)
 			usage(c, grant)
 			controllers.Cover(c, grant)
@@ -434,7 +472,7 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 
-	if model != "" && costsNothing(model, namespace) {
+	if model != "" && (freed || costsNothing(model, namespace)) {
 		// Free is not unbounded. The wallet has nothing to refuse at zero, so the
 		// plan's ALLOWANCE is what bounds this lane: a count of calls per person per
 		// day, held by the host. It is the one gate a free caller meets, and the
@@ -483,22 +521,25 @@ func BalanceGateFilter(c *zip.Ctx) error {
 
 	sufficient, deny, balance := balanceGate.checkBalance(c.Host(), subject, namespace, userKey)
 	if sufficient {
+		if isEnso(model) {
+			paying(true)
+		}
 		return c.Continue()
 	}
-	// A routed tier the wallet cannot cover is served on its free SKU, asked again from
-	// the top as the free SKU is.
-	if routed && model == tier && deny.Code == object.CodeInsufficientBalance {
+	// An Enso tier the wallet cannot cover is served on its no-cost rungs, asked again
+	// from the top as a request nothing pays for is.
+	if isEnso(model) && deny.Code == object.CodeInsufficientBalance {
 		rest("", deny.Code, "")
 		return BalanceGateFilter(c)
 	}
 	// A conversation the wallet cannot pay for goes on in limited mode, like one the
-	// plan cannot: the free model answers and says why. Asked again from the top, so
-	// the free model is held to the plan's windows and the free allowance.
-	if deny.Code == object.CodeInsufficientBalance && model != "" && !strings.EqualFold(model, controllers.FreeModel) && !paidPlanned &&
-		fallback(c, path, deny.Code) && fallBack(c, controllers.FreeModel, deny.Code, namespace, "") {
+	// plan cannot: Enso's router answers at no charge and says why. Asked again from
+	// the top, so it is held to the plan's windows and the free allowance.
+	if deny.Code == object.CodeInsufficientBalance && model != "" && !paidPlanned &&
+		fallback(c, path, deny.Code, namespace, controllers.ClassOf(model)) && handover(c, deny.Code, namespace, "", &model) {
 		return BalanceGateFilter(c)
 	}
-	return denied(c, deny, subject, namespace, balance, path)
+	return denied(c, deny.For(model, controllers.ClassOf(model)), subject, namespace, balance, path)
 }
 
 // pastPlan asks the host what pays for a call its plan has no room for (LimitAsk.Past)
@@ -605,10 +646,15 @@ func fallBack(c *zip.Ctx, to, code, org, upgrade string) bool {
 
 // denied writes the gate's refusal. checkBalance decides WHICH: a known-insufficient
 // balance (402, add credits) or a balance it could not verify (503, retry) — both
-// fail-CLOSED.
+// fail-CLOSED. A 402 is written in the one billing error object a limit's refusal
+// writes (object.BillingError: code, class, model, topup_url, actions) with the
+// top-up headers, so a program reads the same refusal whichever rule refused.
 func denied(c *zip.Ctx, deny object.BillingNotice, subject, namespace string, balance int64, path string) error {
 	log.Info("balance_gate: deny subject=%s namespace=%s balance_cents=%d code=%s status=%d path=%s",
 		subject, namespace, balance, deny.Code, deny.Status, path)
+	for k, v := range deny.Headers() {
+		c.SetHeader(k, v)
+	}
 	return refuse(c, deny.Status, deny.Code, deny.ErrorJSON(), subject, namespace, time.Time{})
 }
 
@@ -630,6 +676,15 @@ func refuse(c *zip.Ctx, status int, code string, raw []byte, subject, namespace 
 			raw = raised(raw, r)
 			if status == http.StatusTooManyRequests && len(c.Fiber().Response().Header.Peek("X-RateLimit-Limit")) == 0 {
 				standing(c, object.Standing{Spent: true, Limit: r.Limit, Resets: reset})
+			}
+		}
+	}
+	if status == http.StatusPaymentRequired {
+		// Every 402 says on the wire what limited it and where funds are added, whichever
+		// site refused; a site that already said so (limitReached, handover) keeps its own.
+		for k, v := range object.PaymentHeaders(code, "", object.PayURL(c.Host(), namespace)) {
+			if len(c.Fiber().Response().Header.Peek(k)) == 0 {
+				c.SetHeader(k, v)
 			}
 		}
 	}
@@ -714,9 +769,44 @@ var costsNothing = controllers.ModelCostsNothing
 // (controllers.DecisionFree), indirected so the gate's tests state the prices directly.
 var decisionFree = controllers.DecisionFree
 
-// depthRoute resolves a router id to its tier and its free SKU
-// (controllers.DepthRoute), indirected so the gate's tests state the table directly.
-var depthRoute = controllers.DepthRoute
+// routeDepth resolves a router id to its tier and the routing its answer publishes
+// (controllers.RouteDepth), indirected so the gate's tests state the router directly.
+var routeDepth = func(ctx stdcontext.Context, model string, body []byte, org, user, rid string) (string, func(string) *controllers.Routing, bool) {
+	d, ok := controllers.RouteDepth(ctx, model, body, org, user, rid)
+	if !ok {
+		return "", nil, false
+	}
+	return d.Tier(), d.Routing, true
+}
+
+// routerStart is the tier Enso's router starts at (controllers.DepthRoute of
+// FreeModel), "" when Enso serves none; indirected so the gate's tests state it.
+var routerStart = func() string {
+	tier, _, ok := controllers.DepthRoute(controllers.FreeModel, nil)
+	if !ok {
+		return ""
+	}
+	return tier
+}
+
+// isEnso reports whether model is an Enso tier (controllers.IsEnso), indirected so the
+// gate's tests state the tier.
+var isEnso = controllers.IsEnso
+
+// handover hands a conversation nothing pays for to Enso's router, served at its start
+// on the tier's no-cost rungs at no charge, and says so (fallBack): model becomes that
+// tier. It reports false when the body could not be rewritten or Enso has no start.
+func handover(c *zip.Ctx, code, org, upgrade string, model *string) bool {
+	tier := routerStart()
+	if tier == "" || !fallBack(c, tier, code, org, upgrade) {
+		return false
+	}
+	c.SetHeader("X-Hanzo-Fallback", controllers.FreeModel)
+	c.SetHeader(controllers.RoutedModelHeader, tier)
+	controllers.Free(c, controllers.FreeModel)
+	*model = tier
+	return true
+}
 
 // owes is why grant does not pay for a routed tier on the paid lane, "" when it does:
 // a paid plan's included usage, or prepaid cash the payer's wallet covers. Prepaid cash
@@ -778,28 +868,9 @@ func giveBack(g *object.LimitGrant) {
 // capped model, the Hanzo model the caller may choose instead; it never serves one.
 // Where the host names the call that raises subject's limit, it rides along (refuse).
 func limitReached(c *zip.Ctx, hit *object.LimitHit, subject, org string) error {
-	type action struct {
-		Kind  string `json:"kind"`
-		Label string `json:"label"`
-		URL   string `json:"url,omitempty"`
-		Plan  string `json:"plan,omitempty"`
-		Model string `json:"model,omitempty"`
+	var body struct {
+		Error object.BillingError `json:"error"`
 	}
-	body := struct {
-		Error struct {
-			Message    string   `json:"message"`
-			Type       string   `json:"type"`
-			Code       string   `json:"code"`
-			Class      string   `json:"class,omitempty"`
-			Model      string   `json:"model,omitempty"`
-			Fallback   string   `json:"fallback,omitempty"`
-			Limit      string   `json:"limit,omitempty"`
-			ResetsAt   string   `json:"resets_at,omitempty"`
-			TopupURL   string   `json:"topup_url"`
-			UpgradeURL string   `json:"upgrade_url,omitempty"`
-			Actions    []action `json:"actions,omitempty"`
-		} `json:"error"`
-	}{}
 	pay := object.PayURL(c.Host(), org)
 	code := hit.Code
 	if code == "" {
@@ -833,27 +904,29 @@ func limitReached(c *zip.Ctx, hit *object.LimitHit, subject, org string) error {
 		body.Error.ResetsAt = reset.Format(time.RFC3339)
 		if wait {
 			c.SetHeader("X-Hanzo-Usage-Resets", body.Error.ResetsAt)
-			if left := int64(math.Ceil(time.Until(reset).Seconds())); left > 0 {
+			// Retry-After only for a wait a client can sit through (object.MaxRetryAfter);
+			// a window that reopens hours away is said by X-Hanzo-Usage-Resets and resets_at.
+			if left := int64(math.Ceil(time.Until(reset).Seconds())); left > 0 && left <= object.MaxRetryAfter {
 				c.SetHeader("Retry-After", fmt.Sprint(left))
 			}
 		}
 	}
 	if wait && body.Error.ResetsAt != "" {
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "wait", Label: "Wait until " + body.Error.ResetsAt})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "wait", Label: "Wait until " + body.Error.ResetsAt})
 	}
-	body.Error.Actions = append(body.Error.Actions, action{Kind: "topup", Label: "Buy usage credits", URL: pay})
+	body.Error.Actions = append(body.Error.Actions, object.TopupAction(pay))
 	if hit.Credits {
 		// The payer holds granted credit and has not chosen to spend it: the action
 		// turns the choice on (PUT /v1/ai/limits), it moves no money.
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "credits", Label: "Continue with credits", URL: "/v1/ai/limits"})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "credits", Label: "Continue with credits", URL: "/v1/ai/limits"})
 	}
 	if hit.Upgrade != "" {
 		body.Error.UpgradeURL = pay + "/cart?plan=" + url.QueryEscape(hit.Upgrade)
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "upgrade", Label: "Upgrade your plan", URL: body.Error.UpgradeURL, Plan: hit.Upgrade})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "upgrade", Label: "Upgrade your plan", URL: body.Error.UpgradeURL, Plan: hit.Upgrade})
 		c.SetHeader("X-Hanzo-Upgrade-Url", body.Error.UpgradeURL)
 	}
 	if code == object.CodeModelCap && hit.Fallback != "" {
-		body.Error.Actions = append(body.Error.Actions, action{Kind: "switch", Label: "Try " + modelName(hit.Fallback), Model: hit.Fallback})
+		body.Error.Actions = append(body.Error.Actions, object.BillingAction{Kind: "switch", Label: "Try " + modelName(hit.Fallback), Model: hit.Fallback})
 	}
 	switch {
 	case wait && body.Error.ResetsAt != "":
@@ -926,19 +999,26 @@ func modelName(id string) string {
 // cash pays for (paid_plan_required, or an empty wallet with no paid plan behind it),
 // from a request whose validated token was minted for a registered app
 // (controllers.Apps), which shows its person what answered (X-Hanzo-Fallback,
-// X-Hanzo-Usage: limited).
+// X-Hanzo-Usage: limited). The host may refuse a class instead (object.HandoverHook):
+// the app then gets the 402 that names the top-up, as a program does.
 //
 // Never a paid plan, on any surface: one that used what it includes waits until its
 // usage reopens or buys usage credits (limitReached). Never an API key or a token
 // delegated for model calls, whatever it sends: a program named its model, and gets
 // that model or the refusal saying what pays, never another model on a 200.
-func fallback(c *zip.Ctx, path, code string) bool {
+func fallback(c *zip.Ctx, path, code, namespace, class string) bool {
 	if !controllers.ChatPath(path) {
 		return false
 	}
 	switch code {
 	case object.CodePaidPlan, object.CodeInsufficientBalance:
-		return len(controllers.Apps(c)) > 0
+		if len(controllers.Apps(c)) == 0 {
+			return false
+		}
+		if h := object.HandoverHook(); h != nil {
+			return h(person(c), namespace, class)
+		}
+		return true
 	}
 	return false
 }
@@ -962,8 +1042,8 @@ func standing(c *zip.Ctx, s object.Standing) {
 	}
 }
 
-// freeRefused writes a Free-plan refusal with Retry-After when it says when it
-// clears.
+// freeRefused writes a Free-plan refusal with Retry-After when it clears within
+// object.MaxRetryAfter.
 func freeRefused(c *zip.Ctx, n object.FreeNotice, subject, namespace string) error {
 	if wait := n.RetryAfter(time.Now()); wait > 0 {
 		c.SetHeader("Retry-After", fmt.Sprint(wait))

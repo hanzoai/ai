@@ -80,6 +80,22 @@ func CalculateOpenAIModelPrice(model string, modelResult *ModelResult, lang stri
 		}
 		modelResult.Currency = "USD"
 
+	// gpt 4.5 model. It must come before the gpt-4 case below, which also
+	// contains "gpt-4.5": after it, this case was never reached and gpt-4.5 was
+	// billed at gpt-4's rates instead of the ones the pricing table publishes.
+	case strings.Contains(model, "gpt-4.5"):
+		if strings.Contains(model, "4.5-mini") {
+			inputPricePerThousandTokens = 0.0004
+			outputPricePerThousandTokens = 0.0016
+		} else if strings.Contains(model, "4.5-nano") {
+			inputPricePerThousandTokens = 0.0001
+			outputPricePerThousandTokens = 0.0004
+		} else {
+			inputPricePerThousandTokens = 0.002
+			outputPricePerThousandTokens = 0.008
+		}
+		modelResult.Currency = "USD"
+
 	// gpt 4.0 model
 	case strings.Contains(model, "gpt-4"):
 		if strings.Contains(model, "turbo") {
@@ -169,20 +185,6 @@ func CalculateOpenAIModelPrice(model string, modelResult *ModelResult, lang stri
 		} else {
 			inputPricePerThousandTokens = 0.00125
 			outputPricePerThousandTokens = 0.01
-		}
-		modelResult.Currency = "USD"
-
-	// gpt 4.5 model
-	case strings.Contains(model, "gpt-4.5"):
-		if strings.Contains(model, "4.5-mini") {
-			inputPricePerThousandTokens = 0.0004
-			outputPricePerThousandTokens = 0.0016
-		} else if strings.Contains(model, "4.5-nano") {
-			inputPricePerThousandTokens = 0.0001
-			outputPricePerThousandTokens = 0.0004
-		} else {
-			inputPricePerThousandTokens = 0.002
-			outputPricePerThousandTokens = 0.008
 		}
 		modelResult.Currency = "USD"
 
@@ -311,11 +313,11 @@ func GetOpenAiClientFromToken(authToken string, providerUrl string) openai.Clien
 }
 
 func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, history []*RawMessage, prompt string, knowledgeMessages []*RawMessage, agentInfo *AgentInfo, lang string) (*ModelResult, error) {
-	var client openai.Client
-	var flushData any
-
-	client = GetOpenAiClientFromToken(p.secretKey, p.providerUrl)
-	flushData = flushDataThink
+	// Every piece goes out through flushDataThink, named by its kind. It used to
+	// be held as an `any` and asserted per loop; the completion loop asserted the
+	// answer-only shape it never held, and every completion model panicked there.
+	client := GetOpenAiClientFromToken(p.secretKey, p.providerUrl)
+	flushThink := flushDataThink
 
 	ctx := context.Background()
 	flusher, ok := writer.(http.Flusher)
@@ -413,7 +415,6 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 
 		isLeadingReturn := true
 		for respStream.Next() {
-			flushThink := flushData.(func(string, string, io.Writer, string) error)
 			response := respStream.Current()
 			switch variant := response.AsAny().(type) {
 			case responses.ResponseReasoningSummaryTextDeltaEvent:
@@ -537,6 +538,11 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		for respStream.Next() {
 			completion := respStream.Current()
 
+			// A chunk can carry no choice (a usage-only chunk does); indexing one
+			// panicked.
+			if len(completion.Choices) == 0 {
+				continue
+			}
 			data := completion.Choices[0].Text
 			if isLeadingReturn && len(data) != 0 {
 				if strings.Count(data, "\n") == len(data) {
@@ -546,8 +552,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 				}
 			}
 
-			flushStandard := flushData.(func(string, io.Writer, string) error)
-			err := flushStandard(data, writer, lang)
+			err := flushThink(data, "message", writer, lang)
 			if err != nil {
 				return nil, err
 			}

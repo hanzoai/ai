@@ -77,6 +77,11 @@ type UsageEvent struct {
 	Class string
 	// Units is what the call consumed in its model's unit: tokens, in and out.
 	Units int64
+	// Lane is the kind of rung that served the call (LaneOurs, LanePremium,
+	// LaneFree): what our own credits served is the plan's usage, what a prepaid
+	// account served is billed at list from the wallet's cash (Plan false, Cash true)
+	// on every plan, and the no-cost pool bills nothing.
+	Lane string
 	// CostUSD is what the call cost us upstream, exact decimal USD; empty when the
 	// provider states no cost. A free call has a cost too, and it is ours.
 	CostUSD string
@@ -137,7 +142,21 @@ type LimitAsk struct {
 	// at once). The host decides what pays past the plan, exactly as for a plan whose
 	// included usage is used, and counts nothing against the plan.
 	Past bool
+	// Lane is the kind of rung the model's route serves on: LaneOurs (our own
+	// credits, NVIDIA's or our engine), LanePremium (a prepaid upstream account) or
+	// LaneFree (the no-cost pool); "" for an Enso tier, whose rungs of every kind the
+	// gate orders by who pays and whose answer names the kind that served
+	// (UsageEvent.Lane). What our own credits serve is the plan's usage; what a
+	// prepaid account serves is billed at list from prepaid on every plan.
+	Lane string
 }
+
+// The kinds of rung a model's answer is served on (LimitAsk.Lane, UsageEvent.Lane).
+const (
+	LaneOurs    = "ours"
+	LanePremium = "premium"
+	LaneFree    = "free"
+)
 
 // The classes a model is sold in. A plan includes usage of the first two, measured
 // at list price; the free class is the free lane.
@@ -223,6 +242,9 @@ const (
 	CodePaidPlan      = "paid_plan_required"
 	CodeFreePlanCap   = "free_plan_cap"
 	CodeModelCap      = "model_cap"
+	// CodePrepaid refuses a request only the payer's own money pays for (fast mode)
+	// from a payer who has none of its own.
+	CodePrepaid = "prepaid_required"
 )
 
 // LimitFunc decides who pays for one request before it is served. The host
@@ -316,7 +338,14 @@ type Raise struct {
 // refusal exactly as it would be with no hook.
 type RaiseFunc func(ctx context.Context, subject, namespace, code string) *Raise
 
+// HandoverFunc says whether a signed-in app's conversation that nothing pays for goes
+// on in Enso's router at no charge (true) or is refused with the top-up (false). class
+// is the class of the model asked for (premium, ours, free). nil leaves the handover
+// on, as it has always been: the host answers false only for the classes it refuses.
+type HandoverFunc func(ctx context.Context, namespace, class string) bool
+
 var (
+	handover      HandoverFunc
 	balanceReader BalanceReaderFunc
 	usageRecorder UsageRecorderFunc
 	tierReader    TierReaderFunc
@@ -340,6 +369,10 @@ func SetLimits(f LimitFunc) { limits = f }
 // SetSpent installs the host's native free-call admission (nil clears it).
 func SetSpent(f SpentFunc) { spent = f }
 
+// SetHandover installs the host's answer to whether a conversation nothing pays for is
+// handed to Enso's router (nil clears it, and the handover stays on).
+func SetHandover(f HandoverFunc) { handover = f }
+
 // SetRaise installs the host's answer to how a refused caller raises its limit (nil
 // clears it).
 func SetRaise(f RaiseFunc) { raise = f }
@@ -358,6 +391,9 @@ func Limits() LimitFunc { return limits }
 
 // Spent returns the installed native free-call admission, or nil when unset.
 func Spent() SpentFunc { return spent }
+
+// HandoverHook returns the installed handover answer, or nil when unset.
+func HandoverHook() HandoverFunc { return handover }
 
 // RaiseHook returns the installed raise answer, or nil when unset.
 func RaiseHook() RaiseFunc { return raise }

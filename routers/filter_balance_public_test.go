@@ -38,6 +38,7 @@ import (
 // So the lane is exempt: it is free by construction, it bills nobody, and it carries
 // its own ceiling. Exempt from BALANCE, never from bounds.
 func TestPublicLaneIsCountedOnceAndOnlyByTheLane(t *testing.T) {
+	freeRoute(t)
 	bg := newTestGate("http://unused", "", balanceCacheTTL)
 	bg.setUserKeyCache("tok", "", "acme", "acme", "acme/user")
 	bg.ledger.SetBalance("acme", 0)
@@ -64,7 +65,7 @@ func TestPublicLaneIsCountedOnceAndOnlyByTheLane(t *testing.T) {
 
 	// A caller arriving at the public lane carrying a credential — the signed-in
 	// reader — must not be held to their own ceiling by this gate.
-	if code := post("/v1/chat/public", `{"model":"enso-free","messages":[]}`, true); code == http.StatusPaymentRequired {
+	if code := post("/v1/chat/public", `{"model":"zen5","messages":[]}`, true); code == http.StatusPaymentRequired {
 		t.Error("the balance gate refused the public lane; the lane bills nobody and must not 402 here")
 	}
 	if asks != 0 {
@@ -81,7 +82,7 @@ func TestPublicLaneIsCountedOnceAndOnlyByTheLane(t *testing.T) {
 	}
 
 	// The CREDENTIALED surface is untouched: it is held to exactly one ceiling, its own.
-	if code := post("/v1/chat/completions", `{"model":"enso-free","messages":[]}`, true); code == http.StatusPaymentRequired {
+	if code := post("/v1/chat/completions", `{"model":"zen5","messages":[]}`, true); code == http.StatusPaymentRequired {
 		t.Error("the free route on the credentialed surface was refused with allowance left")
 	}
 	if asks != 1 {

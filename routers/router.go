@@ -173,6 +173,10 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/audio/voice", "POST:AudioMedia")
 	route(app, "/v1/audio/music", "POST:AudioMedia")
 	route(app, "/v1/audio/foley", "POST:AudioMedia")
+	// Zach shape: /v1/<modality>/generations. Music/foley aliases keep /v1/audio/*.
+	route(app, "/v1/music/generations", "POST:AudioMedia")
+	route(app, "/v1/foley/generations", "POST:AudioMedia")
+	route(app, "/v1/3d/generations", "POST:ThreeDGenerations")
 
 	// The same audio with the turns joined up: a spoken conversation over one
 	// socket, speaking the OpenAI realtime wire so clients written against it

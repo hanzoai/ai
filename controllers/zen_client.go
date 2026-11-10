@@ -120,13 +120,6 @@ type modelFamily struct {
 	// nil means the family has none, and a refusal for money from it is final.
 	spare func([]byte) []string
 
-	// freeName is the one id this family publishes for the free pool: a route a
-	// caller can name, and the route a refusal from this family falls to. It is
-	// branded per family because that is where a caller looks for it, and it is
-	// served from the SAME pool for all of them, because a route that costs nothing
-	// is not made different by whose name is on it.
-	freeName string
-
 	// terms states, in the family's own dialect, what the vendor may keep of an
 	// exchange. It is called with the outgoing body and whether the route being
 	// asked for is one the vendor charges nothing for, because that is the trade a
@@ -188,7 +181,6 @@ type modelFamily struct {
 var (
 	zenFam = &modelFamily{
 		name: "zen", typ: "Zen", prefix: "zen", owner: "zenlm", urlKey: "ZEN_URL", keyKey: "ZEN_API_KEY",
-		freeName:   "zen-free",
 		providerFn: object.ZenProvider,
 		windows: map[string]int{
 			"zen5":       flagshipWindow,
@@ -199,7 +191,6 @@ var (
 	ensoFam = &modelFamily{
 		name: "enso", typ: "Enso", prefix: "enso", owner: "hanzo", urlKey: "ENSO_URL", keyKey: "ENSO_API_KEY",
 		prices:     ensoPrices,
-		freeName:   "enso-free",
 		providerFn: object.EnsoProvider,
 		// The flagship window. Every other SKU, enso-pro among them, is listed and
 		// served from discovery.
@@ -320,47 +311,30 @@ func familyNamed(name string) *modelFamily {
 // client that does not care which family answered has one id to remember.
 const freeID = "free"
 
-// freeDoor is the family and id the platform's free pool is served under. Wherever
-// Enso's own catalog publishes its free id, the pool answers as Enso: Enso's service
-// serves it and gives it Enso's name and maker, so no vendor's model introduces itself
-// to a caller who asked for the free tier. Where Enso does not carry it, the family
+// freeDoor is the family and id the platform's free pool is served under: Enso's
+// router start (enso-auto's default tier), on its no-cost rungs, so no vendor's model
+// introduces itself to a caller the pool answers. Where Enso is not served, the family
 // that holds the free routes chooses among them.
 func freeDoor() (*modelFamily, string) {
 	if ensoFam.enabled() {
-		if _, own := ensoFam.lookup(ensoFam.freeName); own {
-			return ensoFam, ensoFam.freeName
+		if tier := unpaid(freeAs); tier != freeAs {
+			if _, own := ensoFam.lookup(tier); own {
+				return ensoFam, tier
+			}
 		}
 	}
 	return freeFamily(), freeID
 }
 
-// frontDoor reports that this id is a name this family publishes for the pool — its
-// own branded one, and, for the family that HOLDS the pool, the platform's unbranded
-// one. Such an id is not a model any vendor has: it is a name for a choice.
-//
-// A family whose own catalog publishes its branded free id serves it like any other
-// SKU, with that catalog's rungs, fallbacks and vision, so the id has one free path.
-func (f *modelFamily) frontDoor(model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
-	if f.freeName != "" && m == strings.ToLower(f.freeName) {
-		_, own := f.lookup(m)
-		return !own
-	}
-	return f == freeFamily() && m == freeID
-}
+// freeAs is the model an answer from the pool is named for: Enso's router, whose
+// Free-plan callers it serves.
+const freeAs = "enso-auto"
 
-// freeNames are every id this family publishes for the pool, with the owner each is
-// branded to. The platform's own id is owned by us because it is our product, not the
-// vendor's, whichever vendor happens to answer it.
-func (f *modelFamily) freeNames() []struct{ id, owner string } {
-	var out []struct{ id, owner string }
-	if f.freeName != "" && f.frontDoor(f.freeName) {
-		out = append(out, struct{ id, owner string }{f.freeName, f.owner})
-	}
-	if f == freeFamily() {
-		out = append(out, struct{ id, owner string }{freeID, "hanzo"})
-	}
-	return out
+// frontDoor reports that this id is the platform's own name for the pool, freeID, on
+// the family that holds it. It is no model any vendor has, and no caller names it: the
+// public lane assigns it, and the gate refuses it from anyone else (Unsold).
+func (f *modelFamily) frontDoor(model string) bool {
+	return f == freeFamily() && strings.EqualFold(strings.TrimSpace(model), freeID)
 }
 
 // freeFamily holds the platform's free routes: the family whose vendor publishes
@@ -906,6 +880,7 @@ var modeOutputs = map[string][]string{
 	"image":     {"image"},
 	"audio":     {"audio"},
 	"video":     {"video"},
+	"3d":        {"3d"},
 }
 
 // decodeCatalog translates a family's raw /v1/models body into discovered SKUs using
@@ -1344,6 +1319,8 @@ func (f *modelFamily) passthroughRoute(model string) *modelRoute {
 // serve: a listed model that 404s upstream is worse than an absent one, and it is how
 // enso-pro reached /v1/models with no price at all.
 func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
+	// The listing reads a fresh catalog: a stale one is read again first (fresh).
+	f.fresh()
 	zs := f.snapshot()
 	now := time.Now().Unix()
 	// ONE id, ONE entry, on every path through this function. An id already in
@@ -1351,11 +1328,6 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 	// id, so a second row for one id is not extra information — it is two answers
 	// to the same question, and a client building a map keeps whichever it read
 	// last.
-	//
-	// The free ids used to be appended blind on the empty-lineup path below, which
-	// was invisible while the pool was empty (freeInfo returns nothing then, so
-	// nothing was appended) and became three duplicate rows the moment a route
-	// existed — enabling our own compute is exactly what makes one exist.
 	idx := make(map[string]int, len(base))
 	for i, m := range base {
 		idx[strings.ToLower(m.ID)] = i
@@ -1369,16 +1341,11 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 			base = append(base, info)
 		}
 	}
-	if len(zs) == 0 {
-		// A family whose own lineup is empty still publishes its free id: that id is
-		// served from the platform pool, not from anything this family discovered.
-		for _, info := range f.freeInfo(now) {
-			upsert(info)
-		}
-		sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
-		return base
-	}
 	for _, z := range zs {
+		// The pool's no-cost models are fallback providers, never SKUs: none is listed.
+		if f == freeFamily() && !z.priced() {
+			continue
+		}
 		owner := z.OwnedBy
 		if owner == "" {
 			owner = f.owner // public branding default: enso→"hanzo", zen→"zenlm"
@@ -1405,42 +1372,8 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 		}
 		upsert(info)
 	}
-	for _, info := range f.freeInfo(now) {
-		upsert(info)
-	}
 	sort.Slice(base, func(i, j int) bool { return base[i].ID < base[j].ID })
 	return base
-}
-
-// freeInfo is the listing entry for this family's free router, present only while
-// the pool holds a route to serve it with — a listed model that answers nothing is
-// worse than an absent one. Its context is the narrowest in the pool, because that
-// is the prompt every route in the pool can hold, and the widest would promise a
-// window the answer might not have.
-func (f *modelFamily) freeInfo(now int64) []modelInfo {
-	names := f.freeNames()
-	routes := freeRoutes()
-	if len(names) == 0 || len(routes) == 0 {
-		return nil
-	}
-	window := 0
-	for _, r := range routes {
-		m, ok := r.fam.lookup(r.id)
-		if !ok {
-			continue
-		}
-		if window == 0 || (m.MaxCtx > 0 && m.MaxCtx < window) {
-			window = m.MaxCtx
-		}
-	}
-	out := make([]modelInfo, 0, len(names))
-	for _, n := range names {
-		out = append(out, modelInfo{
-			ID: n.id, Object: "model", Created: now, OwnedBy: n.owner,
-			Premium: false, ContextWindow: window, Outputs: []string{"text"},
-		})
-	}
-	return out
 }
 
 // ── the pipe (IO edge) ────────────────────────────────────────────────────────
@@ -1808,6 +1741,20 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if f.ours() && who != "" {
 			r.Header.Set(payerHeader, who)
 		}
+		// The kinds of Enso rung the payer may be served on, in the gate's order, and
+		// fast mode where prepaid cash pays it (kinds.go).
+		if f == ensoFam {
+			l := kindsOn(ctx)
+			r.Header.Set(classesHeader, l.order)
+			if l.fast {
+				r.Header.Set(fastHeader, "1")
+			} else {
+				r.Header.Del(fastHeader)
+			}
+		} else {
+			r.Header.Del(classesHeader)
+			r.Header.Del(fastHeader)
+		}
 		if spend := spendOf(grant, place, pm, f, s); spend != "" {
 			r.Header.Set(spendHeader, spend)
 			r.Header.Set("TE", planTE)
@@ -2006,8 +1953,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	}
 
 	// lane is whether the caller is on the free lane: the route they named costs
-	// nothing. Read before any route stands in, since a stand-in rewrites sku.
-	lane := freeLane(fam, sku)
+	// nothing, or the gate marked the request free (free, ours). Read before any
+	// route stands in, since a stand-in rewrites sku.
+	lane := freeLane(fam, sku) || kindsOn(ctx).free
 
 	// pooled reports whether a free-lane request the pool could not serve is the
 	// POOL's to answer: some account in it is benched by the vendor. Any other
@@ -2135,7 +2083,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// request's own goroutine, and travel by value. recordFamilyUsage takes no
 	// receiver for the same reason: with no `c` in scope it cannot reach a request
 	// at all, which is a compile-time property rather than a rule to remember.
-	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam, plan: grantOf(c.Ctx)}
+	w := whence{ledger: c.billingOrg(authUser), ip: c.Fiber().IP(), ctx: c.Context(), asked: fam, plan: grantOf(c.Ctx), kinds: kindsOn(c.Context())}
 	if fam.prices != nil {
 		// The row of a family that sets its own prices says how hard it was asked to
 		// think, beside the arm that answered (rates.go).
@@ -2205,7 +2153,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// by its free fallback says so), the stand-in's public name, else the model asked.
 	name := model
 	if stood {
-		name = publicName(fam, by, sku)
+		name = publicName(fam, by, sku, model)
 		if fam == freeFamily() {
 			mk.model = name
 		}
@@ -2215,6 +2163,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		}
 	}
 	c.SetHeader(servedHeader, name)
+	// The answer to a router id is named for the router id the caller asked for; the
+	// tier that served it is X-Routed-Model's and the `routing` object's to say.
+	if named := kindsOn(c.Context()).named; named != "" && depthRow(named) != nil {
+		mk.model = named
+	}
 
 	// The client is told the terms its answer was served under, because a free route
 	// is free in exchange for what the vendor keeps and somebody has to be able to
@@ -2392,6 +2345,10 @@ type serving struct {
 	arm, vendor, failover, account string
 	first                          time.Duration
 	free                           bool
+	// class is the kind of the rung that answered (kinds.go), as the family said it;
+	// fast that it was asked fast.
+	class string
+	fast  bool
 	// cost is what a committed answer's paid upstream cost, nano-dollars, as its
 	// family stated it at the end (costHeader); nil when none was stated.
 	cost *int64
@@ -2424,6 +2381,12 @@ func (sv *serving) merge(tr http.Header) {
 	if tr.Get(freeHeader) == "true" {
 		sv.free = true
 	}
+	if v := tr.Get(classHeader); v != "" {
+		sv.class = v
+	}
+	if tr.Get(fastHeader) == "true" {
+		sv.fast = true
+	}
 	if n, ok := usdNanos(tr.Get(costHeader)); ok {
 		sv.cost = &n
 	}
@@ -2438,7 +2401,8 @@ func servingOf(h http.Header) serving {
 	if arm == "" {
 		arm = h.Get(servedHeader)
 	}
-	sv := serving{arm: arm, vendor: h.Get(providerHeader), account: h.Get(keyHeader), failover: strings.Join(h.Values(failoverHeader), "; "), free: h.Get(freeHeader) == "true"}
+	sv := serving{arm: arm, vendor: h.Get(providerHeader), account: h.Get(keyHeader), failover: strings.Join(h.Values(failoverHeader), "; "), free: h.Get(freeHeader) == "true",
+		class: h.Get(classHeader), fast: h.Get(fastHeader) == "true"}
 	if n, ok := usdNanos(h.Get(cogsHeader)); ok {
 		sv.cogs = &n
 	}
@@ -2514,16 +2478,13 @@ func failoverRows(w whence, fam *modelFamily, sku, chain string, u *iam.User, pr
 const armHeader = "X-Hanzo-Arm"
 
 // publicName is the Hanzo name an answer from route sku of family by goes by: an
-// Enso or Zen SKU is its own name; any other route — a borrowed free model, our own
-// compute — is the free tier of the family that was asked, and Enso's for the rest.
-func publicName(asked, by *modelFamily, sku string) string {
+// Enso or Zen SKU is its own name; any other route — a borrowed no-cost model, our
+// own compute — is named for the model the caller asked for, never for itself.
+func publicName(asked, by *modelFamily, sku, model string) string {
 	if by == ensoFam || by == zenFam {
 		return sku
 	}
-	if asked != nil && asked.freeName != "" {
-		return asked.freeName
-	}
-	return ensoFam.freeName
+	return model
 }
 
 // eventStream reports whether resp is a server-sent event stream.
@@ -3007,6 +2968,7 @@ type whence struct {
 	asked  *modelFamily       // the family of the model the caller named
 	plan   *object.LimitGrant // the plan that covers the request, nil for none
 	depth  string             // how hard the request asks its model to think (depthOf)
+	kinds  kinds              // the kinds the gate gave the request (kinds.go)
 }
 
 // recordFamilyUsage takes NO RECEIVER, deliberately. It is called from inside a
@@ -3024,7 +2986,10 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 	// the outage. Stated once, on the record, so the hold, the debit, the warehouse
 	// row and the span all read the same zero (see usageCostNano). A priced SKU the
 	// family says it answered from a free rung costs the caller what that rung costs.
-	free := fam.isSpare(model) || inPool(model) || sv.free
+	//
+	// A request nothing pays for is served on a tier's no-cost rungs or our own
+	// credits, and bills nothing whichever answered (kinds.go).
+	free := fam.isSpare(model) || inPool(model) || sv.free || w.kinds.free
 	// A free model a family ran on a listed vendor's account counts toward the free
 	// view (listing.go); what ai sent on its own accounts counted as it was sent.
 	if lf := listedFamily(sv.vendor); lf != nil && sv.arm != "" && lf.free(sv.arm) {
@@ -3066,7 +3031,23 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 				nano = min(nano, zm.retailNano(t))
 			}
 		}
+		// Fast mode bills its multiple of the price, by the model that answered: the
+		// tier a router id resolved to, not the router id the caller named.
+		if sv.fast {
+			if x := FastMultiple(model); x > 1 {
+				nano *= x
+			}
+		}
 		exact = &nano
+	}
+	// A premium rung's answer, or a fast one, bills the payer's prepaid cash at list on
+	// every plan: the plan's admission is settled at nothing and the row debits the
+	// wallet's cash (kinds.go).
+	plan := w.plan
+	cash := false
+	if status == "success" && !free && sv.cashPays() && plan != nil && plan.Pays != object.PaysCaller {
+		plan.Settle(0)
+		plan, cash = nil, true
 	}
 	// A call that cost us more than it billed is a loss, and a loss is never
 	// silent: the row says how much (loss_nano), and the ledger counts it (rates.go).
@@ -3094,14 +3075,19 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
 		Reasoning: w.depth, Arms: trailed, LossNano: loss,
 		Cost: float64(nano) / 1e9, Currency: "USD",
-		Premium: isPremium, Stream: stream, Status: status, ErrorMsg: errMsg,
+		Premium: isPremium, Lane: laneOfAnswer(sv, free, model), Stream: stream, Status: status, ErrorMsg: errMsg,
 		ClientIP: w.ip, RequestID: reqID, Account: "hanzo", Routing: string(mk.routing),
 		CostNanoExact:   cost,
 		BilledNanoExact: exact,
-		plan:            w.plan,
-		planNanos:       planCost(w.plan, sv.cost),
+		plan:            plan,
+		planNanos:       planCost(plan, sv.cost),
+		cash:            cash,
 	}
 	rec.bind(w.ctx, authUser)
+	// bind reads the request's grant back; the wallet's cash pays this one.
+	if cash {
+		rec.plan, rec.cash = nil, true
+	}
 	recordUsage(rec)
 	recordTrace(w.ctx, rec, start)
 	failed(w, fam, model, sv.failover, authUser, isPremium, stream, reqID, start)

@@ -1058,9 +1058,10 @@ func TestAKeyFloodIsRefusedAtTheCap(t *testing.T) {
 	}
 }
 
-// The free tier answers as Enso wherever Enso's catalog carries its free id, and falls
-// back to the family holding the free routes where it does not.
+// The pool answers as Enso's router start, on its no-cost rungs, wherever Enso serves
+// that tier, and falls back to the family holding the free routes where it does not.
 func TestTheFreeTierAnswersAsEnsoWhereEnsoCarriesIt(t *testing.T) {
+	depthConfig(t)
 	restore(t, ensoFam)
 	ensoFam.providerFn = func() *object.Provider { return nil }
 	if fam, id := freeDoor(); fam != freeFamily() || id != freeID {
@@ -1072,10 +1073,10 @@ func TestTheFreeTierAnswersAsEnsoWhereEnsoCarriesIt(t *testing.T) {
 	ensoFam.byID = map[string]zenModel{}
 	ensoFam.loaded, ensoFam.fetchedAt = true, time.Now()
 	if fam, _ := freeDoor(); fam == ensoFam {
-		t.Error("Enso answers for the free tier without carrying its free id")
+		t.Error("Enso answers for the pool without serving its router's start")
 	}
-	ensoFam.byID = map[string]zenModel{ensoFam.freeName: {ID: ensoFam.freeName}}
-	if fam, id := freeDoor(); fam != ensoFam || id != ensoFam.freeName {
-		t.Errorf("freeDoor = %s/%s, want enso/%s", fam.name, id, ensoFam.freeName)
+	ensoFam.byID = map[string]zenModel{"enso-flash": {ID: "enso-flash"}}
+	if fam, id := freeDoor(); fam != ensoFam || id != "enso-flash" {
+		t.Errorf("freeDoor = %s/%s, want enso/enso-flash", fam.name, id)
 	}
 }

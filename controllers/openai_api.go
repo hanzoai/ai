@@ -18,6 +18,7 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -787,11 +788,14 @@ type usageRecord struct {
 	Cost             float64 `json:"cost"`
 	Currency         string  `json:"currency"`
 	Premium          bool    `json:"premium"`
-	Stream           bool    `json:"stream"`
-	Status           string  `json:"status"`
-	ErrorMsg         string  `json:"errorMsg"`
-	ClientIP         string  `json:"clientIp"`
-	RequestID        string  `json:"requestId"`
+	// Lane is the kind of rung that served the call (object.LaneOurs, LanePremium,
+	// LaneFree), "" where none is known.
+	Lane      string `json:"lane,omitempty"`
+	Stream    bool   `json:"stream"`
+	Status    string `json:"status"`
+	ErrorMsg  string `json:"errorMsg"`
+	ClientIP  string `json:"clientIp"`
+	RequestID string `json:"requestId"`
 	// ref names this record's debit for the ledger (object.UsageEvent.Ref): minted
 	// the first time the record is filed and kept, so filing it again — a retry after
 	// a lost answer — is the same debit.
@@ -1466,6 +1470,7 @@ func recordUsage(record *usageRecord) error {
 			Ref:       record.ref,
 			Class:     ClassOf(record.Model),
 			Units:     int64(record.TotalTokens),
+			Lane:      cmp.Or(record.Lane, LaneOf(record.Model)),
 			// The COGS the row and the span read (usageMargin): a family's or a
 			// vendor's own statement where one was made, else the rate table's.
 			CostUSD: nanoUSD(usageMargin(record).CostNano),
@@ -2132,7 +2137,7 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		est := estimateRequestCostCents(request.Model, max(measured, len(c.Body())/4), request.MaxTokens)
 		var ok bool
 		if hold, wide, ok = c.widthFor(authUser, subject, est); !ok {
-			c.ResponseAuthError(billingError("%s", object.InsufficientBalance(c.Host(), ledger, "request cost").Message))
+			c.refuseFunds(ledger, "request cost", request.Model)
 			return
 		}
 	}
@@ -2157,10 +2162,12 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 		return
 	}
 	if fam := familyForProviderType(provider.Type); fam != nil {
-		// The free tier is served under freeDoor, so it answers as a model of ours.
+		// The pool is served under freeDoor, on Enso's no-cost rungs at no charge, so it
+		// answers as a model of ours (kinds.go).
 		sku := request.Model
 		if fam == freeFamily() && strings.EqualFold(strings.TrimSpace(sku), freeID) {
 			fam, sku = freeDoor()
+			Free(c.Ctx, freeAs)
 		}
 		familyRefused = c.pipeToFamily(fam, "chat/completions", "openai", sku, c.Body(), request.Stream, clampMaxTokens(sku, request.MaxTokens), orgId, authUser, isPremium, hold, requestStartTime)
 		if familyRefused == nil {
@@ -2621,6 +2628,10 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 // using /v1/models to ask "is my key working?" gets an honest answer, because a key
 // that does not verify annotates nothing rather than reading as accepted.
 //
+// ?id= narrows the listing to the models a page names, comma-separated and at most
+// 100, in the listing's order; an id nothing lists is absent. Without it the
+// listing is whole, which is what every OpenAI-compatible caller reads.
+//
 // @Title ListModels
 // @Tag OpenAI Compatible API
 // @Description Returns a list of all available models. Public — no authentication.
@@ -2636,7 +2647,12 @@ func (c *ApiController) ListModels() {
 	// session, a signature-checked JWT, or a key IAM resolved). So an absent, expired
 	// or forged credential simply yields the un-annotated public catalogue — never a
 	// 401, and never another caller's standing.
-	jsonResponse, err := modelListing(c.principalUser())
+	ids, err := namedModels(c.Input().Get("id"))
+	if err != nil {
+		c.ResponseErrorWithStatus(http.StatusBadRequest, err.Error())
+		return
+	}
+	jsonResponse, err := modelListing(c.principalUser(), ids)
 	if err != nil {
 		c.ResponseError(err.Error())
 		return

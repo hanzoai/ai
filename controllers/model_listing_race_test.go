@@ -82,7 +82,7 @@ func TestTheHeldCatalogueIsSafeToReadConcurrently(t *testing.T) {
 					_ = m.ID
 				}
 
-				body, err := modelListing(caller)
+				body, err := modelListing(caller, nil)
 				if err != nil {
 					t.Errorf("modelListing: %v", err)
 					return

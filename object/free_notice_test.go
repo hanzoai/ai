@@ -65,3 +65,26 @@ func TestAllowanceSpentNamesAnotherWindowsReset(t *testing.T) {
 		t.Fatalf("status %d, want 429", n.Status)
 	}
 }
+
+// A refusal names Retry-After only for a wait a client can sit through. Told to
+// come back at 00:00 UTC, Hanzo Dev's coding harness slept inside a fifteen-minute
+// run until it died; the reset is still in resets_at, and a refusal that clears
+// within minutes still says when.
+func TestRetryAfterIsOnlyAWaitWorthSittingThrough(t *testing.T) {
+	now := time.Date(2026, 11, 1, 13, 4, 55, 0, time.UTC)
+	for name, c := range map[string]struct {
+		resets time.Time
+		want   int64
+	}{
+		"no reset":               {time.Time{}, 0},
+		"already reopened":       {now.Add(-time.Second), 0},
+		"in two minutes":         {now.Add(2 * time.Minute), 120},
+		"at the bound":           {now.Add(MaxRetryAfter * time.Second), MaxRetryAfter},
+		"just past it":           {now.Add(MaxRetryAfter*time.Second + time.Second), 0},
+		"at 00:00 UTC, 11h away": {time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC), 0},
+	} {
+		if got := (FreeNotice{Resets: c.resets}).RetryAfter(now); got != c.want {
+			t.Errorf("%s: RetryAfter = %d, want %d", name, got, c.want)
+		}
+	}
+}
