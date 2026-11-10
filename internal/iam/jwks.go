@@ -55,6 +55,17 @@ var (
 
 const jwksTTL = 10 * time.Minute
 
+// ForgetJWKSCache drops the cached key set for one endpoint. The cache is keyed
+// by URL, and a URL says nothing about whether the server behind it still signs
+// with the same key: an httptest server hands its port to the next one as soon
+// as it closes, so a suite that mints a fresh key per test can verify a new
+// token against a dead test's keys and report "crypto/rsa: verification error".
+func ForgetJWKSCache(endpoint string) {
+	jwksCacheMu.Lock()
+	delete(jwksCache, jwksURL(endpoint))
+	jwksCacheMu.Unlock()
+}
+
 // jwksURL derives the JWKS endpoint from an IAM base URL.
 func jwksURL(endpoint string) string {
 	return strings.TrimRight(endpoint, "/") + "/v1/iam/.well-known/jwks"

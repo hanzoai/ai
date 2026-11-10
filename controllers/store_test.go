@@ -206,6 +206,10 @@ func withIAM(t *testing.T) *people {
 	// certificate PEM and reports "not valid PEM", which reads like a key problem
 	// and is a missing address.
 	t.Setenv("IAM_ENDPOINT", srv.URL)
+	// This server's port was another test's server a moment ago, and that test's
+	// keys are still cached under the same URL; drop them so a token signed here is
+	// verified against the key published here.
+	iam.ForgetJWKSCache(srv.URL)
 	t.Setenv("JWT_ISSUER", srv.URL)
 	t.Setenv("IAM_AUDIENCE", iamTestAudience)
 	t.Setenv("IAM_CLIENT_ID", "hanzo-test")
