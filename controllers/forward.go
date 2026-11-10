@@ -370,6 +370,13 @@ func (p pass) call(ctx context.Context, org string, row *object.Provider, c cand
 			if refusedIn(b) {
 				return declined(errorStatus(b), b)
 			}
+			// A 200 that holds no answer at all — no choices, or no JSON object — is a
+			// vendor that answered nothing, with no error to say so. Delivered, the
+			// caller is billed for its prompt and handed an empty success; moved, the
+			// next provider answers it.
+			if noChoices(b) {
+				return declined(http.StatusBadGateway, []byte(emptyAnswer))
+			}
 			whole = b
 		}
 		resp = r
@@ -661,6 +668,20 @@ func refusedIn(body []byte) bool {
 		Choices json.RawMessage `json:"choices"`
 	}
 	return json.Unmarshal(body, &f) == nil && present(f.Error) && !present(f.Choices)
+}
+
+// noChoices reports a buffered 200 that answered nothing: a body that is not a JSON
+// object (an HTML page, a bare string), or an object whose choices are missing or
+// empty. An answer whose one choice says "" is still an answer and is not this.
+func noChoices(body []byte) bool {
+	var f struct {
+		Choices json.RawMessage `json:"choices"`
+	}
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || trimmed[0] != '{' || json.Unmarshal(trimmed, &f) != nil {
+		return true
+	}
+	return !present(f.Choices)
 }
 
 // provenUnchanged holds a strict request to the body its first attempt would send,
