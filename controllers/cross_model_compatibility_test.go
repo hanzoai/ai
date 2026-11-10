@@ -65,8 +65,8 @@ func TestCrossModelAPICompatibility_DeepIntegration(t *testing.T) {
 			if _, ok := result["id"].(string); !ok {
 				t.Errorf("successful OpenAI response missing 'id' string field")
 			}
-			if obj, ok := result["object"].(string); !ok || (obj != "chat.completion" && obj != "object") {
-				t.Errorf("unexpected or missing 'object' field in OpenAI response: %v", result["object"])
+			if obj, ok := result["object"].(string); !ok || obj != "chat.completion" {
+				t.Errorf("unexpected or missing 'object' field in OpenAI response (want 'chat.completion'): %v", result["object"])
 			}
 			if _, ok := result["choices"].([]interface{}); !ok {
 				t.Errorf("successful OpenAI response missing 'choices' array field")
@@ -140,10 +140,12 @@ func TestCrossModelAPICompatibility_DeepIntegration(t *testing.T) {
 			} `json:"error"`
 		}
 
-		if err := json.Unmarshal([]byte(body), &errResp); err == nil && errResp.Error.Message != "" {
-			if errResp.Error.Message == "" {
-				t.Errorf("error envelope message is empty")
-			}
+		if err := json.Unmarshal([]byte(body), &errResp); err != nil {
+			t.Fatalf("error response body is not valid JSON: %v, body: %s", err, body)
+		}
+
+		if errResp.Error.Message == "" {
+			t.Errorf("error envelope missing or empty 'message', body: %s", body)
 		}
 	})
 
@@ -166,9 +168,17 @@ func TestCrossModelAPICompatibility_DeepIntegration(t *testing.T) {
 			t.Fatalf("streaming request caused internal server error")
 		}
 
+		if strings.TrimSpace(body) == "" {
+			t.Errorf("streaming response body is empty")
+		}
+
 		if contentType != "" && strings.Contains(contentType, "text/event-stream") {
 			if !strings.Contains(body, "data:") {
 				t.Errorf("SSE stream body missing 'data:' prefix lines")
+			}
+			// Verify stream terminator or delta markers are present if stream is non-empty
+			if !strings.Contains(body, "[DONE]") && !strings.Contains(body, "delta") {
+				t.Errorf("SSE stream body missing '[DONE]' terminator or delta chunks")
 			}
 		}
 	})
