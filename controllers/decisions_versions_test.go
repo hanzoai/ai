@@ -15,6 +15,8 @@
 package controllers
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -290,5 +292,58 @@ func TestADecisionNamingChatIsToldTheChatDoor(t *testing.T) {
 	if isChatModel("kai") || isChatModel("zenlm/zen6") || isChatModel("zen5") {
 		t.Fatalf("decisions and their ids are not chat models: kai=%t zenlm/zen6=%t zen5=%t",
 			isChatModel("kai"), isChatModel("zenlm/zen6"), isChatModel("zen5"))
+	}
+}
+
+// A chat naming a decision model is refused at both chat doors, HTTP and the ZAP
+// fast path, with the message that names POST /v1/decisions and its docs; neither
+// reaches the decision service or bills.
+func TestAChatNamingKaiIsRefusedOnEveryWire(t *testing.T) {
+	fake, events := setupDecisions(t)
+	const prefix = `model "kai" is served at POST /v1/decisions.`
+	const docs = "Docs: GET /v1/openapi.json?operation=post_decisions"
+	want := decisionDoor("kai")
+	if !strings.HasPrefix(want, prefix) || !strings.HasSuffix(want, docs) {
+		t.Fatalf("decisionDoor(kai) = %q, want it to open %q and end %q", want, prefix, docs)
+	}
+	body := `{"model":"kai","messages":[{"role":"user","content":"hi"}]}`
+
+	c := newChatController("Bearer "+decisionsKey, body)
+	if status := answering(t, c, c.ChatCompletions); status != http.StatusBadRequest {
+		t.Fatalf("HTTP chat naming kai => %d, want 400 (body %s)", status, sent(c))
+	}
+	var got Response
+	if err := json.Unmarshal([]byte(sent(c)), &got); err != nil {
+		t.Fatalf("HTTP refusal is not the envelope: %v (%s)", err, sent(c))
+	}
+	if got.Status != "error" || got.Msg != want {
+		t.Fatalf("HTTP refusal: got %+v, want msg %q", got, want)
+	}
+
+	frame, err := zapChatHandler(context.Background(), "Bearer "+decisionsKey, []byte(body))
+	status, msg := cloudStatus(t, frame, err)
+	if status != http.StatusBadRequest || msg != want {
+		t.Fatalf("ZAP chat naming kai => %d %q, want 400 %q", status, msg, want)
+	}
+
+	if calls, _, _ := fake.seen(); calls != 0 {
+		t.Fatalf("service saw %d call(s) for a chat it must never be sent", calls)
+	}
+	if len(*events) != 0 {
+		t.Fatalf("refused chats were debited %d time(s)", len(*events))
+	}
+}
+
+// The ZAP decisions door reads the model as HTTP does, so a chat model is told the
+// chat door there too.
+func TestAZapDecisionNamingChatIsToldTheChatDoor(t *testing.T) {
+	fake, _ := setupDecisions(t)
+	r := zapDecision(context.Background(), "Bearer "+decisionsKey, []byte(askFor("zen6")))
+	want := string(decisionsFailure(400, `model "zen6" is a chat model; use POST /v1/chat/completions. Docs: GET /v1/openapi.json?operation=post_chat_completions`))
+	if r.status != http.StatusBadRequest || string(r.body) != want {
+		t.Fatalf("ZAP decision naming zen6 => %d %s, want 400 %s", r.status, r.body, want)
+	}
+	if calls, _, _ := fake.seen(); calls != 0 {
+		t.Fatalf("service saw %d call(s) for a chat model it must never be sent", calls)
 	}
 }

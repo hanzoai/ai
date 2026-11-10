@@ -1697,8 +1697,9 @@ func remint(body []byte) []byte {
 // The body may be sent gzip, deflate, br or zstd encoded; decoded, it is bounded as
 // sent.
 //
-// Refusals are {"error":{"code","message"}}: 400 malformed JSON or unknown model,
-// 401 no valid credential, 402 insufficient balance, 403 a key kind that may not
+// Refusals are {"error":{"code","message"}}: 400 malformed JSON, an unknown model,
+// or a chat model, whose message names POST /v1/chat/completions, 401 no valid
+// credential, 402 insufficient balance, 403 a key kind that may not
 // call this (pk-), 415 any other Content-Encoding, 422 an invalid question or handle
 // id, a state beyond the checkpoint's reach (code state_too_long) or a body past 16
 // MiB (code request_too_long), 429 rate limited or queue full, 502 the service

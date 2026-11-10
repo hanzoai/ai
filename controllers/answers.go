@@ -86,7 +86,7 @@ var answers = map[string]Answer{
 	// The OpenAI-compatible surface. These proxy an upstream or rebuild its
 	// answer, so the shape is that wire format — our own fork of the Go types
 	// every client of it already holds.
-	"ChatCompletions":           whole(openai.ChatCompletionResponse{}),
+	"ChatCompletions":           {Shape: openai.ChatCompletionResponse{}, Refusals: chatRefusals()},
 	"ChatCompletionsPublic":     whole(openai.ChatCompletionResponse{}),
 	"Embeddings":                whole(openai.EmbeddingResponse{}),
 	"ImagesGenerations":         whole(openai.ImageResponse{}),
@@ -169,11 +169,20 @@ var answers = map[string]Answer{
 	"GetTrafficGlobe":     data(object.TrafficGlobe{}),
 }
 
+// chatRefusals are the refusals the chat completions handler states beyond 401 and
+// 403, in this service's envelope. A model /v1/decisions serves is not a chat model,
+// and the refusal names that door rather than reporting an unknown model.
+func chatRefusals() map[int]Refusal {
+	return map[int]Refusal{
+		400: {Says: "A body that is not a chat request, or a model chat does not serve. A decision model (kai, a Kai version, or another id /v1/decisions serves) is refused with `model \"<id>\" is served at POST /v1/decisions`, the request shape, and a link to that operation's docs.", Shape: Response{}},
+	}
+}
+
 // decisionRefusals are the refusals /v1/decisions answers with, each in the
 // service's error shape, {"error":{"code","message"}}.
 func decisionRefusals() map[int]Refusal {
 	says := map[int]string{
-		400: "Malformed JSON, or a model this path does not serve.",
+		400: "Malformed JSON, or a model this path does not serve. A chat model is refused with `model \"<id>\" is a chat model; use POST /v1/chat/completions`, and the message links that operation's docs.",
 		401: "No credential, or one this service does not accept.",
 		402: "The balance cannot cover the call. Retry-After is when a top-up is read.",
 		403: "A credential whose kind may not call this, such as a publishable (pk-) key.",
