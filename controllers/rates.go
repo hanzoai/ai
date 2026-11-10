@@ -82,6 +82,7 @@ var ensoPrices = map[string]tag{
 // on every plan, Unlimited included.
 var ensoFast = map[string]int64{
 	"enso-auto": 2, "enso": 2, "hanzo/enso": 2,
+	"hybrid/auto": 2, "hybrid": 2, "enso-hybrid": 2, "zen-hybrid": 2,
 	"enso-flash": 2,
 	"enso-pro":   3, "enso-max": 3,
 	"enso-ultra": 4,

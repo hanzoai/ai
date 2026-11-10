@@ -463,7 +463,8 @@ func routingOf(c *zip.Ctx) json.RawMessage {
 // reasoning turned off, and DepthDefault when it states none.
 func requestDepth(body []byte) string {
 	var req struct {
-		ReasoningEffort string `json:"reasoning_effort"`
+		ReasoningEffort string            `json:"reasoning_effort"`
+		Metadata        map[string]string `json:"metadata"`
 		Reasoning       *struct {
 			Effort    string `json:"effort"`
 			MaxTokens int    `json:"max_tokens"`
@@ -496,6 +497,24 @@ func requestDepth(body []byte) string {
 			return "off"
 		case "enabled":
 			return depthName(thinking.Budget(t.BudgetTokens))
+		}
+	}
+	if len(req.Metadata) > 0 {
+		if strings.EqualFold(strings.TrimSpace(req.Metadata["kai.congested"]), "true") {
+			return "high"
+		}
+		if e := strings.ToLower(strings.TrimSpace(req.Metadata["kai.effort"])); e != "" {
+			return e
+		}
+		switch strings.ToLower(strings.TrimSpace(req.Metadata["kai.tier"])) {
+		case "small":
+			return "low"
+		case "medium":
+			return "medium"
+		case "large":
+			return "high"
+		case "frontier":
+			return "max"
 		}
 	}
 	return DepthDefault

@@ -131,6 +131,12 @@ func TestTheEffortLadderNamesEveryTier(t *testing.T) {
 		{`{"model":"enso-auto","thinking":{"type":"enabled","budget_tokens":2048}}`, "enso-flash", "effort"},
 		{`{"model":"enso-auto","thinking":{"type":"enabled","budget_tokens":20000}}`, "enso-ultra", "effort"},
 		{`{"model":"enso-auto","thinking":{"type":"disabled"}}`, "enso-flash", "effort"},
+		{`{"model":"enso-auto","metadata":{"kai.tier":"small"}}`, "enso-flash", "effort"},
+		{`{"model":"enso-auto","metadata":{"kai.tier":"medium"}}`, "enso-pro", "effort"},
+		{`{"model":"enso-auto","metadata":{"kai.tier":"large"}}`, "enso-max", "effort"},
+		{`{"model":"enso-auto","metadata":{"kai.tier":"frontier"}}`, "enso-ultra", "effort"},
+		{`{"model":"enso-auto","metadata":{"kai.effort":"medium"}}`, "enso-pro", "effort"},
+		{`{"model":"enso-auto","metadata":{"kai.congested":"true"}}`, "enso-max", "effort"},
 		{`{"model":"enso-auto","reasoning_effort":"a word nobody defined"}`, "enso-flash", "default"},
 		{`not json`, "enso-flash", "default"},
 	} {
