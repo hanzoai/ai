@@ -16,9 +16,11 @@ package object
 
 import (
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime"
 
 	_ "github.com/go-sql-driver/mysql" // mysql
@@ -31,6 +33,7 @@ import (
 
 var (
 	adapter                 *Adapter = nil
+	hosted                  *dbx.DB  = nil
 	providerAdapter         *Adapter = nil
 	isCreateDatabaseDefined          = false
 	createDatabase                   = true
@@ -59,6 +62,13 @@ func InitConfig() {
 }
 
 func InitAdapter() {
+	if hosted != nil {
+		// The host handed over the database (UseDB): it owns the connection, its
+		// pool, its dialect and its close, so nothing here is read from config.
+		adapter = &Adapter{driverName: hosted.DriverName(), DbName: conf.GetConfigString("dbName"), db: hosted}
+		providerAdapter = nil
+		return
+	}
 	adapter = NewAdapter(conf.GetConfigString("driverName"), conf.GetConfigDataSourceName())
 	providerDbName := conf.GetConfigString("providerDbName")
 	if adapter.DbName == providerDbName {
@@ -70,7 +80,7 @@ func InitAdapter() {
 }
 
 func CreateTables() {
-	if createDatabase {
+	if createDatabase && hosted == nil {
 		err := adapter.CreateDatabase()
 		if err != nil {
 			panic(err)
@@ -176,6 +186,22 @@ func (a *Adapter) close() {
 }
 
 func (a *Adapter) createTable() {
+	if err := SyncSchema(a.db); err != nil {
+		slog.Warn("schema not synced", "err", err)
+	}
+}
+
+// UseDB hands ai the database its host opened. The host owns the connection, so
+// ai opens none from config (InitAdapter, CreateTables) and closes none. Call it
+// before Bootstrap; db is in whatever dialect the host runs (sqlite, postgres or
+// pgx). Pass nil to take it back.
+func UseDB(db *dbx.DB) { hosted = db }
+
+// SyncSchema creates the tables ai keeps on db, and grows those that exist by the
+// columns added since, in db's own dialect. It is idempotent and is what a host
+// runs as the open of ai's store, so a move between engines finds the same tables
+// on both sides. Every model is tried; the error joins those that failed.
+func SyncSchema(db *dbx.DB) error {
 	// The Go structs are the single source of truth for the schema. dbx.Sync is
 	// idempotent — CREATE TABLE IF NOT EXISTS for new tables and ALTER TABLE ADD
 	// COLUMN for fields added since the table was created — so this is safe on
@@ -199,11 +225,12 @@ func (a *Adapter) createTable() {
 		&Served{},             // what each vendor account did with each model, by hour
 		&MediaJob{},           // generations a vendor runs for a caller, until billed (media_job.go)
 	}
+	var errs []error
 	for _, m := range models {
-		if err := a.db.Sync(m); err != nil {
-			// Log and continue so one bad model can't block the rest; a table
-			// that genuinely failed to create will surface at first use.
-			slog.Warn("table not synced", "model", fmt.Sprintf("%T", m), "err", err)
+		if err := syncModel(db, m); err != nil {
+			// Keep going so one bad model can't block the rest; a table that
+			// genuinely failed to create surfaces at first use, and in the error.
+			errs = append(errs, fmt.Errorf("%T: %w", m, err))
 		}
 	}
 	// dbx.Sync's ALTER TABLE ADD COLUMN carries no default, so rows that predate a
@@ -211,24 +238,25 @@ func (a *Adapter) createTable() {
 	// into a Go scalar ("converting NULL to string is unsupported"). Repair the one
 	// table whose per-org router/judge config the trainer reads at boot and on
 	// cadence; idempotent, so it is a no-op once the rows are clean.
-	backfillNullScalars(a.db, "org_settings", &OrgSettings{})
+	backfillNullScalars(db, "org_settings", &OrgSettings{})
 	// Routes are configuration — tens of rows, not millions — so the whole-model
 	// sweep is the cheap option here rather than the expensive one, and every column
 	// added to a route from now on is repaired without another line. Priced is the
 	// one that needs it today: a bool cannot take NULL, so without this every read
 	// of a route written before the column fails outright rather than reading false.
-	backfillNullScalars(a.db, "model_route", &ModelRoute{})
+	backfillNullScalars(db, "model_route", &ModelRoute{})
 	// A version written before Boot holds NULL there, which a scan into the string
 	// cannot read; the empty Boot it repairs to is a run no deployment matches, so
 	// convergence leaves whatever serves standing.
-	backfillNullScalars(a.db, "routing_version", &RoutingVersion{})
+	backfillNullScalars(db, "routing_version", &RoutingVersion{})
 	// The message table is the largest here and a whole-model sweep costs a scan per
 	// column, so it is repaired one field at a time. These are the columns added since
 	// message rows existed: a NULL claimed_time would make its row unclaimable — a
 	// message nobody can answer — and a NULL in either fails the scan into a string
 	// field before any handler sees the row.
-	backfillNullField(a.db, "message", &Message{}, "ClaimedTime")
-	backfillNullField(a.db, "message", &Message{}, "AnsweredTime")
+	backfillNullField(db, "message", &Message{}, "ClaimedTime")
+	backfillNullField(db, "message", &Message{}, "AnsweredTime")
+	return errors.Join(errs...)
 }
 
 // RawDB returns the underlying *sql.DB for direct access when needed.
@@ -244,17 +272,31 @@ func (a *Adapter) RawDB() *sql.DB {
 // store (the same driver prod uses), so this exercises the real query path, not a
 // fake. Never call it from non-test code: it swaps the process-wide adapter.
 func UseMemoryDB(dsn string, models ...any) (restore func(), err error) {
-	db, err := dbx.Open("sqlite", dsn)
+	var (
+		db    *dbx.DB
+		drop  = func() {}
+		drv   = "sqlite"
+		close = func() {}
+	)
+	if pg := os.Getenv(TestSQLEnv); pg != "" {
+		// The suite on the server hosts run ai on: one schema a call, dropped on restore.
+		db, drop, err = postgresDB(pg)
+		drv = "pgx"
+	} else {
+		db, err = dbx.Open("sqlite", dsn)
+		close = func() { _ = db.Close() }
+	}
 	if err != nil {
 		return nil, err
 	}
 	for _, m := range models {
-		if err := db.Sync(m); err != nil {
-			_ = db.Close()
+		if err := syncModel(db, m); err != nil {
+			close()
+			drop()
 			return nil, err
 		}
 	}
 	prev := adapter
-	adapter = &Adapter{driverName: "sqlite", dataSourceName: dsn, db: db}
-	return func() { adapter = prev; _ = db.Close() }, nil
+	adapter = &Adapter{driverName: drv, dataSourceName: dsn, db: db}
+	return func() { adapter = prev; close(); drop() }, nil
 }

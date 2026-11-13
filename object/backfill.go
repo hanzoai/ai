@@ -64,7 +64,7 @@ func backfillNullScalars(db *dbx.DB, table string, model any) {
 		if !ok {
 			continue
 		}
-		zero, ok := zeroLiteral(f.Type)
+		zero, ok := zeroLiteral(f.Type, db)
 		if !ok {
 			continue
 		}
@@ -94,7 +94,7 @@ func backfillNullField(db *dbx.DB, table string, model any, field string) {
 	if !ok {
 		return
 	}
-	zero, ok := zeroLiteral(f.Type)
+	zero, ok := zeroLiteral(f.Type, db)
 	if !ok {
 		return
 	}
@@ -132,15 +132,19 @@ func backfillColumn(f reflect.StructField) (col string, ok bool) {
 // for a type that is not a plain nullable scalar. A field whose pointer implements
 // sql.Scanner (JSON/slice columns — dbx scans into `field.Addr()`, so that is the
 // dispatch database/sql uses) handles NULL itself and is skipped.
-func zeroLiteral(t reflect.Type) (string, bool) {
+func zeroLiteral(t reflect.Type, db *dbx.DB) (string, bool) {
 	if reflect.PointerTo(t).Implements(scannerType) || t.Implements(scannerType) {
 		return "", false
 	}
 	switch t.Kind() {
 	case reflect.String:
 		return "''", true
-	case reflect.Bool,
-		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+	case reflect.Bool:
+		if postgres(db) {
+			return "FALSE", true // a BOOLEAN column takes no integer
+		}
+		return "0", true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
 		return "0", true

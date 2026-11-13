@@ -176,7 +176,8 @@ func TestOtherSortSites_LegitimateSortFieldsStillSort(t *testing.T) {
 			t.Fatalf("sortField=%q: chat query emitted no SQL", field)
 		}
 		for _, stmt := range chatSQL {
-			if !strings.Contains(stmt, "`chat`.`"+want+"` DESC") {
+			// SQLite quotes an identifier with backticks, PostgreSQL with double quotes.
+			if !strings.Contains(stmt, "`chat`.`"+want+"` DESC") && !strings.Contains(stmt, `"chat"."`+want+`" DESC`) {
 				t.Errorf("chat sortField=%q should sort by chat.%s DESC, SQL = %s", field, want, stmt)
 			}
 		}
@@ -188,7 +189,7 @@ func TestOtherSortSites_LegitimateSortFieldsStillSort(t *testing.T) {
 			t.Fatalf("sortField=%q: provider query emitted no SQL", field)
 		}
 		for _, stmt := range provSQL {
-			if !strings.Contains(stmt, "`"+want+"` ASC") {
+			if !strings.Contains(stmt, "`"+want+"` ASC") && !strings.Contains(stmt, `"`+want+`" ASC`) {
 				t.Errorf("provider sortField=%q should sort by %s ASC, SQL = %s", field, want, stmt)
 			}
 		}
