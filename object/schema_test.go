@@ -188,6 +188,9 @@ func TestUseDBHandsOverTheHostsDatabase(t *testing.T) {
 	prev := adapter
 	t.Cleanup(func() { adapter = prev; UseDB(nil) })
 	UseDB(db)
+	if adapter == nil || adapter.db != db {
+		t.Fatalf("adapter = %+v: UseDB must put the host's database to use at once", adapter)
+	}
 	adapter = nil
 	InitAdapter()
 	if adapter == nil || adapter.db != db {

@@ -65,7 +65,7 @@ func InitAdapter() {
 	if hosted != nil {
 		// The host handed over the database (UseDB): it owns the connection, its
 		// pool, its dialect and its close, so nothing here is read from config.
-		adapter = &Adapter{driverName: hosted.DriverName(), DbName: conf.GetConfigString("dbName"), db: hosted}
+		adapter = hostedAdapter(hosted)
 		providerAdapter = nil
 		return
 	}
@@ -191,11 +191,25 @@ func (a *Adapter) createTable() {
 	}
 }
 
-// UseDB hands ai the database its host opened. The host owns the connection, so
-// ai opens none from config (InitAdapter, CreateTables) and closes none. Call it
-// before Bootstrap; db is in whatever dialect the host runs (sqlite, postgres or
-// pgx). Pass nil to take it back.
-func UseDB(db *dbx.DB) { hosted = db }
+// UseDB hands ai the database its host opened, and ai reads and writes it from this
+// call on. The host owns the connection, so ai opens none from config (InitAdapter,
+// CreateTables) and closes none. Call it before Bootstrap; db is in whatever dialect
+// the host runs (sqlite, postgres or pgx). Pass nil to take it back.
+func UseDB(db *dbx.DB) {
+	if db == nil {
+		if adapter != nil && adapter.db == hosted {
+			adapter = nil
+		}
+		hosted = nil
+		return
+	}
+	hosted = db
+	adapter = hostedAdapter(db)
+}
+
+func hostedAdapter(db *dbx.DB) *Adapter {
+	return &Adapter{driverName: db.DriverName(), DbName: conf.GetConfigString("dbName"), db: db}
+}
 
 // SyncSchema creates the tables ai keeps on db, and grows those that exist by the
 // columns added since, in db's own dialect. It is idempotent and is what a host
