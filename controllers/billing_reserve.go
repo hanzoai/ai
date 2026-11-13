@@ -20,10 +20,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
 	openai "github.com/hanzoai/go-openai"
@@ -42,6 +44,9 @@ type sseStreamChunk struct {
 				} `json:"function"`
 			} `json:"tool_calls"`
 		} `json:"delta"`
+		// FinishReason is read only for whether the answer said it was done: a stream
+		// that ends without one, and without [DONE], was cut, not finished.
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	// Usage is read here only for whether it is there. Its counts are read by
 	// sniffZenUsage, the one reader of usage in both dialects, because the split
@@ -67,6 +72,9 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	var sb strings.Builder
+	// finished is the answer saying it is done: a finish_reason or [DONE]. gone is the
+	// caller hanging up, after which nothing more can be told to them.
+	var finished, gone bool
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -78,13 +86,18 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 
 		if after, ok := strings.CutPrefix(line, "data: "); ok {
 			raw := after
-			if strings.TrimSpace(raw) != "[DONE]" {
+			if strings.TrimSpace(raw) == "[DONE]" {
+				finished = true
+			} else {
 				var chunk sseStreamChunk
 				if json.Unmarshal([]byte(raw), &chunk) == nil {
 					if chunk.Usage != nil {
 						sniffZenUsage([]byte(raw), &t)
 					}
 					for _, ch := range chunk.Choices {
+						if ch.FinishReason != "" {
+							finished = true
+						}
 						sb.WriteString(ch.Delta.Content)
 						for _, tc := range ch.Delta.ToolCalls {
 							sb.WriteString(tc.Function.Arguments)
@@ -124,10 +137,31 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 		// A write that fails is the client gone: return, and the caller's close of r
 		// hangs up on the vendor so its model stops. The text so far is what bills.
 		if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+			gone = true
 			break
 		}
 		if flush != nil && flush() != nil {
+			gone = true
 			break
+		}
+	}
+	// The vendor stopped before the answer said it was done: its connection was cut,
+	// or a line outgrew the scanner. Ended quietly here, the caller's stream closes
+	// clean and its SDK hands back half an answer as if it were whole. An error frame
+	// is what an SDK raises on, so the caller learns the answer is not complete. What
+	// was relayed is still what bills.
+	if !finished && !gone {
+		why := "the upstream stream ended before the answer finished"
+		if err := scanner.Err(); err != nil {
+			log.Warn("relay: upstream stream broke mid-answer: %v", err)
+			why = "the upstream stream broke before the answer finished"
+		} else {
+			log.Warn("relay: upstream stream ended with no finish_reason and no [DONE]")
+		}
+		body, _ := json.Marshal(map[string]any{"error": map[string]any{"message": why}})
+		_, _ = w.Write(openError("openai", http.StatusBadGateway, body))
+		if flush != nil {
+			_ = flush()
 		}
 	}
 	return t, sb.String()
