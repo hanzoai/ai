@@ -462,6 +462,18 @@ func zapChatHandler(ctx context.Context, auth string, body []byte) (*zap.Message
 	if err := json.Unmarshal(body, &request); err != nil {
 		return object.BuildCloudResponse(400, nil, "invalid request: "+err.Error())
 	}
+	// A DECISION MODEL IS NOT A CHAT MODEL, on this wire as on HTTP (chatCompletions):
+	// a credential that is good is told the door that serves the model, rather than
+	// having a chat provider resolved for a model no chat provider answers.
+	if why := decisionDoor(request.Model); why != "" {
+		if confinedIn(auth) {
+			return object.BuildCloudResponse(401, nil, zapConfinedRefusal)
+		}
+		if err := authenticateToken(strings.TrimSpace(strings.TrimPrefix(auth, "Bearer ")), "en"); err != nil {
+			return object.BuildCloudResponse(uint32(statusOf(err)), nil, err.Error())
+		}
+		return object.BuildCloudResponse(400, nil, why)
+	}
 	// ZAP has no gate to ask who pays, so a router id is its row's start tier, held to
 	// the balance gate below as a tier named outright is.
 	request.Model = unpaid(request.Model)
