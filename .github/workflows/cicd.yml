@@ -53,7 +53,7 @@ jobs:
   publish:
     needs: cicd
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: [hanzo-build-linux-amd64]
+    runs-on: [linux-amd64]
     steps:
       - uses: actions/checkout@v4
         with:
