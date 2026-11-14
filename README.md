@@ -20,7 +20,7 @@ The hosted instance is `api.hanzo.ai`. Get a key at [hanzo.ai](https://hanzo.ai)
 ```bash
 curl -H "Authorization: Bearer sk-YOUR-API-KEY" \
   https://api.hanzo.ai/v1/chat/completions \
-  -d '{"model":"zen5","messages":[{"role":"user","content":"Hello"}]}'
+  -d '{"model":"zen6","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
 Three auth modes are accepted: a Hanzo API key (`sk-*`), a JWT from hanzo.id OAuth, or a
@@ -52,7 +52,7 @@ curl -H "Authorization: Bearer sk-YOUR-API-KEY" https://api.hanzo.ai/v1/models
 ```
 
 `https://catalog.hanzo.ai/v1/models` answers the same question without a key. Zen is our
-own family — `enso`, `enso-ultra` and the `zen5` line, `owned_by: hanzo`. Models you
+own family — `enso`, `enso-ultra` and the `zen6` line, `owned_by: hanzo`. Models you
 connect with your own provider keys are routed as well, resolved from Hanzo KMS and scoped
 to your org.
 
@@ -73,10 +73,10 @@ router:
   endpoint: ""          # "" = built-in heuristic; a URL = the learned router
   cost_ceiling: 0.0
   prefer:
-    code:       [zen5-coder]
+    code:       [zen6-coder]
     reasoning:  [enso-ultra, enso]
-    cheap_chat: [zen5-mini, zen5-flash]
-    default:    [zen5]
+    cheap_chat: [zen6-flash]
+    default:    [zen6]
 ```
 
 ```bash
