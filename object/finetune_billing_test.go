@@ -69,7 +69,7 @@ func TestEachCardIsBilledAtItsOwnRate(t *testing.T) {
 // A job that used no GPU time is not a call to Commerce: there is nothing to
 // bill, and an unconfigured Commerce must not turn that into an error.
 func TestAJobThatUsedNoTimeIsNotBilled(t *testing.T) {
-	cents, err := MeterFinetuneGpuHours("acme/alice", 0, "nvidia-h200")
+	cents, err := MeterFinetuneGpuHours("acme/alice", 0, "nvidia-h200", "")
 	if err != nil {
 		t.Errorf("metering nothing answered %v", err)
 	}

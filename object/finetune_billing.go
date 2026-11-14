@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanzoai/ai/util"
 )
 
 // GpuHourlyCents maps a GPU SKU to its metered price in cents per GPU-hour. This
@@ -67,8 +66,10 @@ func gpuSecondsCostCents(gpuSeconds int64, gpuType string) int64 {
 // the amount rounds to zero, so an un-metered cluster still runs jobs.
 //
 // subject is the canonical billing subject ("owner/name"); gpuSeconds is the
-// total GPU-seconds consumed (wall-clock × gpuCount × numNodes).
-func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string) (int64, error) {
+// total GPU-seconds consumed (wall-clock × gpuCount × numNodes). ref is the
+// stable debit key for this run (typically "finetune:" + owner/name); commerce
+// dedupes on it, so a retry of the same run's metering is charged once.
+func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string, ref string) (int64, error) {
 	amountCents := gpuSecondsCostCents(gpuSeconds, gpuType)
 	if amountCents <= 0 {
 		return 0, nil
@@ -77,13 +78,17 @@ func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string) (in
 	if endpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
 	}
+	if ref == "" {
+		ref = "finetune:" + subject
+	}
 	payload := map[string]any{
 		"user":      subject,
 		"currency":  "usd",
 		"amount":    amountCents,
 		"model":     "finetune:" + gpuType,
 		"provider":  "finetune",
-		"requestId": util.GetRandomName(),
+		"requestId": ref,
+		"ref":       ref,
 		"premium":   true,
 		"stream":    false,
 		"status":    "success",
