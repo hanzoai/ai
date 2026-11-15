@@ -247,6 +247,8 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	if model == "" {
 		if m, ok := sessionModel(c.Method(), path, c.Header("Authorization")); ok {
 			model, session = m, true
+		} else if strings.EqualFold(strings.TrimRight(path, "/"), "/v1/voice/session") {
+			model = "zen-voice-mini"
 		}
 	}
 	// THE ENSO ROUTER. A router id (router.depth: enso, enso-auto, hanzo/enso) is no

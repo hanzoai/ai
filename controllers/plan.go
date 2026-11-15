@@ -116,6 +116,7 @@ var meteredPaths = map[string]bool{
 	"/v1/audio/transcriptions": true,
 	"/v1/audio/translations":   true,
 	transcriptPath:             true,
+	"/v1/voice/session":        true,
 	"/v1/audio/voice":          true,
 	"/v1/audio/music":          true,
 	"/v1/audio/foley":          true,
