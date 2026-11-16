@@ -1023,7 +1023,7 @@ func (c *ApiController) proxyAnthropic(
 	// OpenAI→Anthropic (SSE events or JSON) — never a raw OpenAI passthrough.
 	if model.Upstream(provider.Type) != model.Anthropic {
 		if c.strictAsked() {
-			c.refuseStrict("translation", "this model's vendor speaks another API, so the request would be translated; name a native Anthropic model")
+			c.refuseStrict("translation", translationWhy)
 			return
 		}
 		oaiReq := &openai.ChatCompletionRequest{
@@ -1205,27 +1205,40 @@ var spelled = func() map[string]string {
 	return m
 }()
 
-// provenNative holds a strict /v1/messages request to the body the vendor would be
-// sent — the caller's bytes with set spliced in — and either refuses it naming what
-// would change or stamps the two digests that prove nothing did (strict.go).
-func (c *ApiController) provenNative(set map[string]any) bool {
-	upstream, err := splice(c.Body(), set)
+// translationWhy is the reason a strict request to a non-Anthropic vendor is refused.
+const translationWhy = "this model's vendor speaks another API, so the request would be translated; name a native Anthropic model"
+
+// strictRefusal is why a strict request cannot be served as sent: the invariant it
+// breaks, for a program, and why, for a person. Every transport refuses with it.
+type strictRefusal struct{ invariant, why string }
+
+// proveNative holds a strict /v1/messages request to the body the vendor would be
+// sent — the caller's bytes with set spliced in — and either names what would
+// change or returns the two digests that prove nothing did (strict.go). The one
+// check both transports run.
+func proveNative(body []byte, set map[string]any) (sent, relayed string, refusal *strictRefusal) {
+	upstream, err := splice(body, set)
 	if err != nil {
-		c.refuseStrict("not_canonical", err.Error())
-		return false
+		return "", "", &strictRefusal{"not_canonical", err.Error()}
 	}
-	invariant, field, sent, relayed, err := unchanged(c.Body(), upstream)
-	if err != nil {
-		c.refuseStrict("not_canonical", err.Error())
-		return false
-	}
+	invariant, field, sent, relayed, err := unchanged(body, upstream)
 	switch {
+	case err != nil:
+		return "", "", &strictRefusal{"not_canonical", err.Error()}
 	case invariant == "":
+		return sent, relayed, nil
 	case field == "max_tokens":
-		c.refuseStrict("ceiling_lowered", "max_tokens is above what this request may spend; ask for less")
-		return false
-	default:
-		c.refuseStrict(invariant, fmt.Sprintf("%q would not reach the vendor as sent", field))
+		return "", "", &strictRefusal{"ceiling_lowered", "max_tokens is above what this request may spend; ask for less"}
+	}
+	return "", "", &strictRefusal{invariant, fmt.Sprintf("%q would not reach the vendor as sent", field)}
+}
+
+// provenNative is proveNative for the HTTP request: it refuses with the 409 and the
+// violation header, or stamps the two digests.
+func (c *ApiController) provenNative(set map[string]any) bool {
+	sent, relayed, refusal := proveNative(c.Body(), set)
+	if refusal != nil {
+		c.refuseStrict(refusal.invariant, refusal.why)
 		return false
 	}
 	c.SetHeader(strictHeader, "1")
@@ -1594,7 +1607,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	}
 
 	lift := liftFor(body, provider.SubType, c.strictAsked())
-	eaten := OpenerEaten(provider.Name, provider.SubType)
+	eaten := openerEatenOn(request.Model, provider)
 	strip := model.NewReasoningStripper(provider.SubType, eaten)
 	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
 	if err != nil {

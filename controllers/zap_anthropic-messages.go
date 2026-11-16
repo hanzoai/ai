@@ -103,6 +103,13 @@ func zapAnthropicCountTokensGateway(ctx context.Context, auth string, body []byt
 // anthropicErr builds the (status, jsonBody, errText) triple for an Anthropic-shaped
 // error. The JSON body is the AnthropicErrorBody the HTTP path emits; errText mirrors
 // it into the cloud-transport error field.
+// strictRefused is the 409 a strict request is answered with when it cannot be served
+// as sent: the HTTP refusal's invariant and words. A frame carries no headers, so the
+// invariant a program reads is the message's second word.
+func strictRefused(r *strictRefusal) (int, []byte, string) {
+	return anthropicErr("strict_violation", fmt.Sprintf("strict: %s: %s", r.invariant, r.why), http.StatusConflict)
+}
+
 func anthropicErr(errType, message string, status int) (int, []byte, string) {
 	var body AnthropicErrorBody
 	body.Type = "error"
@@ -162,7 +169,7 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 	// A strict request is served unchanged or refused, and anything but a native
 	// Anthropic upstream is translated: the HTTP twin's refusal, on the frame's header.
 	if gatewayHeader(ctx, strictHeader) == "1" && model.Upstream(provider.Type) != model.Anthropic {
-		return anthropicErr("strict_violation", "strict: translation: this model's vendor speaks another API, so the request would be translated; name a native Anthropic model", http.StatusConflict)
+		return strictRefused(&strictRefusal{"translation", translationWhy})
 	}
 
 	isPremium := false
@@ -350,6 +357,13 @@ func zapAnthropicProxy(
 		if request.Stream {
 			set["stream"] = false
 		}
+		// Strict is the HTTP twin's check, run on the same body: a ceiling lowered or a
+		// stream turned off (a frame carries one response) is refused, not served.
+		if gatewayHeader(ctx, strictHeader) == "1" {
+			if _, _, r := proveNative(reqBody, set); r != nil {
+				return strictRefused(r)
+			}
+		}
 		byo, _ := providerBYO(provider, authUser)
 		var betas []string
 		if b := gatewayHeader(ctx, "anthropic-beta"); b != "" {
@@ -428,7 +442,7 @@ func zapAnthropicProxy(
 		return anthropicErr(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
 	}
 	// A strict request never reaches here: zapAnthropicMessages refused it.
-	eaten := OpenerEaten(provider.Name, provider.SubType)
+	eaten := openerEatenOn(request.Model, provider)
 	strip := model.NewReasoningStripper(provider.SubType, eaten)
 	antResp, prompt, completion := openAIResponseToAnthropic(
 		readAnswerBody(respBody, eaten, strip != nil, liftFor(body, provider.SubType, false)), request.Model, requestId)

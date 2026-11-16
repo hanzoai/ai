@@ -218,6 +218,7 @@ func (p *VolcengineModelProvider) QueryText(question string, writer io.Writer, h
 	}
 	defer stream.Close()
 	modelResult := newModelResult(0, 0, 0)
+	strip := NewReasoningStripper(p.subType, OpenerEaten(p.subType))
 
 	for {
 		response, err := stream.Recv()
@@ -239,10 +240,16 @@ func (p *VolcengineModelProvider) QueryText(question string, writer io.Writer, h
 			continue
 		}
 
-		data := response.Choices[0].Delta.Content
-		err = flushData(data)
-		if err != nil {
+		data := strip.Answer(response.Choices[0].Delta.Content, false, string(response.Choices[0].FinishReason))
+		if err = flushData(data); err != nil {
 			return nil, err
+		}
+	}
+	if strip != nil {
+		if held := strip.Flush(); held != "" {
+			if err = flushData(held); err != nil {
+				return nil, err
+			}
 		}
 	}
 

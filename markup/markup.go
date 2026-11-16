@@ -230,6 +230,7 @@ type Scanner struct {
 	indent    int  // columns of blanks that began this line
 	marked    bool // a list or quote mark began this line
 	quoted    bool // a quote mark began this line: what it holds is quoted, never lifted
+	lazy      bool // this line continues a quoted paragraph without a mark of its own
 	off       bool // this line has left its prefix
 
 	pend []byte // whitespace not yet known to be interior
@@ -476,8 +477,11 @@ func (s *Scanner) track(b byte) {
 		if s.closing {
 			s.fence = 0
 		}
+		// A paragraph that began in a quote runs on, quoted, until a blank line: the
+		// next line without its own mark is a lazy continuation of it.
+		lazy := (s.quoted || s.lazy) && s.off && s.fence == 0
 		s.closing, s.tick, s.fenceLine = false, false, false
-		s.indent, s.marked, s.quoted, s.off = 0, false, false, false
+		s.indent, s.marked, s.quoted, s.off, s.lazy = 0, false, lazy, false, lazy
 		return
 	}
 	if b != ' ' && b != '\t' && b != '\r' {

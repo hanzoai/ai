@@ -133,11 +133,16 @@ func TestReasoningStripperStreaming(t *testing.T) {
 		}
 	})
 
-	t.Run("an unclosed block is let go at the end", func(t *testing.T) {
+	t.Run("an unclosed block is let go when the turn finished, dropped when cut", func(t *testing.T) {
 		s := &ReasoningStripper{}
 		s.Feed("<think>cut off")
-		if got := s.Flush(); got != "cut off" {
-			t.Errorf("got %q", got)
+		if got := s.Finish("stop"); got != "cut off" {
+			t.Errorf("finished: got %q", got)
+		}
+		s = &ReasoningStripper{}
+		s.Feed("<think>cut off")
+		if got := s.Finish("length"); got != "" {
+			t.Errorf("cut: got %q", got)
 		}
 	})
 

@@ -75,16 +75,21 @@ func NewReasoningStripper(upstream string, eaten bool) *ReasoningStripper {
 // StripLeadingReasoning removes a leading `<think>…</think>` block from a complete
 // content string, returning the answer. Content that does not start with <think>,
 // or whose block never closes, is returned unchanged.
-func StripLeadingReasoning(content string) string { return StripReasoning(content, false) }
+func StripLeadingReasoning(content string) string { return StripReasoning(content, false, false) }
 
 // StripReasoning is StripLeadingReasoning for a route that may eat the opener: on
 // one, everything up to the first </think> is reasoning, opener or not. Content
-// with no </think> is the answer, whole.
-func StripReasoning(content string, eaten bool) string {
+// with no </think> is the answer, whole, when the model finished; when the answer
+// was cut (cut: finish_reason "length"), what never closed is reasoning, not an
+// answer, and nothing is returned.
+func StripReasoning(content string, eaten, cut bool) string {
 	rest := strings.TrimLeft(content, " \t\r\n")
 	if eaten {
 		if _, after, ok := strings.Cut(content, thinkClose); ok {
 			return strings.TrimLeft(after, " \n")
+		}
+		if cut {
+			return ""
 		}
 		return content
 	}
@@ -94,8 +99,15 @@ func StripReasoning(content string, eaten bool) string {
 	if _, after, ok := strings.Cut(rest[len(thinkOpen):], thinkClose); ok {
 		return strings.TrimLeft(after, " \n")
 	}
+	if cut {
+		return ""
+	}
 	return content
 }
+
+// Finished reports a finish_reason that ends a turn the model chose to end. Any
+// other reason ("length", a filter, none at all) is a cut.
+func Finished(reason string) bool { return reason == "stop" || reason == "tool_calls" }
 
 // ReasoningStripper strips the leading inline-reasoning block from a STREAMED
 // content sequence. It holds content only while it could still be that block —
@@ -118,6 +130,9 @@ const (
 
 // Feed returns the content to forward for one upstream content delta.
 func (s *ReasoningStripper) Feed(delta string) string {
+	// scan is where a </think> not yet seen could start: the terminator may straddle
+	// the last delta, so only its length less one of what was held is read again.
+	scan := 0
 	switch s.state {
 	case stripPass:
 		return delta
@@ -149,10 +164,12 @@ func (s *ReasoningStripper) Feed(delta string) string {
 			return b
 		}
 	default:
+		scan = max(s.buf.Len()-len(thinkClose)+1, 0)
 		s.buf.WriteString(delta)
 	}
 	b := s.buf.String()
-	if _, after, ok := strings.Cut(b, thinkClose); ok {
+	if i := strings.Index(b[scan:], thinkClose); i >= 0 {
+		after := b[scan+i+len(thinkClose):]
 		s.state = stripTrim
 		s.buf.Reset()
 		if after = strings.TrimLeft(after, " \n"); after != "" {
@@ -172,12 +189,52 @@ func (s *ReasoningStripper) Feed(delta string) string {
 	return ""
 }
 
-// Flush ends the stream: it returns what is still held and passes everything after.
+// Flush ends a stream that was cut: it returns what is still held and passes
+// everything after — except a block still open, which is reasoning the model never
+// finished and so is dropped, not released as its answer.
 func (s *ReasoningStripper) Flush() string {
+	held := s.buf.String()
+	open := s.state == stripInside
+	s.buf.Reset()
+	s.state = stripPass
+	if open {
+		return ""
+	}
+	return held
+}
+
+// Finish ends a stream by its finish_reason. A turn the model ended itself
+// (Finished) releases what is held, a block that never closed included: the model
+// did not think, or thought without a terminator, and what it said is the answer.
+// Any other reason is a cut, which Flush handles.
+func (s *ReasoningStripper) Finish(reason string) string {
+	if !Finished(reason) {
+		return s.Flush()
+	}
 	held := s.buf.String()
 	s.buf.Reset()
 	s.state = stripPass
 	return held
+}
+
+// Answer is what one chat stream chunk adds to the answer: its content through the
+// stripper, what was held let go ahead of it when the chunk carries reasoning
+// apart, and the rest of the hold let go at its finish_reason. It is the one step
+// every QueryText provider and every relay takes, so none can skip the strip. A nil
+// stripper (a route that inlines no reasoning) passes content untouched.
+func (s *ReasoningStripper) Answer(content string, reasoned bool, finish string) string {
+	if s == nil {
+		return content
+	}
+	out := ""
+	if reasoned {
+		out = s.Reasoned()
+	}
+	out += s.Feed(content)
+	if finish != "" {
+		out += s.Finish(finish)
+	}
+	return out
 }
 
 // Reasoned notes that the upstream sent its reasoning in reasoning_content, so

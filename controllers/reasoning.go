@@ -31,12 +31,18 @@ import (
 // can never corrupt the stream or drop a response.
 
 // strippedTail is the chunk that lets go what the stripper still holds when a
-// stream ends with no finish_reason: nil when it holds nothing.
-func strippedTail(s *model.ReasoningStripper) []byte {
+// stream ends with no finish_reason: nil when it holds nothing. A stream that ended
+// with [DONE] (done) finished its turn; one that ended without was cut, and a
+// reasoning block it left open is not an answer.
+func strippedTail(s *model.ReasoningStripper, done bool) []byte {
 	if s == nil {
 		return nil
 	}
-	held := s.Flush()
+	reason := ""
+	if done {
+		reason = "stop"
+	}
+	held := s.Finish(reason)
 	if held == "" {
 		return nil
 	}
@@ -68,18 +74,15 @@ func applyReasoningStrip(raw string, s *model.ReasoningStripper) string {
 			delta = map[string]any{}
 		}
 		content, _ := delta["content"].(string)
-		out := ""
 		// An upstream that sends its reasoning apart sends an answer in content.
+		reasoned := false
 		for _, k := range []string{"reasoning_content", "reasoning"} {
 			if r, _ := delta[k].(string); r != "" {
-				out = s.Reasoned()
+				reasoned = true
 			}
 		}
-		out += s.Feed(content)
-		// The answer ending is the last chance to let go what is held.
-		if fin, _ := choice["finish_reason"].(string); fin != "" {
-			out += s.Flush()
-		}
+		fin, _ := choice["finish_reason"].(string)
+		out := s.Answer(content, reasoned, fin)
 		if out == content {
 			continue
 		}
@@ -122,7 +125,8 @@ func stripReasoningBody(body []byte, eaten bool) []byte {
 		if !ok || content == "" {
 			continue
 		}
-		if clean := model.StripReasoning(content, eaten); clean != content {
+		fin, _ := choice["finish_reason"].(string)
+		if clean := model.StripReasoning(content, eaten, fin != "" && !model.Finished(fin)); clean != content {
 			msg["content"] = clean
 			changed = true
 		}
@@ -162,6 +166,8 @@ type reasonedStream struct {
 	in    *bufio.Reader
 	out   []byte
 	done  bool
+	// sawDone is a [DONE] line read: the upstream ended the stream itself.
+	sawDone bool
 }
 
 func (s *reasonedStream) Read(p []byte) (int, error) {
@@ -188,17 +194,18 @@ func (s *reasonedStream) rewrite(line []byte) []byte {
 	data = bytes.TrimSpace(data)
 	switch {
 	case ok && string(data) == "[DONE]":
+		s.sawDone = true
 		return append(s.tail(), line...)
 	case ok && len(data) > 0 && data[0] == '{':
-		return append([]byte("data: "+applyReasoningStrip(string(data), s.strip)), '\n')
+		return framed([]byte(applyReasoningStrip(string(data), s.strip)), "\n")
 	}
 	return line
 }
 
 func (s *reasonedStream) tail() []byte {
-	held := strippedTail(s.strip)
+	held := strippedTail(s.strip, s.sawDone)
 	if held == nil {
 		return nil
 	}
-	return append(append([]byte("data: "), held...), '\n', '\n')
+	return framed(held, "\n\n")
 }

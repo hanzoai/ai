@@ -182,7 +182,7 @@ func TestEatenRouteAnswerWithNoCloseIsDeliveredWhole(t *testing.T) {
 			t.Fatalf("messages split at %d: text %q", cut, got)
 		}
 	}
-	// the stream ends with no finish_reason and no [DONE]
+	// the stream ends with no finish_reason: with [DONE] it is whole, with nothing it was cut
 	for _, tail := range []string{"[DONE]", ""} {
 		frames := []string{chunkFrame(`{"role":"assistant","content":"Hello, no ending"}`, "")}
 		if tail != "" {
@@ -191,8 +191,14 @@ func TestEatenRouteAnswerWithNoCloseIsDeliveredWhole(t *testing.T) {
 		w := newRelayWorld(t, sseOf(frames...), never(t))
 		thinkRoute(t)
 		eatenRoute(t)
-		if h := liftHear(t, sent(w.chat(`{"model":"`+thinkSku+`","stream":true,"messages":[{"role":"user","content":"hi"}]}`))); h.text != "Hello, no ending" {
-			t.Fatalf("tail %q: text %q, want the held bytes", tail, h.text)
+		// [DONE] says the upstream ended the turn: the held bytes are the answer. With
+		// nothing the stream was cut, and what was held is reasoning that never closed.
+		want := "Hello, no ending"
+		if tail == "" {
+			want = ""
+		}
+		if h := liftHear(t, sent(w.chat(`{"model":"`+thinkSku+`","stream":true,"messages":[{"role":"user","content":"hi"}]}`))); h.text != want {
+			t.Fatalf("tail %q: text %q, want %q", tail, h.text, want)
 		}
 	}
 	w := newRelayWorld(t, completes(answer, 5, 0, 3), never(t))

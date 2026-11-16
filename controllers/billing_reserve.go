@@ -88,7 +88,7 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 			raw := after
 			if strings.TrimSpace(raw) == "[DONE]" {
 				finished = true
-				if !letGoStripped(w, flush, mk, strip) || !letGo(w, flush, mk) {
+				if !letGoStripped(w, flush, mk, strip, finished) || !letGo(w, flush, mk) {
 					gone = true
 					break
 				}
@@ -155,7 +155,7 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 	// is what an SDK raises on, so the caller learns the answer is not complete. What
 	// was relayed is still what bills.
 	if !gone {
-		gone = !letGoStripped(w, flush, mk, strip) || !letGo(w, flush, mk)
+		gone = !letGoStripped(w, flush, mk, strip, finished) || !letGo(w, flush, mk)
 	}
 	if !finished && !gone {
 		why := "the upstream stream ended before the answer finished"
@@ -176,8 +176,8 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 
 // letGoStripped writes the answer a reasoning stripper still holds as one chunk,
 // through the stamp so the lifter reads it, before the lifter's own tail.
-func letGoStripped(w io.Writer, flush func() error, mk *mark, strip *model.ReasoningStripper) bool {
-	tail := strippedTail(strip)
+func letGoStripped(w io.Writer, flush func() error, mk *mark, strip *model.ReasoningStripper, done bool) bool {
+	tail := strippedTail(strip, done)
 	if tail == nil {
 		return true
 	}

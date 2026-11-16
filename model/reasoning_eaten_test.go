@@ -29,7 +29,7 @@ func TestEatenStripperEverySplit(t *testing.T) {
 	} {
 		for cut := 0; cut <= len(c.in); cut++ {
 			s := NewReasoningStripper("anything", true)
-			if got := feedAll(s, c.in[:cut], c.in[cut:]) + s.Flush(); got != c.want {
+			if got := feedAll(s, c.in[:cut], c.in[cut:]) + s.Finish("stop"); got != c.want {
 				t.Errorf("%s split at %d: %q, want %q", name, cut, got, c.want)
 			}
 		}
@@ -39,11 +39,11 @@ func TestEatenStripperEverySplit(t *testing.T) {
 			for i := 0; i < len(c.in); i += n {
 				deltas = append(deltas, c.in[i:min(i+n, len(c.in))])
 			}
-			if got := feedAll(s, deltas...) + s.Flush(); got != c.want {
+			if got := feedAll(s, deltas...) + s.Finish("stop"); got != c.want {
 				t.Errorf("%s deltas of %d: %q, want %q", name, n, got, c.want)
 			}
 		}
-		if got := StripReasoning(c.in, true); got != c.want {
+		if got := StripReasoning(c.in, true, false); got != c.want {
 			t.Errorf("%s buffered: %q, want %q", name, got, c.want)
 		}
 	}
@@ -67,7 +67,7 @@ func TestStripperGate(t *testing.T) {
 		t.Error("an inlining or opener-eating route gets one")
 	}
 	// strict rule unchanged
-	if StripReasoning("Reasoning aloud.</think>The answer.", false) != "Reasoning aloud.</think>The answer." {
+	if StripReasoning("Reasoning aloud.</think>The answer.", false, false) != "Reasoning aloud.</think>The answer." {
 		t.Error("a bare close is text off a flagged route")
 	}
 }

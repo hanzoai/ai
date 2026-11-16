@@ -498,6 +498,25 @@ func OpenerEaten(provider, upstream string) bool {
 	return GetModelConfig().openerEaten(provider, upstream)
 }
 
+// openerEatenOn is opener_eaten for the provider serving a request for model, read
+// the way forward reads it: from the route's own entry for that upstream, by the
+// provider name the route gives, never by the name of the provider row that
+// happened to be resolved (an org's own row carries an org's own name). A pair no
+// route names falls back to the row's own.
+func openerEatenOn(model string, provider *object.Provider) bool {
+	if r := resolveModelRoute(model); r != nil {
+		if strings.EqualFold(r.upstreamModel, provider.SubType) {
+			return OpenerEaten(r.providerName, r.upstreamModel)
+		}
+		for _, fb := range r.fallbacks {
+			if strings.EqualFold(fb.upstreamModel, provider.SubType) {
+				return OpenerEaten(fb.providerName, fb.upstreamModel)
+			}
+		}
+	}
+	return OpenerEaten(provider.Name, provider.SubType)
+}
+
 // RetryConfig returns the configured retry policy (zero fields mean "use the
 // default"). Read under the lock so a live config reload is safe.
 func (mc *ModelConfig) RetryConfig() RetryDef {

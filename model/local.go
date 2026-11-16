@@ -321,6 +321,9 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 			toolCalls    []openai.ToolCall
 			toolCallsMap map[int]int
 		)
+		// A reasoning-inlining upstream (DeepSeek) writes its <think></think> block
+		// into content; it is stripped here, as on every other path.
+		strip := NewReasoningStripper(p.subType, OpenerEaten(p.subType))
 
 		for {
 			completion, streamErr := respStream.Recv()
@@ -339,6 +342,10 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 					toolCalls, toolCallsMap = handleToolCallsParameters(toolCall, toolCalls, toolCallsMap)
 				}
 			}
+
+			delta := completion.Choices[0].Delta
+			delta.Content = strip.Answer(delta.Content, delta.ReasoningContent != "", string(completion.Choices[0].FinishReason))
+			completion.Choices[0].Delta = delta
 
 			// Handle both regular content and reasoning content
 			if flushThink != nil {
@@ -386,6 +393,22 @@ func (p *LocalModelProvider) QueryText(question string, writer io.Writer, histor
 				}
 
 				answerData.WriteString(data)
+			}
+		}
+
+		// A stream that ended with no finish_reason was cut: what is held that is not an
+		// open reasoning block still belongs to the answer.
+		if strip != nil {
+			if held := strip.Flush(); held != "" {
+				if flushThink != nil {
+					err = flushThink(held, "message", writer, lang)
+				} else {
+					err = flushStandard(held, writer, lang)
+				}
+				if err != nil {
+					return nil, err
+				}
+				answerData.WriteString(held)
 			}
 		}
 

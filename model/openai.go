@@ -409,6 +409,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		// as plain message text rather than reasoning-summary events; strip that
 		// leading block so the console / plain-chat answer is clean.
 		reasonStrip := NewReasoningStripper(model, OpenerEaten(model))
+		completed := false
 
 		isLeadingReturn := true
 		for respStream.Next() {
@@ -470,6 +471,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 					}
 				}
 			case responses.ResponseCompletedEvent:
+				completed = true
 				modelResult.ResponseTokenCount = int(variant.Response.Usage.OutputTokens)
 				modelResult.PromptTokenCount = int(variant.Response.Usage.InputTokens)
 				modelResult.TotalTokenCount = int(variant.Response.Usage.TotalTokens)
@@ -482,7 +484,11 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		}
 		// What the stripper still holds is the answer, let go with the stream's end.
 		if reasonStrip != nil {
-			if held := reasonStrip.Flush(); held != "" {
+			reason := "length"
+			if completed {
+				reason = "stop"
+			}
+			if held := reasonStrip.Finish(reason); held != "" {
 				if err = flushThink(held, "message", writer, lang); err != nil {
 					return nil, err
 				}
