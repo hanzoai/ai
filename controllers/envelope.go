@@ -341,7 +341,7 @@ func (m *mark) stampChat(env map[string]json.RawMessage) []byte {
 		env["created"] = m.created
 	}
 	if choices, ok := env["choices"]; ok {
-		env["choices"] = stampChoices(m.lift.choices(choices))
+		env["choices"] = stampChoices(m.lift.choices(choices, string(env["object"]) == `"chat.completion.chunk"`))
 	}
 	// Ours, set after the allowlist so an upstream's own `routing` never passes.
 	if m.routing != nil && !m.routed {

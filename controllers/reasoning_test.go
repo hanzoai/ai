@@ -45,7 +45,7 @@ func chunkContent(t *testing.T, raw string) string {
 func TestApplyReasoningStripStreaming(t *testing.T) {
 	s := &model.ReasoningStripper{}
 	// A DeepSeek stream: reasoning, then </think>, then the answer — across chunks.
-	deltas := []string{" Zebra", " stripe.", "</think>I am", " Zen5 Pro."}
+	deltas := []string{"<think> Zebra", " stripe.", "</think>I am", " Zen5 Pro."}
 	var out strings.Builder
 	for _, d := range deltas {
 		raw := `{"choices":[{"delta":{"content":` + mustJSON(d) + `}}]}`
@@ -70,7 +70,7 @@ func TestApplyReasoningStripFailSafe(t *testing.T) {
 
 func TestStripReasoningBodyNonStream(t *testing.T) {
 	// The exact non-stream leak shape observed from zen5-pro.
-	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"</think>OK"}}],"usage":{"total_tokens":8}}`)
+	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"<think></think>OK"}}],"usage":{"total_tokens":8}}`)
 	out := stripReasoningBody(body)
 	var resp struct {
 		Choices []struct {
@@ -111,7 +111,7 @@ func TestStreamCaptureUsageStripsReasoning(t *testing.T) {
 	sse := strings.Join([]string{
 		`data: {"choices":[{"delta":{"role":"assistant"}}]}`,
 		``,
-		`data: {"choices":[{"delta":{"content":" Zebra"}}]}`,
+		`data: {"choices":[{"delta":{"content":"<think> Zebra"}}]}`,
 		``,
 		`data: {"choices":[{"delta":{"content":" stripe.</think>I am"}}]}`,
 		``,

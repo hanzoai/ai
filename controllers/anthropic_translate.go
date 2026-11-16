@@ -449,9 +449,9 @@ type anthropicStreamTranslator struct {
 	prompt, completion, total int
 }
 
-func newAnthropicStreamTranslator(emit func(string, any) error, modelID, reqID string) *anthropicStreamTranslator {
+func newAnthropicStreamTranslator(emit func(string, any) error, modelID, upstream, reqID string) *anthropicStreamTranslator {
 	t := &anthropicStreamTranslator{emit: emit, modelID: modelID, reqID: reqID, stopReason: "end_turn"}
-	if model.InlinesReasoning(modelID) {
+	if model.InlinesReasoning(upstream) {
 		t.reason = &model.ReasoningStripper{}
 	}
 	return t
@@ -524,6 +524,21 @@ func (t *anthropicStreamTranslator) ensureKind(kind string) error {
 	}
 }
 
+// text emits one text delta, opening the text block if it is not the open one.
+func (t *anthropicStreamTranslator) text(text string) error {
+	if text == "" {
+		return nil
+	}
+	if err := t.ensureKind("text"); err != nil {
+		return err
+	}
+	return t.emit("content_block_delta", map[string]any{
+		"type":  "content_block_delta",
+		"index": t.curIndex,
+		"delta": map[string]any{"type": "text_delta", "text": text},
+	})
+}
+
 // handleChunk translates one OpenAI chunk into Anthropic SSE events.
 func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 	if err := t.ensureStarted(); err != nil {
@@ -545,6 +560,14 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 
 		// reasoning_content → thinking block (never leak the raw OpenAI field).
 		if ch.Delta.ReasoningContent != "" {
+			// Content is the answer when the reasoning is sent apart.
+			if t.reason != nil {
+				if held := t.reason.Reasoned(); held != "" {
+					if err := t.text(held); err != nil {
+						return err
+					}
+				}
+			}
 			if err := t.ensureKind("thinking"); err != nil {
 				return err
 			}
@@ -566,17 +589,14 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 			if t.reason != nil {
 				text = t.reason.Feed(text)
 			}
-			if text != "" {
-				if err := t.ensureKind("text"); err != nil {
-					return err
-				}
-				if err := t.emit("content_block_delta", map[string]any{
-					"type":  "content_block_delta",
-					"index": t.curIndex,
-					"delta": map[string]any{"type": "text_delta", "text": text},
-				}); err != nil {
-					return err
-				}
+			if err := t.text(text); err != nil {
+				return err
+			}
+		}
+
+		if ch.FinishReason != "" && t.reason != nil {
+			if err := t.text(t.reason.Flush()); err != nil {
+				return err
 			}
 		}
 
@@ -625,6 +645,11 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 func (t *anthropicStreamTranslator) finish() error {
 	if err := t.ensureStarted(); err != nil {
 		return err
+	}
+	if t.reason != nil {
+		if err := t.text(t.reason.Flush()); err != nil {
+			return err
+		}
 	}
 	if err := t.closeBlock(); err != nil {
 		return err
@@ -755,8 +780,8 @@ func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (used A
 
 // translateOpenAIStream reads an upstream OpenAI SSE stream and drives the
 // translator, returning captured usage. It never writes raw OpenAI frames.
-func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, reqID string) (prompt, completion, total int) {
-	t := newAnthropicStreamTranslator(emit, modelID, reqID)
+func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, upstream, reqID string) (prompt, completion, total int) {
+	t := newAnthropicStreamTranslator(emit, modelID, upstream, reqID)
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 	for scanner.Scan() {
@@ -784,7 +809,7 @@ func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, r
 
 // openAIResponseToAnthropic converts a non-streaming OpenAI chat completion into
 // an Anthropic Messages response (content blocks + stop_reason + usage).
-func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[string]any, prompt, completion int) {
+func openAIResponseToAnthropic(body []byte, modelID, upstream, reqID string) (resp map[string]any, prompt, completion int) {
 	var oai struct {
 		Choices []struct {
 			Message struct {
@@ -818,7 +843,7 @@ func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[str
 		// block in content rather than reasoning_content; strip it so only the
 		// answer becomes a text block (other upstreams pass through unchanged).
 		text := ch.Message.Content
-		if model.InlinesReasoning(modelID) {
+		if model.InlinesReasoning(upstream) {
 			text = model.StripLeadingReasoning(text)
 		}
 		if text != "" {

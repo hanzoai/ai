@@ -416,7 +416,9 @@ func zapAnthropicProxy(
 	if resp.StatusCode != http.StatusOK {
 		return anthropicErr(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
 	}
-	antResp, prompt, completion := openAIResponseToAnthropic(liftFor(body, provider.SubType, false).payload(respBody), request.Model, requestId)
+	// A ZAP frame carries no headers, and strict is asked for in one (strict.go), so
+	// no request that arrives here is strict.
+	antResp, prompt, completion := openAIResponseToAnthropic(liftFor(body, provider.SubType, false).payload(respBody), request.Model, provider.SubType, requestId)
 	out, err := json.Marshal(antResp)
 	if err != nil {
 		return anthropicErr("api_error", err.Error(), 500)

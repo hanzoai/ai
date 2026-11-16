@@ -419,6 +419,13 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 			switch variant := response.AsAny().(type) {
 			case responses.ResponseReasoningSummaryTextDeltaEvent:
 				data := variant.Delta
+				if reasonStrip != nil {
+					if held := reasonStrip.Reasoned(); held != "" {
+						if err = flushThink(held, "message", writer, lang); err != nil {
+							return nil, err
+						}
+					}
+				}
 				err = flushThink(data, "reason", writer, lang)
 				if err != nil {
 					return nil, err
@@ -475,6 +482,14 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		}
 		if respStream.Err() != nil {
 			return nil, respStream.Err()
+		}
+		// What the stripper still holds is the answer, let go with the stream's end.
+		if reasonStrip != nil {
+			if held := reasonStrip.Flush(); held != "" {
+				if err = flushThink(held, "message", writer, lang); err != nil {
+					return nil, err
+				}
+			}
 		}
 
 		if agentInfo != nil && agentInfo.AgentMessages != nil {

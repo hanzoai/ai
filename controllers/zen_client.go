@@ -2153,6 +2153,11 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// family's own word when it is one of the family's SKUs (a priced SKU answered
 	// by its free fallback says so), the stand-in's public name, else the model asked.
 	name := model
+	// What reads the answer's tool calls is the markup of the model that wrote it:
+	// the route that served, which a fallback may have moved off the one asked.
+	if sku != model && mk.speaks == chatShape {
+		mk.lift = liftFor(rawBody, sku, c.strictAsked())
+	}
 	if stood {
 		name = publicName(fam, by, sku, model)
 		if fam == freeFamily() {

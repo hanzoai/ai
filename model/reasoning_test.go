@@ -25,11 +25,11 @@ func TestStripLeadingReasoning(t *testing.T) {
 		in   string
 		want string
 	}{
-		// Exact shapes observed live from the DeepSeek upstreams.
-		{"zen5-flash bare close", "</think>I am **Zen5 Flash** by **Hanzo AI**.", "I am **Zen5 Flash** by **Hanzo AI**."},
-		{"zen5-pro reasoning then close", " Zebra stripe.</think>I am Zen5 Pro, a high-capability model.", "I am Zen5 Pro, a high-capability model."},
 		{"matched think pair", "<think>let me reason…</think>The answer is 42.", "The answer is 42."},
-		{"leading whitespace after close", "reasoning</think>\n\n  Answer here.", "Answer here."},
+		{"leading whitespace before open", " \n<think>r</think>\n\n  Answer here.", "Answer here."},
+		{"bare close is text", "I am **Zen5 Flash**.</think>Rest", "I am **Zen5 Flash**.</think>Rest"},
+		{"later close is text", "To end a block write </think> like so.", "To end a block write </think> like so."},
+		{"unclosed block unchanged", "<think>never closed", "<think>never closed"},
 		// Clean output (GLM / non-reasoning) is untouched.
 		{"no think — passthrough", "I am Zen5, a frontier model.", "I am Zen5, a frontier model."},
 		{"empty", "", ""},
@@ -68,42 +68,83 @@ func feedAll(s *ReasoningStripper, deltas ...string) string {
 	return out.String()
 }
 
+// every split of in into two deltas, each through a fresh stripper and Flush.
+func splitsOf(t *testing.T, in, want string) {
+	t.Helper()
+	for i := 0; i <= len(in); i++ {
+		s := &ReasoningStripper{}
+		got := feedAll(s, in[:i], in[i:]) + s.Flush()
+		if got != want {
+			t.Fatalf("split at %d of %q: got %q, want %q", i, in, got, want)
+		}
+	}
+	s := &ReasoningStripper{}
+	var parts []string
+	for _, r := range in {
+		parts = append(parts, string(r))
+	}
+	if got := feedAll(s, parts...) + s.Flush(); got != want {
+		t.Fatalf("byte-wise %q: got %q, want %q", in, got, want)
+	}
+}
+
 func TestReasoningStripperStreaming(t *testing.T) {
-	t.Run("reasoning then answer in one delta", func(t *testing.T) {
+	t.Run("a genuine block is stripped at every split", func(t *testing.T) {
+		splitsOf(t, "<think>thinking…</think>Hello.", "Hello.")
+		splitsOf(t, " \n<think>a</think>\n\nHello</think>x", "Hello</think>x")
+	})
+
+	t.Run("an answer is delivered whole, with or without a flush", func(t *testing.T) {
+		for _, in := range []string{"Hello world", "  ", "<thi", "<think", "<b>bold</b>", "ok</think>no"} {
+			splitsOf(t, in, in)
+		}
 		s := &ReasoningStripper{}
-		if got := feedAll(s, "thinking…</think>Hello."); got != "Hello." {
-			t.Errorf("got %q, want %q", got, "Hello.")
+		if got := s.Feed("Hello world"); got != "Hello world" {
+			t.Errorf("an answer streams as it comes, got %q", got)
 		}
 	})
 
-	t.Run("terminator split across deltas", func(t *testing.T) {
+	t.Run("a close later in the text is text", func(t *testing.T) {
+		splitsOf(t, "Use </think> to end it.", "Use </think> to end it.")
+	})
+
+	t.Run("reasoning_content turns the strip off", func(t *testing.T) {
 		s := &ReasoningStripper{}
-		// </think> arrives as "</th" + "ink>" — the classic chunk boundary.
-		got := feedAll(s, "some ", "reasoning", "</th", "ink>", "The ", "answer.")
-		if got != "The answer." {
-			t.Errorf("got %q, want %q", got, "The answer.")
+		held := s.Feed("\n")
+		if held != "" {
+			t.Fatalf("whitespace is held, got %q", held)
+		}
+		if got := s.Reasoned(); got != "\n" {
+			t.Errorf("Reasoned released %q", got)
+		}
+		if got := s.Feed("<think>x</think>y"); got != "<think>x</think>y" {
+			t.Errorf("after reasoning_content content is the answer, got %q", got)
 		}
 	})
 
-	t.Run("answer streams through after close", func(t *testing.T) {
+	t.Run("a block already open survives reasoning_content", func(t *testing.T) {
 		s := &ReasoningStripper{}
-		got := feedAll(s, "r</think>", "Hel", "lo ", "world")
-		if got != "Hello world" {
-			t.Errorf("got %q, want %q", got, "Hello world")
+		s.Feed("<think>a")
+		if got := s.Reasoned(); got != "" {
+			t.Errorf("got %q", got)
+		}
+		if got := s.Feed("</think>b"); got != "b" {
+			t.Errorf("got %q", got)
 		}
 	})
 
-	t.Run("no terminator under cap holds (upstream should be gated out)", func(t *testing.T) {
+	t.Run("an unclosed block is let go at the end", func(t *testing.T) {
 		s := &ReasoningStripper{}
-		if got := feedAll(s, "just an answer"); got != "" {
-			t.Errorf("got %q, want empty (held)", got)
+		s.Feed("<think>cut off")
+		if got := s.Flush(); got != "cut off" {
+			t.Errorf("got %q", got)
 		}
 	})
 
 	t.Run("cap flushes rather than buffering unboundedly", func(t *testing.T) {
 		s := &ReasoningStripper{}
-		big := strings.Repeat("x", reasoningCap+10)
-		if got := s.Feed(big); got != big {
+		big := "<think>" + strings.Repeat("x", reasoningCap+10)
+		if got := s.Feed(big); got != big[len(thinkOpen):] {
 			t.Errorf("cap: want the held buffer flushed, got %d bytes", len(got))
 		}
 		if got := s.Feed("!"); got != "!" {

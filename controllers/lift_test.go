@@ -147,7 +147,7 @@ func TestLiftBufferedAnswerBecomesToolCall(t *testing.T) {
 
 func TestLiftStreamedAnswerBecomesToolCall(t *testing.T) {
 	// Byte by byte is the hardest split: every prefix of the marker is seen.
-	parts := []string{"</think>"}
+	var parts []string
 	for _, r := range liftSample {
 		parts = append(parts, string(r))
 	}
@@ -173,7 +173,7 @@ func TestLiftResponsesBecomeFunctionCall(t *testing.T) {
 		t.Run(fmt.Sprintf("stream=%v", stream), func(t *testing.T) {
 			serve := completesWith(liftSample)
 			if stream {
-				serve = streams([]string{"</think>" + liftProse + "\n\n<｜DSML｜tool", "_calls>" + liftBlock[len("<｜DSML｜tool_calls>"):]}, 10, 0, 5)
+				serve = streams([]string{liftProse + "\n\n<｜DSML｜tool", "_calls>" + liftBlock[len("<｜DSML｜tool_calls>"):]}, 10, 0, 5)
 			}
 			w := newLiftWorld(t, serve)
 			c := w.responses(fmt.Sprintf(`{"model":"relay-sku","stream":%v,%s,"input":"go"}`, stream, respTools))
@@ -207,7 +207,7 @@ func TestLiftLeavesWhatItWasNotAskedToLift(t *testing.T) {
 			}
 		})
 		t.Run(name+" streamed", func(t *testing.T) {
-			w := newLiftWorld(t, streams([]string{"</think>", liftSample[:len(liftProse)+3], liftSample[len(liftProse)+3:]}, 10, 0, 5))
+			w := newLiftWorld(t, streams([]string{liftSample[:len(liftProse)+3], liftSample[len(liftProse)+3:]}, 10, 0, 5))
 			h := liftHear(t, sent(w.chat(strings.Replace(body, `{"model"`, `{"stream":true,"model"`, 1))))
 			if h.text != liftSample || len(h.names) != 0 || h.finish != "stop" {
 				t.Fatalf("liftHeard %+v, want the text untouched", h)
@@ -220,7 +220,7 @@ func TestLiftLeavesWhatItWasNotAskedToLift(t *testing.T) {
 // nothing is called.
 func TestLiftStreamCutInsideABlockReleasesTheText(t *testing.T) {
 	cut := liftSample[:strings.LastIndex(liftSample, "</｜DSML｜tool_calls>")]
-	w := newLiftWorld(t, streams([]string{"</think>", cut}, 10, 0, 5))
+	w := newLiftWorld(t, streams([]string{cut}, 10, 0, 5))
 	c := w.chat(`{"model":"relay-sku","stream":true,` + liftTools + `,"messages":[{"role":"user","content":"go"}]}`)
 	h := liftHear(t, sent(c))
 	if h.text != cut || len(h.names) != 0 || h.finish != "stop" {
@@ -297,7 +297,7 @@ func TestLiftStreamReaderEverySplit(t *testing.T) {
 func TestLiftAnthropicBufferedAnswer(t *testing.T) {
 	body := `{"choices":[{"index":0,"message":{"role":"assistant","content":` + liftQuote(liftSample) + `},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4}}`
 	l := liftFor([]byte(`{`+liftTools+`}`), liftModel, false)
-	resp, _, _ := openAIResponseToAnthropic(l.payload([]byte(body)), "m", "r")
+	resp, _, _ := openAIResponseToAnthropic(l.payload([]byte(body)), "m", "m", "r")
 	out, _ := json.Marshal(resp)
 	if strings.Contains(string(out), "DSML") || resp["stop_reason"] != "tool_use" ||
 		!strings.Contains(string(out), `"type":"tool_use"`) || !strings.Contains(string(out), `"name":"exec_command"`) {

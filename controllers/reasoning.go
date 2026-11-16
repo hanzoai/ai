@@ -27,6 +27,21 @@ import (
 // fail-safe: any parse error returns the input unchanged, so a malformed chunk
 // can never corrupt the stream or drop a response.
 
+// strippedTail is the chunk that lets go what the stripper still holds when a
+// stream ends with no finish_reason: nil when it holds nothing.
+func strippedTail(s *model.ReasoningStripper) []byte {
+	if s == nil {
+		return nil
+	}
+	held := s.Flush()
+	if held == "" {
+		return nil
+	}
+	b, _ := json.Marshal(map[string]any{"object": "chat.completion.chunk",
+		"choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": held}, "finish_reason": nil}}})
+	return b
+}
+
 // applyReasoningStrip rewrites the content deltas of one OpenAI SSE data chunk
 // (the JSON after "data: ") through the stripper. Billing is unaffected — the
 // caller counts the original content before this runs.
@@ -47,13 +62,26 @@ func applyReasoningStrip(raw string, s *model.ReasoningStripper) string {
 		}
 		delta, ok := choice["delta"].(map[string]any)
 		if !ok {
+			delta = map[string]any{}
+		}
+		content, _ := delta["content"].(string)
+		out := ""
+		// An upstream that sends its reasoning apart sends an answer in content.
+		for _, k := range []string{"reasoning_content", "reasoning"} {
+			if r, _ := delta[k].(string); r != "" {
+				out = s.Reasoned()
+			}
+		}
+		out += s.Feed(content)
+		// The answer ending is the last chance to let go what is held.
+		if fin, _ := choice["finish_reason"].(string); fin != "" {
+			out += s.Flush()
+		}
+		if out == content {
 			continue
 		}
-		content, ok := delta["content"].(string)
-		if !ok || content == "" {
-			continue
-		}
-		delta["content"] = s.Feed(content)
+		delta["content"] = out
+		choice["delta"] = delta
 		changed = true
 	}
 	if !changed {

@@ -65,19 +65,20 @@ type form struct {
 	open, close string
 	follow      func(after string) verdict
 	parse       func(block string) ([]rawCall, bool)
+	shaped      bool // the body may be one JSON object, whose shape is checked as it arrives
 }
 
 type rawCall struct{ name, args string }
 
 var (
 	deepseek = []*form{
-		{"<｜DSML｜tool_calls>", "</｜DSML｜tool_calls>", followedBy(invoke), dsml},
-		{"<｜DSML｜function_calls>", "</｜DSML｜function_calls>", followedBy(invoke), dsml},
-		{"<｜tool▁calls▁begin｜>", "<｜tool▁calls▁end｜>", followedBy(begin), fenced},
-		{"<｜tool▁call▁begin｜>", "<｜tool▁call▁end｜>", func(string) verdict { return accept }, fenced},
+		{"<｜DSML｜tool_calls>", "</｜DSML｜tool_calls>", followedBy(invoke), dsml, false},
+		{"<｜DSML｜function_calls>", "</｜DSML｜function_calls>", followedBy(invoke), dsml, false},
+		{"<｜tool▁calls▁begin｜>", "<｜tool▁calls▁end｜>", followedBy(begin), fenced, false},
+		{"<｜tool▁call▁begin｜>", "<｜tool▁call▁end｜>", sepFollow, fenced, false},
 	}
 	hermesForms = []*form{
-		{"<tool_call>", "</tool_call>", hermesFollow, hermes},
+		{"<tool_call>", "</tool_call>", hermesFollow, hermes, true},
 	}
 )
 
@@ -133,6 +134,18 @@ func starts(s, want string) verdict {
 	return reject
 }
 
+// sepFollow accepts a call opener once its tool separator has arrived, soon enough
+// for a block, and rejects it when it has not.
+func sepFollow(after string) verdict {
+	switch {
+	case strings.Contains(after, sep):
+		return accept
+	case len(after) >= 256:
+		return reject
+	}
+	return wait
+}
+
 // hermesFollow accepts a <tool_call> followed by a JSON object or a <function=.
 func hermesFollow(after string) verdict {
 	if starts(after, "{") == accept {
@@ -164,11 +177,21 @@ type Scanner struct {
 	rules Rules
 	forms []*form
 
-	// Whether the text let go so far ends inside a code fence or inline code.
-	fence   byte // the fence character while inside a fence
-	tick    bool // inside `inline code`
-	run     int  // length of the run of fence characters being read
-	runChar byte
+	// Whether the text let go so far ends inside code, read as CommonMark does: a
+	// fenced block (an opener of three or more backticks or tildes, closed only at
+	// the start of a line by a run of the same character at least as long), an
+	// inline span, or a line indented four spaces or more.
+	fence     byte // the fence character while inside a fence
+	fenceLen  int
+	fenceLine bool // the fence opened on this line, so its info string is still being read
+	closing   bool // a closing run ended this line and only blanks have followed
+	tick      bool // inside `inline code`
+	run       int  // length of the run of fence characters being read
+	runChar   byte
+	runLead   bool // the run began a line, past blanks and list or quote marks
+	indent    int  // columns of blanks that began this line
+	marked    bool // a list or quote mark began this line
+	off       bool // this line has left its prefix
 
 	pend []byte // whitespace not yet known to be interior
 
@@ -179,6 +202,8 @@ type Scanner struct {
 	cur     *form
 	start   int // where the block being read opens
 	scanned int // the closer is searched from here
+	shp     *shape
+	shpAt   int // the shape has read the held text up to here
 	calls   []Call
 }
 
@@ -253,10 +278,30 @@ func (s *Scanner) hold() int {
 				return len(f.open)
 			}
 			s.cur, s.start, s.scanned = f, j, j+len(f.open)
+			s.shp, s.shpAt = nil, s.scanned
+			if f.shaped && bytes.HasPrefix(bytes.TrimLeft(r[len(f.open):], " \t\r\n"), []byte("{")) {
+				s.shp = newShape(f.close)
+			}
 		}
 		from := max(s.scanned-len(s.cur.close)+1, s.start+len(s.cur.open))
 		i := bytes.Index(s.buf[from:], []byte(s.cur.close))
 		s.scanned = len(s.buf)
+		if s.shp != nil {
+			// What follows an opener that is not the body of a block is text: let it
+			// go now, not at the end of an answer that may run on for pages.
+			limit := len(s.buf)
+			if i >= 0 {
+				limit = from + i
+			}
+			ok := s.shp.feed(s.buf[s.shpAt:max(limit, s.shpAt)])
+			s.shpAt = max(limit, s.shpAt)
+			if !ok {
+				if s.done > 0 {
+					return s.done
+				}
+				return len(s.cur.open)
+			}
+		}
 		if i < 0 {
 			return s.cap()
 		}
@@ -351,8 +396,9 @@ func (s *Scanner) lift(raws []rawCall) ([]Call, bool) {
 func (s *Scanner) candidate(text []byte) int {
 	for i, b := range text {
 		if b == '<' {
-			s.settle()
-			if s.fence == 0 && !s.tick && s.starts(text[i:]) {
+			s.endRun()
+			s.closing = false
+			if s.fence == 0 && !s.tick && !s.indented() && s.starts(text[i:]) {
 				return i
 			}
 		}
@@ -370,34 +416,67 @@ func (s *Scanner) starts(t []byte) bool {
 	return false
 }
 
-// track reads one byte of let-go text into the code state: a run of three or more
-// backticks or tildes opens and closes a fence, a lone backtick an inline span that
-// ends with its line.
+// indented is whether the line being read is an indented code line: four columns
+// of blanks, outside a list or a quote.
+func (s *Scanner) indented() bool { return s.fence == 0 && !s.marked && s.indent >= 4 }
+
+// track reads one byte of let-go text into the code state.
 func (s *Scanner) track(b byte) {
 	if b == '`' || b == '~' {
 		if s.runChar != b {
-			s.settle()
+			s.endRun()
 			s.runChar = b
+			s.runLead = !s.off && (s.marked || s.indent <= 3)
 		}
 		s.run++
+		s.off = true
 		return
 	}
-	s.settle()
+	s.endRun()
 	if b == '\n' {
-		s.tick = false
+		if s.closing {
+			s.fence = 0
+		}
+		s.closing, s.tick, s.fenceLine = false, false, false
+		s.indent, s.marked, s.off = 0, false, false
+		return
+	}
+	if b != ' ' && b != '\t' && b != '\r' {
+		s.closing = false
+	}
+	if s.off {
+		return
+	}
+	switch {
+	case b == ' ':
+		s.indent++
+	case b == '\t':
+		s.indent += 4 - s.indent%4
+	case b == '>' || b == '-' || b == '*' || b == '+' || b == '.' || b == ')' || b >= '0' && b <= '9':
+		s.marked = true
+	default:
+		s.off = true
 	}
 }
 
-func (s *Scanner) settle() {
+// endRun settles the run of fence characters that has just ended.
+func (s *Scanner) endRun() {
+	if s.run == 0 {
+		return
+	}
+	n, c, lead := s.run, s.runChar, s.runLead
+	s.run, s.runChar, s.closing = 0, 0, false
 	switch {
-	case s.run >= 3 && s.fence == 0:
-		s.fence, s.tick = s.runChar, false
-	case s.run >= 3 && s.fence == s.runChar:
-		s.fence = 0
-	case s.run > 0 && s.runChar == '`' && s.fence == 0:
+	case s.fence == 0 && lead && n >= 3:
+		s.fence, s.fenceLen, s.fenceLine, s.tick = c, n, c == '`', false
+	case s.fence != 0 && c == s.fence && lead && n >= s.fenceLen:
+		s.closing = true
+	case s.fence != 0 && s.fenceLine && c == '`':
+		// A backtick in the line that opened it: that was an inline span, not a fence.
+		s.fence, s.fenceLine = 0, false
+	case s.fence == 0 && c == '`':
 		s.tick = !s.tick
 	}
-	s.run, s.runChar = 0, 0
 }
 
 func isSpace(b byte) bool { return b == ' ' || b == '\t' || b == '\r' || b == '\n' }

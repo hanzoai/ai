@@ -35,11 +35,11 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"io"
 	"maps"
 	"slices"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -90,13 +90,39 @@ func liftFor(body []byte, upstream string, strict bool) *lifter {
 	if len(rules.Offered) == 0 {
 		return nil
 	}
-	var forced struct {
+	type named struct {
+		Name     string `json:"name"`
 		Function struct {
 			Name string `json:"name"`
 		} `json:"function"`
 	}
+	var forced struct {
+		Type     string  `json:"type"`
+		Tools    []named `json:"tools"` // the Responses spelling of the allowed set
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+		Allowed struct {
+			Tools []named `json:"tools"`
+		} `json:"allowed_tools"`
+	}
 	if json.Unmarshal(r.ToolChoice, &forced) == nil {
 		rules.Only = forced.Function.Name
+		if forced.Type == "allowed_tools" {
+			// Only the tools the caller allowed may be called, whatever else it offered.
+			allowed := map[string]bool{}
+			for _, t := range append(forced.Allowed.Tools, forced.Tools...) {
+				allowed[cmp.Or(t.Function.Name, t.Name)] = true
+			}
+			for name := range rules.Offered {
+				if !allowed[name] {
+					delete(rules.Offered, name)
+				}
+			}
+			if len(rules.Offered) == 0 {
+				return nil
+			}
+		}
 	}
 	for _, m := range r.Messages {
 		for _, text := range textsOf(m.Content) {
@@ -130,14 +156,14 @@ func textsOf(content json.RawMessage) []string {
 // (a chunk). Text a stream holds back leaves with the chunk that ends its choice;
 // the calls leave in the chunk that completes them, and a choice that made a call
 // finishes as tool_calls. A choice it cannot read is left alone.
-func (l *lifter) choices(raw json.RawMessage) json.RawMessage {
+func (l *lifter) choices(raw json.RawMessage, chunk bool) json.RawMessage {
 	var all []map[string]json.RawMessage
 	if l == nil || json.Unmarshal(raw, &all) != nil {
 		return raw
 	}
 	changed := false
 	for _, choice := range all {
-		changed = l.choice(choice) || changed
+		changed = l.choice(choice, chunk) || changed
 	}
 	if !changed {
 		return raw
@@ -148,17 +174,23 @@ func (l *lifter) choices(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-func (l *lifter) choice(choice map[string]json.RawMessage) bool {
+func (l *lifter) choice(choice map[string]json.RawMessage, chunk bool) bool {
+	var at int
+	_ = json.Unmarshal(choice["index"], &at)
+	// A choice of a chunk is streamed with or without a delta: the one that carries
+	// only its finish_reason ends the choice, and what is held must leave with it.
+	_, delta := choice["delta"]
+	_, whole := choice["message"]
 	part, stream := "message", false
-	if _, ok := choice["delta"]; ok {
+	if delta || chunk && !whole || !whole && l.scan[at] != nil {
 		part, stream = "delta", true
 	}
 	var body map[string]json.RawMessage
-	if json.Unmarshal(choice[part], &body) != nil || body == nil {
+	if _, ok := choice[part]; !ok && stream {
+		body = map[string]json.RawMessage{}
+	} else if json.Unmarshal(choice[part], &body) != nil || body == nil {
 		return false
 	}
-	var at int
-	_ = json.Unmarshal(choice["index"], &at)
 	var native []json.RawMessage
 	_ = json.Unmarshal(body["tool_calls"], &native)
 	changed := false
@@ -210,9 +242,9 @@ func (l *lifter) choice(choice map[string]json.RawMessage) bool {
 		}
 		return changed
 	}
-	// Text with no "<", no code mark and no whitespace, with nothing held, cannot
-	// begin a block or change what is held: it goes on as it is.
-	if finish == "" && (!text || !strings.ContainsAny(content, "<`~\n\r\t ") && (sc == nil || !sc.Held())) {
+	// A streamed choice is always read: the scanner follows every byte, the code
+	// marks and line breaks among them, so no chunk may skip it.
+	if finish == "" && !(stream && text) {
 		return false
 	}
 
@@ -314,7 +346,7 @@ func (l *lifter) payload(p []byte) []byte {
 	if l == nil || json.Unmarshal(p, &env) != nil || env["choices"] == nil {
 		return p
 	}
-	lifted := l.choices(env["choices"])
+	lifted := l.choices(env["choices"], string(env["object"]) == `"chat.completion.chunk"`)
 	if bytes.Equal(lifted, env["choices"]) {
 		return p
 	}

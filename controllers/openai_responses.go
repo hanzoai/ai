@@ -759,6 +759,11 @@ func (t *responsesStreamTranslator) start() error {
 }
 
 func (t *responsesStreamTranslator) handleChunk(chunk *openaiStreamChunk) error {
+	// Nothing follows response.completed: an event after it is one the client
+	// cannot place.
+	if t.finished {
+		return nil
+	}
 	if err := t.start(); err != nil {
 		return err
 	}

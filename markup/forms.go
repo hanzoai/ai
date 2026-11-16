@@ -184,30 +184,44 @@ func hermes(block string) ([]rawCall, bool) {
 	if strings.HasPrefix(strings.TrimSpace(body), "<function=") {
 		return coder(body)
 	}
-	var c struct {
-		Name       string          `json:"name"`
-		Arguments  json.RawMessage `json:"arguments"`
-		Parameters json.RawMessage `json:"parameters"`
-	}
-	if json.Unmarshal([]byte(body), &c) != nil || c.Name == "" {
+	// The members are read by exactly the names name, arguments and parameters: a
+	// parser that folds case would read "Name" as "name", and a body that spells a
+	// member two ways is read two ways by two readers, so it is no call.
+	m, ok := object([]byte(body))
+	if !ok {
 		return nil, false
 	}
-	raw := c.Arguments
+	var name string
+	for k := range m {
+		switch strings.ToLower(k) {
+		case "name", "arguments", "parameters":
+			if k != strings.ToLower(k) {
+				return nil, false
+			}
+		}
+	}
+	if json.Unmarshal(m["name"], &name) != nil || name == "" {
+		return nil, false
+	}
+	raw := m["arguments"]
 	if len(raw) == 0 {
-		raw = c.Parameters
+		raw = m["parameters"]
 	}
 	if len(raw) == 0 {
-		return []rawCall{{c.Name, "{}"}}, true
+		return []rawCall{{name, "{}"}}, true
 	}
 	var encoded string
 	if json.Unmarshal(raw, &encoded) == nil {
 		raw = []byte(encoded)
 	}
-	args, ok := compact(string(raw))
-	if !ok || args[0] != '{' {
+	if _, ok := object(raw); !ok {
 		return nil, false
 	}
-	return []rawCall{{c.Name, args}}, true
+	args, ok := compact(string(raw))
+	if !ok {
+		return nil, false
+	}
+	return []rawCall{{name, args}}, true
 }
 
 // coder reads Qwen3-Coder's block: <function=name> holding <parameter=key> values.
