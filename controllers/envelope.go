@@ -132,6 +132,9 @@ type mark struct {
 	// Anthropic path and the embeddings path went on publishing `provider`,
 	// `gen-` ids and `native_finish_reason` after the chat path stopped.
 	speaks shape
+	// lift reads a request's tool calls out of the text a model wrote them as
+	// (lift.go). nil when the request offered no tools.
+	lift *lifter
 }
 
 // seller names who SOLD the inference. Our keys sell as Hanzo, whatever they route
@@ -338,7 +341,7 @@ func (m *mark) stampChat(env map[string]json.RawMessage) []byte {
 		env["created"] = m.created
 	}
 	if choices, ok := env["choices"]; ok {
-		env["choices"] = stampChoices(choices)
+		env["choices"] = stampChoices(m.lift.choices(choices))
 	}
 	// Ours, set after the allowlist so an upstream's own `routing` never passes.
 	if m.routing != nil && !m.routed {

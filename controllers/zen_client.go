@@ -1658,6 +1658,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		mk.speaks = listShape
 	default:
 		mk.speaks, mk.id = chatShape, "chatcmpl-"+reqID
+		mk.lift = liftFor(rawBody)
 	}
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	// One build, one place to fail: the method, the URL and the headers do not vary
@@ -2755,6 +2756,9 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t t
 		}
 		if bytes.HasPrefix(line, zenDataPrefix) {
 			payload := bytes.TrimSpace(line[len(zenDataPrefix):])
+			if string(payload) == "[DONE]" && !letGo(w, w.Flush, mk) {
+				return
+			}
 			if len(payload) > 0 && payload[0] == '{' {
 				sniffZenUsage(payload, &t)
 				said += answerChars(payload)
@@ -2778,6 +2782,7 @@ func relayZenStream(w *bufio.Writer, body io.Reader, mk *mark, paid func()) (t t
 			first = time.Now()
 		}
 	}
+	letGo(w, w.Flush, mk)
 	return
 }
 

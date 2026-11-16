@@ -548,7 +548,7 @@ func (c *ApiController) forward(p pass) bool {
 // cached prompt priced as cached.
 func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, resp *http.Response, whole []byte, snap snapshot) bool {
 	sku := p.req.Model
-	mk := &mark{id: "chatcmpl-" + p.id, model: sku, seller: seller(row, p.user)}
+	mk := &mark{id: "chatcmpl-" + p.id, model: sku, seller: seller(row, p.user), lift: liftFor(p.body)}
 
 	// settle runs where the answer is finished — for a stream, inside its writer — so
 	// it reads the snapshot and p, and never the controller.

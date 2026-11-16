@@ -88,6 +88,10 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 			raw := after
 			if strings.TrimSpace(raw) == "[DONE]" {
 				finished = true
+				if !letGo(w, flush, mk) {
+					gone = true
+					break
+				}
 			} else {
 				var chunk sseStreamChunk
 				if json.Unmarshal([]byte(raw), &chunk) == nil {
@@ -150,6 +154,9 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 	// clean and its SDK hands back half an answer as if it were whole. An error frame
 	// is what an SDK raises on, so the caller learns the answer is not complete. What
 	// was relayed is still what bills.
+	if !gone {
+		gone = !letGo(w, flush, mk)
+	}
 	if !finished && !gone {
 		why := "the upstream stream ended before the answer finished"
 		if err := scanner.Err(); err != nil {
@@ -165,6 +172,19 @@ func streamCaptureUsage(r io.Reader, w io.Writer, flush func() error, clientWant
 		}
 	}
 	return t, sb.String()
+}
+
+// letGo writes the text a stream's lifter still holds (lift.go) as one last chunk,
+// before [DONE] or the end of the stream. false when the client is gone.
+func letGo(w io.Writer, flush func() error, mk *mark) bool {
+	rest := mk.rest()
+	if rest == nil {
+		return true
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", rest); err != nil {
+		return false
+	}
+	return flush == nil || flush() == nil
 }
 
 const (
