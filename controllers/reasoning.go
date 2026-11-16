@@ -126,7 +126,7 @@ func stripReasoningBody(body []byte, eaten bool) []byte {
 			continue
 		}
 		fin, _ := choice["finish_reason"].(string)
-		if clean := model.StripReasoning(content, eaten, fin != "" && !model.Finished(fin)); clean != content {
+		if clean := model.StripReasoning(content, eaten, fin != "" && model.Cuts(fin)); clean != content {
 			msg["content"] = clean
 			changed = true
 		}

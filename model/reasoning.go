@@ -105,9 +105,27 @@ func StripReasoning(content string, eaten, cut bool) string {
 	return content
 }
 
-// Finished reports a finish_reason that ends a turn the model chose to end. Any
-// other reason ("length", a filter, none at all) is a cut.
-func Finished(reason string) bool { return reason == "stop" || reason == "tool_calls" }
+// Finished reports a finish_reason that ends a turn the model chose to end, in any
+// case and in any upstream's spelling. Any other reason ("length",
+// "content_filter", none at all) is a cut.
+func Finished(reason string) bool {
+	switch strings.ToLower(reason) {
+	case "stop", "eos", "end_turn", "tool_calls", "function_call":
+		return true
+	}
+	return false
+}
+
+// Calls reports a finish_reason that ends a turn on tool calls. A reasoning block
+// still open then is the model's thinking, never its answer.
+func Calls(reason string) bool {
+	r := strings.ToLower(reason)
+	return r == "tool_calls" || r == "function_call"
+}
+
+// Cuts reports whether a reason leaves an open reasoning block unreleased: a cut
+// turn, or one that ended on tool calls.
+func Cuts(reason string) bool { return !Finished(reason) || Calls(reason) }
 
 // ReasoningStripper strips the leading inline-reasoning block from a STREAMED
 // content sequence. It holds content only while it could still be that block —
@@ -208,7 +226,7 @@ func (s *ReasoningStripper) Flush() string {
 // did not think, or thought without a terminator, and what it said is the answer.
 // Any other reason is a cut, which Flush handles.
 func (s *ReasoningStripper) Finish(reason string) string {
-	if !Finished(reason) {
+	if Cuts(reason) {
 		return s.Flush()
 	}
 	held := s.buf.String()

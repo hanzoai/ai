@@ -197,6 +197,9 @@ func (p *OpenRouterModelProvider) QueryText(question string, writer io.Writer, h
 	responseStringBuilder := strings.Builder{}
 
 	isLeadingReturn := true
+	// A reasoning-inlining upstream writes its <think></think> block into content;
+	// it is stripped here as on every other path.
+	strip := NewReasoningStripper(p.subType, OpenerEaten(p.subType))
 	for {
 		completion, streamErr := respStream.Recv()
 		if streamErr != nil {
@@ -205,8 +208,11 @@ func (p *OpenRouterModelProvider) QueryText(question string, writer io.Writer, h
 			}
 			return nil, streamErr
 		}
+		if len(completion.Choices) == 0 {
+			continue
+		}
 
-		data := completion.Choices[0].Message.Content
+		data := strip.Answer(completion.Choices[0].Message.Content, false, completion.Choices[0].FinishReason)
 		if isLeadingReturn && len(data) != 0 {
 			if strings.Count(data, "\n") == len(data) {
 				continue

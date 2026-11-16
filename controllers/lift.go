@@ -35,7 +35,6 @@ package controllers
 import (
 	"bufio"
 	"bytes"
-	"cmp"
 	"encoding/json"
 	"io"
 	"maps"
@@ -57,99 +56,15 @@ type lifter struct {
 	shift  map[int]int             // by choice: lifted calls the upstream's own indices follow
 }
 
-// liftFor is the lifter of a chat request body served by the upstream model: one for
-// each tool the request offered, and none when it offered none, forbade calling
-// them, named a function the legacy way, asked to be served unchanged, or carries
-// markup of the model's family in a message.
+// liftFor is the lifter of a chat request body served by the upstream model, none
+// when markup.RulesFor says nothing may be lifted.
 func liftFor(body []byte, upstream string, strict bool) *lifter {
-	if strict || !markup.Reads(upstream) {
+	rules, ok := markup.RulesFor(body, upstream, strict)
+	if !ok {
 		return nil
-	}
-	var r struct {
-		Tools []struct {
-			Function struct {
-				Name string `json:"name"`
-			} `json:"function"`
-		} `json:"tools"`
-		Functions  []json.RawMessage `json:"functions"`
-		ToolChoice json.RawMessage   `json:"tool_choice"`
-		Parallel   *bool             `json:"parallel_tool_calls"`
-		Messages   []struct {
-			Content json.RawMessage `json:"content"`
-		} `json:"messages"`
-	}
-	if json.Unmarshal(body, &r) != nil || len(r.Functions) > 0 || string(r.ToolChoice) == `"none"` {
-		return nil
-	}
-	rules := markup.Rules{Offered: map[string]bool{}, Model: upstream, One: r.Parallel != nil && !*r.Parallel}
-	for _, t := range r.Tools {
-		if t.Function.Name != "" {
-			rules.Offered[t.Function.Name] = true
-		}
-	}
-	if len(rules.Offered) == 0 {
-		return nil
-	}
-	type named struct {
-		Name     string `json:"name"`
-		Function struct {
-			Name string `json:"name"`
-		} `json:"function"`
-	}
-	var forced struct {
-		Type     string  `json:"type"`
-		Tools    []named `json:"tools"` // the Responses spelling of the allowed set
-		Function struct {
-			Name string `json:"name"`
-		} `json:"function"`
-		Allowed struct {
-			Tools []named `json:"tools"`
-		} `json:"allowed_tools"`
-	}
-	if json.Unmarshal(r.ToolChoice, &forced) == nil {
-		rules.Only = forced.Function.Name
-		if forced.Type == "allowed_tools" {
-			// Only the tools the caller allowed may be called, whatever else it offered.
-			allowed := map[string]bool{}
-			for _, t := range append(forced.Allowed.Tools, forced.Tools...) {
-				allowed[cmp.Or(t.Function.Name, t.Name)] = true
-			}
-			for name := range rules.Offered {
-				if !allowed[name] {
-					delete(rules.Offered, name)
-				}
-			}
-			if len(rules.Offered) == 0 {
-				return nil
-			}
-		}
-	}
-	for _, m := range r.Messages {
-		for _, text := range textsOf(m.Content) {
-			if markup.Quotes(upstream, text) {
-				return nil
-			}
-		}
 	}
 	return &lifter{rules: rules, scan: map[int]*markup.Scanner{}, calls: map[int]int{}, made: map[int]bool{},
 		native: map[int]bool{}, shift: map[int]int{}}
-}
-
-// textsOf is the text a message's content holds: the string, or each text part.
-func textsOf(content json.RawMessage) []string {
-	var one string
-	if json.Unmarshal(content, &one) == nil {
-		return []string{one}
-	}
-	var parts []struct {
-		Text string `json:"text"`
-	}
-	_ = json.Unmarshal(content, &parts)
-	out := make([]string, len(parts))
-	for i, p := range parts {
-		out[i] = p.Text
-	}
-	return out
 }
 
 // choices lifts the calls out of each choice's message (a buffered answer) or delta
