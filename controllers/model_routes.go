@@ -33,7 +33,8 @@ import (
 type modelRouteFallback struct {
 	providerName  string
 	upstreamModel string
-	contextWindow int // window THIS provider serves it at; 0 = same as primary
+	contextWindow int  // window THIS provider serves it at; 0 = same as primary
+	openerEaten   bool // this route's template eats the <think> opener
 }
 
 // modelRoute maps a user-facing model name to an upstream provider and model ID.
@@ -45,6 +46,7 @@ type modelRoute struct {
 	hidden        bool                 // If true, excluded from /api/models listing (still callable)
 	ownedBy       string               // Override for owned_by in model listing (default: providerName)
 	contextWindow int                  // Max context tokens as THIS provider serves it; 0 = undeclared (caller uses the floor)
+	openerEaten   bool                 // The route's chat template eats the <think> opener: reasoning runs to the first </think>
 	maxOutput     int                  // Max completion tokens (from the upstream catalog); 0 = undeclared
 	vision        bool                 // Accepts image input (OpenAI image_url parts) — set only from a live probe
 	tools         bool                 // Supports function/tool calling — set only from a live probe

@@ -22,7 +22,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hanzoai/ai/model"
 	openai "github.com/hanzoai/go-openai"
 )
 
@@ -434,10 +433,6 @@ type anthropicStreamTranslator struct {
 	modelID string
 	reqID   string
 
-	// reason strips a reasoning-inlining upstream's leading <think></think>
-	// block from streamed text deltas; nil for every other upstream (unchanged).
-	reason *model.ReasoningStripper
-
 	started   bool   // message_start emitted
 	blockOpen bool   // a content block is currently open
 	blockKind string // "thinking" | "text" | "tool"
@@ -449,11 +444,8 @@ type anthropicStreamTranslator struct {
 	prompt, completion, total int
 }
 
-func newAnthropicStreamTranslator(emit func(string, any) error, modelID, upstream, reqID string) *anthropicStreamTranslator {
+func newAnthropicStreamTranslator(emit func(string, any) error, modelID, reqID string) *anthropicStreamTranslator {
 	t := &anthropicStreamTranslator{emit: emit, modelID: modelID, reqID: reqID, stopReason: "end_turn"}
-	if model.InlinesReasoning(upstream) {
-		t.reason = &model.ReasoningStripper{}
-	}
 	return t
 }
 
@@ -560,14 +552,6 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 
 		// reasoning_content → thinking block (never leak the raw OpenAI field).
 		if ch.Delta.ReasoningContent != "" {
-			// Content is the answer when the reasoning is sent apart.
-			if t.reason != nil {
-				if held := t.reason.Reasoned(); held != "" {
-					if err := t.text(held); err != nil {
-						return err
-					}
-				}
-			}
 			if err := t.ensureKind("thinking"); err != nil {
 				return err
 			}
@@ -580,22 +564,10 @@ func (t *anthropicStreamTranslator) handleChunk(c *openaiStreamChunk) error {
 			}
 		}
 
-		// content → text block. A reasoning-inlining upstream (DeepSeek) buries
-		// its <think></think> block here rather than in reasoning_content; strip
-		// it so only the answer becomes text (t.reason is nil for every other
-		// upstream, leaving the delta byte-for-byte unchanged).
+		// content → text block. The stream arrives with its inline reasoning
+		// already removed (answerStream).
 		if ch.Delta.Content != "" {
-			text := ch.Delta.Content
-			if t.reason != nil {
-				text = t.reason.Feed(text)
-			}
-			if err := t.text(text); err != nil {
-				return err
-			}
-		}
-
-		if ch.FinishReason != "" && t.reason != nil {
-			if err := t.text(t.reason.Flush()); err != nil {
+			if err := t.text(ch.Delta.Content); err != nil {
 				return err
 			}
 		}
@@ -646,11 +618,6 @@ func (t *anthropicStreamTranslator) finish() error {
 	if err := t.ensureStarted(); err != nil {
 		return err
 	}
-	if t.reason != nil {
-		if err := t.text(t.reason.Flush()); err != nil {
-			return err
-		}
-	}
 	if err := t.closeBlock(); err != nil {
 		return err
 	}
@@ -662,6 +629,19 @@ func (t *anthropicStreamTranslator) finish() error {
 		return err
 	}
 	return t.emit("message_stop", map[string]any{"type": "message_stop"})
+}
+
+// cut ends a stream the upstream broke off: what was relayed is closed, and an
+// error event follows in place of message_stop, which an agent reads as a turn done.
+func (t *anthropicStreamTranslator) cut() error {
+	if err := t.ensureStarted(); err != nil {
+		return err
+	}
+	if err := t.closeBlock(); err != nil {
+		return err
+	}
+	return t.emit("error", map[string]any{"type": "error",
+		"error": map[string]any{"type": "api_error", "message": "the upstream stream ended before the answer finished"}})
 }
 
 // sseLineMax is the longest SSE line read whole. A usage event is a few hundred
@@ -780,16 +760,22 @@ func streamCaptureAnthropicUsage(r io.Reader, w io.Writer, flush func()) (used A
 
 // translateOpenAIStream reads an upstream OpenAI SSE stream and drives the
 // translator, returning captured usage. It never writes raw OpenAI frames.
-func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, upstream, reqID string) (prompt, completion, total int) {
-	t := newAnthropicStreamTranslator(emit, modelID, upstream, reqID)
+func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, reqID string) (prompt, completion, total int) {
+	t := newAnthropicStreamTranslator(emit, modelID, reqID)
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	// done is the answer saying it is done: a finish_reason or [DONE]. A stream that
+	// ends without one was cut, and a coding agent must not read a cut as finished.
+	var done, gone bool
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
 		raw := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if raw == "[DONE]" {
+			done = true
+		}
 		if raw == "" || raw == "[DONE]" {
 			continue
 		}
@@ -797,11 +783,19 @@ func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, u
 		if err := json.Unmarshal([]byte(raw), &chunk); err != nil {
 			continue
 		}
+		for _, ch := range chunk.Choices {
+			done = done || ch.FinishReason != ""
+		}
 		if err := t.handleChunk(&chunk); err != nil {
+			gone = true
 			break
 		}
 	}
-	_ = t.finish()
+	if done || gone {
+		_ = t.finish()
+	} else {
+		_ = t.cut()
+	}
 	return t.prompt, t.completion, t.total
 }
 
@@ -809,7 +803,7 @@ func translateOpenAIStream(r io.Reader, emit func(string, any) error, modelID, u
 
 // openAIResponseToAnthropic converts a non-streaming OpenAI chat completion into
 // an Anthropic Messages response (content blocks + stop_reason + usage).
-func openAIResponseToAnthropic(body []byte, modelID, upstream, reqID string) (resp map[string]any, prompt, completion int) {
+func openAIResponseToAnthropic(body []byte, modelID, reqID string) (resp map[string]any, prompt, completion int) {
 	var oai struct {
 		Choices []struct {
 			Message struct {
@@ -839,13 +833,8 @@ func openAIResponseToAnthropic(body []byte, modelID, upstream, reqID string) (re
 		if ch.Message.ReasoningContent != "" {
 			content = append(content, map[string]any{"type": "thinking", "thinking": ch.Message.ReasoningContent})
 		}
-		// A reasoning-inlining upstream (DeepSeek) buries its <think></think>
-		// block in content rather than reasoning_content; strip it so only the
-		// answer becomes a text block (other upstreams pass through unchanged).
+		// The body arrives with its inline reasoning already removed (answerBody).
 		text := ch.Message.Content
-		if model.InlinesReasoning(upstream) {
-			text = model.StripLeadingReasoning(text)
-		}
 		if text != "" {
 			content = append(content, map[string]any{"type": "text", "text": text})
 		}

@@ -56,7 +56,7 @@ func TestAnthropicSSE_WireFormat_ToolStream(t *testing.T) {
 		return err
 	}
 
-	prompt, completion, _ := translateOpenAIStream(strings.NewReader(upstream), emit, "glm-5.2", "glm-5.2", "req_wire")
+	prompt, completion, _ := translateOpenAIStream(strings.NewReader(upstream), emit, "glm-5.2", "req_wire")
 	got := wire.String()
 	t.Logf("\n----- Anthropic SSE on the wire (what Claude Code receives) -----\n%s----------------------------------------------------------------", got)
 

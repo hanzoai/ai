@@ -71,7 +71,7 @@ func TestApplyReasoningStripFailSafe(t *testing.T) {
 func TestStripReasoningBodyNonStream(t *testing.T) {
 	// The exact non-stream leak shape observed from zen5-pro.
 	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"<think></think>OK"}}],"usage":{"total_tokens":8}}`)
-	out := stripReasoningBody(body)
+	out := stripReasoningBody(body, false)
 	var resp struct {
 		Choices []struct {
 			Message struct {
@@ -93,7 +93,7 @@ func TestStripReasoningBodyNonStream(t *testing.T) {
 	}
 	// Clean body is returned byte-identical.
 	clean := []byte(`{"choices":[{"message":{"content":"hi"}}]}`)
-	if got := stripReasoningBody(clean); string(got) != string(clean) {
+	if got := stripReasoningBody(clean, false); string(got) != string(clean) {
 		t.Errorf("clean body must be unchanged, got %s", got)
 	}
 }

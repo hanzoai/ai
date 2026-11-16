@@ -203,7 +203,7 @@ func TestLiftReleasedTextIsFramed(t *testing.T) {
 		seen += strings.Count(string(b), `\u003c`)
 		return nil
 	}
-	translateOpenAIStream(l.stream(strings.NewReader(sse)), emit, "m", "m", "r")
+	translateOpenAIStream(l.stream(strings.NewReader(sse)), emit, "m", "r")
 	if want := strings.Count(held, "<"); seen != want {
 		t.Fatalf("the translator read %d of %d held characters", seen, want)
 	}

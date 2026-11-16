@@ -72,9 +72,9 @@ type rawCall struct{ name, args string }
 
 var (
 	deepseek = []*form{
-		{"<｜DSML｜tool_calls>", "</｜DSML｜tool_calls>", followedBy(invoke), dsml, false},
-		{"<｜DSML｜function_calls>", "</｜DSML｜function_calls>", followedBy(invoke), dsml, false},
-		{"<｜tool▁calls▁begin｜>", "<｜tool▁calls▁end｜>", followedBy(begin), fenced, false},
+		{"<｜DSML｜tool_calls>", "</｜DSML｜tool_calls>", tagFollow(invoke), dsml, false},
+		{"<｜DSML｜function_calls>", "</｜DSML｜function_calls>", tagFollow(invoke), dsml, false},
+		{"<｜tool▁calls▁begin｜>", "<｜tool▁calls▁end｜>", callsFollow, fenced, false},
 		{"<｜tool▁call▁begin｜>", "<｜tool▁call▁end｜>", sepFollow, fenced, false},
 	}
 	hermesForms = []*form{
@@ -110,11 +110,43 @@ func Quotes(model, text string) bool {
 	return false
 }
 
-// followedBy accepts an opener followed, past whitespace, by want.
-func followedBy(want string) func(string) verdict {
+// shapeWindow is how far past an opener the shape of a call must show itself: the
+// tag that names the call closed, or the tool separator arrived. Prose after an
+// opener that merely looked like one is let go then, not held to the end.
+const shapeWindow = 256
+
+// tagFollow accepts an opener followed, past whitespace, by the tag want, once that
+// tag has closed with ">" within the window.
+func tagFollow(want string) func(string) verdict {
 	return func(after string) verdict {
-		return starts(after, want)
+		if v := starts(after, want); v != accept {
+			return v
+		}
+		return closes(strings.TrimLeft(after, " \t\r\n")[len(want):], "")
 	}
+}
+
+// closes is accept when s holds a ">" within the window with none of the bytes in
+// bar before it, wait while it may still arrive, and reject otherwise.
+func closes(s, bar string) verdict {
+	w := s[:min(len(s), shapeWindow)]
+	i := strings.IndexByte(w, '>')
+	switch {
+	case i >= 0 && !strings.ContainsAny(w[:i], bar+"<"):
+		return accept
+	case i >= 0, len(s) >= shapeWindow:
+		return reject
+	}
+	return wait
+}
+
+// callsFollow accepts the calls wrapper followed by a call whose separator arrives
+// within the window.
+func callsFollow(after string) verdict {
+	if v := starts(after, begin); v != accept {
+		return v
+	}
+	return sepFollow(strings.TrimLeft(after, " \t\r\n")[len(begin):])
 }
 
 // starts is accept when s, past leading whitespace, begins with want, wait while it
@@ -151,7 +183,13 @@ func hermesFollow(after string) verdict {
 	if starts(after, "{") == accept {
 		return accept
 	}
-	return starts(after, "<function=")
+	v := starts(after, "<function=")
+	if v != accept {
+		return v
+	}
+	// The name is one word and ends at ">": <function=name>.
+	t := strings.TrimLeft(after, " \t\r\n")[len("<function="):]
+	return closes(t, " \t\r\n")
 }
 
 // maxHeld bounds what a scanner keeps while it waits to decide. A block longer than
@@ -191,6 +229,7 @@ type Scanner struct {
 	runLead   bool // the run began a line, past blanks and list or quote marks
 	indent    int  // columns of blanks that began this line
 	marked    bool // a list or quote mark began this line
+	quoted    bool // a quote mark began this line: what it holds is quoted, never lifted
 	off       bool // this line has left its prefix
 
 	pend []byte // whitespace not yet known to be interior
@@ -398,7 +437,7 @@ func (s *Scanner) candidate(text []byte) int {
 		if b == '<' {
 			s.endRun()
 			s.closing = false
-			if s.fence == 0 && !s.tick && !s.indented() && s.starts(text[i:]) {
+			if s.fence == 0 && !s.tick && !s.quoted && !s.indented() && s.starts(text[i:]) {
 				return i
 			}
 		}
@@ -438,7 +477,7 @@ func (s *Scanner) track(b byte) {
 			s.fence = 0
 		}
 		s.closing, s.tick, s.fenceLine = false, false, false
-		s.indent, s.marked, s.off = 0, false, false
+		s.indent, s.marked, s.quoted, s.off = 0, false, false, false
 		return
 	}
 	if b != ' ' && b != '\t' && b != '\r' {
@@ -452,7 +491,9 @@ func (s *Scanner) track(b byte) {
 		s.indent++
 	case b == '\t':
 		s.indent += 4 - s.indent%4
-	case b == '>' || b == '-' || b == '*' || b == '+' || b == '.' || b == ')' || b >= '0' && b <= '9':
+	case b == '>':
+		s.marked, s.quoted = true, true
+	case b == '-' || b == '*' || b == '+' || b == '.' || b == ')' || b >= '0' && b <= '9':
 		s.marked = true
 	default:
 		s.off = true
@@ -487,12 +528,21 @@ func id() string {
 	return "call_" + hex.EncodeToString(b[:])
 }
 
-// compact is v as compact JSON, or false when v is not JSON.
+// compact is v as compact JSON, or false when v is not JSON or repeats an object
+// name at any depth: of two copies a parser keeps one and another reader the other,
+// so every JSON value a call's arguments carry passes here. A caller that would
+// otherwise keep v as text asks repeats first.
 func compact(v string) (string, bool) {
 	v = strings.TrimSpace(v)
 	var b bytes.Buffer
-	if v == "" || json.Compact(&b, []byte(v)) != nil {
+	if v == "" || !distinct([]byte(v)) || json.Compact(&b, []byte(v)) != nil {
 		return "", false
 	}
 	return b.String(), true
+}
+
+// repeats is true when v is JSON that repeats an object name: no call, not text.
+func repeats(v string) bool {
+	v = strings.TrimSpace(v)
+	return json.Valid([]byte(v)) && !distinct([]byte(v))
 }

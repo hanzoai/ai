@@ -128,6 +128,8 @@ type FallbackDef struct {
 	// fallback that reaches a bigger window declares it here; 0 inherits the
 	// primary route's window.
 	ContextWindow int `yaml:"context_window,omitempty"`
+	// OpenerEaten: see ModelDef.OpenerEaten.
+	OpenerEaten bool `yaml:"opener_eaten,omitempty"`
 }
 
 // ModelDef describes a single model entry in the config.
@@ -148,6 +150,11 @@ type ModelDef struct {
 	// is the single field that stops long prompts (and /compact) dead-ending
 	// on a stale 16K/256K fallback for models the table predates.
 	ContextWindow int `yaml:"context_window,omitempty"`
+	// OpenerEaten states that this route's chat template writes the <think> opener
+	// itself, so the model's content is `reasoning</think>answer` with no opener.
+	// Everything up to the first </think> is then reasoning and never reaches the
+	// caller. Absent ⇒ a block is reasoning only when content starts with <think>.
+	OpenerEaten bool `yaml:"opener_eaten,omitempty"`
 	// MaxOutputTokens is the model's max completion length (tokens), taken from
 	// the upstream catalog. Surfaced in /v1/models so a client caps its output
 	// request honestly instead of guessing.
@@ -293,6 +300,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 				hidden:        def.Hidden,
 				ownedBy:       def.OwnedBy,
 				contextWindow: def.ContextWindow,
+				openerEaten:   def.OpenerEaten,
 				maxOutput:     def.MaxOutputTokens,
 				vision:        def.Vision,
 				tools:         def.Tools,
@@ -305,6 +313,7 @@ func (mc *ModelConfig) applyConfig(file *ModelConfigFile) error {
 					providerName:  fb.Provider,
 					upstreamModel: fb.Upstream,
 					contextWindow: fb.ContextWindow,
+					openerEaten:   fb.OpenerEaten,
 				})
 			}
 			routes[key] = r
@@ -456,6 +465,37 @@ func Canonical(model string) (string, bool) {
 		}
 	}
 	return id, ok
+}
+
+// openerEaten reports whether the route that serves upstream on provider is
+// declared to have a template that eats the <think> opener (opener_eaten). An
+// empty provider matches any. The statement is read per route, never from a name.
+func (mc *ModelConfig) openerEaten(provider, upstream string) bool {
+	if mc == nil || upstream == "" {
+		return false
+	}
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	same := func(p, u string) bool {
+		return strings.EqualFold(u, upstream) && (provider == "" || strings.EqualFold(p, provider))
+	}
+	for _, r := range mc.routes {
+		if r.openerEaten && same(r.providerName, r.upstreamModel) {
+			return true
+		}
+		for _, fb := range r.fallbacks {
+			if fb.openerEaten && same(fb.providerName, fb.upstreamModel) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// OpenerEaten is the opener_eaten statement for upstream on provider, from the
+// loaded config; false when none is loaded.
+func OpenerEaten(provider, upstream string) bool {
+	return GetModelConfig().openerEaten(provider, upstream)
 }
 
 // RetryConfig returns the configured retry policy (zero fields mean "use the

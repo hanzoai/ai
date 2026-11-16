@@ -159,6 +159,12 @@ func zapAnthropicMessages(ctx context.Context, auth string, reqBody []byte) (int
 		st := statusOf(err)
 		return anthropicErr(anthropicErrorTypeForStatus(st), err.Error(), st)
 	}
+	// A strict request is served unchanged or refused, and anything but a native
+	// Anthropic upstream is translated: the HTTP twin's refusal, on the frame's header.
+	if gatewayHeader(ctx, strictHeader) == "1" && model.Upstream(provider.Type) != model.Anthropic {
+		return anthropicErr("strict_violation", "strict: translation: this model's vendor speaks another API, so the request would be translated; name a native Anthropic model", http.StatusConflict)
+	}
+
 	isPremium := false
 	if route := resolveModelRoute(request.Model); route != nil {
 		isPremium = route.premium
@@ -337,14 +343,19 @@ func zapAnthropicProxy(
 
 	// Native Anthropic upstream: the caller's own request, the same one the HTTP
 	// path sends (nativeRequest), with stream off because one ZAP frame carries one
-	// response. The frame carries no headers, so the version is the default one.
+	// response. The version and betas are the ones the frame's headers carry, as the
+	// HTTP path sends the request's.
 	if model.Upstream(provider.Type) == model.Anthropic {
 		set := map[string]any{"model": provider.SubType, "max_tokens": request.MaxTokens}
 		if request.Stream {
 			set["stream"] = false
 		}
 		byo, _ := providerBYO(provider, authUser)
-		req, err := nativeRequest(ctx, provider, reqBody, set, byo, "", nil)
+		var betas []string
+		if b := gatewayHeader(ctx, "anthropic-beta"); b != "" {
+			betas = []string{b}
+		}
+		req, err := nativeRequest(ctx, provider, reqBody, set, byo, gatewayHeader(ctx, "anthropic-version"), betas)
 		if err != nil {
 			return anthropicErr(anthropicErrorType(err), err.Error(), statusOf(err))
 		}
@@ -416,9 +427,11 @@ func zapAnthropicProxy(
 	if resp.StatusCode != http.StatusOK {
 		return anthropicErr(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
 	}
-	// A ZAP frame carries no headers, and strict is asked for in one (strict.go), so
-	// no request that arrives here is strict.
-	antResp, prompt, completion := openAIResponseToAnthropic(liftFor(body, provider.SubType, false).payload(respBody), request.Model, provider.SubType, requestId)
+	// A strict request never reaches here: zapAnthropicMessages refused it.
+	eaten := OpenerEaten(provider.Name, provider.SubType)
+	strip := model.NewReasoningStripper(provider.SubType, eaten)
+	antResp, prompt, completion := openAIResponseToAnthropic(
+		readAnswerBody(respBody, eaten, strip != nil, liftFor(body, provider.SubType, false)), request.Model, requestId)
 	out, err := json.Marshal(antResp)
 	if err != nil {
 		return anthropicErr("api_error", err.Error(), 500)

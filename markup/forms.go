@@ -86,6 +86,9 @@ func parameters(inner string) (string, bool) {
 			return "", false
 		}
 		if kind, _ := attr(tag, "string"); kind != "true" {
+			if repeats(value) {
+				return "", false
+			}
 			if v, ok := compact(value); ok {
 				value = v
 			} else {
@@ -252,6 +255,9 @@ func coder(body string) ([]rawCall, bool) {
 		seen[key] = true
 		value = strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
 		if t := strings.TrimSpace(value); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
+			if repeats(t) {
+				return nil, false
+			}
 			if v, ok := compact(t); ok {
 				value = v
 			} else {

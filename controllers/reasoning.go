@@ -15,7 +15,10 @@
 package controllers
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"io"
 
 	"github.com/hanzoai/ai/model"
 )
@@ -96,7 +99,7 @@ func applyReasoningStrip(raw string, s *model.ReasoningStripper) string {
 
 // stripReasoningBody rewrites message.content in a non-streaming OpenAI chat
 // completion response, removing each choice's leading reasoning block.
-func stripReasoningBody(body []byte) []byte {
+func stripReasoningBody(body []byte, eaten bool) []byte {
 	var resp map[string]any
 	if json.Unmarshal(body, &resp) != nil {
 		return body
@@ -119,7 +122,7 @@ func stripReasoningBody(body []byte) []byte {
 		if !ok || content == "" {
 			continue
 		}
-		if clean := model.StripLeadingReasoning(content); clean != content {
+		if clean := model.StripReasoning(content, eaten); clean != content {
 			msg["content"] = clean
 			changed = true
 		}
@@ -131,4 +134,71 @@ func stripReasoningBody(body []byte) []byte {
 		return out
 	}
 	return body
+}
+
+// readAnswer reads an upstream chat SSE stream the way every relay that
+// translates it must: the inline reasoning comes off first, and only what is left
+// is read for tool calls. One order, here, so a path cannot lift from text the
+// caller will never see (an unclosed fence in the reasoning desyncs the scanner).
+func readAnswer(r io.Reader, strip *model.ReasoningStripper, l *lifter) io.Reader {
+	if strip != nil {
+		r = &reasonedStream{strip: strip, in: bufio.NewReader(r)}
+	}
+	return l.stream(r)
+}
+
+// readAnswerBody is readAnswer for a buffered chat completion.
+func readAnswerBody(body []byte, eaten, inlines bool, l *lifter) []byte {
+	if inlines {
+		body = stripReasoningBody(body, eaten)
+	}
+	return l.payload(body)
+}
+
+// reasonedStream is an SSE stream with its inline reasoning removed, and what the
+// stripper still holds let go before [DONE] or at the end.
+type reasonedStream struct {
+	strip *model.ReasoningStripper
+	in    *bufio.Reader
+	out   []byte
+	done  bool
+}
+
+func (s *reasonedStream) Read(p []byte) (int, error) {
+	for len(s.out) == 0 {
+		if s.done {
+			return 0, io.EOF
+		}
+		line, err := s.in.ReadBytes('\n')
+		if err != nil {
+			s.done = true
+		}
+		s.out = s.rewrite(line)
+		if s.done {
+			s.out = append(s.out, s.tail()...)
+		}
+	}
+	n := copy(p, s.out)
+	s.out = s.out[n:]
+	return n, nil
+}
+
+func (s *reasonedStream) rewrite(line []byte) []byte {
+	data, ok := bytes.CutPrefix(bytes.TrimRight(line, "\r\n"), []byte("data:"))
+	data = bytes.TrimSpace(data)
+	switch {
+	case ok && string(data) == "[DONE]":
+		return append(s.tail(), line...)
+	case ok && len(data) > 0 && data[0] == '{':
+		return append([]byte("data: "+applyReasoningStrip(string(data), s.strip)), '\n')
+	}
+	return line
+}
+
+func (s *reasonedStream) tail() []byte {
+	held := strippedTail(s.strip)
+	if held == nil {
+		return nil
+	}
+	return append(append([]byte("data: "), held...), '\n', '\n')
 }

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/ai/model"
 	openai "github.com/hanzoai/go-openai"
 )
 
@@ -39,7 +40,7 @@ func runTranslator(t *testing.T, openaiSSE string) ([]sseEvent, int, int) {
 		events = append(events, sseEvent{Event: event, Data: m})
 		return nil
 	}
-	prompt, completion, _ := translateOpenAIStream(strings.NewReader(openaiSSE), emit, "glm-5.2", "glm-5.2", "req_test")
+	prompt, completion, _ := translateOpenAIStream(strings.NewReader(openaiSSE), emit, "glm-5.2", "req_test")
 	return events, prompt, completion
 }
 
@@ -426,7 +427,7 @@ func TestAssistantThinkingRoundTrips(t *testing.T) {
 
 func TestOpenAIResponseToAnthropic_ToolUse(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_7","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"SF\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":15,"completion_tokens":6}}`)
-	resp, prompt, completion := openAIResponseToAnthropic(body, "glm-5.2", "glm-5.2", "req_1")
+	resp, prompt, completion := openAIResponseToAnthropic(body, "glm-5.2", "req_1")
 
 	if resp["stop_reason"] != "tool_use" {
 		t.Fatalf("stop_reason = %v, want tool_use", resp["stop_reason"])
@@ -451,7 +452,7 @@ func TestOpenAIResponseToAnthropic_ToolUse(t *testing.T) {
 
 func TestOpenAIResponseToAnthropic_Text(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"HANZO OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}`)
-	resp, _, _ := openAIResponseToAnthropic(body, "glm-5.2", "glm-5.2", "req_1")
+	resp, _, _ := openAIResponseToAnthropic(body, "glm-5.2", "req_1")
 	if resp["stop_reason"] != "end_turn" {
 		t.Fatalf("stop_reason = %v", resp["stop_reason"])
 	}
@@ -494,7 +495,7 @@ func runTranslatorModel(t *testing.T, openaiSSE, modelID string) []sseEvent {
 		events = append(events, sseEvent{Event: event, Data: m})
 		return nil
 	}
-	translateOpenAIStream(strings.NewReader(openaiSSE), emit, modelID, modelID, "req_test")
+	translateOpenAIStream(readAnswer(strings.NewReader(openaiSSE), model.NewReasoningStripper(modelID, false), nil), emit, modelID, "req_test")
 	return events
 }
 
@@ -574,7 +575,7 @@ func TestTranslateStream_NonDeepSeekContentUntouched(t *testing.T) {
 // single text block holding only the answer.
 func TestOpenAIResponseToAnthropic_DeepSeekInlineReasoningStripped(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"<think>Reasoning here.</think>The final answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":9}}`)
-	resp, _, _ := openAIResponseToAnthropic(body, "deepseek-v4-pro", "deepseek-v4-pro", "req_1")
+	resp, _, _ := openAIResponseToAnthropic(readAnswerBody(body, false, true, nil), "deepseek-v4-pro", "req_1")
 
 	content := resp["content"].([]any)
 	if len(content) != 1 {

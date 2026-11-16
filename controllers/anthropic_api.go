@@ -1594,6 +1594,8 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	}
 
 	lift := liftFor(body, provider.SubType, c.strictAsked())
+	eaten := OpenerEaten(provider.Name, provider.SubType)
+	strip := model.NewReasoningStripper(provider.SubType, eaten)
 	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
 	if err != nil {
 		c.respondAnthropicError("api_error", "Failed to build upstream request: "+err.Error(), 500)
@@ -1660,7 +1662,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 				_ = w.Flush()
 				return nil
 			}
-			prompt, completion, total := translateOpenAIStream(lift.stream(upstream), emit, request.Model, provider.SubType, requestId)
+			prompt, completion, total := translateOpenAIStream(readAnswer(upstream, strip, lift), emit, request.Model, requestId)
 			// Tokenizer fallback so a successful streamed tool call is never billed $0.
 			if prompt == 0 {
 				if pt, e := model.OpenaiNumTokensFromMessages(oaiReq.Messages, request.Model); e == nil {
@@ -1685,7 +1687,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		c.respondAnthropicRefusal(relay(request.Model, provider.Name, resp.StatusCode, respBody))
 		return
 	}
-	antResp, prompt, completion := openAIResponseToAnthropic(lift.payload(respBody), request.Model, provider.SubType, requestId)
+	antResp, prompt, completion := openAIResponseToAnthropic(readAnswerBody(respBody, eaten, strip != nil, lift), request.Model, requestId)
 	out, err := json.Marshal(antResp)
 	if err != nil {
 		c.respondAnthropicError("api_error", err.Error(), 500)

@@ -156,6 +156,7 @@ func doBootstrap() (err error) {
 	// Nil-safe: if ModelConfig failed to load, the table-only path stays.
 	if mc := controllers.GetModelConfig(); mc != nil {
 		model.SetContextWindowResolver(mc.ContextWindow)
+		model.SetOpenerEatenResolver(func(upstream string) bool { return controllers.OpenerEaten("", upstream) })
 	}
 
 	// Provider HTTP client, GeoIP, request parsing, maintenance tasks.

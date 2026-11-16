@@ -597,10 +597,8 @@ func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, re
 
 	// A reasoning-inlining upstream (DeepSeek) has its leading <think></think> block
 	// stripped from what is forwarded; billing counts what it sent.
-	var strip *model.ReasoningStripper
-	if model.InlinesReasoning(cand.upstream) {
-		strip = &model.ReasoningStripper{}
-	}
+	eaten := OpenerEaten(cand.provider, cand.upstream)
+	strip := model.NewReasoningStripper(cand.upstream, eaten)
 
 	if p.req.Stream {
 		c.SetHeader("Content-Type", "text/event-stream")
@@ -625,7 +623,7 @@ func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, re
 	// answer reads what the streamed one does.
 	answer := whole
 	if strip != nil {
-		answer = stripReasoningBody(whole)
+		answer = stripReasoningBody(whole, eaten)
 	}
 	out := mk.stamp(answer)
 	var t tokens

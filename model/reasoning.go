@@ -26,8 +26,11 @@ import "strings"
 //
 // These helpers strip a block only when content STARTS with <think> (after any
 // whitespace). Content that starts otherwise is an answer, and a </think> inside
-// it is text. Which SKU behaves which way is a property of
-// the catalog (HIP-0039), read at run time — never a list here. Lives in package
+// it is text. One kind of route differs: where the chat template itself writes
+// the opener, the model's content arrives as `reasoning</think>answer` with no
+// <think> at all. A route says so (opener_eaten in models.yaml), and on it
+// everything up to the first </think> is reasoning. Which SKU behaves which way
+// is a property of the catalog (HIP-0039), read at run time — never a list here. Lives in package
 // model so both the relay (controllers) and the QueryText providers share one
 // definition.
 
@@ -49,11 +52,42 @@ func InlinesReasoning(upstreamModel string) bool {
 	return strings.Contains(strings.ToLower(upstreamModel), "deepseek")
 }
 
+// eatenResolver answers whether the route serving an upstream model has a chat
+// template that eats the <think> opener. Installed once from controllers.
+var eatenResolver func(upstream string) bool
+
+// SetOpenerEatenResolver installs the config-backed opener_eaten lookup.
+func SetOpenerEatenResolver(f func(upstream string) bool) { eatenResolver = f }
+
+// OpenerEaten reports whether upstream's route is declared to eat the opener.
+func OpenerEaten(upstream string) bool { return eatenResolver != nil && eatenResolver(upstream) }
+
+// NewReasoningStripper is the stripper for a stream of a route, or nil when the
+// route inlines no reasoning (its bytes then pass untouched). eaten is the route's
+// opener_eaten statement.
+func NewReasoningStripper(upstream string, eaten bool) *ReasoningStripper {
+	if !eaten && !InlinesReasoning(upstream) {
+		return nil
+	}
+	return &ReasoningStripper{eaten: eaten}
+}
+
 // StripLeadingReasoning removes a leading `<think>…</think>` block from a complete
 // content string, returning the answer. Content that does not start with <think>,
 // or whose block never closes, is returned unchanged.
-func StripLeadingReasoning(content string) string {
+func StripLeadingReasoning(content string) string { return StripReasoning(content, false) }
+
+// StripReasoning is StripLeadingReasoning for a route that may eat the opener: on
+// one, everything up to the first </think> is reasoning, opener or not. Content
+// with no </think> is the answer, whole.
+func StripReasoning(content string, eaten bool) string {
 	rest := strings.TrimLeft(content, " \t\r\n")
+	if eaten {
+		if _, after, ok := strings.Cut(content, thinkClose); ok {
+			return strings.TrimLeft(after, " \n")
+		}
+		return content
+	}
 	if !strings.HasPrefix(rest, thinkOpen) {
 		return content
 	}
@@ -72,6 +106,7 @@ func StripLeadingReasoning(content string) string {
 type ReasoningStripper struct {
 	state int // 0 deciding, 1 inside the block, 2 pass through
 	buf   strings.Builder
+	eaten bool // the route's template ate the opener: reasoning runs to the first </think>
 }
 
 const (
@@ -96,6 +131,12 @@ func (s *ReasoningStripper) Feed(delta string) string {
 		b := s.buf.String()
 		rest := strings.TrimLeft(b, " \t\r\n")
 		switch {
+		case s.eaten && rest == "":
+			return ""
+		case s.eaten:
+			s.state = stripInside
+			s.buf.Reset()
+			s.buf.WriteString(b)
 		case rest == "" || (len(rest) < len(thinkOpen) && strings.HasPrefix(thinkOpen, rest)):
 			return ""
 		case strings.HasPrefix(rest, thinkOpen):
@@ -119,7 +160,11 @@ func (s *ReasoningStripper) Feed(delta string) string {
 		}
 		return after
 	}
-	if s.buf.Len() >= reasoningCap {
+	limit := reasoningCap
+	if s.eaten {
+		limit = reasoningCap << 4
+	}
+	if s.buf.Len() >= limit {
 		s.state = stripPass
 		s.buf.Reset()
 		return b

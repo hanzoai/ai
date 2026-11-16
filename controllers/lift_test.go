@@ -297,7 +297,7 @@ func TestLiftStreamReaderEverySplit(t *testing.T) {
 func TestLiftAnthropicBufferedAnswer(t *testing.T) {
 	body := `{"choices":[{"index":0,"message":{"role":"assistant","content":` + liftQuote(liftSample) + `},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4}}`
 	l := liftFor([]byte(`{`+liftTools+`}`), liftModel, false)
-	resp, _, _ := openAIResponseToAnthropic(l.payload([]byte(body)), "m", "m", "r")
+	resp, _, _ := openAIResponseToAnthropic(l.payload([]byte(body)), "m", "r")
 	out, _ := json.Marshal(resp)
 	if strings.Contains(string(out), "DSML") || resp["stop_reason"] != "tool_use" ||
 		!strings.Contains(string(out), `"type":"tool_use"`) || !strings.Contains(string(out), `"name":"exec_command"`) {

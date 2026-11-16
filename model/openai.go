@@ -408,10 +408,7 @@ func (p *OpenAiModelProvider) QueryText(question string, writer io.Writer, histo
 		// A reasoning-inlining upstream (DeepSeek) emits its <think></think> block
 		// as plain message text rather than reasoning-summary events; strip that
 		// leading block so the console / plain-chat answer is clean.
-		var reasonStrip *ReasoningStripper
-		if InlinesReasoning(model) {
-			reasonStrip = &ReasoningStripper{}
-		}
+		reasonStrip := NewReasoningStripper(model, OpenerEaten(model))
 
 		isLeadingReturn := true
 		for respStream.Next() {
