@@ -416,7 +416,7 @@ func zapAnthropicProxy(
 	if resp.StatusCode != http.StatusOK {
 		return anthropicErr(anthropicErrorTypeForStatus(resp.StatusCode), upstreamErrorMessage(respBody), resp.StatusCode)
 	}
-	antResp, prompt, completion := openAIResponseToAnthropic(liftFor(body).payload(respBody), request.Model, requestId)
+	antResp, prompt, completion := openAIResponseToAnthropic(liftFor(body, provider.SubType, false).payload(respBody), request.Model, requestId)
 	out, err := json.Marshal(antResp)
 	if err != nil {
 		return anthropicErr("api_error", err.Error(), 500)

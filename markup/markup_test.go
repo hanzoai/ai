@@ -34,8 +34,13 @@ const (
 
 var offered = map[string]bool{"exec_command": true, "read_file": true}
 
+var (
+	ds = Rules{Offered: offered, Model: "deepseek/deepseek-v4"}
+	qw = Rules{Offered: offered, Model: "qwen/qwen3-coder"}
+)
+
 func TestLiftDSML(t *testing.T) {
-	text, calls := Lift(sample, offered)
+	text, calls := Lift(sample, ds)
 	if text != sampleText {
 		t.Fatalf("text = %q", text)
 	}
@@ -53,7 +58,7 @@ func TestLiftDSMLTypes(t *testing.T) {
 		`<｜DSML｜parameter name="e" string="true">line1
 "line2"</｜DSML｜parameter>` +
 		`</｜DSML｜invoke></｜DSML｜tool_calls>`
-	text, calls := Lift(in, offered)
+	text, calls := Lift(in, ds)
 	want := `{"a":"123","b":{"k":[1,2]},"c":true,"d":"not json","e":"line1\n\"line2\""}`
 	if text != "" || len(calls) != 1 || calls[0].Arguments != want {
 		t.Fatalf("text=%q calls=%+v", text, calls)
@@ -65,7 +70,7 @@ func TestLiftMultipleInvokes(t *testing.T) {
 		`<｜DSML｜invoke name="read_file"><｜DSML｜parameter name="p" string="true">a</｜DSML｜parameter></｜DSML｜invoke>` +
 		`<｜DSML｜invoke name="exec_command"></｜DSML｜invoke>` +
 		`</｜DSML｜tool_calls>`
-	_, calls := Lift(in, offered)
+	_, calls := Lift(in, ds)
 	if len(calls) != 2 || calls[0].Name != "read_file" || calls[0].Arguments != `{"p":"a"}` ||
 		calls[1].Name != "exec_command" || calls[1].Arguments != `{}` || calls[0].ID == calls[1].ID {
 		t.Fatalf("calls = %+v", calls)
@@ -75,20 +80,20 @@ func TestLiftMultipleInvokes(t *testing.T) {
 func TestLiftUnknownToolStaysText(t *testing.T) {
 	in := "ok\n\n" + strings.ReplaceAll(sample, "exec_command", "rm_rf")
 	in = strings.Replace(in, sampleText, "ok", 1)
-	text, calls := Lift(in, offered)
+	text, calls := Lift(in, ds)
 	if text != in || len(calls) != 0 {
 		t.Fatalf("text=%q calls=%+v", text, calls)
 	}
 	// One unknown invoke keeps the whole block: nothing is half lifted.
 	mixed := `<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"></｜DSML｜invoke><｜DSML｜invoke name="nope"></｜DSML｜invoke></｜DSML｜tool_calls>`
-	if text, calls := Lift(mixed, offered); text != mixed || len(calls) != 0 {
+	if text, calls := Lift(mixed, ds); text != mixed || len(calls) != 0 {
 		t.Fatalf("mixed: text=%q calls=%+v", text, calls)
 	}
 }
 
 func TestLiftTruncatedStaysText(t *testing.T) {
 	in := sample[:len(sample)-len("</｜DSML｜tool_calls>")]
-	text, calls := Lift(in, offered)
+	text, calls := Lift(in, ds)
 	if text != in || len(calls) != 0 {
 		t.Fatalf("text=%q calls=%+v", text, calls)
 	}
@@ -96,21 +101,21 @@ func TestLiftTruncatedStaysText(t *testing.T) {
 
 func TestLiftMalformedStaysText(t *testing.T) {
 	in := `<｜DSML｜tool_calls><｜DSML｜invoke><｜DSML｜parameter name="p">x</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
-	if text, calls := Lift(in, offered); text != in || len(calls) != 0 {
+	if text, calls := Lift(in, ds); text != in || len(calls) != 0 {
 		t.Fatalf("text=%q calls=%+v", text, calls)
 	}
 }
 
 func TestLiftPlainTextUntouched(t *testing.T) {
 	for _, in := range []string{"", "  hello  \n", "a < b and <div> and <tool", "x <｜ y"} {
-		if text, calls := Lift(in, offered); text != in || len(calls) != 0 {
+		if text, calls := Lift(in, ds); text != in || len(calls) != 0 {
 			t.Fatalf("%q -> %q %+v", in, text, calls)
 		}
 	}
 }
 
 func TestLiftNoToolsOffered(t *testing.T) {
-	if text, calls := Lift(sample, nil); text != sample || len(calls) != 0 {
+	if text, calls := Lift(sample, Rules{Model: ds.Model}); text != sample || len(calls) != 0 {
 		t.Fatalf("text=%q calls=%+v", text, calls)
 	}
 }
@@ -118,7 +123,7 @@ func TestLiftNoToolsOffered(t *testing.T) {
 func TestLiftQwen(t *testing.T) {
 	in := "Checking.\n<tool_call>\n{\"name\": \"read_file\", \"arguments\": {\"path\": \"/a b\"}}\n</tool_call>\n" +
 		"<tool_call>{\"name\":\"exec_command\",\"arguments\":\"{\\\"cmd\\\":\\\"ls\\\"}\"}</tool_call>"
-	text, calls := Lift(in, offered)
+	text, calls := Lift(in, qw)
 	if text != "Checking." || len(calls) != 2 ||
 		calls[0].Name != "read_file" || calls[0].Arguments != `{"path":"/a b"}` ||
 		calls[1].Name != "exec_command" || calls[1].Arguments != `{"cmd":"ls"}` {
@@ -129,7 +134,7 @@ func TestLiftQwen(t *testing.T) {
 func TestLiftFenced(t *testing.T) {
 	in := "Sure.<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>read_file\n```json\n{\"path\": \"x\"}\n```<｜tool▁call▁end｜>" +
 		"<｜tool▁call▁begin｜>exec_command<｜tool▁sep｜>{\"cmd\":\"ls\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
-	text, calls := Lift(in, offered)
+	text, calls := Lift(in, ds)
 	if text != "Sure." || len(calls) != 2 ||
 		calls[0].Name != "read_file" || calls[0].Arguments != `{"path":"x"}` ||
 		calls[1].Name != "exec_command" || calls[1].Arguments != `{"cmd":"ls"}` {
@@ -140,28 +145,28 @@ func TestLiftFenced(t *testing.T) {
 // Every split of the input in two, and the input one byte at a time, lift the same
 // calls and the same text as the whole, and the text never carries a marker byte.
 func TestScannerEverySplit(t *testing.T) {
-	inputs := []string{
-		sample,
-		"before\n" + sample + "\nafter text",
-		"a <b> c " + sample + " tail <｜ not markup",
-		"<tool_call>{\"name\":\"read_file\",\"arguments\":{}}</tool_call> then <tool_call>{\"name\":\"nope\"}</tool_call> end",
-		"unterminated " + sample[:len(sample)-5],
+	inputs := map[string]Rules{
+		sample:                               ds,
+		"before\n" + sample + "\nafter text": ds,
+		"a <b> c " + sample + " tail <｜ not markup": ds,
+		"a <b> c " + sample + " \n":                 ds,
+		"<tool_call>{\"name\":\"read_file\",\"arguments\":{}}</tool_call> then <tool_call>{\"name\":\"nope\"}</tool_call> end": qw,
+		"unterminated " + sample[:len(sample)-5]: ds,
 	}
-	for _, in := range inputs {
-		wantText, wantCalls := Lift(in, offered)
+	for in, rules := range inputs {
+		wantText, wantCalls := Lift(in, rules)
 		check := func(parts []string) {
-			s := NewScanner(offered)
+			s := NewScanner(rules)
 			var text strings.Builder
-			var calls []Call
 			for _, p := range parts {
-				x, c := s.Feed(p)
+				x := s.Feed(p)
 				text.WriteString(x)
-				calls = append(calls, c...)
-				if len(wantCalls) > 0 && len(calls) == len(wantCalls) && strings.Contains(x, "｜DSML｜tool_calls>") && !strings.Contains(in, "unterminated") && !strings.Contains(wantText, "｜DSML｜") {
+				if len(wantCalls) > 0 && strings.Contains(x, "｜DSML｜tool_calls>") {
 					t.Fatalf("markup leaked in %q", x)
 				}
 			}
-			text.WriteString(s.Flush())
+			rest, calls := s.Flush()
+			text.WriteString(rest)
 			if text.String() != wantText || len(calls) != len(wantCalls) {
 				t.Fatalf("parts %q: text=%q want %q calls=%d want %d", parts, text.String(), wantText, len(calls), len(wantCalls))
 			}
@@ -187,12 +192,12 @@ func TestScannerEverySplit(t *testing.T) {
 
 // Text before a block streams out at once; only a possible marker is held.
 func TestScannerPassesTextThrough(t *testing.T) {
-	s := NewScanner(offered)
-	text, _ := s.Feed("hello world <｜DS")
+	s := NewScanner(ds)
+	text := s.Feed("hello world <｜DS")
 	if text != "hello world" || !s.Held() {
 		t.Fatalf("text=%q held=%v", text, s.Held())
 	}
-	text, _ = s.Feed("x")
+	text = s.Feed("x")
 	if text != " <｜DSx" || s.Held() {
 		t.Fatalf("text=%q", text)
 	}

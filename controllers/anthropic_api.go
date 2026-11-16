@@ -1593,7 +1593,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		return
 	}
 
-	lift := liftFor(body)
+	lift := liftFor(body, provider.SubType, c.strictAsked())
 	req, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
 	if err != nil {
 		c.respondAnthropicError("api_error", "Failed to build upstream request: "+err.Error(), 500)

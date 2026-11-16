@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/hanzoai/ai/object"
 )
 
 const (
@@ -134,7 +136,7 @@ func completesWith(content string) func(http.ResponseWriter, int) {
 }
 
 func TestLiftBufferedAnswerBecomesToolCall(t *testing.T) {
-	w := newRelayWorld(t, completesWith(liftSample), never(t))
+	w := newLiftWorld(t, completesWith(liftSample))
 	c := w.chat(`{"model":"relay-sku",` + liftTools + `,"messages":[{"role":"user","content":"go"}]}`)
 	out := sent(c)
 	if answered(c) != http.StatusOK || strings.Contains(out, "DSML") {
@@ -145,11 +147,11 @@ func TestLiftBufferedAnswerBecomesToolCall(t *testing.T) {
 
 func TestLiftStreamedAnswerBecomesToolCall(t *testing.T) {
 	// Byte by byte is the hardest split: every prefix of the marker is seen.
-	var parts []string
+	parts := []string{"</think>"}
 	for _, r := range liftSample {
 		parts = append(parts, string(r))
 	}
-	w := newRelayWorld(t, streams(parts, 10, 0, 5), never(t))
+	w := newLiftWorld(t, streams(parts, 10, 0, 5))
 	c := w.chat(`{"model":"relay-sku","stream":true,` + liftTools + `,"messages":[{"role":"user","content":"go"}]}`)
 	out := sent(c)
 	if strings.Contains(out, "DSML") || strings.Contains(out, "tool_calls>") {
@@ -171,9 +173,9 @@ func TestLiftResponsesBecomeFunctionCall(t *testing.T) {
 		t.Run(fmt.Sprintf("stream=%v", stream), func(t *testing.T) {
 			serve := completesWith(liftSample)
 			if stream {
-				serve = streams([]string{liftProse + "\n\n<｜DSML｜tool", "_calls>" + liftBlock[len("<｜DSML｜tool_calls>"):]}, 10, 0, 5)
+				serve = streams([]string{"</think>" + liftProse + "\n\n<｜DSML｜tool", "_calls>" + liftBlock[len("<｜DSML｜tool_calls>"):]}, 10, 0, 5)
 			}
-			w := newRelayWorld(t, serve, never(t))
+			w := newLiftWorld(t, serve)
 			c := w.responses(fmt.Sprintf(`{"model":"relay-sku","stream":%v,%s,"input":"go"}`, stream, respTools))
 			out := sent(c)
 			if strings.Contains(out, "DSML") {
@@ -198,14 +200,14 @@ func TestLiftLeavesWhatItWasNotAskedToLift(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			w := newRelayWorld(t, completesWith(liftSample), never(t))
+			w := newLiftWorld(t, completesWith(liftSample))
 			h := liftHear(t, sent(w.chat(body)))
 			if h.text != liftSample || len(h.names) != 0 || h.finish != "stop" {
 				t.Fatalf("liftHeard %+v, want the text untouched", h)
 			}
 		})
 		t.Run(name+" streamed", func(t *testing.T) {
-			w := newRelayWorld(t, streams([]string{liftSample[:len(liftProse)+3], liftSample[len(liftProse)+3:]}, 10, 0, 5), never(t))
+			w := newLiftWorld(t, streams([]string{"</think>", liftSample[:len(liftProse)+3], liftSample[len(liftProse)+3:]}, 10, 0, 5))
 			h := liftHear(t, sent(w.chat(strings.Replace(body, `{"model"`, `{"stream":true,"model"`, 1))))
 			if h.text != liftSample || len(h.names) != 0 || h.finish != "stop" {
 				t.Fatalf("liftHeard %+v, want the text untouched", h)
@@ -218,7 +220,7 @@ func TestLiftLeavesWhatItWasNotAskedToLift(t *testing.T) {
 // nothing is called.
 func TestLiftStreamCutInsideABlockReleasesTheText(t *testing.T) {
 	cut := liftSample[:strings.LastIndex(liftSample, "</｜DSML｜tool_calls>")]
-	w := newRelayWorld(t, streams([]string{cut}, 10, 0, 5), never(t))
+	w := newLiftWorld(t, streams([]string{"</think>", cut}, 10, 0, 5))
 	c := w.chat(`{"model":"relay-sku","stream":true,` + liftTools + `,"messages":[{"role":"user","content":"go"}]}`)
 	h := liftHear(t, sent(c))
 	if h.text != cut || len(h.names) != 0 || h.finish != "stop" {
@@ -226,16 +228,39 @@ func TestLiftStreamCutInsideABlockReleasesTheText(t *testing.T) {
 	}
 }
 
-// A model that already made structured calls keeps them, and a lifted one follows
-// at the next index.
-func TestLiftKeepsNativeCallsAndNumbersAfterThem(t *testing.T) {
-	l := liftFor([]byte(`{` + liftTools + `}`))
+// A choice the upstream gave structured calls is not read for more: its text stays
+// text, so one call is never made twice.
+func TestLiftKeepsNativeCallsAndLiftsNothingBesideThem(t *testing.T) {
+	l := liftFor([]byte(`{`+liftTools+`}`), liftModel, false)
 	in := `{"choices":[{"index":0,"message":{"role":"assistant","content":` + liftQuote(liftSample) +
 		`,"tool_calls":[{"id":"call_n","type":"function","function":{"name":"exec_command","arguments":"{}"}}]},"finish_reason":"stop"}]}`
 	h := liftHear(t, string(l.payload([]byte(in))))
-	if h.names[0] != "exec_command" || h.args[0] != "{}" || h.ids[0] != "call_n" || h.names[1] != "exec_command" || h.args[1] != liftArgs {
+	if len(h.names) != 1 || h.names[0] != "exec_command" || h.args[0] != "{}" || h.ids[0] != "call_n" || h.text != liftSample {
 		t.Fatalf("liftHeard %+v", h)
 	}
+}
+
+// liftModel is the upstream model id the lift tests route to: a family whose markup
+// the sample is written in.
+const liftModel = "deepseek/deepseek-v4"
+
+// newLiftWorld is a relay world whose SKU routes to the upstream model liftModel.
+func newLiftWorld(t *testing.T, serve func(http.ResponseWriter, int)) *relayWorld {
+	return newLiftWorldFor(t, liftModel, serve)
+}
+
+func newLiftWorldFor(t *testing.T, upstream string, serve func(http.ResponseWriter, int)) *relayWorld {
+	t.Helper()
+	w := newRelayWorld(t, serve, never(t))
+	route, err := object.GetModelRoute("built-in", relaySku)
+	if err != nil || route == nil {
+		t.Fatalf("route: %v", err)
+	}
+	route.Upstream = upstream
+	if _, err := object.UpdateModelRoute("built-in", relaySku, route); err != nil {
+		t.Fatal(err)
+	}
+	return w
 }
 
 func liftQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
@@ -256,7 +281,7 @@ func TestLiftStreamReaderEverySplit(t *testing.T) {
 	}
 	sse.WriteString("data: [DONE]\n\n")
 	for cut := 0; cut <= sse.Len(); cut++ {
-		l := liftFor([]byte(`{` + liftTools + `}`))
+		l := liftFor([]byte(`{`+liftTools+`}`), liftModel, false)
 		r := l.stream(io.MultiReader(strings.NewReader(sse.String()[:cut]), strings.NewReader(sse.String()[cut:])))
 		out, err := io.ReadAll(r)
 		if err != nil {
@@ -271,7 +296,7 @@ func TestLiftStreamReaderEverySplit(t *testing.T) {
 
 func TestLiftAnthropicBufferedAnswer(t *testing.T) {
 	body := `{"choices":[{"index":0,"message":{"role":"assistant","content":` + liftQuote(liftSample) + `},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4}}`
-	l := liftFor([]byte(`{` + liftTools + `}`))
+	l := liftFor([]byte(`{`+liftTools+`}`), liftModel, false)
 	resp, _, _ := openAIResponseToAnthropic(l.payload([]byte(body)), "m", "r")
 	out, _ := json.Marshal(resp)
 	if strings.Contains(string(out), "DSML") || resp["stop_reason"] != "tool_use" ||
@@ -283,7 +308,7 @@ func TestLiftAnthropicBufferedAnswer(t *testing.T) {
 // Direction in: a history of assistant tool calls and their results goes upstream as
 // structured tool_calls and tool messages, from every dialect that carries one.
 func TestToolHistoryGoesUpstreamStructured(t *testing.T) {
-	w := newRelayWorld(t, completesWith("done"), never(t))
+	w := newLiftWorld(t, completesWith("done"))
 	w.chat(`{"model":"relay-sku",` + liftTools + `,"messages":[{"role":"user","content":"go"},` +
 		`{"role":"assistant","content":"running","tool_calls":[{"id":"call_1","type":"function","function":{"name":"exec_command","arguments":"{\"cmd\":\"ls\"}"}}]},` +
 		`{"role":"tool","tool_call_id":"call_1","content":"a b"}]}`)
@@ -319,7 +344,7 @@ func TestLiftEverySplitThroughTheMark(t *testing.T) {
 			liftQuote(content) + `},"finish_reason":` + fr + `}]}`)
 	}
 	run := func(parts []string) {
-		mk := &mark{id: "chatcmpl-x", model: "sku", lift: liftFor([]byte(`{` + liftTools + `}`))}
+		mk := &mark{id: "chatcmpl-x", model: "sku", lift: liftFor([]byte(`{`+liftTools+`}`), liftModel, false)}
 		var wire strings.Builder
 		for _, p := range parts {
 			wire.WriteString("data: " + string(mk.stamp(chunk(p, ""))) + "\n\n")
@@ -343,7 +368,7 @@ func TestLiftEverySplitThroughTheMark(t *testing.T) {
 
 // A stream that ends with no finish chunk lets the held text go through rest.
 func TestLiftRestReleasesWhatIsHeld(t *testing.T) {
-	mk := &mark{id: "chatcmpl-x", model: "sku", lift: liftFor([]byte(`{` + liftTools + `}`))}
+	mk := &mark{id: "chatcmpl-x", model: "sku", lift: liftFor([]byte(`{`+liftTools+`}`), liftModel, false)}
 	out := mk.stamp([]byte(`{"choices":[{"index":0,"delta":{"content":"so far <｜DS"}}]}`))
 	if strings.Contains(string(out), "DS") {
 		t.Fatalf("a possible marker went out: %s", out)

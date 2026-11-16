@@ -25,6 +25,12 @@ package controllers
 // every relay that stamps — the forward relay, the family relay, an assembled
 // answer — lifts the same way, and /v1/responses, which is served as a chat
 // completion, with them.
+//
+// What is lifted is narrow, because a model quoting a call is not making one: only
+// the markup of the family serving the routed model, only a block that ends the
+// answer, never in code, never for a request that already carries an opener of that
+// markup (a caller could be asking the model to echo it), never from a choice the
+// upstream gave structured calls, and never for a strict request.
 
 import (
 	"bufio"
@@ -35,6 +41,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hanzoai/ai/markup"
 )
@@ -42,44 +49,81 @@ import (
 // lifter lifts the tool calls of one request's answer. One per request, read and
 // written on the goroutine serving it. A nil lifter lifts nothing.
 type lifter struct {
-	offered map[string]bool
-	scan    map[int]*markup.Scanner // by choice: a stream's held text
-	calls   map[int]int             // by choice: tool calls the stream has so far
-	made    map[int]bool            // by choice: a call was lifted from its text
+	rules  markup.Rules
+	scan   map[int]*markup.Scanner // by choice: a stream's held text
+	calls  map[int]int             // by choice: tool calls the stream has so far
+	made   map[int]bool            // by choice: a call was lifted from its text
+	native map[int]bool            // by choice: the upstream sent structured calls
+	shift  map[int]int             // by choice: lifted calls the upstream's own indices follow
 }
 
-// liftFor is the lifter of a chat request body: one for each tool the request
-// offered, and none when it offered none or forbade calling them.
-func liftFor(body []byte) *lifter {
+// liftFor is the lifter of a chat request body served by the upstream model: one for
+// each tool the request offered, and none when it offered none, forbade calling
+// them, named a function the legacy way, asked to be served unchanged, or carries
+// markup of the model's family in a message.
+func liftFor(body []byte, upstream string, strict bool) *lifter {
+	if strict || !markup.Reads(upstream) {
+		return nil
+	}
 	var r struct {
 		Tools []struct {
 			Function struct {
 				Name string `json:"name"`
 			} `json:"function"`
 		} `json:"tools"`
-		Functions []struct {
-			Name string `json:"name"`
-		} `json:"functions"`
-		ToolChoice json.RawMessage `json:"tool_choice"`
+		Functions  []json.RawMessage `json:"functions"`
+		ToolChoice json.RawMessage   `json:"tool_choice"`
+		Parallel   *bool             `json:"parallel_tool_calls"`
+		Messages   []struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
 	}
-	if json.Unmarshal(body, &r) != nil || string(r.ToolChoice) == `"none"` {
+	if json.Unmarshal(body, &r) != nil || len(r.Functions) > 0 || string(r.ToolChoice) == `"none"` {
 		return nil
 	}
-	offered := map[string]bool{}
+	rules := markup.Rules{Offered: map[string]bool{}, Model: upstream, One: r.Parallel != nil && !*r.Parallel}
 	for _, t := range r.Tools {
 		if t.Function.Name != "" {
-			offered[t.Function.Name] = true
+			rules.Offered[t.Function.Name] = true
 		}
 	}
-	for _, f := range r.Functions {
-		if f.Name != "" {
-			offered[f.Name] = true
-		}
-	}
-	if len(offered) == 0 {
+	if len(rules.Offered) == 0 {
 		return nil
 	}
-	return &lifter{offered: offered, scan: map[int]*markup.Scanner{}, calls: map[int]int{}, made: map[int]bool{}}
+	var forced struct {
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if json.Unmarshal(r.ToolChoice, &forced) == nil {
+		rules.Only = forced.Function.Name
+	}
+	for _, m := range r.Messages {
+		for _, text := range textsOf(m.Content) {
+			if markup.Quotes(upstream, text) {
+				return nil
+			}
+		}
+	}
+	return &lifter{rules: rules, scan: map[int]*markup.Scanner{}, calls: map[int]int{}, made: map[int]bool{},
+		native: map[int]bool{}, shift: map[int]int{}}
+}
+
+// textsOf is the text a message's content holds: the string, or each text part.
+func textsOf(content json.RawMessage) []string {
+	var one string
+	if json.Unmarshal(content, &one) == nil {
+		return []string{one}
+	}
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	_ = json.Unmarshal(content, &parts)
+	out := make([]string, len(parts))
+	for i, p := range parts {
+		out[i] = p.Text
+	}
+	return out
 }
 
 // choices lifts the calls out of each choice's message (a buffered answer) or delta
@@ -117,16 +161,29 @@ func (l *lifter) choice(choice map[string]json.RawMessage) bool {
 	_ = json.Unmarshal(choice["index"], &at)
 	var native []json.RawMessage
 	_ = json.Unmarshal(body["tool_calls"], &native)
-	if stream {
-		for i, c := range native {
-			var n struct {
-				Index *int `json:"index"`
+	changed := false
+	if stream && len(native) > 0 {
+		// An upstream call arriving after lifted ones is numbered after them.
+		l.native[at] = true
+		for k, c := range native {
+			var n map[string]json.RawMessage
+			if json.Unmarshal(c, &n) != nil {
+				continue
 			}
-			_ = json.Unmarshal(c, &n)
-			if n.Index != nil {
-				i = *n.Index
+			i := k
+			if raw, ok := n["index"]; ok {
+				_ = json.Unmarshal(raw, &i)
 			}
+			i += l.shift[at]
 			l.calls[at] = max(l.calls[at], i+1)
+			if l.shift[at] > 0 {
+				n["index"], _ = json.Marshal(i)
+				native[k], _ = encode(n)
+				changed = true
+			}
+		}
+		if changed {
+			body["tool_calls"], _ = encode(native)
 		}
 	}
 	var content string
@@ -136,27 +193,47 @@ func (l *lifter) choice(choice map[string]json.RawMessage) bool {
 	var sc *markup.Scanner
 	if stream {
 		if sc = l.scan[at]; sc == nil {
-			sc = markup.NewScanner(l.offered)
+			sc = markup.NewScanner(l.rules)
 			l.scan[at] = sc
 		}
 	}
-	// Text with no "<" and no whitespace, with nothing held, cannot begin a block or
-	// change what is held: it goes on as it is.
-	if finish == "" && (!text || !strings.ContainsAny(content, "<\n\r\t ") && (sc == nil || !sc.Held())) {
+	// A choice the upstream gave structured calls is not read for more: what the
+	// scanner holds goes out as the text it is.
+	if l.native[at] || !stream && len(native) > 0 {
+		if sc != nil && sc.Held() {
+			body["content"], _ = json.Marshal(sc.Release() + content)
+			choice[part], _ = encode(body)
+			return true
+		}
+		if changed {
+			choice[part], _ = encode(body)
+		}
+		return changed
+	}
+	// Text with no "<", no code mark and no whitespace, with nothing held, cannot
+	// begin a block or change what is held: it goes on as it is.
+	if finish == "" && (!text || !strings.ContainsAny(content, "<`~\n\r\t ") && (sc == nil || !sc.Held())) {
 		return false
 	}
 
 	var out string
 	var lifted []markup.Call
-	if stream {
+	switch {
+	case stream:
 		if text {
-			out, lifted = sc.Feed(content)
+			out = sc.Feed(content)
 		}
-		if finish != "" {
-			out += sc.Flush()
+		if finish == "stop" {
+			var rest string
+			rest, lifted = sc.Flush()
+			out += rest
+		} else if finish != "" {
+			out += sc.Release()
 		}
-	} else if text {
-		out, lifted = markup.Lift(content, l.offered)
+	case text && finish == "stop":
+		out, lifted = markup.Lift(content, l.rules)
+	default:
+		out = content
 	}
 	if len(lifted) > 0 {
 		l.made[at] = true
@@ -187,6 +264,7 @@ func (l *lifter) choice(choice map[string]json.RawMessage) bool {
 			native = append(native, encoded)
 		}
 		l.calls[at] = base + len(lifted)
+		l.shift[at] += len(lifted)
 		body["tool_calls"], _ = encode(native)
 		if !stream && out == "" {
 			body["content"] = json.RawMessage("null")
@@ -204,7 +282,7 @@ func (l *lifter) held() []map[string]any {
 	var out []map[string]any
 	for _, at := range slices.Sorted(maps.Keys(l.scan)) {
 		if sc := l.scan[at]; sc.Held() {
-			out = append(out, map[string]any{"index": at, "delta": map[string]string{"content": sc.Flush()}, "finish_reason": nil})
+			out = append(out, map[string]any{"index": at, "delta": map[string]string{"content": sc.Release()}, "finish_reason": nil})
 		}
 	}
 	return out
@@ -291,7 +369,7 @@ func (s *liftedStream) rewrite(line []byte) []byte {
 	case ok && string(data) == "[DONE]":
 		return append(s.tail(), line...)
 	case ok && len(data) > 0 && data[0] == '{':
-		return append(append([]byte("data: "), s.l.payload(data)...), '\n')
+		return framed(s.l.payload(data), "\n")
 	}
 	return line
 }
@@ -302,5 +380,49 @@ func (s *liftedStream) tail() []byte {
 		return nil
 	}
 	chunk, _ := encode(map[string]any{"object": "chat.completion.chunk", "choices": held})
-	return append(append([]byte("data: "), chunk...), '\n', '\n')
+	return framed(chunk, "\n\n")
+}
+
+// maxFrame bounds the text one SSE line carries: a reader that scans a stream by
+// lines has a limit, and text let go from a hold can be as long as the hold.
+const maxFrame = 64 << 10
+
+// framed is a chunk as SSE data lines ending in end. Text in a chunk's delta longer
+// than maxFrame goes first, as chunks of its own, so no line is longer than a few
+// times maxFrame whatever the text held.
+func framed(chunk []byte, end string) []byte {
+	var env map[string]json.RawMessage
+	var choices []map[string]json.RawMessage
+	var out []byte
+	if json.Unmarshal(chunk, &env) == nil && json.Unmarshal(env["choices"], &choices) == nil {
+		for more := true; more; {
+			more = false
+			var lead []map[string]any
+			for _, ch := range choices {
+				var delta map[string]json.RawMessage
+				var content string
+				if json.Unmarshal(ch["delta"], &delta) != nil || json.Unmarshal(delta["content"], &content) != nil || len(content) <= maxFrame {
+					continue
+				}
+				cut := maxFrame
+				for cut > 0 && !utf8.RuneStart(content[cut]) {
+					cut--
+				}
+				delta["content"], _ = json.Marshal(content[cut:])
+				ch["delta"], _ = encode(delta)
+				lead = append(lead, map[string]any{"index": ch["index"], "delta": map[string]string{"content": content[:cut]}, "finish_reason": nil})
+				more = more || len(content[cut:]) > maxFrame
+			}
+			if len(lead) > 0 {
+				piece := maps.Clone(env)
+				delete(piece, "usage")
+				piece["choices"], _ = encode(lead)
+				encoded, _ := encode(piece)
+				out = append(append(append(out, "data: "...), encoded...), "\n\n"...)
+			}
+		}
+		env["choices"], _ = encode(choices)
+		chunk, _ = encode(env)
+	}
+	return append(append(append(out, "data: "...), chunk...), end...)
 }

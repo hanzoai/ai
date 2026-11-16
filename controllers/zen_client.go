@@ -1658,7 +1658,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		mk.speaks = listShape
 	default:
 		mk.speaks, mk.id = chatShape, "chatcmpl-"+reqID
-		mk.lift = liftFor(rawBody)
+		mk.lift = liftFor(rawBody, model, c.strictAsked())
 	}
 	url := prov.ProviderUrl + "/v1/" + apiPath
 	// One build, one place to fail: the method, the URL and the headers do not vary

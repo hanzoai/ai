@@ -30,7 +30,7 @@ const (
 
 // dsml reads DeepSeek's DSML block: invokes holding typed parameters. A parameter
 // marked string="true" is its text verbatim; any other is read as JSON and, when it
-// is not JSON, kept as a string.
+// is not JSON, kept as a string. A block repeating a parameter name is no call.
 func dsml(block string) ([]rawCall, bool) {
 	body := block[strings.Index(block, ">")+1 : strings.LastIndex(block, "</")]
 	var calls []rawCall
@@ -65,6 +65,7 @@ func dsml(block string) ([]rawCall, bool) {
 func parameters(inner string) (string, bool) {
 	var b strings.Builder
 	b.WriteByte('{')
+	seen := map[string]bool{}
 	for n := 0; ; n++ {
 		inner = strings.TrimSpace(inner)
 		if inner == "" {
@@ -76,9 +77,10 @@ func parameters(inner string) (string, bool) {
 			return "", false
 		}
 		name, ok := attr(tag, "name")
-		if !ok {
+		if !ok || seen[name] {
 			return "", false
 		}
+		seen[name] = true
 		value, after, ok := strings.Cut(rest, "</｜DSML｜parameter>")
 		if !ok {
 			return "", false
@@ -176,9 +178,12 @@ func fenced(block string) ([]rawCall, bool) {
 }
 
 // hermes reads the Qwen and Hermes block: one JSON object naming the tool, its
-// arguments an object or a JSON string holding one.
+// arguments an object or a JSON string holding one; or Qwen3-Coder's XML form.
 func hermes(block string) ([]rawCall, bool) {
 	body := strings.TrimSuffix(strings.TrimPrefix(block, "<tool_call>"), "</tool_call>")
+	if strings.HasPrefix(strings.TrimSpace(body), "<function=") {
+		return coder(body)
+	}
 	var c struct {
 		Name       string          `json:"name"`
 		Arguments  json.RawMessage `json:"arguments"`
@@ -203,4 +208,50 @@ func hermes(block string) ([]rawCall, bool) {
 		return nil, false
 	}
 	return []rawCall{{c.Name, args}}, true
+}
+
+// coder reads Qwen3-Coder's block: <function=name> holding <parameter=key> values.
+// A value is its text between the tag's own line breaks; one that is a JSON object
+// or array is that JSON. A repeated parameter name makes the block no call.
+func coder(body string) ([]rawCall, bool) {
+	rest, _ := strings.CutPrefix(strings.TrimSpace(body), "<function=")
+	name, rest, ok := strings.Cut(rest, ">")
+	inner, tail, found := strings.Cut(rest, "</function>")
+	if !ok || !found || name == "" || strings.TrimSpace(tail) != "" {
+		return nil, false
+	}
+	var b strings.Builder
+	b.WriteByte('{')
+	seen := map[string]bool{}
+	for {
+		inner = strings.TrimSpace(inner)
+		if inner == "" {
+			b.WriteByte('}')
+			return []rawCall{{name, b.String()}}, true
+		}
+		rest, ok := strings.CutPrefix(inner, "<parameter=")
+		key, rest, ok2 := strings.Cut(rest, ">")
+		value, after, ok3 := strings.Cut(rest, "</parameter>")
+		if !ok || !ok2 || !ok3 || seen[key] {
+			return nil, false
+		}
+		seen[key] = true
+		value = strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
+		if t := strings.TrimSpace(value); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
+			if v, ok := compact(t); ok {
+				value = v
+			} else {
+				value = quote(value)
+			}
+		} else {
+			value = quote(value)
+		}
+		if b.Len() > 1 {
+			b.WriteByte(',')
+		}
+		b.WriteString(quote(key))
+		b.WriteByte(':')
+		b.WriteString(value)
+		inner = after
+	}
 }

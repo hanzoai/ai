@@ -548,7 +548,7 @@ func (c *ApiController) forward(p pass) bool {
 // cached prompt priced as cached.
 func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, resp *http.Response, whole []byte, snap snapshot) bool {
 	sku := p.req.Model
-	mk := &mark{id: "chatcmpl-" + p.id, model: sku, seller: seller(row, p.user), lift: liftFor(p.body)}
+	mk := &mark{id: "chatcmpl-" + p.id, model: sku, seller: seller(row, p.user), lift: liftFor(p.body, cand.upstream, c.strictAsked())}
 
 	// settle runs where the answer is finished — for a stream, inside its writer — so
 	// it reads the snapshot and p, and never the controller.
@@ -621,10 +621,13 @@ func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, re
 	}
 
 	// What goes out is ours (envelope.go); what came in is what the billing reads.
-	out := mk.stamp(whole)
+	// The reasoning goes first, so a block inside it is never lifted: the buffered
+	// answer reads what the streamed one does.
+	answer := whole
 	if strip != nil {
-		out = stripReasoningBody(out)
+		answer = stripReasoningBody(whole)
 	}
+	out := mk.stamp(answer)
 	var t tokens
 	sniffZenUsage(whole, &t)
 	settle(t, answerText(whole))
