@@ -49,6 +49,7 @@ import (
 
 	"github.com/hanzoai/ai/model"
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/provenance"
 	"github.com/hanzoai/ai/util"
 )
 
@@ -398,6 +399,7 @@ func cloudUsageValues(record *usageRecord, startTime time.Time) []any {
 		costNano, m.BilledNano, marginNano, unpriced, uncosted,
 		cacheSavedNano(record),
 		record.Reasoning, record.ReasoningTokens, record.Served, record.Vendor, record.Arms, record.LossNano,
+		provenance.Digest(record.RuntimeDigest), provenance.Connector(record.CacheConnector),
 	}
 }
 
