@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/hanzoai/ai/object"
+	"github.com/hanzoai/ai/provenance"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -268,6 +269,14 @@ func buildGenAISpanFields(record *usageRecord, totalCostUSD, billedCostUSD float
 	if record.RequestID != "" {
 		attrs = append(attrs, attribute.String(attrRequestID, record.RequestID))
 	}
+	// The runtime that served the call, on EVERY span: a digest or "unknown", a
+	// connector name or "unknown". Always present, so a filter for either — a
+	// digest under investigation, or the calls no node could name — is a lookup on
+	// one attribute rather than a reasoning about its absence (hanzo-inc/cloud#800).
+	attrs = append(attrs,
+		attribute.String(provenance.AttrRuntimeDigest, provenance.Digest(record.RuntimeDigest)),
+		attribute.String(provenance.AttrCacheConnector, provenance.Connector(record.CacheConnector)),
+	)
 
 	// served_by is always present (defaults to hanzo cloud); cluster/route-policy
 	// only when a producer set them (BYO-GPU / enso routing).

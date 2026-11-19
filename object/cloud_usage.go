@@ -89,7 +89,9 @@ const cloudUsageTableDDL = `
 		served String,
 		vendor String,
 		arms String,
-		loss_nano Int64
+		loss_nano Int64,
+		runtime_digest String DEFAULT 'unknown',
+		cache_connector String DEFAULT 'unknown'
 	) ENGINE = ReplacingMergeTree()
 	ORDER BY (timestamp, organization, user_id, id)
 	TTL timestamp + INTERVAL 2 YEAR`
@@ -200,6 +202,15 @@ var cloudUsageColumnMigrations = []string{
 	// loss_nano is what a call cost us past what it billed, 0 for every call billed
 	// at or above its cost. Never silent: a loss is a row, and the rates job counts it.
 	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS loss_nano Int64`,
+	// runtime_digest is the immutable digest of the image or serving binary that
+	// answered, cache_connector the KV cache path it ran with (in-memory,
+	// cpu-offload, disk-offload, external:<name>): which bytes and which cache served
+	// a call, for an integrity or isolation audit (hanzo-inc/cloud#800). Never a tag,
+	// a host or a credential (github.com/hanzoai/ai/provenance). "unknown" when no
+	// node stated it, and on every row written before the columns: those rows did not
+	// record it, so unknown is what they know.
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS runtime_digest String DEFAULT 'unknown'`,
+	`ALTER TABLE hanzo.cloud_usage ADD COLUMN IF NOT EXISTS cache_connector String DEFAULT 'unknown'`,
 }
 
 // CloudUsageColumns is the write order for a usage row, and the ONLY place it is
@@ -222,6 +233,7 @@ var CloudUsageColumns = []string{
 	"cost_nano", "billed_nano", "margin_nano", "unpriced", "uncosted",
 	"cache_saved_nano",
 	"reasoning", "reasoning_tokens", "served", "vendor", "arms", "loss_nano",
+	"runtime_digest", "cache_connector",
 }
 
 // CloudUsageInsert is the usage-row INSERT, derived from CloudUsageColumns.

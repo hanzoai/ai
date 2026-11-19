@@ -136,6 +136,7 @@ func recordMedia(w whence, model string, u *iam.User, premium bool, reqID string
 		Owner: w.ledger, Organization: u.Owner,
 		Model: model, Provider: "zen", Free: sv.free,
 		Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover,
+		RuntimeDigest: sv.runtime, CacheConnector: sv.connector,
 		Cost: float64(nano) / 1e9, Currency: "USD",
 		Premium: premium, Status: status, ErrorMsg: errMsg,
 		ClientIP: w.ip, RequestID: reqID, Account: "hanzo",

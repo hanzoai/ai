@@ -48,6 +48,13 @@ type ServedUsage struct {
 	WrittenTokens   int           // of PromptTokens: written to the upstream's prompt cache
 	ReasoningTokens int           // of CompletionTokens: spent reasoning
 	First           time.Duration // time from StartTime to the first token of the answer
+
+	// The runtime that served the answer, as the serving node stated it
+	// (provenance.RuntimeDigestHeader / CacheConnectorHeader): its image or binary
+	// digest and its KV cache connector. Recorded through provenance.Digest and
+	// Connector, so "" — a node that said nothing — is recorded as "unknown".
+	RuntimeDigest  string
+	CacheConnector string
 }
 
 // TraceServedUsage emits the warehouse row (hanzo.cloud_usage) + gen_ai span for
@@ -89,6 +96,8 @@ func servedRecord(in ServedUsage) *usageRecord {
 		Failover:         in.Failover,
 		ReasoningTokens:  in.ReasoningTokens,
 		First:            in.First,
+		RuntimeDigest:    in.RuntimeDigest,
+		CacheConnector:   in.CacheConnector,
 		Currency:         "USD",
 		Status:           in.Status,
 		ErrorMsg:         in.ErrorMsg,

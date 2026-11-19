@@ -984,6 +984,15 @@ type usageRecord struct {
 	// LossNano is what the call cost us past what it billed: 0 on every call billed
 	// at or above its cost. A loss is never silent; it is this.
 	LossNano int64 `json:"lossNano,omitempty"`
+	// RuntimeDigest and CacheConnector are the runtime that served the call: the
+	// immutable digest of its image or serving binary and the KV cache connector it
+	// ran with, as the serving node (or the router before it) stated them
+	// (provenance.RuntimeDigestHeader, CacheConnectorHeader). Raw here; every
+	// reader goes through provenance.Digest / Connector, so an unstated or
+	// malformed value is recorded as "unknown" on the span and the row alike
+	// (hanzo-inc/cloud#800).
+	RuntimeDigest  string `json:"runtimeDigest,omitempty"`
+	CacheConnector string `json:"cacheConnector,omitempty"`
 	// First is the time from the start of the call to the first token of the
 	// answer. Zero when not measured.
 	First time.Duration `json:"-"`

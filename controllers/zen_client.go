@@ -48,6 +48,7 @@ import (
 	"github.com/hanzoai/ai/log"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/plugin"
+	"github.com/hanzoai/ai/provenance"
 	"github.com/hanzoai/ai/upstream"
 	"github.com/hanzoai/decimal"
 )
@@ -2365,6 +2366,11 @@ type serving struct {
 	// every answer a family's address gave. The pipe sets it from the response it
 	// was handed, so no header an address sends can claim it.
 	maker *native
+	// runtime and connector are the serving runtime's digest and KV cache connector
+	// as the family relayed them from the node that answered
+	// (provenance.RuntimeDigestHeader / CacheConnectorHeader). Read into the record,
+	// never relayed to the caller.
+	runtime, connector string
 }
 
 // merge reads what a family stated in its trailer, at an answer's end, over what its
@@ -2373,7 +2379,8 @@ func (sv *serving) merge(tr http.Header) {
 	if len(tr) == 0 {
 		return
 	}
-	for dst, k := range map[*string]string{&sv.arm: armHeader, &sv.vendor: providerHeader, &sv.account: keyHeader} {
+	for dst, k := range map[*string]string{&sv.arm: armHeader, &sv.vendor: providerHeader, &sv.account: keyHeader,
+		&sv.runtime: provenance.RuntimeDigestHeader, &sv.connector: provenance.CacheConnectorHeader} {
 		if v := tr.Get(k); v != "" {
 			*dst = v
 		}
@@ -2408,7 +2415,8 @@ func servingOf(h http.Header) serving {
 		arm = h.Get(servedHeader)
 	}
 	sv := serving{arm: arm, vendor: h.Get(providerHeader), account: h.Get(keyHeader), failover: strings.Join(h.Values(failoverHeader), "; "), free: h.Get(freeHeader) == "true",
-		class: h.Get(classHeader), fast: h.Get(fastHeader) == "true"}
+		class: h.Get(classHeader), fast: h.Get(fastHeader) == "true",
+		runtime: h.Get(provenance.RuntimeDigestHeader), connector: h.Get(provenance.CacheConnectorHeader)}
 	if n, ok := usdNanos(h.Get(cogsHeader)); ok {
 		sv.cogs = &n
 	}
@@ -3083,6 +3091,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: origin, Via: via,
 		PromptTokens: t.prompt(), CacheReadTokens: t.cached, CacheWriteTokens: t.written, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
+		RuntimeDigest: sv.runtime, CacheConnector: sv.connector,
 		Reasoning: w.depth, Arms: trailed, LossNano: loss,
 		Cost: float64(nano) / 1e9, Currency: "USD",
 		Premium: isPremium, Lane: laneOfAnswer(sv, free, model), Stream: stream, Status: status, ErrorMsg: errMsg,
