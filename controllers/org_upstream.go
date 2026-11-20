@@ -3,6 +3,9 @@
 package controllers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/url"
@@ -49,4 +52,51 @@ func nameOrg(h http.Header, base, org string) {
 		return
 	}
 	h.Del(orgHeader)
+}
+
+// partition is the cache partition a call runs in: its org, narrowed to the
+// account that pays when that is not the org itself. Members of the shared signup
+// org each pay from their own wallet, so they are strangers and never share one
+// (hanzo-inc/zen's Tenant.partition, the same rule).
+func partition(org, payer string) string {
+	if org == "" || payer == "" || payer == org {
+		return org
+	}
+	pair, _ := json.Marshal([2]string{org, payer})
+	return string(pair)
+}
+
+// cacheKeyPrefix marks a prompt_cache_key ai derived from a partition.
+const cacheKeyPrefix = "hz-"
+
+// withCacheKey sets body's prompt_cache_key to a digest of the call's partition
+// and the key the caller sent, if any. A vendor routes a request to the cache that
+// may hold its prefix by this key, so a caller still splits its own traffic by its
+// own key, but no key a caller writes can name another partition's: the digest
+// always folds the partition in. The digest also keeps the org's name from the
+// vendor. A body with no partition, or that is not a JSON object, goes unchanged.
+func withCacheKey(body []byte, part string) []byte {
+	if part == "" {
+		return body
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	var asked string
+	if raw, ok := m["prompt_cache_key"]; ok && json.Unmarshal(raw, &asked) != nil {
+		asked = string(raw)
+	}
+	pair, _ := json.Marshal([2]string{part, asked})
+	sum := sha256.Sum256(pair)
+	key, err := json.Marshal(cacheKeyPrefix + hex.EncodeToString(sum[:16]))
+	if err != nil {
+		return body
+	}
+	m["prompt_cache_key"] = key
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
 }

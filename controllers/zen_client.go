@@ -1776,6 +1776,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// The vendor is sent its own id for the SKU. An alias is ours, so it goes
 		// upstream as the SKU it names while the answer still wears the alias.
 		b := withModel(rawBody, f.sku(s))
+		// A vendor's prompt cache belongs to the account, and every org's calls run on
+		// Hanzo's accounts. A chat leaving for a vendor (this family's address, or the
+		// maker asked first) names its org's partition as the cache key, so two orgs'
+		// identical prefixes are routed to the vendor's cache apart.
+		if apiPath == "chat/completions" && (!firstParty(p.ProviderUrl) || f.maker(s) != nil) {
+			b = withCacheKey(b, partition(org, who))
+		}
 		// A model its maker serves is asked of the maker first, on every key of its
 		// pool, and of this family only once none of them answered (native.go). A
 		// maker's API bills every call, so only a request seated on the paid lane
