@@ -82,9 +82,7 @@ func zenMedia(ctx context.Context, w whence, apiPath, model string, raw []byte, 
 	upstream.Authorize(req, prov)
 	// Tenant attribution: zen needs a billable tenant, and ai — which settles the
 	// ledger — tells zen it fronts this call so zen meters without double-charging.
-	if org != "" {
-		req.Header.Set("X-Org-Id", org)
-	}
+	nameOrg(req.Header, prov.ProviderUrl, org)
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 
 	resp, err := zenPipeClient.Do(req)
