@@ -1679,11 +1679,16 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// the ledger — tells the family it fronts this call so it meters without
 	// double-charging. A Hanzo family is also told who pays (dispatch), by which it
 	// keeps each payer's share of its free lane; a vendor's API never is.
+	//
+	// The org goes only to an upstream Hanzo runs (nameOrg), here and again in
+	// dispatch for each family a request moves to: OpenRouter is a family too, and an
+	// org slug is a customer's name.
 	var who string
-	if org := tenant(ctx, orgId, authUser); org != "" {
-		req.Header.Set("X-Org-Id", org)
+	org := tenant(ctx, orgId, authUser)
+	if org != "" {
 		who = payerOf(ctx, org, authUser)
 	}
+	nameOrg(req.Header, prov.ProviderUrl, org)
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
 	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
 	// the family may answer from a paid rung whose cost fits, and tells us its rate.
@@ -1740,6 +1745,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			// The credential is the family's own: another family's never travels.
 			r.Header.Del("Authorization")
 		}
+		// So is the org: a Hanzo family that stands in for a vendor's is told it, and
+		// a vendor's family that stands in for a Hanzo one is not.
+		nameOrg(r.Header, p.ProviderUrl, org)
 		if f.ours() && who != "" {
 			r.Header.Set(payerHeader, who)
 		}
