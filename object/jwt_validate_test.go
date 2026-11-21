@@ -462,3 +462,40 @@ func TestBrandNamesCoverBrandIssuers(t *testing.T) {
 		}
 	}
 }
+
+// While the platform's issuer moves from hanzo.id to hanzo.ai the request-auth policy trusts
+// both, each exactly, and both are the deployment's own brand; an organization's own issuer
+// (one path segment under hanzo.ai) is neither trusted nor own-brand.
+func TestBothPlatformIssuersAreTrustedAndOwnBrand(t *testing.T) {
+	for _, primary := range []string{"https://hanzo.id", "https://hanzo.ai"} {
+		t.Run(primary, func(t *testing.T) {
+			t.Setenv("JWT_ISSUER", primary)
+			t.Setenv("WHITELABEL_ISSUERS", "")
+			for _, iss := range []string{"https://hanzo.id", "https://hanzo.ai"} {
+				tok := makeJWT(t, map[string]any{"iss": iss, "aud": "hanzo-console"})
+				if err := ValidateJWTIssAud(tok); err != nil {
+					t.Errorf("iss %s refused with primary %s: %v", iss, primary, err)
+				}
+				if !TokenIsOwnBrand(tok) {
+					t.Errorf("iss %s is not own-brand with primary %s", iss, primary)
+				}
+			}
+			for _, iss := range []string{"https://hanzo.ai/acme", "https://hanzo.ai/", "https://hanzo.ai.evil.test", "http://hanzo.ai"} {
+				tok := makeJWT(t, map[string]any{"iss": iss, "aud": "hanzo-console"})
+				if iss != "https://hanzo.ai/" {
+					if err := ValidateJWTIssAud(tok); err == nil {
+						t.Errorf("iss %s was trusted: an organization's issuer or a lookalike", iss)
+					}
+				}
+				if TokenIsOwnBrand(tok) {
+					t.Errorf("iss %s is own-brand", iss)
+				}
+			}
+		})
+	}
+	// A brand whose primary is not the platform's gains nothing.
+	t.Setenv("JWT_ISSUER", "https://lux.id")
+	if TokenIsOwnBrand(makeJWT(t, map[string]any{"iss": "https://hanzo.ai"})) {
+		t.Error("hanzo.ai is own-brand for a lux deployment")
+	}
+}
