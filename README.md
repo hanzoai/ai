@@ -2,6 +2,8 @@
 
 # ai
 
+[![Open in Hanzo](https://hanzo.app/badges/open-in-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/ai&ref=main&action=open) [![Edit with Hanzo](https://hanzo.app/badges/edit-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/ai&ref=main&action=edit) [![Deploy with Hanzo](https://hanzo.app/badges/deploy-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/ai&ref=main&action=deploy)
+
 `ai` is the AI subsystem of the Hanzo cloud: it serves the `/v1` inference surface, routes
 each request to a model, meters it, and carries the RAG and model-hub surfaces alongside.
 Pure Go.
