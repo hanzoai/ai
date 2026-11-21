@@ -78,6 +78,21 @@ var brandIssuerList = []string{
 	"https://pars.id",
 }
 
+// platformIssuers are the two spellings of the platform's own issuer while it moves from
+// hanzo.id to hanzo.ai: a deployment whose primary issuer is either one trusts both, each
+// matched exactly. An organization's own issuer (https://hanzo.ai/<org>) is never one.
+var platformIssuers = []string{"https://hanzo.id", "https://hanzo.ai"}
+
+// ownBrandIssuers is every issuer that is THIS deployment's own: its primary, and the
+// platform's other spelling when the primary is one of the platform's.
+func ownBrandIssuers() []string {
+	exp := expectedJWTIssuer()
+	if slices.Contains(platformIssuers, exp) {
+		return platformIssuers
+	}
+	return []string{exp}
+}
+
 // brandNames is the set of white-label brands one binary serves. It mirrors
 // brandIssuerList, but by BRAND rather than by issuer, because that is what an
 // audience is keyed on: HIP-0111 makes client_id == <brand>-<app> == aud. The brand
@@ -106,6 +121,9 @@ func TrustedJWTIssuers() []string {
 			return
 		}
 		out = append(out, v)
+	}
+	for _, iss := range ownBrandIssuers() {
+		add(iss)
 	}
 	for _, iss := range brandIssuerList {
 		add(iss)
@@ -312,7 +330,8 @@ func ValidateJWTIssAud(token string) error {
 }
 
 // TokenIsOwnBrand reports whether a JWT was issued by THIS deployment's OWN
-// primary brand issuer (expectedJWTIssuer) — as opposed to a sibling white-label
+// primary brand issuer (expectedJWTIssuer, either spelling of the platform's while its
+// issuer moves) — as opposed to a sibling white-label
 // brand issuer that trustedJWTIssuers ALSO accepts for sign-in. The iss is read
 // from the raw payload (the same source ValidateJWTIssAud trusts); call only on a
 // token already accepted by ParseAndValidateJWT (signature + issuer allowlist),
@@ -329,7 +348,7 @@ func TokenIsOwnBrand(token string) bool {
 	if err != nil || iss == "" {
 		return false
 	}
-	return iss == expectedJWTIssuer()
+	return slices.Contains(ownBrandIssuers(), iss)
 }
 
 // confined is the host's verifier for a confined token (SetConfinedVerifier).
