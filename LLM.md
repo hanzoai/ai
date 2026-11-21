@@ -614,6 +614,13 @@ forwards; the service owns which upstream answers. The contract, one address eac
   (`familyBody`), `X-Org-Id` the org the call is for (a machine credential acting for
   a person: that person's org, `tenant`), `X-Hanzo-Fronted-By: ai` (ai bills; the
   family meters nothing), `X-Hanzo-Spend` + `TE: trailers` for a plan's paid rungs.
+  The org goes only to an upstream Hanzo runs (`firstParty`: a hanzo.ai host, a cluster
+  or LAN name, a private address), decided per dispatch (`nameOrg`), so OpenRouter is
+  never told it. A chat leaving for a vendor carries `prompt_cache_key` =
+  `hz-`+sha256(partition, the caller's key) (`withCacheKey`; the partition is the org,
+  narrowed to the paying wallet in the shared signup org): a vendor's prompt cache is
+  routed per org, and the key is a routing hint, not an isolation boundary. Claude
+  through the Messages API has no such key.
 - `POST /v1/rerank`, `/v1/images/generations`, `/v1/audio/{voice,music,foley}`,
   `/v1/videos/generations`: buffered, billed per unit (`zenMedia`, the one media relay
   for HTTP and ZAP).
