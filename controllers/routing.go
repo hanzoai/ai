@@ -34,10 +34,12 @@ package controllers
 // from: a catalog the guard would refuse is not sent, the family takes the rest or
 // refuses it with the reason, and a version row records the catalog, who applied it,
 // when, the diff, and the deployment its run of versions was made over (Boot).
-// Rolling back applies an older version's catalog as a new version. Every minute the
-// newest version is compared with what each family serves and applied again where
-// the family restarted onto the deployment the version was made over; a family that
-// serves another (a new release of its file) is left standing, and its read says so.
+// Rolling back applies an older version's catalog as a new version. An applied
+// version goes on the host's bus (object.RoutingChanged), and each replica serves the
+// newest version of the family on that event and once at boot: wherever the family
+// restarted onto the deployment the version was made over, it is applied again; a
+// family that serves another (a new release of its file) is left standing, and its
+// read says so. No clock decides when.
 //
 // Everything here is SuperAdmin only (zapMiscSuperAdmin): the catalogs name the
 // upstreams behind every SKU, which no other caller is shown.
@@ -637,6 +639,7 @@ func RoutingApply(ctx context.Context, family string, catalog json.RawMessage, b
 		return nil, http.StatusInternalServerError, fmt.Errorf("%s applied the catalog, and its version was not recorded: %v", family, err)
 	}
 	log.Info("routing: %s applied version %d by %s: %s", family, v.Id, actor, note)
+	object.PublishRouting(ctx, object.RoutingChanged{Family: family, Version: v.Id})
 	return v, http.StatusOK, nil
 }
 
@@ -689,33 +692,25 @@ func routingTest(ctx context.Context, family, model string) (*routingProbe, erro
 	}, nil
 }
 
-// routingEvery is how often each family's newest version is checked against what
-// it serves.
-const routingEvery = time.Minute
-
-// StartRoutingConvergence applies each family's newest version wherever the family
-// restarted onto the deployment that version was made over.
-func StartRoutingConvergence() {
-	routingOnce.Do(func() {
-		go func() {
-			for {
-				for _, f := range routingFamilies {
-					converge(context.Background(), f)
-				}
-				time.Sleep(routingEvery)
-			}
-		}()
-	})
+// ConvergeRouting serves each of families' newest version, or every family's when
+// none is named, wherever the family restarted onto the deployment that version was
+// made over. The host calls it at boot and, with the family, on each
+// object.RoutingChanged.
+func ConvergeRouting(ctx context.Context, families ...string) {
+	if len(families) == 0 {
+		families = routingFamilies
+	}
+	for _, f := range families {
+		converge(ctx, f)
+	}
 }
-
-var routingOnce sync.Once
 
 // unconverged is, per family, the deployment convergence last failed to serve its
 // newest version on; held under routingMu.
 var unconverged = map[string]string{}
 
 // stood is the catalog each family was last left serving over its newest version,
-// so the warning is written once a deployment, not once a minute.
+// so the warning is written once a deployment, not once an event.
 var (
 	stoodMu sync.Mutex
 	stood   = map[string]string{}

@@ -139,9 +139,60 @@ func TestRoutingIsVersionedAndSuperAdminOnly(t *testing.T) {
 
 	// A family that restarted onto its file serves the newest version again.
 	f.cat = `{"models":{"zen6":{"route":[{"upstream":"a:free"}]}}}`
-	converge(context.Background(), "zen")
+	ConvergeRouting(context.Background(), "zen")
 	if !strings.Contains(f.cat, "b:free") {
 		t.Fatalf("convergence left %s", f.cat)
+	}
+}
+
+// An applied version goes on the bus, and a refused catalog does not; a replica that
+// still holds the old catalog serves the newest version when it hears the event, and
+// not before: nothing applies it on a clock.
+func TestAppliedVersionGoesOnTheBusAndReplicasServeItOnTheEvent(t *testing.T) {
+	withStore(t)
+	t.Setenv("ZEN_URL", "")
+	old := `{"models":{"zen6":{"route":[{"upstream":"a:free"}]}}}`
+	f := &fakeZen{cat: old}
+	Zen = f.host()
+	t.Cleanup(func() { Zen = nil })
+	var (
+		mu   sync.Mutex
+		told []object.RoutingChanged
+	)
+	object.SetRoutingPublisher(func(_ context.Context, c object.RoutingChanged) {
+		mu.Lock()
+		defer mu.Unlock()
+		told = append(told, c)
+	})
+	t.Cleanup(func() { object.SetRoutingPublisher(nil) })
+
+	ctx := context.Background()
+	if _, st, err := RoutingApply(ctx, "zen", json.RawMessage(`{"providers":{"bad":{}}}`), 0, "admin/a", "refused"); err == nil || st != http.StatusBadRequest {
+		t.Fatalf("a refused catalog answered %d %v", st, err)
+	}
+	if len(told) != 0 {
+		t.Fatalf("a refused catalog went on the bus: %v", told)
+	}
+
+	v, st, err := RoutingApply(ctx, "zen", json.RawMessage(`{"models":{"zen6":{"route":[{"upstream":"b:free"}]}}}`), 0, "admin/a", "b leads")
+	if err != nil || st != http.StatusOK {
+		t.Fatalf("apply %d %v", st, err)
+	}
+	if len(told) != 1 || told[0] != (object.RoutingChanged{Family: "zen", Version: v.Id}) {
+		t.Fatalf("the bus heard %v, want zen version %d", told, v.Id)
+	}
+
+	// Another replica: its zen still holds the catalog it booted with. It serves the
+	// newest version on the event, and the replica that applied it changes nothing.
+	f.cat = old
+	ConvergeRouting(ctx, told[0].Family)
+	if !strings.Contains(f.cat, "b:free") {
+		t.Fatalf("a replica hearing the event serves %s", f.cat)
+	}
+	before := f.cat
+	ConvergeRouting(ctx, told[0].Family)
+	if f.cat != before {
+		t.Fatalf("hearing the event twice changed the catalog: %s", f.cat)
 	}
 }
 

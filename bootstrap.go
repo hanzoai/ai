@@ -283,8 +283,9 @@ func doBootstrap() (err error) {
 	// Finish, keep and bill every video job a process before this one left
 	// unfinished (controllers.ResumeVideos): the vendor finishes it either way.
 	go controllers.ResumeVideos()
-	// Serve each family's newest routing version, and keep serving it (routing.go).
-	controllers.StartRoutingConvergence()
+	// Serve each family's newest routing version once at boot; the host serves it again
+	// on each object.RoutingChanged (routing.go).
+	go controllers.ConvergeRouting(context.Background())
 	controllers.StartRouterProbe()
 	controllers.StartRouterTrainer()
 	controllers.StartRouterJudge()
