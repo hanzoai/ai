@@ -32,12 +32,17 @@ import (
 // state one without the other. Where CostIn/CostOut are unset the cost is not known —
 // see costed — and no margin is reported for it.
 type modelPrice struct {
-	InputPerMillion      float64 // $ per 1M input tokens (customer price)
-	OutputPerMillion     float64 // $ per 1M output tokens (customer price)
-	CacheReadPerMillion  float64 // $ per 1M cache-read tokens (0 = use InputPerMillion)
-	CacheWritePerMillion float64 // $ per 1M cache-write tokens (0 = use InputPerMillion)
-	CostInPerMillion     float64 // $ per 1M input tokens (provider COGS; 0 = not known)
-	CostOutPerMillion    float64 // $ per 1M output tokens (provider COGS; 0 = not known)
+	InputPerMillion        float64 // $ per 1M input tokens (customer price)
+	OutputPerMillion       float64 // $ per 1M output tokens (customer price)
+	CacheReadPerMillion    float64 // $ per 1M cache-read tokens (0 = use InputPerMillion)
+	CacheWritePerMillion   float64 // $ per 1M cache-write tokens (0 = use InputPerMillion)
+	CacheWrite1hPerMillion float64 // $ per 1M 1h cache-write tokens (0 = use 2.0 * InputPerMillion)
+	FastInputPerMillion    float64 // $ per 1M input tokens in Fast mode (0 = standard)
+	FastOutputPerMillion   float64 // $ per 1M output tokens in Fast mode (0 = standard)
+	ContextWindow          int     // max context window (tokens) when statically declared (0 = unstated)
+	MaxOutput              int     // max completion tokens when statically declared (0 = unstated)
+	CostInPerMillion       float64 // $ per 1M input tokens (provider COGS; 0 = not known)
+	CostOutPerMillion      float64 // $ per 1M output tokens (provider COGS; 0 = not known)
 	// Variable: each call bills at the cost its answer states (zenModel.variable), and
 	// the rates above are only the ceiling a hold reserves, never a price.
 	Variable bool
@@ -211,6 +216,17 @@ var modelPricing = map[string]modelPrice{
 	"claude-opus-4-6":   {InputPerMillion: 15.00, OutputPerMillion: 75.00},
 	"claude-sonnet-4":   {InputPerMillion: 3.00, OutputPerMillion: 15.00},
 	"claude-sonnet-4-5": {InputPerMillion: 3.00, OutputPerMillion: 15.00},
+	"claude-fable-5.2": {
+		InputPerMillion:        8.00,
+		OutputPerMillion:       40.00,
+		CacheReadPerMillion:    0.20,
+		CacheWritePerMillion:   10.00,
+		CacheWrite1hPerMillion: 16.00,
+		FastInputPerMillion:    16.00,
+		FastOutputPerMillion:   80.00,
+		ContextWindow:          1_000_000,
+		MaxOutput:              128_000,
+	},
 
 	// Open source via DO-AI
 	"deepseek-r1-distill-70b": {InputPerMillion: 0.35, OutputPerMillion: 1.20},
@@ -467,6 +483,9 @@ var aliasPricing = map[string]string{
 	"anthropic/claude-haiku-4-5-20251001":  "claude-haiku-4-5",
 	"anthropic/claude-opus-4-6":            "claude-opus-4-6",
 	"anthropic/claude-sonnet-4-5-20250929": "claude-sonnet-4-5",
+	"claude-fable-5-2":                     "claude-fable-5.2",
+	"anthropic/claude-fable-5.2":           "claude-fable-5.2",
+	"anthropic/claude-fable-5-2":           "claude-fable-5.2",
 }
 
 // PriceOf is the price a model is billed at for org, dollars a million tokens by
@@ -545,22 +564,38 @@ func getModelPriceForOrgOK(model string, orgId string) (modelPrice, bool) {
 	}
 
 	// Static fallback
-	m := strings.ToLower(model)
-
-	// Direct lookup
-	if price, ok := modelPricing[m]; ok {
+	if price, ok := staticModelPrice(model); ok {
 		return price, true
 	}
 
-	// Check aliases
+	// Default: conservative pricing for unknown models — the ONE synthesized price.
+	return modelPrice{InputPerMillion: 1.00, OutputPerMillion: 4.00}, false
+}
+
+// staticModelPrice looks up a static modelPricing entry directly, via aliasPricing,
+// or after resolving openrouterAliases.
+func staticModelPrice(model string) (modelPrice, bool) {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if price, ok := modelPricing[m]; ok {
+		return price, true
+	}
 	if base, ok := aliasPricing[m]; ok {
 		if price, ok := modelPricing[base]; ok {
 			return price, true
 		}
 	}
-
-	// Default: conservative pricing for unknown models — the ONE synthesized price.
-	return modelPrice{InputPerMillion: 1.00, OutputPerMillion: 4.00}, false
+	if mapped, ok := openrouterAliases[m]; ok {
+		m = strings.ToLower(strings.TrimSpace(mapped))
+		if price, ok := modelPricing[m]; ok {
+			return price, true
+		}
+		if base, ok := aliasPricing[m]; ok {
+			if price, ok := modelPricing[base]; ok {
+				return price, true
+			}
+		}
+	}
+	return modelPrice{}, false
 }
 
 // registeredCost is what an operator has recorded that a model costs us, per 1M tokens,

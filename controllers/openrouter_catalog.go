@@ -729,6 +729,32 @@ func openrouterTerms(body []byte, sku zenModel, free bool, session string) []byt
 	return out
 }
 
+// openrouterWithZDR sets provider.zdr = true on an OpenRouter request body when
+// zero data retention is active on the caller's request.
+func openrouterWithZDR(body []byte) []byte {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	prov := map[string]json.RawMessage{}
+	if raw, ok := m["provider"]; ok {
+		if json.Unmarshal(raw, &prov) != nil || prov == nil {
+			prov = map[string]json.RawMessage{}
+		}
+	}
+	prov["zdr"] = json.RawMessage("true")
+	pb, err := json.Marshal(prov)
+	if err != nil {
+		return body
+	}
+	m["provider"] = pb
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // maxSession is the longest session_id OpenRouter accepts.
 const maxSession = 256
 

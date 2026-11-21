@@ -230,6 +230,10 @@ func BalanceGateFilter(c *zip.Ctx) error {
 		}
 	}
 	model := requestedModel(c)
+	if controllers.WantsZDR(c.Header("X-Hanzo-ZDR")) {
+		c.Fiber().Request().Header.Set("X-Hanzo-ZDR", "1")
+		controllers.SetZDR(c, true)
+	}
 	// The no-cost pool and its models are fallback rungs inside a tier, never a model a
 	// caller asks for.
 	if controllers.Unsold(model) {
@@ -383,10 +387,11 @@ func BalanceGateFilter(c *zip.Ctx) error {
 	}
 	if limits := object.Limits(); limits != nil && model != "" && controllers.Entitled(path) {
 		for try := 0; try < 4; try++ {
+			canonModel := controllers.CanonicalModel(model)
 			priced := !freed && !costsNothing(model, namespace)
 			ask := object.LimitAsk{
-				Subject: subject, Namespace: namespace, Actor: userKey, Model: model,
-				Family: controllers.FamilyOf(model), Class: controllers.ClassOf(model), Priced: priced, Lane: controllers.LaneOf(model),
+				Subject: subject, Namespace: namespace, Actor: userKey, Model: canonModel,
+				Family: controllers.FamilyOf(canonModel), Class: controllers.ClassOf(canonModel), Priced: priced, Lane: controllers.LaneOf(canonModel),
 				Apps: controllers.Apps(c), Spend: controllers.ChatPath(path), Session: session,
 			}
 			grant, hit, err := limits(c.Context(), ask)

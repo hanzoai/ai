@@ -66,7 +66,7 @@ var (
 	// published — but it was published whole, and an aggregator hangs the same
 	// things on a refusal it hangs on a success: who it bought from
 	// (error.metadata.provider_name) and the upstream's own raw body.
-	errorFields = fields("message", "type", "param", "code")
+	errorFields = fields("message", "type", "param", "code", "layer")
 
 	// The Anthropic dialect — /v1/messages, which is what Claude Code and every
 	// agent built on that SDK speaks. Identity lives on the MESSAGE object: the
@@ -373,8 +373,16 @@ func stampError(raw json.RawMessage) json.RawMessage {
 		return raw
 	}
 	keep(refusal, errorFields)
-	if _, isText := name(refusal["code"]); !isText {
-		delete(refusal, "code")
+	if rawCode, ok := refusal["code"]; ok {
+		if _, isText := name(rawCode); !isText {
+			var n int
+			if json.Unmarshal(rawCode, &n) == nil && n == 402 {
+				refusal["code"] = text(codeBudgetExhausted)
+				refusal["layer"] = text(layerUpstreamProvider)
+			} else {
+				delete(refusal, "code")
+			}
+		}
 	}
 	out, err := encode(refusal)
 	if err != nil {

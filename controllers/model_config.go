@@ -467,6 +467,23 @@ func Canonical(model string) (string, bool) {
 	return id, ok
 }
 
+// CanonicalModel resolves aliases (models.yaml alias_of and openrouterAliases) to
+// the canonical lowercase model identifier before balance/plan limits, pricing, or
+// capability checks evaluate the request.
+func CanonicalModel(model string) string {
+	id := strings.ToLower(strings.TrimSpace(model))
+	if id == "" {
+		return ""
+	}
+	if mapped, ok := Canonical(id); ok && mapped != "" {
+		id = strings.ToLower(strings.TrimSpace(mapped))
+	}
+	if mapped, ok := openrouterAliases[id]; ok && mapped != "" {
+		id = strings.ToLower(strings.TrimSpace(mapped))
+	}
+	return id
+}
+
 // openerEaten reports whether the route that serves upstream on provider is
 // declared to have a template that eats the <think> opener (opener_eaten). An
 // empty provider matches any. The statement is read per route, never from a name.

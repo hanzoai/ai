@@ -536,9 +536,9 @@ func TestAProxiedVendorRefusalIsNotTheCallersBill(t *testing.T) {
 	if answered(c) != http.StatusServiceUnavailable {
 		t.Errorf("status=%d, want 503 — the true statement is that we could not serve this", answered(c))
 	}
-	if got := codeOf(exhausted("glm-5.2", nil)); !strings.Contains(sent(c), got) {
-		t.Errorf("body %q does not carry %q, so a client cannot tell this from its own empty wallet",
-			sent(c), got)
+	if !strings.Contains(sent(c), codeBudgetExhausted) || !strings.Contains(sent(c), layerUpstreamProvider) {
+		t.Errorf("body %q does not carry %q and %q, so a client cannot tell this from its own empty wallet",
+			sent(c), codeBudgetExhausted, layerUpstreamProvider)
 	}
 }
 

@@ -237,7 +237,11 @@ func hourAsMinutes(model string, n int) int {
 	if minutes <= 0 {
 		return n
 	}
-	return int(math.Ceil(float64(n) * p.InputPerMillion * cacheWriteHourMultiple / minutes))
+	hourRate := p.CacheWrite1hPerMillion
+	if hourRate <= 0 {
+		hourRate = p.InputPerMillion * cacheWriteHourMultiple
+	}
+	return int(math.Ceil(float64(n) * hourRate / minutes))
 }
 
 // answerUsage is the usage a whole native answer reports, and whether it reported
@@ -307,6 +311,8 @@ type AnthropicErrorBody struct {
 	Type  string `json:"type"`
 	Error struct {
 		Type    string `json:"type"`
+		Code    string `json:"code,omitempty"`
+		Layer   string `json:"layer,omitempty"`
 		Message string `json:"message"`
 	} `json:"error"`
 }
@@ -556,6 +562,21 @@ func (c *ApiController) respondAnthropicError(errType string, message string, st
 	c.Bytes(status, jsonData)
 }
 
+func (c *ApiController) respondAnthropicErrorWithMeta(errType, code, layer, message string, status int) {
+	body := AnthropicErrorBody{Type: "error"}
+	body.Error.Type = errType
+	body.Error.Code = code
+	body.Error.Layer = layer
+	body.Error.Message = message
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		c.Status(500)
+		return
+	}
+	c.SetHeader("Content-Type", "application/json")
+	c.Bytes(status, jsonData)
+}
+
 // streamAnthropicError sends the same body as an `error` event. Once a stream is
 // being produced the reply is no longer the controller's to write — the request
 // context has been released and the client is reading events — so the failure
@@ -584,7 +605,19 @@ func anthropicErrorType(err error) string {
 // that "who does this refusal belong to" is decided once, by relay, and merely
 // rendered here.
 func (c *ApiController) respondAnthropicRefusal(err error) {
-	c.respondAnthropicError(anthropicErrorType(err), err.Error(), statusOf(err))
+	st := statusForModelError(err)
+	code := codeOf(err)
+	layer := layerOf(err)
+	if isVendor402Exhaustion(err) {
+		st = http.StatusServiceUnavailable
+		code = codeBudgetExhausted
+		layer = layerUpstreamProvider
+	}
+	if code != "" || layer != "" {
+		c.respondAnthropicErrorWithMeta(anthropicErrorTypeForStatus(st), code, layer, err.Error(), st)
+		return
+	}
+	c.respondAnthropicError(anthropicErrorTypeForStatus(st), err.Error(), st)
 }
 
 // AnthropicMessages implements the Anthropic Messages API.
@@ -681,6 +714,14 @@ func (c *ApiController) AnthropicMessages() {
 	// key, and the id every refusal along the way is filed under, so a failover
 	// reads back as one story rather than as unrelated rows.
 	requestId := uuid.NewString()
+
+	zdr := WantsZDR(c.Header(zdrHeader)) || ZDRFromContext(c.Context())
+	authZDR := zdrAuthorized(c.Header(zdrAuthorizedHeader))
+	byo, _ := providerBYO(provider, authUser)
+	if err := validateClaudeRequest(request.Model, "messages", c.Body(), claudeCapabilities(request.Model), zdr, byo, authZDR); err != nil {
+		c.respondAnthropicRefusal(err)
+		return
+	}
 
 	// ── Model families (Zen, Enso) ─────────────────────
 	// A family model is served by its family service, which owns identity, reasoning,
@@ -1060,7 +1101,8 @@ func (c *ApiController) proxyAnthropic(
 	if c.strictAsked() && !c.provenNative(set) {
 		return
 	}
-	req, err := nativeRequest(context.Background(), provider, c.Body(), set, byo, version, betas)
+	reqCtx := c.contextWithClaudePolicy(context.Background())
+	req, err := nativeRequest(reqCtx, provider, c.Body(), set, byo, version, betas)
 	if err != nil {
 		c.respondAnthropicRefusal(err)
 		return
@@ -1078,6 +1120,8 @@ func (c *ApiController) proxyAnthropic(
 			resp.Body.Close()
 		}
 	}()
+	rd := strings.TrimSpace(resp.Header.Get(runtimeDigestHeader))
+	cc := strings.TrimSpace(resp.Header.Get(cacheConnectorHeader))
 
 	// ONE status decision, ahead of the stream/buffered split and ahead of the
 	// billing below: both branches write a status and both then bill, and neither
@@ -1109,7 +1153,7 @@ func (c *ApiController) proxyAnthropic(
 			defer held.settle(0)
 			defer upstream.Close()
 			used, final := streamCaptureAnthropicUsage(upstream, w, func() { _ = w.Flush() })
-			recordAnthropicToolUsage(snap, request, provider, authUser, isPremium, true, requestId, used, lost(final, floor), requestStartTime, held)
+			recordAnthropicToolUsage(snap, request, provider, authUser, isPremium, true, requestId, used, lost(final, floor), requestStartTime, held, rd, cc)
 		})
 		return
 	}
@@ -1124,7 +1168,7 @@ func (c *ApiController) proxyAnthropic(
 		return
 	}
 	used, final := answerUsage(respBody)
-	recordAnthropicToolUsage(c.takeSnapshot(authUser), request, provider, authUser, isPremium, false, requestId, used, lost(final, floor), requestStartTime, hold)
+	recordAnthropicToolUsage(c.takeSnapshot(authUser), request, provider, authUser, isPremium, false, requestId, used, lost(final, floor), requestStartTime, hold, rd, cc)
 	// A whole Messages answer is JSON. The type is stated rather than copied: a
 	// connected account's URL is the customer's to set, and whatever it answers is
 	// served from this origin.
@@ -1163,7 +1207,41 @@ func (c *ApiController) anthropicHeaders() (version string, betas []string) {
 // On the shared account anything not priced in tokens, or reaching state the
 // account holds, is refused before anything is sent (shared); the caller's own
 // connected account (byo) is sent whatever the caller wrote.
+func (c *ApiController) contextWithClaudePolicy(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if WantsZDR(c.Header(zdrHeader)) || ZDRFromContext(c.Context()) {
+		ctx = WithZDR(ctx, true)
+	}
+	if pm := strings.TrimSpace(c.Header(priorModelHeader)); pm != "" {
+		ctx = WithPriorModel(ctx, pm)
+	}
+	if pf := strings.TrimSpace(c.Header(priorThinkingFamilyHeader)); pf != "" {
+		ctx = WithPriorThinkingFamily(ctx, pf)
+	}
+	if WantsZDR(c.Header(resetThinkingHeader)) {
+		ctx = WithThinkingReset(ctx, true)
+	}
+	if attr := object.GenAIAttributionFromContext(c.Context()); attr.Session != "" {
+		ctx = object.WithGenAIAttribution(ctx, attr)
+	}
+	return ctx
+}
+
 func nativeRequest(ctx context.Context, provider *object.Provider, body []byte, set map[string]any, byo bool, version string, betas []string) (*http.Request, error) {
+	targetModel, _ := set["model"].(string)
+	if targetModel == "" {
+		var hdr struct {
+			Model string `json:"model"`
+		}
+		_ = json.Unmarshal(body, &hdr)
+		targetModel = hdr.Model
+	}
+	body, err := stripThinkingBlocksOnSwitch(ctx, body, targetModel)
+	if err != nil {
+		return nil, err
+	}
 	out, err := splice(body, set)
 	if err != nil {
 		return nil, err
@@ -1188,6 +1266,9 @@ func nativeRequest(ctx context.Context, provider *object.Provider, body []byte, 
 	req.Header.Set("anthropic-version", version)
 	for _, b := range betas {
 		req.Header.Add("anthropic-beta", b)
+	}
+	if ZDRFromContext(ctx) {
+		req.Header.Set(zdrHeader, "1")
 	}
 	upstream.Authorize(req, provider)
 	return req, nil
@@ -1657,6 +1738,8 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		// the verbatim relay above states: the callback has not run when
 		// SendStreamWriter returns, so the body must travel in and the counts must be
 		// used in here.
+		rd := strings.TrimSpace(resp.Header.Get(runtimeDigestHeader))
+		cc := strings.TrimSpace(resp.Header.Get(cacheConnectorHeader))
 		upstream := resp.Body
 		resp = nil
 		snap := c.takeSnapshot(authUser)
@@ -1686,7 +1769,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 			// (the upstream cut off, the client left and the relay stopped reading)
 			// is billed at what it could have cost.
 			recordAnthropicToolUsage(snap, request, provider, authUser, isPremium, true, requestId,
-				AnthropicUsage{InputTokens: prompt, OutputTokens: completion}, lost(total > 0 || completion > 0, floor), requestStartTime, held)
+				AnthropicUsage{InputTokens: prompt, OutputTokens: completion}, lost(total > 0 || completion > 0, floor), requestStartTime, held, rd, cc)
 		})
 		return
 	}
@@ -1700,6 +1783,8 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 		c.respondAnthropicRefusal(relay(request.Model, provider.Name, resp.StatusCode, respBody))
 		return
 	}
+	rd := strings.TrimSpace(resp.Header.Get(runtimeDigestHeader))
+	cc := strings.TrimSpace(resp.Header.Get(cacheConnectorHeader))
 	antResp, prompt, completion := openAIResponseToAnthropic(readAnswerBody(respBody, eaten, strip != nil, lift), request.Model, requestId)
 	out, err := json.Marshal(antResp)
 	if err != nil {
@@ -1709,7 +1794,7 @@ func (c *ApiController) proxyAnthropicViaOpenAI(
 	c.SetHeader("Content-Type", "application/json")
 	c.Bytes(http.StatusOK, out)
 	recordAnthropicToolUsage(c.takeSnapshot(authUser), request, provider, authUser, isPremium, false, requestId,
-		AnthropicUsage{InputTokens: prompt, OutputTokens: completion}, lost(prompt > 0 || completion > 0, floor), requestStartTime, hold)
+		AnthropicUsage{InputTokens: prompt, OutputTokens: completion}, lost(prompt > 0 || completion > 0, floor), requestStartTime, hold, rd, cc)
 }
 
 // recordAnthropicToolUsage settles the budget hold and records usage + trace for a
@@ -1727,7 +1812,7 @@ func recordAnthropicToolUsage(
 	snap snapshot,
 	request *AnthropicRequest, provider *object.Provider, authUser *iam.User,
 	isPremium, stream bool, requestId string, used AnthropicUsage, floor *AnthropicUsage,
-	requestStartTime time.Time, hold *budgetHold,
+	requestStartTime time.Time, hold *budgetHold, runtimeDigest, cacheConnector string,
 ) {
 	b := used.billed(request.Model)
 	if floor != nil {
@@ -1739,6 +1824,7 @@ func recordAnthropicToolUsage(
 		rec := &usageRecord{
 			Owner: snap.org, Organization: authUser.Owner, Model: request.Model, Provider: provider.Name,
 			Origin:       provider.Origin(),
+			RuntimeDigest: runtimeDigest, CacheConnector: cacheConnector,
 			PromptTokens: b.prompt(), CompletionTokens: b.out, TotalTokens: b.prompt() + b.out,
 			CacheReadTokens: b.read, CacheWriteTokens: b.write,
 			Currency: "USD", Premium: isPremium, Stream: stream, Status: "success",

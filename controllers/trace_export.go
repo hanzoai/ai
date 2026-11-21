@@ -44,6 +44,8 @@ type ServedUsage struct {
 	Served          string        // the arm that generated the answer (gen_ai.response.model)
 	Vendor          string        // the provider that ran that arm (gen_ai.provider.name)
 	Failover        string        // the arms that failed before it, with why
+	RuntimeDigest   string        // upstream runtime image/binary digest (X-Hanzo-Runtime-Digest)
+	CacheConnector  string        // upstream KV/cache connector identifier (X-Hanzo-Cache-Connector)
 	CachedTokens    int           // of PromptTokens: served from the upstream's prompt cache
 	WrittenTokens   int           // of PromptTokens: written to the upstream's prompt cache
 	ReasoningTokens int           // of CompletionTokens: spent reasoning
@@ -87,6 +89,8 @@ func servedRecord(in ServedUsage) *usageRecord {
 		Served:           in.Served,
 		Vendor:           in.Vendor,
 		Failover:         in.Failover,
+		RuntimeDigest:    in.RuntimeDigest,
+		CacheConnector:   in.CacheConnector,
 		ReasoningTokens:  in.ReasoningTokens,
 		First:            in.First,
 		Currency:         "USD",

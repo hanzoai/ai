@@ -36,7 +36,8 @@ import (
 type Response struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg"`
-	Code   string `json:"code,omitempty"` // machine name of the failure; clients switch on this, never on Msg
+	Code   string `json:"code,omitempty"`  // machine name of the failure; clients switch on this, never on Msg
+	Layer  string `json:"layer,omitempty"` // failure layer when attribution is structured (e.g. "upstream_provider")
 	Data   any    `json:"data"`
 	Data2  any    `json:"data2"`
 }
@@ -108,7 +109,9 @@ type apiError struct {
 	// both "our upstream refused" and "we could not read your balance"). Only this
 	// is safe to branch on, which is why the shapes that need telling apart carry
 	// one and the rest carry nothing rather than something invented.
-	code string
+	code      string
+	layer     string
+	vendor402 bool
 }
 
 func (e *apiError) Error() string { return e.msg }
@@ -231,11 +234,41 @@ func (c *ApiController) ResponseFailure(err error) {
 	c.JSON(statusOf(err), Response{Status: "error", Msg: err.Error(), Code: codeOf(err)})
 }
 
+const (
+	codeBudgetExhausted   = "budget_exhausted"
+	layerUpstreamProvider = "upstream_provider"
+)
+
+func layerOf(err error) string {
+	if ae, ok := errors.AsType[*apiError](err); ok && ae.layer != "" {
+		return ae.layer
+	}
+	if isVendor402Exhaustion(err) {
+		return layerUpstreamProvider
+	}
+	return ""
+}
+
+func isVendor402Exhaustion(err error) bool {
+	if ae, ok := errors.AsType[*apiError](err); ok && ae.vendor402 {
+		return true
+	}
+	return upstreamHTTPStatus(err) == http.StatusPaymentRequired && codeOf(err) != object.CodeInsufficientBalance
+}
+
 // ResponseModelFailure renders a model call that nothing answered, with the
 // status a client should see for it (statusForModelError: an upstream 429 stays a
 // 429, a vendor's 402 is our 503) and the machine name it carries.
 func (c *ApiController) ResponseModelFailure(err error) {
-	c.JSON(statusForModelError(err), Response{Status: "error", Msg: err.Error(), Code: codeOf(err)})
+	status := statusForModelError(err)
+	code := codeOf(err)
+	layer := layerOf(err)
+	if isVendor402Exhaustion(err) {
+		status = http.StatusServiceUnavailable
+		code = codeBudgetExhausted
+		layer = layerUpstreamProvider
+	}
+	c.JSON(status, Response{Status: "error", Msg: err.Error(), Code: code, Layer: layer})
 }
 
 // ResponseUnauthorized renders an authentication denial (no/invalid session or

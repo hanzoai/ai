@@ -1533,7 +1533,7 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// its bound once a paid rung accepted it, else nothing.
 	// ctx is the request's context, read once: dispatch and pool also run from a
 	// stream's writer (awaitCommitted's fill), after fiber has recycled c.
-	grant, pm, ctx := grantOf(c.Ctx), markOf(c.Ctx), c.Context()
+	grant, pm, ctx := grantOf(c.Ctx), markOf(c.Ctx), c.contextWithClaudePolicy(c.Context())
 	place := seatOf(ctx)
 	unsettled := func() {
 		if grant != nil && pm.settled.CompareAndSwap(false, true) {
@@ -1623,6 +1623,13 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	// fields that shape the answer, and the token ceiling the hold covers. A field
 	// that picks other models, endpoints or paid tools on the vendor's side stays
 	// here (familyBody), and so does a web-searching model id.
+	zdr := ZDRFromContext(ctx) || WantsZDR(c.Header(zdrHeader))
+	authZDR := zdrAuthorized(c.Header(zdrAuthorizedHeader))
+	byo, _ := providerBYO(prov, authUser)
+	if err := validateClaudeRequest(model, apiPath, rawBody, claudeCapabilities(model), zdr, byo, authZDR); err != nil {
+		c.writeClaudePolicyError(dialect, err)
+		return done()
+	}
 	if searchesWeb(model) {
 		c.zenError(dialect, fmt.Sprintf("%s runs a web search on every call and is not served", model), http.StatusBadRequest)
 		return done()
@@ -1684,6 +1691,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		who = payerOf(ctx, org, authUser)
 	}
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
+	if zdr {
+		req.Header.Set(zdrHeader, "1")
+	}
 	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
 	// the family may answer from a paid rung whose cost fits, and tells us its rate.
 	if spend := spendFor(c.Ctx, fam, model); spend != "" {
@@ -1790,6 +1800,9 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		if f.terms != nil {
 			m, _ := f.lookup(s)
 			b = f.terms(b, m, f.free(s), object.GenAIAttributionFromContext(ctx).Session)
+			if ZDRFromContext(ctx) {
+				b = openrouterWithZDR(b)
+			}
 		}
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		r.ContentLength = int64(len(b))
@@ -2025,6 +2038,10 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// The paid lane is off and the model named is a third-party one: it is not
 		// sent, and nothing answers in its place.
 		err := laneOff(ctx, model)
+		if isVendor402Exhaustion(err) {
+			c.writeClaudePolicyError(dialect, err)
+			return done()
+		}
 		c.zenError(dialect, err.Error(), statusOf(err))
 		return done()
 	} else if !lane && FreeOnlyFor(ctx) && (apiPath != "embeddings" || fam.spends(sku)) {
@@ -2342,6 +2359,9 @@ const (
 	// (OPENROUTER_API_KEY_3), never its key: the free view's which-account
 	// (listing.go). A header, or a trailer on a stream.
 	keyHeader = "X-Hanzo-Key"
+	// runtimeDigestHeader and cacheConnectorHeader carry upstream runtime/KV provenance.
+	runtimeDigestHeader  = "X-Hanzo-Runtime-Digest"
+	cacheConnectorHeader = "X-Hanzo-Cache-Connector"
 )
 
 // serving is what a family said about an answer beyond its body: the arm that
@@ -2349,6 +2369,7 @@ const (
 // its first token, and whether that arm bills nothing.
 type serving struct {
 	arm, vendor, failover, account string
+	runtimeDigest, cacheConnector  string
 	first                          time.Duration
 	free                           bool
 	// class is the kind of the rung that answered (kinds.go), as the family said it;
@@ -2399,6 +2420,12 @@ func (sv *serving) merge(tr http.Header) {
 	if n, ok := usdNanos(tr.Get(cogsHeader)); ok {
 		sv.cogs = &n
 	}
+	if v := strings.TrimSpace(tr.Get(runtimeDigestHeader)); v != "" {
+		sv.runtimeDigest = v
+	}
+	if v := strings.TrimSpace(tr.Get(cacheConnectorHeader)); v != "" {
+		sv.cacheConnector = v
+	}
 }
 
 // servingOf reads a family response's headers into a serving.
@@ -2408,6 +2435,7 @@ func servingOf(h http.Header) serving {
 		arm = h.Get(servedHeader)
 	}
 	sv := serving{arm: arm, vendor: h.Get(providerHeader), account: h.Get(keyHeader), failover: strings.Join(h.Values(failoverHeader), "; "), free: h.Get(freeHeader) == "true",
+		runtimeDigest: strings.TrimSpace(h.Get(runtimeDigestHeader)), cacheConnector: strings.TrimSpace(h.Get(cacheConnectorHeader)),
 		class: h.Get(classHeader), fast: h.Get(fastHeader) == "true"}
 	if n, ok := usdNanos(h.Get(cogsHeader)); ok {
 		sv.cogs = &n
@@ -3083,6 +3111,7 @@ func recordFamilyUsage(w whence, fam *modelFamily, model, requested string, prov
 		Model: model, Requested: requested, Free: free, Provider: fam.name, Origin: origin, Via: via,
 		PromptTokens: t.prompt(), CacheReadTokens: t.cached, CacheWriteTokens: t.written, CompletionTokens: t.completion, TotalTokens: t.prompt() + t.completion,
 		ReasoningTokens: t.reasoning, Served: sv.arm, Vendor: sv.vendor, Failover: sv.failover, First: sv.first,
+		RuntimeDigest: sv.runtimeDigest, CacheConnector: sv.cacheConnector,
 		Reasoning: w.depth, Arms: trailed, LossNano: loss,
 		Cost: float64(nano) / 1e9, Currency: "USD",
 		Premium: isPremium, Lane: laneOfAnswer(sv, free, model), Stream: stream, Status: status, ErrorMsg: errMsg,
@@ -3214,4 +3243,32 @@ func (c *ApiController) zenError(dialect, msg string, status int) {
 	})
 	c.SetHeader("Content-Type", "application/json")
 	_ = c.Bytes(status, body)
+}
+
+func (c *ApiController) writeClaudePolicyError(dialect string, err error) {
+	if dialect == "anthropic" {
+		c.respondAnthropicRefusal(err)
+		return
+	}
+	st := statusForModelError(err)
+	code := codeOf(err)
+	layer := layerOf(err)
+	if isVendor402Exhaustion(err) {
+		st = http.StatusServiceUnavailable
+		code = codeBudgetExhausted
+		layer = layerUpstreamProvider
+	}
+	errObj := map[string]any{
+		"message": err.Error(),
+		"type":    openAIErrorType(st),
+	}
+	if code != "" {
+		errObj["code"] = code
+	}
+	if layer != "" {
+		errObj["layer"] = layer
+	}
+	body, _ := json.Marshal(map[string]any{"error": errObj})
+	c.SetHeader("Content-Type", "application/json")
+	_ = c.Bytes(st, body)
 }

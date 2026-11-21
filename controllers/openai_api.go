@@ -972,6 +972,9 @@ type usageRecord struct {
 	// of a place, never a key. Empty on every other call. Emitted on the span as
 	// gen_ai.hanzo.via; the row says the same in Origin, as host#place.
 	Via string `json:"via,omitempty"`
+	// RuntimeDigest and CacheConnector record upstream provenance headers when present.
+	RuntimeDigest  string `json:"runtimeDigest,omitempty"`
+	CacheConnector string `json:"cacheConnector,omitempty"`
 	// ReasoningTokens is the part of CompletionTokens the model spent reasoning.
 	ReasoningTokens int `json:"reasoningTokens,omitempty"`
 	// Reasoning is how hard the caller asked the model to think (depthOf): none,
@@ -2145,6 +2148,14 @@ func (c *ApiController) chatCompletions(from caller, to *sink) {
 	// from inside its own writer, which runs after this handler has returned, and a
 	// release here would win the one-shot settle before the answer's cost is known.
 	defer func() { hold.settle(0) }()
+
+	zdr := WantsZDR(c.Header(zdrHeader)) || ZDRFromContext(c.Context())
+	authZDR := zdrAuthorized(c.Header(zdrAuthorizedHeader))
+	byo, _ := providerBYO(provider, authUser)
+	if err := validateClaudeRequest(request.Model, "chat/completions", c.Body(), claudeCapabilities(request.Model), zdr, byo, authZDR); err != nil {
+		c.writeClaudePolicyError("openai", err)
+		return
+	}
 
 	// ── Model families (Zen, Enso) ─────────────────────
 	// A family model is served by its family service, which owns identity, reasoning,

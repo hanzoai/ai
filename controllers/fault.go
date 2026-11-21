@@ -799,8 +799,15 @@ func exhausted(model string, tried []attempt) error {
 		return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
 			msg: fmt.Sprintf("model %q is not available", model)}
 	}
+	has402 := false
+	for _, a := range tried {
+		if a.status == http.StatusPaymentRequired || upstreamHTTPStatus(a.err) == http.StatusPaymentRequired {
+			has402 = true
+			break
+		}
+	}
 	// Who refused and why is ours (announce logged each refusal); the caller is
 	// told only that the model could not answer.
-	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted,
+	return &apiError{status: http.StatusServiceUnavailable, code: codeExhausted, vendor402: has402,
 		msg: fmt.Sprintf("model %q is temporarily unavailable; try again shortly", model)}
 }

@@ -35,7 +35,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -389,6 +391,13 @@ func chatAsMessages(body []byte, m claude) (out []byte, hide bool, err error) {
 		default:
 			return nil, false, errUntranslated
 		}
+		if forced && m.Unforced {
+			return nil, false, &apiError{
+				status: http.StatusBadRequest,
+				code:   codeInvalidRequestError,
+				msg:    fmt.Sprintf("%s does not support forced tool_choice", m.ID),
+			}
+		}
 		if in.Parallel != nil && !*in.Parallel && choice["type"] != "none" {
 			if choice["type"] == nil {
 				choice["type"] = "auto"
@@ -465,9 +474,15 @@ func chatAsMessages(body []byte, m claude) (out []byte, hide bool, err error) {
 	}
 
 	// ── sampling ──
-	// The models that think only adaptively take no sampling parameter, and none
-	// does while it thinks. The vendor's temperature runs to 1, and it takes a
-	// temperature or a top_p, not both.
+	// Some models (e.g. Fable 5.2) reject sampling parameters outright rather than
+	// dropping them; others that think adaptively accept them only when off.
+	if m.RejectSampling && (in.Temperature != nil || in.TopP != nil || in.TopK != nil) {
+		return nil, false, &apiError{
+			status: http.StatusBadRequest,
+			code:   codeInvalidRequestError,
+			msg:    fmt.Sprintf("%s does not support temperature, top_p, or top_k sampling parameters", m.ID),
+		}
+	}
 	if _, thinks := req["thinking"]; m.Budget && !thinks {
 		switch {
 		case in.Temperature != nil:

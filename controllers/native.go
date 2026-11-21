@@ -369,6 +369,17 @@ type claude struct {
 	// Vision is whether it reads images, and Schema whether an answer can be held
 	// to a JSON schema.
 	Vision, Schema bool
+
+	RetentionDays  int
+	ZeroRetention  bool
+	Unforced       bool
+	RejectSampling bool
+	ThinkingFamily string
+	ContextWindow  int
+	MaxOutput      int
+	Effort         bool
+	MaxEffort      bool
+	XHigh          bool
 }
 
 // efforts are the effort levels a model may list, least first.
@@ -460,6 +471,7 @@ func (n *native) read(ctx context.Context, base string, a object.Account) (map[s
 					m.Efforts[e] = true
 				}
 			}
+			applyClaudeDefaults(&m)
 			out[id] = m
 			parts := dated.FindStringSubmatch(id)
 			if parts == nil {
@@ -536,7 +548,7 @@ func (n *native) send(ctx context.Context, c nativeCall) (*http.Response, []miss
 		if !ok || cooling(a.Key, false) {
 			continue
 		}
-		body, hide, err := n.shape(c, m)
+		body, hide, err := n.shape(ctx, c, m)
 		if err != nil {
 			// Not the maker's to answer on any key.
 			return nil, missed
@@ -633,7 +645,11 @@ func (n *native) betas(c nativeCall) []string {
 // to the vendor's dialect, or a body that already speaks it, asked to cache its
 // prompt like any other the platform sends a Claude model. hide says the caller
 // asked for the model's reasoning not to be written out.
-func (n *native) shape(c nativeCall, m claude) (body []byte, hide bool, err error) {
+func (n *native) shape(ctx context.Context, c nativeCall, m claude) (body []byte, hide bool, err error) {
+	applyClaudeDefaults(&m)
+	if err := validateClaudeRequest(c.sku, c.path, c.body, m, ZDRFromContext(ctx), false, false); err != nil {
+		return nil, false, err
+	}
 	if n.chat {
 		return chatBody(c, m)
 	}
@@ -643,12 +659,16 @@ func (n *native) shape(c nativeCall, m claude) (body []byte, hide bool, err erro
 	if c.path != "messages" {
 		return nil, false, errUntranslated
 	}
+	cleaned, err := stripThinkingBlocksOnSwitch(ctx, c.body, m.ID)
+	if err != nil {
+		return nil, false, err
+	}
 	var in map[string]json.RawMessage
-	if json.Unmarshal(c.body, &in) != nil || in == nil {
+	if json.Unmarshal(cleaned, &in) != nil || in == nil {
 		return nil, false, errUntranslated
 	}
 	in["model"], _ = json.Marshal(m.ID)
-	if !bytes.Contains(c.body, []byte(`"cache_control"`)) {
+	if !bytes.Contains(cleaned, []byte(`"cache_control"`)) {
 		in["cache_control"] = ephemeral
 	}
 	if body, err = json.Marshal(in); err != nil {
@@ -746,6 +766,12 @@ func (n *native) answer(resp *http.Response, c nativeCall, m claude, a object.Ac
 	h.Set(keyHeader, a.Name)
 	if len(missed) > 0 {
 		h.Set(failoverHeader, chain(missed))
+	}
+	if v := strings.TrimSpace(resp.Header.Get(runtimeDigestHeader)); v != "" {
+		h.Set(runtimeDigestHeader, v)
+	}
+	if v := strings.TrimSpace(resp.Header.Get(cacheConnectorHeader)); v != "" {
+		h.Set(cacheConnectorHeader, v)
 	}
 	out := &http.Response{
 		Status:     resp.Status,
@@ -879,4 +905,385 @@ func (t *tap) finish() {
 		t.ended = true
 		t.end(t.used, t.final, t.wrote)
 	}
+}
+
+const (
+	zdrHeader                 = "X-Hanzo-ZDR"
+	zdrAuthorizedHeader       = "X-Hanzo-ZDR-Authorized"
+	priorModelHeader          = "X-Hanzo-Prior-Model"
+	priorThinkingFamilyHeader = "X-Hanzo-Thinking-Family"
+	resetThinkingHeader       = "X-Hanzo-Thinking-Reset"
+	codeRetentionIncompatible = "retention_incompatible"
+	codeInvalidRequestError   = "invalid_request_error"
+)
+
+type (
+	zdrCtxKey            struct{}
+	thinkingSwitchCtxKey struct{}
+)
+
+type thinkingSwitchState struct {
+	reset       bool
+	priorFamily string
+}
+
+// WantsZDR reports whether X-Hanzo-ZDR requests zero data retention ("1" or "true").
+func WantsZDR(v string) bool {
+	s := strings.ToLower(strings.TrimSpace(v))
+	return s == "1" || s == "true"
+}
+
+func zdrAuthorized(v string) bool {
+	s := strings.ToLower(strings.TrimSpace(v))
+	return s == "1" || s == "true"
+}
+
+// WithZDR attaches whether ZDR is active on ctx.
+func WithZDR(ctx context.Context, zdr bool) context.Context {
+	if !zdr {
+		return ctx
+	}
+	return context.WithValue(ctx, zdrCtxKey{}, true)
+}
+
+// ZDRFromContext reports whether zero data retention is active on ctx.
+func ZDRFromContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v, _ := ctx.Value(zdrCtxKey{}).(bool)
+	return v
+}
+
+// WithPriorModel records a prior conversation model on ctx to detect ThinkingFamily switches.
+func WithPriorModel(ctx context.Context, priorModel string) context.Context {
+	if pf := thinkingFamilyFor(priorModel); pf != "" {
+		return WithPriorThinkingFamily(ctx, pf)
+	}
+	return ctx
+}
+
+// WithPriorThinkingFamily records the conversation's prior ThinkingFamily on ctx.
+func WithPriorThinkingFamily(ctx context.Context, family string) context.Context {
+	f := strings.ToLower(strings.TrimSpace(family))
+	if f == "" {
+		return ctx
+	}
+	st, _ := ctx.Value(thinkingSwitchCtxKey{}).(thinkingSwitchState)
+	st.priorFamily = f
+	return context.WithValue(ctx, thinkingSwitchCtxKey{}, st)
+}
+
+// WithThinkingReset marks that prior assistant thinking blocks must be stripped on ctx.
+func WithThinkingReset(ctx context.Context, reset bool) context.Context {
+	if !reset {
+		return ctx
+	}
+	st, _ := ctx.Value(thinkingSwitchCtxKey{}).(thinkingSwitchState)
+	st.reset = true
+	return context.WithValue(ctx, thinkingSwitchCtxKey{}, st)
+}
+
+func thinkingSwitchFromContext(ctx context.Context) thinkingSwitchState {
+	if ctx == nil {
+		return thinkingSwitchState{}
+	}
+	st, _ := ctx.Value(thinkingSwitchCtxKey{}).(thinkingSwitchState)
+	return st
+}
+
+var (
+	sessionThinkingMu sync.Mutex
+	sessionThinking   = map[string]string{}
+)
+
+func lastSessionThinkingFamily(session string) string {
+	if session == "" {
+		return ""
+	}
+	sessionThinkingMu.Lock()
+	defer sessionThinkingMu.Unlock()
+	return sessionThinking[session]
+}
+
+func setSessionThinkingFamily(session, family string) {
+	if session == "" || family == "" {
+		return
+	}
+	sessionThinkingMu.Lock()
+	if len(sessionThinking) >= 4096 {
+		clear(sessionThinking)
+	}
+	sessionThinking[session] = family
+	sessionThinkingMu.Unlock()
+}
+
+func isFable52Model(id string) bool {
+	s := strings.ToLower(strings.TrimSpace(id))
+	s = strings.TrimPrefix(s, "anthropic/")
+	s = strings.ReplaceAll(s, ".", "-")
+	return s == "claude-fable-5-2" || strings.HasPrefix(s, "claude-fable-5-2-")
+}
+
+func thinkingFamilyFor(model string) string {
+	s := strings.ToLower(strings.TrimSpace(model))
+	if s == "" {
+		return ""
+	}
+	if mapped, ok := openrouterAliases[s]; ok {
+		s = strings.ToLower(mapped)
+	}
+	if _, rest, ok := strings.Cut(s, "/"); ok && rest != "" {
+		s = rest
+	}
+	s = dated.ReplaceAllString(s, "")
+	if isFable52Model(s) {
+		return "fable-5.2"
+	}
+	s = strings.ReplaceAll(s, ".", "-")
+	if rest, ok := strings.CutPrefix(s, "claude-"); ok {
+		if strings.HasPrefix(rest, "fable-5-1") {
+			return "fable-5.1"
+		}
+		// Normalize trailing -M-N version digits (e.g., opus-4-6 -> opus-4.6)
+		parts := strings.Split(rest, "-")
+		if n := len(parts); n >= 3 && isAllDigits(parts[n-1]) && isAllDigits(parts[n-2]) {
+			return strings.Join(parts[:n-2], "-") + "-" + parts[n-2] + "." + parts[n-1]
+		}
+		return rest
+	}
+	return s
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func applyClaudeDefaults(m *claude) {
+	if m == nil {
+		return
+	}
+	if m.Efforts == nil {
+		m.Efforts = map[string]bool{}
+	}
+	if isFable52Model(m.ID) {
+		m.RetentionDays = 30
+		m.ZeroRetention = false
+		m.Unforced = true
+		m.RejectSampling = true
+		m.ThinkingFamily = "fable-5.2"
+		m.Adaptive = true
+		m.Budget = false
+		m.Effort = true
+		m.MaxEffort = true
+		m.XHigh = true
+		m.ContextWindow = 1_000_000
+		m.MaxOutput = 128_000
+		if m.Out == 0 {
+			m.Out = 128_000
+		}
+		for _, e := range []string{"low", "medium", "high", "xhigh", "max"} {
+			m.Efforts[e] = true
+		}
+		return
+	}
+	m.ZeroRetention = true
+	if m.ThinkingFamily == "" {
+		m.ThinkingFamily = thinkingFamilyFor(m.ID)
+	}
+	if m.MaxOutput == 0 && m.Out > 0 {
+		m.MaxOutput = m.Out
+	}
+	m.Effort = m.Effort || m.Efforts["low"] || m.Efforts["medium"] || m.Efforts["high"]
+	m.MaxEffort = m.MaxEffort || m.Efforts["max"]
+	m.XHigh = m.XHigh || m.Efforts["xhigh"]
+}
+
+func claudeCapabilities(model string) claude {
+	m := claude{ID: CanonicalModel(model)}
+	if m.ID == "" {
+		m.ID = strings.ToLower(strings.TrimSpace(model))
+	}
+	applyClaudeDefaults(&m)
+	return m
+}
+
+func validateClaudeRequest(model, path string, body []byte, caps claude, zdr, byo, authZDR bool) error {
+	if zdr && !caps.ZeroRetention && !(byo && authZDR) {
+		msg := fmt.Sprintf("%s retains data for %d days and is incompatible with zero data retention (X-Hanzo-ZDR)", model, caps.RetentionDays)
+		if caps.RetentionDays <= 0 {
+			msg = fmt.Sprintf("%s is incompatible with zero data retention (X-Hanzo-ZDR)", model)
+		}
+		return &apiError{status: http.StatusForbidden, code: codeRetentionIncompatible, msg: msg}
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(body, &fields) != nil || fields == nil {
+		return nil
+	}
+	if caps.Unforced && hasForcedToolChoice(fields["tool_choice"]) {
+		return &apiError{
+			status: http.StatusBadRequest,
+			code:   codeInvalidRequestError,
+			msg:    fmt.Sprintf("%s does not support forced tool_choice", model),
+		}
+	}
+	if caps.RejectSampling && (hasExplicitParam(fields, "temperature") || hasExplicitParam(fields, "top_p") || hasExplicitParam(fields, "top_k")) {
+		return &apiError{
+			status: http.StatusBadRequest,
+			code:   codeInvalidRequestError,
+			msg:    fmt.Sprintf("%s does not support temperature, top_p, or top_k sampling parameters", model),
+		}
+	}
+	return nil
+}
+
+func hasExplicitParam(fields map[string]json.RawMessage, key string) bool {
+	for k, v := range fields {
+		if strings.EqualFold(k, key) {
+			s := strings.TrimSpace(string(v))
+			return s != "" && s != "null"
+		}
+	}
+	return false
+}
+
+func hasForcedToolChoice(raw json.RawMessage) bool {
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "null" {
+		return false
+	}
+	var word string
+	if json.Unmarshal(raw, &word) == nil {
+		switch strings.ToLower(strings.TrimSpace(word)) {
+		case "", "auto", "none":
+			return false
+		default:
+			return true
+		}
+	}
+	var obj struct {
+		Type     string `json:"type"`
+		Name     string `json:"name"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if json.Unmarshal(raw, &obj) == nil {
+		t := strings.ToLower(strings.TrimSpace(obj.Type))
+		switch t {
+		case "auto", "none":
+			return false
+		case "any", "tool", "required", "function":
+			return true
+		}
+		return obj.Name != "" || obj.Function.Name != ""
+	}
+	return false
+}
+
+// stripThinkingBlocksOnSwitch strips prior assistant thinking and redacted_thinking
+// blocks when a conversation switches ThinkingFamily (via context headers, session
+// state, or per-message model/thinking_family annotations), preserving text and
+// tool_use blocks. Bytes are returned unchanged when no switch applies.
+func stripThinkingBlocksOnSwitch(ctx context.Context, body []byte, targetModel string) ([]byte, error) {
+	targetFamily := thinkingFamilyFor(targetModel)
+	st := thinkingSwitchFromContext(ctx)
+	globalSwitch := st.reset || (st.priorFamily != "" && targetFamily != "" && st.priorFamily != targetFamily)
+	session := object.GenAIAttributionFromContext(ctx).Session
+	if !globalSwitch && session != "" && targetFamily != "" {
+		if prev := lastSessionThinkingFamily(session); prev != "" && prev != targetFamily {
+			globalSwitch = true
+		}
+	}
+	defer func() {
+		if session != "" && targetFamily != "" {
+			setSessionThinkingFamily(session, targetFamily)
+		}
+	}()
+
+	var top map[string]json.RawMessage
+	if json.Unmarshal(body, &top) != nil || top == nil {
+		return body, nil
+	}
+	rawMsgs, ok := top["messages"]
+	if !ok {
+		return body, nil
+	}
+	var msgs []map[string]json.RawMessage
+	if json.Unmarshal(rawMsgs, &msgs) != nil || len(msgs) == 0 {
+		return body, nil
+	}
+
+	modified := false
+	for _, msg := range msgs {
+		var role string
+		_ = json.Unmarshal(msg["role"], &role)
+		turnSwitch := false
+		if tfRaw, hasTF := msg["thinking_family"]; hasTF {
+			var tf string
+			if json.Unmarshal(tfRaw, &tf) == nil && tf != "" && targetFamily != "" && !strings.EqualFold(strings.TrimSpace(tf), targetFamily) {
+				turnSwitch = true
+			}
+			delete(msg, "thinking_family")
+			modified = true
+		}
+		if mRaw, hasM := msg["model"]; hasM {
+			var pm string
+			if json.Unmarshal(mRaw, &pm) == nil {
+				if pf := thinkingFamilyFor(pm); pf != "" && targetFamily != "" && pf != targetFamily {
+					turnSwitch = true
+				}
+			}
+			delete(msg, "model")
+			modified = true
+		}
+		if !strings.EqualFold(role, "assistant") || (!globalSwitch && !turnSwitch) {
+			continue
+		}
+		var blocks []map[string]json.RawMessage
+		if json.Unmarshal(msg["content"], &blocks) != nil || len(blocks) == 0 {
+			continue
+		}
+		kept := make([]map[string]json.RawMessage, 0, len(blocks))
+		removed := false
+		for _, b := range blocks {
+			var bType string
+			_ = json.Unmarshal(b["type"], &bType)
+			if bType == "thinking" || bType == "redacted_thinking" {
+				removed = true
+				continue
+			}
+			kept = append(kept, b)
+		}
+		if removed {
+			if encoded, err := encode(kept); err == nil {
+				msg["content"] = encoded
+				modified = true
+			}
+		}
+	}
+	if !modified {
+		return body, nil
+	}
+	encodedMsgs, err := encode(msgs)
+	if err != nil {
+		return body, nil
+	}
+	top["messages"] = encodedMsgs
+	out, err := encode(top)
+	if err != nil {
+		return body, nil
+	}
+	return out, nil
 }

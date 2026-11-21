@@ -549,6 +549,8 @@ func (c *ApiController) forward(p pass) bool {
 func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, resp *http.Response, whole []byte, snap snapshot) bool {
 	sku := p.req.Model
 	mk := &mark{id: "chatcmpl-" + p.id, model: sku, seller: seller(row, p.user), lift: liftFor(p.body, cand.upstream, c.strictAsked())}
+	rd := strings.TrimSpace(resp.Header.Get(runtimeDigestHeader))
+	cc := strings.TrimSpace(resp.Header.Get(cacheConnectorHeader))
 
 	// settle runs where the answer is finished — for a stream, inside its writer — so
 	// it reads the snapshot and p, and never the controller.
@@ -566,6 +568,8 @@ func (c *ApiController) deliver(p pass, cand candidate, row *object.Provider, re
 				Model:            sku,
 				Provider:         cand.provider,
 				Origin:           originOf(row, mk),
+				RuntimeDigest:    rd,
+				CacheConnector:   cc,
 				CostNanoExact:    mk.cogs(),
 				PromptTokens:     t.prompt(),
 				CacheReadTokens:  t.cached,

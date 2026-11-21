@@ -112,6 +112,15 @@ func setKinds(c *zip.Ctx, l kinds) {
 	c.SetContext(context.WithValue(c.Context(), kindsKey{}, l))
 }
 
+// SetZDR marks zero-data-retention active on c's Locals and Request context.
+func SetZDR(c *zip.Ctx, zdr bool) {
+	if c == nil || !zdr {
+		return
+	}
+	c.Locals(zdrCtxKey{}, true)
+	c.SetContext(WithZDR(c.Context(), true))
+}
+
 // kindsOn is what the gate marked on ctx; unmarked, free, ours.
 func kindsOn(ctx context.Context) kinds {
 	if ctx != nil {

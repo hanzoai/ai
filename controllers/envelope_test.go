@@ -318,12 +318,26 @@ func TestARefusalIsPrunedWithoutBeingGutted(t *testing.T) {
 		t.Errorf("type = %q, want it kept", got)
 	}
 
-	// The upstream status must not come back inside the body after the status line
-	// declined to say it. 402 tells the customer THEY owe money; our account is the
-	// empty one.
-	if raw, ok := refusal["code"]; ok {
-		t.Errorf("code = %s — a numeric code restates the upstream HTTP status, and this "+
-			"one bills the customer for our empty vendor account", raw)
+	// Numeric 402 must not come back as raw 402 inside the body; it maps to
+	// structured budget_exhausted on upstream_provider, while other numeric codes
+	// are removed.
+	if got := field(t, refusal, "code"); got != "budget_exhausted" {
+		t.Errorf("code = %q, want budget_exhausted", got)
+	}
+	if got := field(t, refusal, "layer"); got != "upstream_provider" {
+		t.Errorf("layer = %q, want upstream_provider", got)
+	}
+
+	otherNumeric := mk.stamp([]byte(`{"error":{"message":"Upstream bad gateway.","type":"api_error","code":502}}`))
+	if err := json.Unmarshal(otherNumeric, &env); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+	otherMap := map[string]json.RawMessage{}
+	if err := json.Unmarshal(env["error"], &otherMap); err != nil {
+		t.Fatalf("error unreadable: %v", err)
+	}
+	if raw, ok := otherMap["code"]; ok {
+		t.Errorf("numeric non-402 code = %s, want deleted", raw)
 	}
 
 	// A string code is a machine-readable diagnostic in our own schema and stays.

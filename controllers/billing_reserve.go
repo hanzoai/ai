@@ -256,11 +256,19 @@ func mostOut(model string) int {
 			return f.MaxOut
 		}
 		if mc == nil {
+			if p, ok := staticModelPrice(m); ok && p.MaxOutput > 0 {
+				return p.MaxOutput
+			}
 			return 0
 		}
 		n, next := mc.outStep(m)
 		if n > 0 {
 			return n
+		}
+		if next == "" {
+			if p, ok := staticModelPrice(m); ok && p.MaxOutput > 0 {
+				return p.MaxOutput
+			}
 		}
 		m = next
 	}
