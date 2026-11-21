@@ -152,7 +152,7 @@ func gateway(router http.Handler) zap.Handler {
 
 		switch {
 		case path == "/v1/chat" || path == "/v1/chat/completions" || path == "/v1/completions":
-			return zapChatHandler(ctx, auth, body)
+			return asGateway(zapChatHandler(ctx, auth, body))
 		case path == "/v1/models":
 			// R-04: require auth for model listing
 			if auth == "" {
@@ -166,9 +166,9 @@ func gateway(router http.Handler) zap.Handler {
 				return object.BuildGatewayResponse(401, errBody, nil)
 			}
 			q, _ := url.ParseQuery(query)
-			return zapListModelsHandler(q.Get("id"))
+			return asGateway(zapListModelsHandler(q.Get("id")))
 		case strings.HasPrefix(path, "/v1/balance"):
-			return zapBalanceHandler(auth)
+			return asGateway(zapBalanceHandler(auth))
 		}
 		// Migrated route-groups self-register their gateway path prefixes into the
 		// dispatch registry (zap_registry.go). A miss is not a hole: the same request
@@ -180,6 +180,22 @@ func gateway(router http.Handler) zap.Handler {
 		errBody, _ := json.Marshal(map[string]string{"error": "not found: " + path})
 		return object.BuildGatewayResponse(404, errBody, nil)
 	}
+}
+
+// asGateway answers a gateway (MsgType 200) request with the reply of a handler
+// that frames for the native cloud service (MsgType 100): the status and body
+// carry over, and an error text becomes the {"error": ...} body every other
+// gateway refusal has.
+func asGateway(reply *zap.Message, err error) (*zap.Message, error) {
+	if err != nil || reply == nil {
+		return reply, err
+	}
+	root := reply.Root()
+	body := root.Bytes(object.CloudRespBody)
+	if text := root.Text(object.CloudRespError); text != "" && len(body) == 0 {
+		body, _ = json.Marshal(map[string]string{"error": text})
+	}
+	return object.BuildGatewayResponse(root.Uint32(object.CloudRespStatus), body, nil)
 }
 
 // dispatchGateway routes an HTTP-over-ZAP request to a migrated group's native

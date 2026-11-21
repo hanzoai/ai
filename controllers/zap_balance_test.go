@@ -95,13 +95,14 @@ func TestBalanceIsTheCallersOwn(t *testing.T) {
 		body := `{"user":"` + target + `"}`
 
 		cases := []struct {
-			name string
-			call func() (*zap.Message, error)
+			name    string
+			gateway bool
+			call    func() (*zap.Message, error)
 		}{
-			{"native balance", func() (*zap.Message, error) {
+			{"native balance", false, func() (*zap.Message, error) {
 				return handleCloudService(context.Background(), "peer", cloudCall(t, "balance", auth, body))
 			}},
-			{"gateway /v1/balance", func() (*zap.Message, error) {
+			{"gateway /v1/balance", true, func() (*zap.Message, error) {
 				return gateway(nil)(context.Background(), "gw", gatewayGet(t, "/v1/balance",
 					url.Values{"user": {target}}.Encode(),
 					map[string]string{"Authorization": auth, "X-User-Id": target, "X-Org-Id": who.target.Owner},
@@ -117,7 +118,14 @@ func TestBalanceIsTheCallersOwn(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s as %s: %v", tc.name, own, err)
 			}
-			status, data, errText := antDecodeCloud(t, msg)
+			var status uint32
+			var data []byte
+			var errText string
+			if tc.gateway {
+				status, data = antDecodeGateway(t, msg)
+			} else {
+				status, data, errText = antDecodeCloud(t, msg)
+			}
 			if status != 200 {
 				t.Fatalf("%s as %s: status %d (%s), want 200", tc.name, own, status, errText)
 			}
