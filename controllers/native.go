@@ -60,6 +60,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -717,13 +718,27 @@ func unfunded(status int, kind, message string) bool {
 }
 
 // retryAfter is the wait a refusal states in seconds, or 0.
+// It honors Retry-After up to ~60s (nativeBusy) with +/-20% jitter;
+// never sleeps longer.
 func retryAfter(h http.Header) time.Duration {
 	if s, err := strconv.ParseFloat(strings.TrimSpace(h.Get("Retry-After")), 64); err == nil && s > 0 {
-		return time.Duration(s * float64(time.Second))
+		d := time.Duration(s * float64(time.Second))
+		if d > nativeBusy {
+			d = nativeBusy
+		}
+		// Add +/-20% jitter.
+		jitter := time.Duration(rand.Float64()*0.4 - 0.2) * d
+		d += jitter
+		if d < 0 {
+			d = 0
+		}
+		if d > nativeBusy {
+			d = nativeBusy
+		}
+		return d
 	}
 	return 0
 }
-
 // chain writes arms a request could not use as a family states them
 // (failoverHeader), so arms reads them back.
 func chain(missed []miss) string {
