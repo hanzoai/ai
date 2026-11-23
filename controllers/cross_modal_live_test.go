@@ -39,10 +39,9 @@ import (
 //	chain 3: /v1/images/generations → /v1/videos/generations → poll → /content
 //
 // and fails with the exact status code and response payload of the hop that
-// broke. It is skipped unless HANZO_API_KEY is set, so CI never runs it and no
-// key leaks into logs (only sizes, media types and artifact shapes are printed):
+// broke. It is skipped unless both HANZO_API_KEY is set and HANZO_LIVE_TESTS=1:
 //
-//	HANZO_API_KEY=sk-… go test ./controllers/ -run TestCrossModalChainsLive -v -timeout 420s
+//	HANZO_LIVE_TESTS=1 HANZO_API_KEY=sk-… go test ./controllers/ -run TestCrossModalChainsLive -v -timeout 420s
 //
 // Model names default to the zen family each endpoint serves and are overridable
 // per stage: HANZO_CHAT_MODEL (zen3-nano), HANZO_VISION_MODEL (zen3-vl),
@@ -50,9 +49,12 @@ import (
 // HANZO_TTS_MODEL (zen-voice-mini), HANZO_STT_MODEL (zen-scribe). The gateway
 // base is HANZO_BASE_URL, default https://api.hanzo.ai/v1.
 func TestCrossModalChainsLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live cross-modal harness: set HANZO_LIVE_TESTS=1 and HANZO_API_KEY to run")
+	}
 	key := os.Getenv("HANZO_API_KEY")
-	if key == "" {
-		t.Skip("HANZO_API_KEY not set — skipping the live cross-modal chain harness")
+	if key == "" || os.Getenv("HANZO_LIVE_TESTS") != "1" {
+		t.Skip("live cross-modal harness: set HANZO_LIVE_TESTS=1 and HANZO_API_KEY to run")
 	}
 	base := strings.TrimSuffix(os.Getenv("HANZO_BASE_URL"), "/")
 	if base == "" {

@@ -94,6 +94,15 @@ go test -v $(go list ./...) -tags skipCi
 cd web && yarn test
 ```
 
+### Live cross-modal tests
+
+`controllers/cross_modal_live_test.go` hits api.hanzo.ai (images, audio, video) and is
+skipped by default. Run it only with an explicit opt-in:
+
+```bash
+HANZO_LIVE_TESTS=1 HANZO_API_KEY=sk-… go test ./controllers/ -run TestCrossModalChainsLive -v -timeout 420s
+```
+
 ## Linting
 
 ```bash
