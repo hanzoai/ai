@@ -891,7 +891,7 @@ func mapPlanToTier(plan string) Tier {
 		return TierZenPro
 	case "zen-team", "team":
 		return TierZenTeam
-	case "zen-enterprise", "enterprise", "scale":
+	case "zen-enterprise", "enterprise", "scale", "unlimited":
 		return TierZenEnterprise
 	case "zen-custom", "custom":
 		return TierZenCustom
