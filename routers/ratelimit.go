@@ -804,7 +804,12 @@ func (tc *TierCache) cleanupLoop() {
 
 // commerceTierResponse mirrors the JSON shape of GET /v1/billing/tier
 // (commerce api/billing/tier.go GetTier): the plan name lives at tier.name.
+// subscription.planName is preferred when present (the plan the customer actually
+// subscribed to); tier.name is a legacy fallback.
 type commerceTierResponse struct {
+	Subscription struct {
+		PlanName string `json:"planName"`
+	} `json:"subscription"`
 	Tier struct {
 		Name string `json:"name"`
 	} `json:"tier"`
@@ -878,7 +883,11 @@ func (tc *TierCache) commerceTierLookup(orgKey string) (Tier, error) {
 		return TierZenFree, fmt.Errorf("decode response: %w", err)
 	}
 
-	return mapPlanToTier(tierResp.Tier.Name), nil
+	plan := tierResp.Subscription.PlanName
+	if plan == "" {
+		plan = tierResp.Tier.Name
+	}
+	return mapPlanToTier(plan), nil
 }
 
 // mapPlanToTier converts a Commerce plan name or legacy tier name to a
