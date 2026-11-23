@@ -100,7 +100,7 @@ func TestTierFallsBackToTheEdgeWithoutAReader(t *testing.T) {
 // Both transports name a tier the same way, or the same customer is two speeds
 // depending on how the binary happens to be deployed.
 func TestBothTransportsNameATierTheSameWay(t *testing.T) {
-	for _, plan := range []string{"free", "pro", "team", "enterprise", "custom", "starter", "scale", "nonsense"} {
+	for _, plan := range []string{"free", "pro", "team", "enterprise", "custom", "starter", "scale", "unlimited", "nonsense"} {
 		object.SetTierReader(func(_ context.Context, _, _ string) (string, error) { return plan, nil })
 		native, err := (&TierCache{}).commerceTierLookup("acme")
 		object.SetTierReader(nil)

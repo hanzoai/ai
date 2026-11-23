@@ -117,3 +117,49 @@ func TestCommerceTierLookupFailOpen(t *testing.T) {
 		t.Errorf("tier = %q, want %q (fail-open)", tier, TierZenFree)
 	}
 }
+
+// TestCommerceTierLookupPlanOverTierName verifies that subscription.planName
+// is preferred over tier.name when both are present.
+func TestCommerceTierLookupPlanOverTierName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("user") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		// Both subscription.planName and tier.name present — planName should win.
+		_, _ = w.Write([]byte(`{"tier":{"name":"free"},"subscription":{"planName":"pro"}}`))
+	}))
+	defer srv.Close()
+
+	tc := newTestTierCache(srv.URL)
+	tier, err := tc.commerceTierLookup("acme")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tier != TierZenPro {
+		t.Errorf("tier = %q, want %q (subscription.planName=pro should win over tier.name=free)", tier, TierZenPro)
+	}
+}
+
+// TestCommerceTierLookupUnlimitedPlan verifies that "unlimited" plan maps to TierZenEnterprise.
+func TestCommerceTierLookupUnlimitedPlan(t *testing.T) {
+	for _, plan := range []string{"unlimited", "UNLIMITED", "Unlimited"} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("user") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`{"tier":{"name":"` + plan + `"}}`))
+		}))
+		defer srv.Close()
+
+		tc := newTestTierCache(srv.URL)
+		tier, err := tc.commerceTierLookup("acme")
+		if err != nil {
+			t.Fatalf("plan %q: unexpected error: %v", plan, err)
+		}
+		if tier != TierZenEnterprise {
+			t.Errorf("plan %q: tier = %q, want %q", plan, tier, TierZenEnterprise)
+		}
+	}
+}

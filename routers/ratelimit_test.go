@@ -267,6 +267,9 @@ func TestMapPlanToTier(t *testing.T) {
 		{"team", TierZenTeam},
 		{"enterprise", TierZenEnterprise},
 		{"scale", TierZenEnterprise},
+		{"unlimited", TierZenEnterprise},
+		{"UNLIMITED", TierZenEnterprise},
+		{"Unlimited", TierZenEnterprise},
 		{"custom", TierZenCustom},
 		// Case insensitivity
 		{"ZEN-PRO", TierZenPro},
