@@ -324,6 +324,24 @@ func (f *modelFamily) ring(p *object.Provider) []string {
 	return nil
 }
 
+// sendDirect issues r using one explicit tenant-override key (per-org or per-user),
+// bypassing the platform key ring and drained/cooldown state so a tenant's own funded
+// OpenRouter key serves even when every platform key is drained.
+func (f *modelFamily) sendDirect(r *http.Request, p *object.Provider, stream bool) (*http.Response, error) {
+	do := zenPipeClient.Do
+	if stream {
+		do = func(r *http.Request) (*http.Response, error) {
+			resp, err := zenPipeClient.Do(r)
+			if err != nil {
+				return nil, err
+			}
+			return opening(resp), nil
+		}
+	}
+	upstream.Authorize(r, p)
+	return do(r)
+}
+
 // send issues r to the family's upstream. free says the route is one the vendor
 // charges nothing for. A streamed request is judged by its opening frames on each
 // key (family_open.go), so a refusal that arrives inside a 200 stream moves to the
