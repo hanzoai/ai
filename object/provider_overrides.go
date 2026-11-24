@@ -24,6 +24,7 @@ package object
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -184,4 +185,99 @@ func ResolveTenantProviderKey(org, userOrg, user, provider string) (key string, 
 		}
 	}
 	return "", ""
+}
+
+// LinkedComputeOverride holds a tenant's KMS-sealed private compute endpoint
+// (URL, API key, and optional target model) forwarded exclusively to first-party
+// Hanzo model families (Enso / Zen).
+type LinkedComputeOverride struct {
+	URL   string `json:"url"`
+	Key   string `json:"key"`
+	Model string `json:"model"`
+}
+
+// Empty reports whether no linked-compute URL is configured.
+func (l LinkedComputeOverride) Empty() bool {
+	return strings.TrimSpace(l.URL) == ""
+}
+
+// OrgLinkedComputeRef returns the canonical KMS secret ref for an organization's
+// linked-compute field ("url", "key", "model", or "default"), or "" if invalid.
+func OrgLinkedComputeRef(org, field string) string {
+	o := cleanOverrideSegment(org)
+	f := cleanOverrideSegment(strings.ToLower(field))
+	if o == "" || f == "" {
+		return ""
+	}
+	return "orgs/" + o + "/linked-compute/" + f
+}
+
+// UserLinkedComputeRef returns the canonical KMS secret ref for a user's
+// linked-compute field inside org, or "" if invalid.
+func UserLinkedComputeRef(org, user, field string) string {
+	o := cleanOverrideSegment(org)
+	u := cleanOverrideUser(o, user)
+	f := cleanOverrideSegment(strings.ToLower(field))
+	if o == "" || u == "" || f == "" {
+		return ""
+	}
+	return "orgs/" + o + "/users/" + u + "/linked-compute/" + f
+}
+
+func readLinkedComputePrefix(refFn func(field string) string) (LinkedComputeOverride, bool) {
+	urlVal := readOverrideRef(refFn("url"))
+	keyVal := readOverrideRef(refFn("key"))
+	modelVal := readOverrideRef(refFn("model"))
+	if urlVal != "" {
+		return LinkedComputeOverride{
+			URL:   urlVal,
+			Key:   keyVal,
+			Model: modelVal,
+		}, true
+	}
+	if raw := readOverrideRef(refFn("default")); raw != "" {
+		var lc LinkedComputeOverride
+		if json.Unmarshal([]byte(raw), &lc) == nil {
+			lc.URL = strings.TrimSpace(lc.URL)
+			lc.Key = strings.TrimSpace(lc.Key)
+			lc.Model = strings.TrimSpace(lc.Model)
+			if lc.URL != "" {
+				return lc, true
+			}
+		}
+	}
+	return LinkedComputeOverride{}, false
+}
+
+// ResolveTenantLinkedCompute resolves the highest-priority linked-compute target
+// for (org, userOrg, user) from KMS:
+//
+//  1. Active-org user override: orgs/{org}/users/{user}/linked-compute/{url,key,model|default}
+//  2. Home-org user override (cross-org): orgs/{userOrg}/users/{user}/linked-compute/...
+//  3. Active-org override: orgs/{org}/linked-compute/...
+//
+// Returns (empty, "") when no linked compute is configured.
+func ResolveTenantLinkedCompute(org, userOrg, user string) (LinkedComputeOverride, string) {
+	if cleanOverrideSegment(org) != "" && cleanOverrideUser(org, user) != "" {
+		if lc, ok := readLinkedComputePrefix(func(f string) string {
+			return UserLinkedComputeRef(org, user, f)
+		}); ok {
+			return lc, "user"
+		}
+	}
+	if userOrg != "" && userOrg != org && cleanOverrideSegment(userOrg) != "" && cleanOverrideUser(userOrg, user) != "" {
+		if lc, ok := readLinkedComputePrefix(func(f string) string {
+			return UserLinkedComputeRef(userOrg, user, f)
+		}); ok {
+			return lc, "user"
+		}
+	}
+	if cleanOverrideSegment(org) != "" {
+		if lc, ok := readLinkedComputePrefix(func(f string) string {
+			return OrgLinkedComputeRef(org, f)
+		}); ok {
+			return lc, "org"
+		}
+	}
+	return LinkedComputeOverride{}, ""
 }

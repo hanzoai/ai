@@ -104,8 +104,23 @@ func registerAPI(app *zip.App) {
 	route(app, "/v1/chat/public", "POST:ChatCompletionsPublic")
 	// OpenAI Responses API — the native wire protocol used by current Codex.
 	// The controller adapts onto ChatCompletions so auth, routing, billing and
-	// failover remain one policy path.
+	// failover remain one policy path. GET /v1/responses/:id/stream replays
+	// buffered SSE frames after ?after_seq=N and tails live until [DONE].
 	route(app, "/v1/responses", "POST:Responses")
+	route(app, "/v1/responses/:id/stream", "GET:StreamResponse")
+
+	// Stateful 10M+ Thread DAG, O(1) branch fork/merge, fenced multi-agent
+	// handoffs, cross-account capability ACLs, and lossless cold chunk recall.
+	route(app, "/v1/threads", "POST:CreateThread")
+	route(app, "/v1/threads/:id", "GET:GetThread")
+	route(app, "/v1/threads/:id/append", "POST:AppendThread")
+	route(app, "/v1/threads/:id/fork", "POST:ForkThread")
+	route(app, "/v1/threads/:id/merge", "POST:MergeThread")
+	route(app, "/v1/threads/:id/handoff", "POST:HandoffThread")
+	route(app, "/v1/threads/:id/grants", "POST:AddThreadGrant")
+	route(app, "/v1/threads/:id/grants/:principal", "DELETE:DeleteThreadGrant")
+	route(app, "/v1/threads/:id/chunks/:chunkId", "GET:GetThreadChunk")
+	route(app, "/v1/threads/:id/search", "POST:SearchThreadChunks")
 	route(app, "/v1/models", "GET:ListModels")
 	// Who serves the catalog above — the same source, projected to a set of names.
 	// Public and secret-free like the listing itself. A literal segment, so it

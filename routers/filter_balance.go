@@ -1191,6 +1191,12 @@ func isBalanceExempt(path, method string) bool {
 	// 402 a $0-balance org either.
 	case path == "/v1/ai/router/stats" || path == "/v1/ai/router/history" || path == "/v1/ai/router/judge-panel":
 		return true
+	// Thread DAG management, handoffs, grants, chunk recall, and resumable stream
+	// replay do not invoke metered inference — each caller still authenticates and
+	// enforces thread ACLs in the handler, and actual inference on /v1/responses
+	// remains fully balance-gated on the executing caller's org/user.
+	case path == "/v1/threads" || strings.HasPrefix(path, "/v1/threads/"):
+		return true
 	default:
 		return false
 	}

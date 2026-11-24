@@ -783,7 +783,7 @@ func (n *native) answer(resp *http.Response, c nativeCall, m claude, a object.Ac
 		h.Set("Content-Type", "text/event-stream")
 		out.Body = &tap{ReadCloser: resp.Body, end: stated}
 	default:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
 		resp.Body.Close()
 		h.Set("Content-Type", "application/json")
 		if used, ok := answerUsage(body); ok {

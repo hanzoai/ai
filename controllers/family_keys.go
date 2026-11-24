@@ -392,7 +392,7 @@ func requestModel(r *http.Request) string {
 	var body struct {
 		Model string `json:"model"`
 	}
-	if json.NewDecoder(io.LimitReader(b, 64<<20)).Decode(&body) != nil {
+	if json.NewDecoder(io.LimitReader(b, 256<<20)).Decode(&body) != nil {
 		return ""
 	}
 	return body.Model
