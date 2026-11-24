@@ -1719,6 +1719,19 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	var made *http.Response
 	var madeBy *native
 
+	// Internal per-request provider API key override headers forwarded ONLY to
+	// first-party Hanzo families (Enso / Zen). Stripped before any external call.
+	const (
+		overrideOpenRouterHeader = "X-Hanzo-Override-OpenRouter"
+		overrideNvidiaHeader     = "X-Hanzo-Override-Nvidia"
+	)
+	var userOrg, userName string
+	if authUser != nil {
+		userOrg, userName = authUser.Owner, authUser.Name
+	}
+	overrideOR, _ := object.ResolveTenantProviderKey(org, userOrg, userName, object.ProviderOverrideOpenRouter)
+	overrideNV, _ := object.ResolveTenantProviderKey(org, userOrg, userName, object.ProviderOverrideNvidia)
+
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
 	// the request is the caller's own. That is what lets a route on a DIFFERENT
@@ -1772,6 +1785,18 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			r.Header.Del(spendHeader)
 			r.Header.Del("TE")
 		}
+		// Per-org / per-user OpenRouter and NVIDIA key overrides travel ONLY to
+		// first-party Hanzo families (Enso / Zen), never to third-party vendors.
+		r.Header.Del(overrideOpenRouterHeader)
+		r.Header.Del(overrideNvidiaHeader)
+		if hanzoFamily(f) && firstParty(p.ProviderUrl) {
+			if overrideOR != "" {
+				r.Header.Set(overrideOpenRouterHeader, overrideOR)
+			}
+			if overrideNV != "" {
+				r.Header.Set(overrideNvidiaHeader, overrideNV)
+			}
+		}
 		upstream.Authorize(r, p)
 		// The vendor is sent its own id for the SKU. An alias is ours, so it goes
 		// upstream as the SKU it names while the answer still wears the alias.
@@ -1792,15 +1817,18 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// And only the route the caller named: a route that stands in for another, or
 		// one out of the pool, is never a maker's, whatever it is priced at.
 		var missed []miss
-		if n := f.maker(s); n != nil && f == fam && s == model && !FreeOnlyFor(ctx) {
-			if price, listed := f.lookup(s); listed && price.priced() {
-				own, refused := n.send(ctx, nativeCall{path: apiPath, sku: f.sku(s), body: b, stream: stream || assemble,
-					version: version, betas: betas, price: price, start: start})
-				if own != nil {
-					made, madeBy = own, n
-					return own, nil
+		useOverrideOR := f == openrouterFam && overrideOR != ""
+		if !useOverrideOR {
+			if n := f.maker(s); n != nil && f == fam && s == model && !FreeOnlyFor(ctx) {
+				if price, listed := f.lookup(s); listed && price.priced() {
+					own, refused := n.send(ctx, nativeCall{path: apiPath, sku: f.sku(s), body: b, stream: stream || assemble,
+						version: version, betas: betas, price: price, start: start})
+					if own != nil {
+						made, madeBy = own, n
+						return own, nil
+					}
+					missed = refused
 				}
-				missed = refused
 			}
 		}
 		if f.terms != nil {
@@ -1814,8 +1842,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 		// Setting the body by hand without it silently drops that.
 		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
 		// A stream's 200 arrives before its answer; send judges its opening frames
-		// on each key (family_open.go).
-		resp, err := f.send(r, p, f.free(s), stream || assemble)
+		// on each key (family_open.go). When the tenant configured its own OpenRouter
+		// override key, send directly with that key (bypassing the platform key ring).
+		var resp *http.Response
+		var err error
+		if useOverrideOR {
+			resp, err = f.sendDirect(r, withKey(p, overrideOR), stream || assemble)
+		} else {
+			resp, err = f.send(r, p, f.free(s), stream || assemble)
+		}
 		// Each key of the maker's that refused first is on the books beside whatever
 		// this family answers, as a family's own failed arms are.
 		if resp != nil && len(missed) > 0 {

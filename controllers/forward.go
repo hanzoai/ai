@@ -169,6 +169,32 @@ func relays(p *object.Provider) bool {
 // recorded, and a route whose alternates are all of this kind ends at exhausted().
 var errUnrelayable = errors.New("provider speaks no OpenAI chat dialect")
 
+type overrideActorKey struct{}
+type overrideActor struct{ org, user string }
+
+func withOverrideActor(ctx context.Context, u *iam.User) context.Context {
+	if u == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, overrideActorKey{}, overrideActor{org: u.Owner, user: u.Name})
+}
+
+func providerOverrideSlug(p *object.Provider) string {
+	if p == nil {
+		return ""
+	}
+	name := strings.ToLower(strings.TrimSpace(p.Name))
+	typ := strings.ToLower(strings.TrimSpace(p.Type))
+	u := strings.ToLower(strings.TrimSpace(p.ProviderUrl))
+	if name == "openrouter" || typ == "openrouter" || strings.Contains(u, "openrouter.ai") {
+		return object.ProviderOverrideOpenRouter
+	}
+	if name == "nvidia" || typ == "nvidia" || strings.Contains(u, "nvidia.com") {
+		return object.ProviderOverrideNvidia
+	}
+	return ""
+}
+
 // dial sends one attempt to one provider: the row the candidate names, resolved for
 // the org the way callProvider resolves it — so a customer that connected its own
 // key spends its own key, on a fallback exactly as on the primary — and the body
@@ -192,6 +218,12 @@ var dial = func(ctx context.Context, org string, row *object.Provider, c candida
 	}
 	p := *row // copy: SubType is per request, and Azure addresses its deployment by it
 	p.SubType = c.upstream
+	if slug := providerOverrideSlug(&p); slug != "" {
+		actor, _ := ctx.Value(overrideActorKey{}).(overrideActor)
+		if key, _ := object.ResolveTenantProviderKey(org, actor.org, actor.user, slug); key != "" {
+			p.ClientSecret = key
+		}
+	}
 	if !relays(&p) {
 		return nil, &p, errUnrelayable
 	}
@@ -341,6 +373,7 @@ func declined(status int, body []byte) error {
 // begun (opening), or a buffered body read to its end. Anything else comes back as
 // the refusal it is, with nothing written — which is what keeps it movable.
 func (p pass) call(ctx context.Context, org string, row *object.Provider, c candidate, d draft) (resp *http.Response, whole []byte, used *object.Provider, err error) {
+	ctx = withOverrideActor(ctx, p.user)
 	body := func(u *object.Provider) []byte { return d.body(c.upstream, u) }
 	err = retryTransient(ctx, currentRetryPolicy(), func() error {
 		r, u, e := dial(ctx, org, row, c, body)
