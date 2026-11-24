@@ -72,8 +72,12 @@ const effortInstructions = "How much reasoning does a model need to answer this 
 // asked is what the router reads of a request: its classifier's input, and what
 // Kai is shown beside it.
 type asked struct {
-	req          router.Request
-	turns, tools int
+	req              router.Request
+	turns, tools     int
+	userTurns        int
+	frustration      int
+	toolErrors       int
+	toolContinuation bool
 }
 
 // routerAsk reads a request body in any dialect a router id is sent in (chat
@@ -109,7 +113,7 @@ func routerAsk(body []byte) asked {
 		}
 		text, media := partsOf(t.Content)
 		chars += len(text)
-		if !last && (t.Role == "" || t.Role == "user") {
+		if !last && (t.Role == "" || t.Role == "user") && (text != "" || media) {
 			a.req.Text, a.req.HasMedia, last = text, media, true
 		}
 	}
@@ -155,12 +159,25 @@ func effortQuestion(a asked, task string) []byte {
 	for k, v := range effortCriteria {
 		criteria[k] = v
 	}
+	state := map[string]any{
+		"request": text, "turns": a.turns, "tools": a.tools,
+		"tokens": a.req.ApproxTokens, "media": a.req.HasMedia, "task": task,
+	}
+	if a.userTurns > 0 {
+		state["user_turns"] = a.userTurns
+	}
+	if a.frustration > 0 {
+		state["frustration"] = a.frustration
+	}
+	if a.toolErrors > 0 {
+		state["tool_errors"] = a.toolErrors
+	}
+	if a.toolContinuation {
+		state["tool_continuation"] = true
+	}
 	b, _ := json.Marshal(map[string]any{
 		"model": "kai",
-		"state": map[string]any{
-			"request": text, "turns": a.turns, "tools": a.tools,
-			"tokens": a.req.ApproxTokens, "media": a.req.HasMedia, "task": task,
-		},
+		"state": state,
 		"questions": map[string]any{
 			"effort": map[string]any{"type": "choice", "instructions": effortInstructions, "criteria": criteria},
 		},
