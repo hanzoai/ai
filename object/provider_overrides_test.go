@@ -53,3 +53,50 @@ func TestResolveTenantProviderKeyPrecedence(t *testing.T) {
 		t.Fatalf("unsafe user ref = %q, want empty", ref)
 	}
 }
+
+func TestResolveTenantLinkedComputePrecedence(t *testing.T) {
+	store := &fakeStore{vals: map[string]string{
+		"orgs/acme/linked-compute/url":                "https://gpu.acme.internal/v1",
+		"orgs/acme/linked-compute/key":                "lc-acme-org-key",
+		"orgs/acme/linked-compute/model":              "zen5-10m",
+		"orgs/acme/users/alice/linked-compute/url":    "https://alice-box.acme.internal/v1",
+		"orgs/acme/users/alice/linked-compute/key":    "lc-alice-user-key",
+		"orgs/acme/users/alice/linked-compute/model":  "enso-ultra-local",
+		"orgs/hanzo/users/zach/linked-compute/default": `{"url":"https://zach.hanzo.internal/v1","key":"lc-zach-json","model":"zen5-coder"}`,
+	}}
+	bind(t, store)
+	ResetProviderKeyOverrideCache()
+	t.Cleanup(ResetProviderKeyOverrideCache)
+
+	// 1. User linked-compute beats org linked-compute.
+	lc, scope := ResolveTenantLinkedCompute("acme", "acme", "alice")
+	if scope != "user" || lc.URL != "https://alice-box.acme.internal/v1" || lc.Key != "lc-alice-user-key" || lc.Model != "enso-ultra-local" {
+		t.Fatalf("alice linked compute = (%+v, %q)", lc, scope)
+	}
+
+	// 2. User without personal linked compute inherits org linked compute.
+	lc, scope = ResolveTenantLinkedCompute("acme", "acme", "bob")
+	if scope != "org" || lc.URL != "https://gpu.acme.internal/v1" || lc.Key != "lc-acme-org-key" || lc.Model != "zen5-10m" {
+		t.Fatalf("bob linked compute = (%+v, %q)", lc, scope)
+	}
+
+	// 3. Cross-org home user JSON default overrides active org.
+	lc, scope = ResolveTenantLinkedCompute("acme", "hanzo", "zach")
+	if scope != "user" || lc.URL != "https://zach.hanzo.internal/v1" || lc.Key != "lc-zach-json" || lc.Model != "zen5-coder" {
+		t.Fatalf("zach cross-org linked compute = (%+v, %q)", lc, scope)
+	}
+
+	// 4. Unconfigured tenant returns empty.
+	lc, scope = ResolveTenantLinkedCompute("other", "other", "bob")
+	if !lc.Empty() || scope != "" {
+		t.Fatalf("unconfigured linked compute = (%+v, %q), want empty", lc, scope)
+	}
+
+	// 5. Path traversal fails closed.
+	if ref := OrgLinkedComputeRef("../etc", "url"); ref != "" {
+		t.Fatalf("unsafe org ref = %q, want empty", ref)
+	}
+	if ref := UserLinkedComputeRef("acme", "..", "key"); ref != "" {
+		t.Fatalf("unsafe user ref = %q, want empty", ref)
+	}
+}

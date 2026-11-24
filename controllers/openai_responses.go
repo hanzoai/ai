@@ -27,28 +27,37 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hanzoai/ai/log"
+	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/go-openai"
 	"github.com/klauspost/compress/zstd"
 )
+
+// ErrPreviousResponseNotFound is returned when a Responses request names a
+// previous_response_id that is not stored in the ThreadStore.
+var ErrPreviousResponseNotFound = errors.New("previous_response_id not found")
 
 // OpenAIResponsesRequest is the subset of POST /v1/responses used by Codex and
 // OpenAI SDKs. Unknown fields are deliberately accepted for forward
 // compatibility; fields that Chat Completions cannot represent are ignored.
 type OpenAIResponsesRequest struct {
-	Model             string            `json:"model"`
-	Instructions      string            `json:"instructions,omitempty"`
-	Input             json.RawMessage   `json:"input"`
-	Tools             []responsesTool   `json:"tools,omitempty"`
-	ToolChoice        json.RawMessage   `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
-	Stream            bool              `json:"stream,omitempty"`
-	MaxOutputTokens   int               `json:"max_output_tokens,omitempty"`
-	Temperature       *float32          `json:"temperature,omitempty"`
-	TopP              *float32          `json:"top_p,omitempty"`
-	Store             bool              `json:"store,omitempty"`
-	Metadata          map[string]string `json:"metadata,omitempty"`
-	Reasoning         json.RawMessage   `json:"reasoning,omitempty"`
-	Text              json.RawMessage   `json:"text,omitempty"`
+	Model               string            `json:"model"`
+	Instructions        string            `json:"instructions,omitempty"`
+	Input               json.RawMessage   `json:"input"`
+	Tools               []responsesTool   `json:"tools,omitempty"`
+	ToolChoice          json.RawMessage   `json:"tool_choice,omitempty"`
+	ParallelToolCalls   *bool             `json:"parallel_tool_calls,omitempty"`
+	Stream              bool              `json:"stream,omitempty"`
+	MaxOutputTokens     int               `json:"max_output_tokens,omitempty"`
+	Temperature         *float32          `json:"temperature,omitempty"`
+	TopP                *float32          `json:"top_p,omitempty"`
+	Store               bool              `json:"store,omitempty"`
+	PreviousResponseID  string            `json:"previous_response_id,omitempty"`
+	ThreadID            string            `json:"thread_id,omitempty"`
+	Branch              string            `json:"branch,omitempty"`
+	ContextTargetTokens int               `json:"context_target_tokens,omitempty"`
+	Metadata            map[string]string `json:"metadata,omitempty"`
+	Reasoning           json.RawMessage   `json:"reasoning,omitempty"`
+	Text                json.RawMessage   `json:"text,omitempty"`
 
 	// spaces names, for each tool a namespace holds, its flat chat name's
 	// namespace and own name, so a call coming back is answered as the client
@@ -140,9 +149,23 @@ func (c *ApiController) Responses() {
 		return
 	}
 
+	// Resolve verified caller identity when available so stateful thread lookup
+	// (previous_response_id / thread_id) and storage (store: true) enforce ACLs
+	// and attribute ownership accurately.
+	var callerOrg, callerUser string
+	if u := c.principalUser(); u != nil {
+		callerOrg = strings.TrimSpace(c.GetOrg())
+		callerUser = u.Name
+	} else if !isJwtToken(token) {
+		if prov, pErr := object.GetProviderByProviderKey(token, c.GetAcceptLanguage()); pErr == nil && prov != nil && strings.TrimSpace(prov.Owner) != "" {
+			callerOrg = strings.TrimSpace(prov.Owner)
+			callerUser = "provider:" + prov.Name
+		}
+	}
+
 	// c.Body() is the body the server already decoded (zstd included, within its body
 	// limit), so it is read as plain whatever Content-Encoding the caller sent.
-	call, err := ReadResponses(c.Body(), "")
+	call, err := ReadResponsesForCaller(c.Body(), "", callerOrg, callerUser, strings.TrimSpace(c.Header("X-Hanzo-Thread")))
 	if err != nil {
 		// Authenticate before reporting: whatever the body says, a caller without
 		// a valid key is told that first, and learns nothing about how we read it.
@@ -157,6 +180,14 @@ func (c *ApiController) Responses() {
 				"request body exceeds the %d MiB limit", MaxDecoded>>20))
 			return
 		}
+		if errors.Is(err, ErrPreviousResponseNotFound) || errors.Is(err, object.ErrThreadNotFound) || errors.Is(err, object.ErrBranchNotFound) {
+			c.ResponseErrorWithStatus(http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, object.ErrForbidden) {
+			c.ResponseErrorWithStatus(http.StatusForbidden, err.Error())
+			return
+		}
 		c.ResponseErrorWithStatus(http.StatusBadRequest, err.Error())
 		return
 	}
@@ -167,6 +198,12 @@ func (c *ApiController) Responses() {
 	req.Header.Del("Content-Encoding")
 	req.SetBody(call.Chat)
 	req.Header.Del("Content-Length")
+	if call.threadID != "" && strings.TrimSpace(c.Header("X-Hanzo-Thread")) == "" {
+		req.Header.Set("X-Hanzo-Thread", call.threadID)
+	}
+	if call.responseID != "" {
+		c.SetHeader("X-Hanzo-Response-Id", call.responseID)
+	}
 
 	// This endpoint IS a chat completion, read in a second dialect. So it asks for
 	// one and says what shape the answer must take, rather than swapping the writer
@@ -180,15 +217,37 @@ func (c *ApiController) Responses() {
 // host that serves chat in-process (cloud's zen) serves it there and answers
 // through the same two functions.
 type ResponsesCall struct {
-	Chat  []byte
-	req   OpenAIResponsesRequest
-	kinds map[string]string
+	Chat         []byte
+	req          OpenAIResponsesRequest
+	kinds        map[string]string
+	responseID   string
+	threadID     string
+	branch       string
+	callerOrg    string
+	callerUser   string
+	newInputMsgs []openai.ChatCompletionMessage
+}
+
+// ResponseID returns the response ID minted for this Responses turn.
+func (r *ResponsesCall) ResponseID() string {
+	if r == nil {
+		return ""
+	}
+	return r.responseID
 }
 
 // ReadResponses reads a Responses body, zstd-compressed when encoding says so.
 // Every error is the caller's; one for a body too large to expand wraps
 // zstd.ErrDecoderSizeExceeded.
 func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
+	return ReadResponsesForCaller(body, encoding, "", "", "")
+}
+
+// ReadResponsesForCaller reads a Responses body and resolves any stateful
+// previous_response_id or thread_id continuation against ThreadStore, enforcing
+// cross-account ACLs when callerOrg is known and projecting 10M+ histories
+// through object.ProjectWindow.
+func ReadResponsesForCaller(body []byte, encoding, callerOrg, callerUser, headerThreadID string) (*ResponsesCall, error) {
 	if strings.EqualFold(strings.TrimSpace(encoding), "zstd") {
 		decoded, err := decodeResponsesZstd(body)
 		if err != nil {
@@ -196,7 +255,11 @@ func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
 		}
 		body = decoded
 	}
-	call := &ResponsesCall{}
+	call := &ResponsesCall{
+		responseID: "resp_" + uuid.NewString(),
+		callerOrg:  strings.TrimSpace(callerOrg),
+		callerUser: strings.TrimSpace(callerUser),
+	}
 	if err := json.Unmarshal(body, &call.req); err != nil {
 		return nil, fmt.Errorf("Failed to parse Responses request: %w", err)
 	}
@@ -207,6 +270,73 @@ func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
 	if err != nil {
 		return nil, err
 	}
+	call.newInputMsgs = append([]openai.ChatCompletionMessage(nil), chat.Messages...)
+
+	// Resolve stateful continuation from previous_response_id or thread_id.
+	store := object.DefaultThreadStore()
+	branch := strings.TrimSpace(call.req.Branch)
+	if branch == "" {
+		branch = object.DefaultBranchName
+	}
+	var historyChunks []object.Chunk
+	switch {
+	case strings.TrimSpace(call.req.PreviousResponseID) != "":
+		prevID := strings.TrimSpace(call.req.PreviousResponseID)
+		tid, br, cid, ok := store.LookupResponse(prevID)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrPreviousResponseNotFound, prevID)
+		}
+		thr, gErr := store.GetThread(tid)
+		if gErr != nil {
+			return nil, gErr
+		}
+		if call.callerOrg != "" && !object.Can(thr, call.callerOrg, call.callerUser, object.ThreadScopeRead) {
+			return nil, fmt.Errorf("%w: caller cannot read thread %s", object.ErrForbidden, tid)
+		}
+		historyChunks, err = store.GetBranchChunksUpTo(tid, br, cid)
+		if err != nil {
+			return nil, err
+		}
+		call.threadID = tid
+		call.branch = br
+	case strings.TrimSpace(call.req.ThreadID) != "" || headerThreadID != "":
+		tid := strings.TrimSpace(call.req.ThreadID)
+		if tid == "" {
+			tid = headerThreadID
+		}
+		thr, gErr := store.GetThread(tid)
+		if gErr != nil {
+			// If thread_id was explicitly supplied in the JSON body, fail with 404.
+			// If it only arrived as an advisory header, allow proceeding statelessly.
+			if strings.TrimSpace(call.req.ThreadID) != "" {
+				return nil, gErr
+			}
+		} else {
+			if call.callerOrg != "" && !object.Can(thr, call.callerOrg, call.callerUser, object.ThreadScopeRead) {
+				return nil, fmt.Errorf("%w: caller cannot read thread %s", object.ErrForbidden, tid)
+			}
+			historyChunks, err = store.GetBranchChunks(tid, branch)
+			if err != nil {
+				return nil, err
+			}
+			call.threadID = tid
+			call.branch = branch
+		}
+	default:
+		call.branch = branch
+	}
+
+	if len(historyChunks) > 0 {
+		targetTokens := call.req.ContextTargetTokens
+		if targetTokens <= 0 {
+			targetTokens = 128_000
+		}
+		query := extractQueryFromMessages(call.newInputMsgs)
+		projected := object.ProjectWindow(historyChunks, targetTokens, query)
+		histMsgs := chunksToChatMessages(projected.Chunks)
+		chat.Messages = mergeHistoryAndNewMessages(histMsgs, chat.Messages)
+	}
+
 	if call.Chat, err = json.Marshal(chat); err != nil {
 		return nil, err
 	}
@@ -217,19 +347,138 @@ func ReadResponses(body []byte, encoding string) (*ResponsesCall, error) {
 	return call, nil
 }
 
+func extractQueryFromMessages(msgs []openai.ChatCompletionMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == openai.ChatMessageRoleUser && strings.TrimSpace(msgs[i].Content) != "" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
+
+func chunksToChatMessages(chunks []object.Chunk) []openai.ChatCompletionMessage {
+	msgs := make([]openai.ChatCompletionMessage, 0, len(chunks))
+	for _, ch := range chunks {
+		role := ch.Role
+		if role == "" {
+			role = openai.ChatMessageRoleUser
+		}
+		m := openai.ChatCompletionMessage{
+			Role:       role,
+			Content:    ch.Content,
+			ToolCallID: ch.ToolCallID,
+		}
+		if len(ch.ToolCalls) > 0 {
+			m.ToolCalls = make([]openai.ToolCall, 0, len(ch.ToolCalls))
+			for _, tc := range ch.ToolCalls {
+				tt := openai.ToolType(tc.Type)
+				if tt == "" {
+					tt = openai.ToolTypeFunction
+				}
+				m.ToolCalls = append(m.ToolCalls, openai.ToolCall{
+					ID:   tc.ID,
+					Type: tt,
+					Function: openai.FunctionCall{
+						Name:      tc.Name,
+						Arguments: tc.Arguments,
+					},
+				})
+			}
+		}
+		msgs = append(msgs, m)
+	}
+	return msgs
+}
+
+func mergeHistoryAndNewMessages(hist, next []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+	if len(hist) == 0 {
+		return next
+	}
+	// Avoid duplicating an identical leading system prompt when instructions are resent.
+	if len(next) > 0 && next[0].Role == openai.ChatMessageRoleSystem &&
+		hist[0].Role == openai.ChatMessageRoleSystem && hist[0].Content == next[0].Content {
+		next = next[1:]
+	}
+	out := make([]openai.ChatCompletionMessage, 0, len(hist)+len(next))
+	out = append(out, hist...)
+	out = append(out, next...)
+	return out
+}
+
+func (r *ResponsesCall) persistTurn(responseID, assistantText string, toolCalls []object.ThreadToolCall) {
+	if r == nil || (!r.req.Store && r.threadID == "") {
+		return
+	}
+	store := object.DefaultThreadStore()
+	org := r.callerOrg
+	if org == "" {
+		org = "default"
+	}
+	tid := r.threadID
+	branch := r.branch
+	if branch == "" {
+		branch = object.DefaultBranchName
+	}
+	if tid == "" {
+		thr, err := store.CreateThread(org, r.callerUser, "", r.req.Metadata)
+		if err != nil {
+			return
+		}
+		tid = thr.ID
+		r.threadID = tid
+	} else {
+		// Verify append permission when writing to an existing thread.
+		if thr, err := store.GetThread(tid); err == nil && r.callerOrg != "" {
+			if !object.Can(thr, r.callerOrg, r.callerUser, object.ThreadScopeAppend) {
+				return
+			}
+		}
+	}
+
+	existing, _ := store.GetBranchChunks(tid, branch)
+	for i, m := range r.newInputMsgs {
+		// Skip duplicating an identical leading system prompt already at head[0].
+		if i == 0 && m.Role == openai.ChatMessageRoleSystem && len(existing) > 0 &&
+			existing[0].Role == "system" && existing[0].Content == m.Content {
+			continue
+		}
+		var tcs []object.ThreadToolCall
+		for _, tc := range m.ToolCalls {
+			tcs = append(tcs, object.ThreadToolCall{
+				ID:        tc.ID,
+				Type:      string(tc.Type),
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			})
+		}
+		_, _, _ = store.AppendChunk(tid, branch, nil, object.Chunk{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  tcs,
+			ToolCallID: m.ToolCallID,
+			Actor:      r.callerUser,
+			Org:        org,
+		})
+	}
+	_, _, _ = store.AppendChunk(tid, branch, nil, object.Chunk{
+		Role:       openai.ChatMessageRoleAssistant,
+		Content:    assistantText,
+		ToolCalls:  toolCalls,
+		ResponseID: responseID,
+		Actor:      r.callerUser,
+		Org:        org,
+		Model:      r.req.Model,
+	})
+}
+
 // carry puts into the chat body what go-openai's struct cannot hold, read from the
 // Responses body as the caller wrote it: a temperature or top_p of zero (omitempty
 // drops both, so a caller who asked for greedy sampling got the vendor's default),
 // the prompt cache key (chat's own field of that name, which keeps a conversation's
 // turns on the cache that holds its prefix), the structured-output format
 // (text.format, chat's response_format) and the reasoning effort.
-//
-// previous_response_id asks for a stored conversation, and this gateway stores none.
-// It is refused rather than answered: an answer without the conversation it named
-// would read as one that had it.
 func carry(chat, body []byte) ([]byte, error) {
 	var in struct {
-		Previous    string          `json:"previous_response_id"`
 		CacheKey    json.RawMessage `json:"prompt_cache_key"`
 		Temperature json.RawMessage `json:"temperature"`
 		TopP        json.RawMessage `json:"top_p"`
@@ -245,9 +494,6 @@ func carry(chat, body []byte) ([]byte, error) {
 	}
 	if f := unpricedField(body); f != "" {
 		return nil, fmt.Errorf("%q is not accepted: it would buy something this model's price does not cover", f)
-	}
-	if in.Previous != "" {
-		return nil, errors.New("previous_response_id is not supported: no response is stored here, so send the whole conversation in input")
 	}
 	var out map[string]json.RawMessage
 	if err := json.Unmarshal(chat, &out); err != nil {
@@ -300,14 +546,22 @@ func chatFormat(raw json.RawMessage) (json.RawMessage, error) {
 	return nil, fmt.Errorf("text.format type %q is not supported", kind)
 }
 
-// Stream writes a chat SSE stream to w as Responses events, as it is produced.
+// Stream writes a chat SSE stream to w as Responses events, as it is produced,
+// while recording every frame in the resumable stream hub keyed by response_id.
 func (r *ResponsesCall) Stream(w io.Writer) io.WriteCloser {
-	return newResponsesBridge(w, &r.req, r.kinds)
+	b := newResponsesBridge(w, &r.req, r.kinds)
+	b.call = r
+	if r != nil && r.responseID != "" {
+		b.responseID = r.responseID
+		b.streamRec = DefaultResponseStreamHub().Register(r.responseID, r.callerOrg, r.callerUser, r.threadID)
+	}
+	return b
 }
 
-// Whole translates one finished chat completion into a Responses object.
+// Whole translates one finished chat completion into a Responses object and
+// persists the turn to ThreadStore when store:true or a thread is active.
 func (r *ResponsesCall) Whole(chat []byte) ([]byte, error) {
-	return openAIChatResponseToResponses(chat, &r.req, r.kinds)
+	return openAIChatResponseToResponsesWithCall(chat, &r.req, r.kinds, r)
 }
 
 // responsesAnswer is the Responses shape of a chat completion: a stream is
@@ -606,6 +860,9 @@ type responsesBridge struct {
 	out        io.Writer
 	request    *OpenAIResponsesRequest
 	toolKinds  map[string]string
+	call       *ResponsesCall
+	responseID string
+	streamRec  *ResponseStream
 	lineBuf    bytes.Buffer
 	translator *responsesStreamTranslator
 	mu         sync.Mutex
@@ -624,6 +881,26 @@ func (w *responsesBridge) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	if w.translator == nil {
 		w.translator = newResponsesStreamTranslator(w.emitLocked, w.request, w.toolKinds)
+		if w.responseID != "" {
+			w.translator.responseID = w.responseID
+		} else {
+			w.responseID = w.translator.responseID
+		}
+		if w.streamRec == nil {
+			var org, user, tid string
+			if w.call != nil {
+				org, user, tid = w.call.callerOrg, w.call.callerUser, w.call.threadID
+			}
+			w.streamRec = DefaultResponseStreamHub().Register(w.responseID, org, user, tid)
+		}
+		w.translator.onComplete = func(respID, text string, calls []object.ThreadToolCall) {
+			if w.call != nil {
+				w.call.persistTurn(respID, text, calls)
+			}
+			if w.streamRec != nil {
+				w.streamRec.Complete()
+			}
+		}
 		if err := w.translator.start(); err != nil {
 			return len(p), err
 		}
@@ -683,15 +960,25 @@ func (w *responsesBridge) Close() error {
 	}
 	w.closed = true
 	if w.translator == nil {
+		if w.streamRec != nil {
+			w.streamRec.Complete()
+		}
 		return nil
 	}
-	return w.translator.finish()
+	err := w.translator.finish()
+	if w.streamRec != nil {
+		w.streamRec.Complete()
+	}
+	return err
 }
 
 func (w *responsesBridge) emitLocked(event string, data any) error {
 	b, err := json.Marshal(data)
 	if err != nil {
 		return err
+	}
+	if w.streamRec != nil {
+		w.streamRec.Append(event, b)
 	}
 	if _, err = fmt.Fprintf(w.out, "event: %s\ndata: %s\n\n", event, b); err != nil {
 		return err
@@ -714,6 +1001,7 @@ type responsesToolCallState struct {
 
 type responsesStreamTranslator struct {
 	emit             func(string, any) error
+	onComplete       func(responseID, text string, calls []object.ThreadToolCall)
 	request          *OpenAIResponsesRequest
 	toolKinds        map[string]string
 	responseID       string
@@ -976,10 +1264,26 @@ func (t *responsesStreamTranslator) finish() error {
 		}
 		outputs = append(outputs, item)
 	}
-	return t.emit("response.completed", map[string]any{
+	if err := t.emit("response.completed", map[string]any{
 		"type": "response.completed", "sequence_number": t.next(),
 		"response": t.resource("completed", outputs),
-	})
+	}); err != nil {
+		return err
+	}
+	if t.onComplete != nil {
+		var savedCalls []object.ThreadToolCall
+		for _, idx := range t.callOrder {
+			call := t.calls[idx]
+			savedCalls = append(savedCalls, object.ThreadToolCall{
+				ID:        call.CallID,
+				Type:      "function",
+				Name:      call.Name,
+				Arguments: call.finalArguments(),
+			})
+		}
+		t.onComplete(t.responseID, t.text.String(), savedCalls)
+	}
+	return nil
 }
 
 // count takes the usage a chunk or a whole answer reports. A count it leaves out
@@ -1012,12 +1316,17 @@ func (t *responsesStreamTranslator) resource(status string, output []any) respon
 	// Both are parts of the prompt, and never more than it.
 	cached := min(t.cachedTokens, t.promptTokens)
 	written := min(t.writtenTokens, t.promptTokens-cached)
+	var prevID any
+	if t.request.PreviousResponseID != "" {
+		prevID = t.request.PreviousResponseID
+	}
 	return responsesResource{
 		ID: t.responseID, Object: "response", CreatedAt: t.createdAt, Status: status,
 		Model: t.request.Model, Output: output,
 		Instructions: t.request.Instructions, MaxOutputTokens: t.request.MaxOutputTokens,
 		Metadata: t.request.Metadata, ParallelToolCalls: t.request.ParallelToolCalls,
-		Reasoning: jsonOrNil(t.request.Reasoning),
+		PreviousResponseID: prevID,
+		Reasoning:          jsonOrNil(t.request.Reasoning),
 		Store:     t.request.Store, Temperature: t.request.Temperature,
 		Text: jsonOrNil(t.request.Text), ToolChoice: jsonOrNil(t.request.ToolChoice),
 		Tools: t.request.Tools, TopP: t.request.TopP,
@@ -1113,6 +1422,10 @@ func jsonOrNil(raw json.RawMessage) any {
 }
 
 func openAIChatResponseToResponses(body []byte, request *OpenAIResponsesRequest, toolKinds map[string]string) ([]byte, error) {
+	return openAIChatResponseToResponsesWithCall(body, request, toolKinds, nil)
+}
+
+func openAIChatResponseToResponsesWithCall(body []byte, request *OpenAIResponsesRequest, toolKinds map[string]string, call *ResponsesCall) ([]byte, error) {
 	var response struct {
 		Choices []struct {
 			Message struct {
@@ -1129,25 +1442,41 @@ func openAIChatResponseToResponses(body []byte, request *OpenAIResponsesRequest,
 		return nil, fmt.Errorf("invalid upstream chat response: %w", err)
 	}
 	translator := newResponsesStreamTranslator(func(string, any) error { return nil }, request, toolKinds)
+	if call != nil && call.responseID != "" {
+		translator.responseID = call.responseID
+	}
 	translator.count(&response.Usage)
 	outputs := []any{}
+	var savedText string
+	var savedCalls []object.ThreadToolCall
 	if len(response.Choices) > 0 {
 		message := response.Choices[0].Message
 		if message.Content != "" {
+			savedText = message.Content
 			outputs = append(outputs, map[string]any{
 				"id": translator.messageID, "type": "message", "role": "assistant", "status": "completed",
 				"content": []any{map[string]any{"type": "output_text", "text": message.Content, "annotations": []any{}}},
 			})
 		}
 		for _, tc := range message.ToolCalls {
-			call := &responsesToolCallState{ID: tc.ID, CallID: tc.ID, Name: tc.Function.Name, Kind: toolKinds[tc.Function.Name]}
-			if call.Kind == "" {
-				call.Kind = "function"
+			tcState := &responsesToolCallState{ID: tc.ID, CallID: tc.ID, Name: tc.Function.Name, Kind: toolKinds[tc.Function.Name]}
+			if tcState.Kind == "" {
+				tcState.Kind = "function"
 			}
-			request.unflat(call)
-			call.Arguments.WriteString(tc.Function.Arguments)
-			outputs = append(outputs, call.item("completed", call.finalArguments()))
+			request.unflat(tcState)
+			tcState.Arguments.WriteString(tc.Function.Arguments)
+			finalArgs := tcState.finalArguments()
+			outputs = append(outputs, tcState.item("completed", finalArgs))
+			savedCalls = append(savedCalls, object.ThreadToolCall{
+				ID:        tcState.CallID,
+				Type:      "function",
+				Name:      tcState.Name,
+				Arguments: finalArgs,
+			})
 		}
+	}
+	if call != nil {
+		call.persistTurn(translator.responseID, savedText, savedCalls)
 	}
 	resource := translator.resource("completed", outputs)
 	return json.Marshal(resource)

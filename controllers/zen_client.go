@@ -60,9 +60,14 @@ import (
 // source. A family is added by adding an instance here — nothing else in ai knows a
 // family name.
 
-// flagshipWindow is the served context window (1M tokens) ai guarantees for the
-// flagship Zen/Enso SKUs, independent of what a given discovery snapshot advertises.
+// flagshipWindow is the native single-turn context window (1M tokens) ai
+// guarantees for the flagship Zen/Enso SKUs, independent of what a given
+// discovery snapshot advertises.
 const flagshipWindow = 1_000_000
+
+// VirtualThreadWindow is the 10M+ lossless virtual thread context window backed
+// by ThreadStore + 3-tier context paging for first-party Hanzo families.
+const VirtualThreadWindow = 10_000_000
 
 // modelFamily is one serving family as a value: its public name/brand + cold-start
 // ownership prefix, the config keys that hold its address, the provider record ai
@@ -1056,7 +1061,7 @@ func (f *modelFamily) listAt(ctx context.Context, p *object.Provider, path strin
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s %s: status %d", f.name, path, resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	return io.ReadAll(io.LimitReader(resp.Body, 256<<20))
 }
 
 // errNoList is a vendor that has no list at a path.
@@ -1355,13 +1360,17 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 		if w := f.window(z.ID); w > 0 {
 			window = w // flagship SKUs report their guaranteed served window
 		}
+		virtualWindow := 0
+		if f.ours() && f.enabled() {
+			virtualWindow = VirtualThreadWindow
+		}
 		info := modelInfo{
 			// Premium is a statement about money, so the price is what makes it:
 			// a SKU the family charges for is premium, and one it charges nothing
 			// for is not. A free route reported as premium reads to a client as a
 			// SKU their plan cannot afford, which is the opposite of true.
 			ID: z.ID, Object: "model", Created: z.releasedOr(now), OwnedBy: owner, Premium: z.priced(),
-			Name: z.Name, Description: z.Description, ContextWindow: window, MaxOutputTokens: z.MaxOut, Expires: z.Expires,
+			Name: z.Name, Description: z.Description, ContextWindow: window, VirtualContextWindow: virtualWindow, MaxOutputTokens: z.MaxOut, Expires: z.Expires,
 			Inputs: z.Inputs, Outputs: z.Outputs,
 			SupportsVision: z.Vision, SupportsTools: z.Tools, SupportsReasoning: z.Reasoning,
 			Video: z.Video, Voice: z.Voice,
@@ -1381,13 +1390,11 @@ func (f *modelFamily) mergeModels(base []modelInfo) []modelInfo {
 
 // zenPipeHeader bounds ONE attempt: how long a family may take to say it has begun.
 //
-// It is not a round number chosen for tidiness. On a buffered request the header does
-// not arrive until the whole answer does, so this ceiling is the generation ceiling,
-// and real whole-site builds through this path complete at ~112s — a shorter bound
-// would clip work that is doing exactly what it should. The body is deliberately not
-// bounded at all: a streamed 1M-token answer is long by design, and the caller
-// staying on the line is the only honest measure of whether it is still wanted.
-const zenPipeHeader = 120 * time.Second
+// Set to 600s (10 minutes) so 10M+ prefills and long reasoning turns are never
+// killed while alive. The body is deliberately not bounded at all: a streamed
+// multi-million-token answer is long by design, and the caller staying on the
+// line is the only honest measure of whether it is still wanted.
+const zenPipeHeader = 600 * time.Second
 
 // commitWait is how long ai waits for a committed answer to begin before a paid rung
 // accepted it: as long as it waits for any family's headers.
@@ -1719,18 +1726,30 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	var made *http.Response
 	var madeBy *native
 
-	// Internal per-request provider API key override headers forwarded ONLY to
-	// first-party Hanzo families (Enso / Zen). Stripped before any external call.
+	// Internal per-request provider API key, thread/KV-checkpoint, and linked-compute
+	// override headers forwarded ONLY to first-party Hanzo families (Enso / Zen).
+	// Stripped before any external call.
 	const (
-		overrideOpenRouterHeader = "X-Hanzo-Override-OpenRouter"
-		overrideNvidiaHeader     = "X-Hanzo-Override-Nvidia"
+		overrideOpenRouterHeader   = "X-Hanzo-Override-OpenRouter"
+		overrideNvidiaHeader       = "X-Hanzo-Override-Nvidia"
+		overrideComputeURLHeader   = "X-Hanzo-Override-Compute-Url"
+		overrideComputeKeyHeader   = "X-Hanzo-Override-Compute-Key"
+		overrideComputeModelHeader = "X-Hanzo-Override-Compute-Model"
+		threadHeaderName           = "X-Hanzo-Thread"
+		kvCheckpointHeaderName     = "X-Hanzo-KV-Checkpoint"
 	)
+	// Clone thread/KV checkpoint headers while the request context is still ours
+	// (dispatch may also run from a stream writer after fiber recycles c).
+	reqThreadID := strings.Clone(strings.TrimSpace(c.Header(threadHeaderName)))
+	reqKVCheckpoint := strings.Clone(strings.TrimSpace(c.Header(kvCheckpointHeaderName)))
+
 	var userOrg, userName string
 	if authUser != nil {
 		userOrg, userName = authUser.Owner, authUser.Name
 	}
 	overrideOR, _ := object.ResolveTenantProviderKey(org, userOrg, userName, object.ProviderOverrideOpenRouter)
 	overrideNV, _ := object.ResolveTenantProviderKey(org, userOrg, userName, object.ProviderOverrideNvidia)
+	linkedCompute, _ := object.ResolveTenantLinkedCompute(org, userOrg, userName)
 
 	// dispatch offers this request to ONE route of ONE family: the family decides the
 	// address and the credential, the sku decides the model, and every other part of
@@ -1785,16 +1804,38 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			r.Header.Del(spendHeader)
 			r.Header.Del("TE")
 		}
-		// Per-org / per-user OpenRouter and NVIDIA key overrides travel ONLY to
-		// first-party Hanzo families (Enso / Zen), never to third-party vendors.
+		// Per-org / per-user OpenRouter, NVIDIA, thread/KV-checkpoint, and linked-compute
+		// overrides travel ONLY to first-party Hanzo families (Enso / Zen), never to
+		// third-party vendors. Always delete first so client-spoofed override headers
+		// can never pass through.
 		r.Header.Del(overrideOpenRouterHeader)
 		r.Header.Del(overrideNvidiaHeader)
+		r.Header.Del(overrideComputeURLHeader)
+		r.Header.Del(overrideComputeKeyHeader)
+		r.Header.Del(overrideComputeModelHeader)
+		r.Header.Del(threadHeaderName)
+		r.Header.Del(kvCheckpointHeaderName)
 		if hanzoFamily(f) && firstParty(p.ProviderUrl) {
 			if overrideOR != "" {
 				r.Header.Set(overrideOpenRouterHeader, overrideOR)
 			}
 			if overrideNV != "" {
 				r.Header.Set(overrideNvidiaHeader, overrideNV)
+			}
+			if reqThreadID != "" {
+				r.Header.Set(threadHeaderName, reqThreadID)
+			}
+			if reqKVCheckpoint != "" {
+				r.Header.Set(kvCheckpointHeaderName, reqKVCheckpoint)
+			}
+			if !linkedCompute.Empty() {
+				r.Header.Set(overrideComputeURLHeader, linkedCompute.URL)
+				if linkedCompute.Key != "" {
+					r.Header.Set(overrideComputeKeyHeader, linkedCompute.Key)
+				}
+				if linkedCompute.Model != "" {
+					r.Header.Set(overrideComputeModelHeader, linkedCompute.Model)
+				}
 			}
 		}
 		upstream.Authorize(r, p)

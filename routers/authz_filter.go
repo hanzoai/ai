@@ -217,7 +217,10 @@ func requiresPresentCredential(controllerName string) bool {
 		// controller resolves the person from the credential.
 		strings.HasPrefix(controllerName, "ai/memory/") ||
 		controllerName == "ai/connections" ||
-		strings.HasPrefix(controllerName, "ai/connections/")
+		strings.HasPrefix(controllerName, "ai/connections/") ||
+		controllerName == "threads" ||
+		strings.HasPrefix(controllerName, "threads/") ||
+		strings.HasPrefix(controllerName, "responses/")
 }
 
 // unauthenticated is the 401 a caller with no credential reads. It names the
