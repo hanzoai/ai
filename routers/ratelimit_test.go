@@ -17,8 +17,11 @@ package routers
 import (
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/hanzoai/ai/object"
 )
 
 func TestRateLimiterAllow(t *testing.T) {
@@ -267,10 +270,13 @@ func TestMapPlanToTier(t *testing.T) {
 		{"team", TierZenTeam},
 		{"enterprise", TierZenEnterprise},
 		{"scale", TierZenEnterprise},
+		{"unlimited", TierZenEnterprise},
+		{"zen-unlimited", TierZenEnterprise},
 		{"custom", TierZenCustom},
 		// Case insensitivity
 		{"ZEN-PRO", TierZenPro},
 		{"Enterprise", TierZenEnterprise},
+		{"UNLIMITED", TierZenEnterprise},
 		// Unknown defaults to zen-free
 		{"", TierZenFree},
 		{"unknown", TierZenFree},
@@ -281,6 +287,56 @@ func TestMapPlanToTier(t *testing.T) {
 			got := mapPlanToTier(tt.plan)
 			if got != tt.expected {
 				t.Errorf("mapPlanToTier(%q) = %q, want %q", tt.plan, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCommerceTierLookupPrefersUnlimitedPlan(t *testing.T) {
+	saved := object.TierReader()
+	object.SetTierReader(nil)
+	t.Cleanup(func() { object.SetTierReader(saved) })
+
+	cases := map[string]struct {
+		body string
+		want Tier
+	}{
+		"unlimited folded under pro tier": {
+			body: `{"plan":"unlimited","planName":"Unlimited","tier":{"name":"pro"}}`,
+			want: TierZenEnterprise,
+		},
+		"pro-3x falls back to tier.name pro": {
+			body: `{"plan":"pro-3x","planName":"Pro 3x","tier":{"name":"pro"}}`,
+			want: TierZenPro,
+		},
+		"dedicated falls back to tier.name enterprise": {
+			body: `{"plan":"dedicated","tier":{"name":"enterprise"}}`,
+			want: TierZenEnterprise,
+		},
+		"legacy tier.name only": {
+			body: `{"tier":{"name":"pro"}}`,
+			want: TierZenPro,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			cache := &TierCache{
+				endpoint: srv.URL,
+				client:   srv.Client(),
+			}
+			got, err := cache.commerceTierLookup("hanzo")
+			if err != nil {
+				t.Fatalf("commerceTierLookup: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("commerceTierLookup = %q, want %q", got, tc.want)
 			}
 		})
 	}

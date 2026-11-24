@@ -803,11 +803,28 @@ func (tc *TierCache) cleanupLoop() {
 }
 
 // commerceTierResponse mirrors the JSON shape of GET /v1/billing/tier
-// (commerce api/billing/tier.go GetTier): the plan name lives at tier.name.
+// (commerce api/billing/tier.go GetTier): the catalog plan slug lives at top-level
+// plan/planName (e.g. "unlimited", "pro-3x"), while tier.name carries Commerce's
+// grouped tier ("free", "starter", "pro", "enterprise").
 type commerceTierResponse struct {
-	Tier struct {
+	Plan     string `json:"plan"`
+	PlanName string `json:"planName"`
+	Tier     struct {
 		Name string `json:"name"`
 	} `json:"tier"`
+}
+
+// resolveTier maps a Commerce tier response to a rate limit Tier.
+// Prefer the specific catalog plan when it maps to a known tier (for example
+// "unlimited" → TierZenEnterprise, which Commerce groups under tier.name "pro"),
+// falling back to tier.name for catalog slugs like "pro-3x" or "dedicated".
+func (r commerceTierResponse) resolveTier() Tier {
+	for _, candidate := range []string{r.Plan, r.PlanName} {
+		if tier, ok := matchPlanToTier(candidate); ok {
+			return tier
+		}
+	}
+	return mapPlanToTier(r.Tier.Name)
 }
 
 // commerceTierLookup calls Commerce to resolve the billing plan for an IAM org
@@ -878,26 +895,33 @@ func (tc *TierCache) commerceTierLookup(orgKey string) (Tier, error) {
 		return TierZenFree, fmt.Errorf("decode response: %w", err)
 	}
 
-	return mapPlanToTier(tierResp.Tier.Name), nil
+	return tierResp.resolveTier(), nil
+}
+
+// matchPlanToTier converts a known Commerce plan name or legacy tier name to a
+// canonical zen-* rate limit Tier, reporting whether the name was recognized.
+func matchPlanToTier(plan string) (Tier, bool) {
+	switch strings.ToLower(strings.TrimSpace(plan)) {
+	case "zen-free", "free", "developer":
+		return TierZenFree, true
+	case "zen-pro", "pro", "starter":
+		return TierZenPro, true
+	case "zen-team", "team":
+		return TierZenTeam, true
+	case "zen-enterprise", "enterprise", "scale", "unlimited", "zen-unlimited":
+		return TierZenEnterprise, true
+	case "zen-custom", "custom":
+		return TierZenCustom, true
+	default:
+		return TierZenFree, false
+	}
 }
 
 // mapPlanToTier converts a Commerce plan name or legacy tier name to a
 // canonical zen-* rate limit Tier. Supports both old and new naming conventions.
 func mapPlanToTier(plan string) Tier {
-	switch strings.ToLower(strings.TrimSpace(plan)) {
-	case "zen-free", "free", "developer":
-		return TierZenFree
-	case "zen-pro", "pro", "starter":
-		return TierZenPro
-	case "zen-team", "team":
-		return TierZenTeam
-	case "zen-enterprise", "enterprise", "scale":
-		return TierZenEnterprise
-	case "zen-custom", "custom":
-		return TierZenCustom
-	default:
-		return TierZenFree
-	}
+	tier, _ := matchPlanToTier(plan)
+	return tier
 }
 
 // maskKey returns an API key truncated to its first 6 characters for safe logging.

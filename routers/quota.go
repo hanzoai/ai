@@ -3,6 +3,7 @@ package routers
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -200,6 +201,10 @@ func (q *Quota) Metrics() (allowed, denied uint64) {
 // quotaInstance is the singleton armed by InitRateLimiter.
 var quotaInstance *Quota
 
+// quotaNow is the clock charge reads; tests override it to test both short and
+// multi-hour window resets deterministically.
+var quotaNow = time.Now
+
 // charge bills one request to key's quota and refuses it when a period is spent.
 //
 // It reports whether the request may PROCEED. When it may not, the refusal has
@@ -207,28 +212,40 @@ var quotaInstance *Quota
 //
 // It runs only for a request the rate already admitted, so the two ceilings are
 // asked in the order a caller meets them: too fast is answered in seconds, too
-// much is answered with the instant the period rolls. Retry-After carries that
-// instant either way, so one header means one thing.
+// much is answered with the instant the period rolls. Retry-After is emitted only
+// when the reset is within object.MaxRetryAfter (matching filter_balance.go and
+// object.FreeNotice.RetryAfter) so clients never sleep hours on one retry; longer
+// resets are carried by X-RateLimit-Reset, X-Hanzo-Usage-Resets, and resets_at.
 func charge(c *zip.Ctx, key, path string) (bool, error) {
 	if quotaInstance == nil {
 		return true, nil
 	}
-	ok, period, until := quotaInstance.Spend(key, time.Now())
+	now := quotaNow()
+	ok, period, until := quotaInstance.Spend(key, now)
 	if ok {
 		return true, nil
 	}
 
-	retryAfter := int(time.Until(until).Seconds()) + 1
+	reset := until.UTC()
+	resetsAt := reset.Format(time.RFC3339)
+	retryAfter := int(math.Ceil(reset.Sub(now).Seconds()))
+	if retryAfter < 1 {
+		retryAfter = 1
+	}
 	allowed, denied := quotaInstance.Metrics()
-	log.Info("quota_exceeded key=%s path=%s period=%s retry_after=%d total_allowed=%d total_denied=%d",
-		maskKey(key), path, period, retryAfter, allowed, denied)
+	log.Info("quota_exceeded key=%s path=%s period=%s retry_after=%d resets_at=%s total_allowed=%d total_denied=%d",
+		maskKey(key), path, period, retryAfter, resetsAt, allowed, denied)
 
-	c.SetHeader("Retry-After", fmt.Sprintf("%d", retryAfter))
+	if retryAfter <= object.MaxRetryAfter {
+		c.SetHeader("Retry-After", strconv.Itoa(retryAfter))
+	}
 	c.SetHeader("X-RateLimit-Remaining", "0")
+	c.SetHeader("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+	c.SetHeader("X-Hanzo-Usage-Resets", resetsAt)
 	c.SetHeader("Content-Type", "application/json")
 	return false, c.Bytes(http.StatusTooManyRequests, []byte(fmt.Sprintf(
-		`{"error":{"message":"Usage limit reached for this %s. It resets in %d seconds.","type":"quota_error","code":429}}`,
-		period, retryAfter,
+		`{"error":{"message":"Usage limit reached for this %s. It resets at %s.","type":"quota_error","code":429,"resets_at":%q}}`,
+		period, resetsAt, resetsAt,
 	)))
 }
 

@@ -1,8 +1,13 @@
 package routers
 
 import (
+	"encoding/json"
+	"net/http"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/zap-proto/zip"
 )
 
 func free(string) Tier { return TierZenFree }
@@ -143,4 +148,74 @@ func TestKeysAreCountedApart(t *testing.T) {
 	if ok, _, _ := q.Spend("b", at); !ok {
 		t.Error("one key's ceiling refused another key")
 	}
+}
+
+func TestChargeCapsRetryAfterAndEmitsResetsAt(t *testing.T) {
+	savedQuota := quotaInstance
+	savedNow := quotaNow
+	t.Cleanup(func() {
+		quotaInstance = savedQuota
+		quotaNow = savedNow
+	})
+
+	runCharge := func(now time.Time) probe {
+		q := NewQuota(free, time.Hour)
+		t.Cleanup(q.Stop)
+		quotaInstance = q
+		quotaNow = func() time.Time { return now }
+
+		limit := tierQuotas[TierZenFree][0]
+		for range limit {
+			q.Spend("hanzo", now)
+		}
+		return ask(http.MethodPost, "/v1/chat/completions").through(func(c *zip.Ctx) error {
+			proceed, err := charge(c, "hanzo", "/v1/chat/completions")
+			if !proceed {
+				return err
+			}
+			return c.Continue()
+		})
+	}
+
+	t.Run("multi-hour reset omits Retry-After and sets resets_at", func(t *testing.T) {
+		// 10:00 UTC -> 8h window resets at 16:00 UTC (6 hours away, > MaxRetryAfter).
+		p := runCharge(at)
+		if p.status() != http.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429", p.status())
+		}
+		if ra := p.replied("Retry-After"); ra != "" {
+			t.Fatalf("Retry-After = %q, want empty for multi-hour reset", ra)
+		}
+		wantReset := time.Date(2026, 8, 12, 16, 0, 0, 0, time.UTC)
+		if got := p.replied("X-RateLimit-Reset"); got != strconv.FormatInt(wantReset.Unix(), 10) {
+			t.Fatalf("X-RateLimit-Reset = %q, want %d", got, wantReset.Unix())
+		}
+		if got := p.replied("X-Hanzo-Usage-Resets"); got != wantReset.Format(time.RFC3339) {
+			t.Fatalf("X-Hanzo-Usage-Resets = %q, want %q", got, wantReset.Format(time.RFC3339))
+		}
+		var payload struct {
+			Error struct {
+				Type     string `json:"type"`
+				ResetsAt string `json:"resets_at"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(p.said()), &payload); err != nil {
+			t.Fatalf("unmarshal body: %v (%s)", err, p.said())
+		}
+		if payload.Error.Type != "quota_error" || payload.Error.ResetsAt != wantReset.Format(time.RFC3339) {
+			t.Fatalf("body = %+v, want quota_error with resets_at %s", payload.Error, wantReset.Format(time.RFC3339))
+		}
+	})
+
+	t.Run("short reset within MaxRetryAfter emits Retry-After", func(t *testing.T) {
+		// 15:59:15 UTC -> 8h window resets at 16:00:00 UTC (45s away, <= MaxRetryAfter).
+		near := time.Date(2026, 8, 12, 15, 59, 15, 0, time.UTC)
+		p := runCharge(near)
+		if p.status() != http.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429", p.status())
+		}
+		if ra := p.replied("Retry-After"); ra != "45" {
+			t.Fatalf("Retry-After = %q, want 45", ra)
+		}
+	})
 }
