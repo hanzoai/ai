@@ -86,10 +86,11 @@ type depthPick struct {
 	// auto: the request stated no effort, or auto, so the router chooses.
 	auto bool
 	// by is what chose the tier: "effort" (the word the request sent), "default"
-	// (the row's start), "router" (its table for the task) or "kai" (its effort
-	// decision).
-	by   string
-	task string
+	// (the row's start), "router" (its table for the task), "kai" (its effort
+	// decision), or "adaptive-*" (per-thread shift-down / frustration escalation).
+	by           string
+	task         string
+	adaptiveNote string
 }
 
 // pickDepth reads router.depth for model at the request's effort, before the router
@@ -169,6 +170,11 @@ func (p *depthPick) escalate(ctx context.Context, org, user, rid string, body []
 		}
 	}
 	ask := routerAsk(body)
+	sig := analyzeThreadSignals(body)
+	ask.frustration = sig.FrustrationLevel
+	ask.toolErrors = sig.ConsecutiveToolErrors
+	ask.toolContinuation = sig.TrailingToolContinuation
+	ask.userTurns = sig.UserTurns
 	task := router.Classify(ask.req)
 	p.task = string(task)
 	if cfg := GetModelConfig(); cfg != nil {
@@ -178,9 +184,24 @@ func (p *depthPick) escalate(ctx context.Context, org, user, rid string, body []
 			take(strings.ToLower(sku), "router")
 		}
 	}
-	if word, ok := kaiEffort(ctx, org, rid, ask, p.task); ok {
-		take(p.row[effort(word)], "kai")
+	kaiChose := false
+	// Skip Kai on pure clean tool-result continuations (no new user prompt intent;
+	// adaptive shift-down handles them in sub-millisecond time at zero latency).
+	if !(sig.TrailingToolContinuation && !sig.TrailingToolError && sig.FrustrationLevel == 0) {
+		if word, ok := kaiEffort(ctx, org, rid, ask, p.task); ok {
+			kaiSKU := p.row[effort(word)]
+			if r, known := at[kaiSKU]; known {
+				if p.sku == "" || r > at[p.sku] {
+					p.sku, p.by, kaiChose = kaiSKU, "kai", true
+				} else if sig.UserTurns >= 2 && sig.FrustrationLevel == 0 && sig.ConsecutiveToolErrors == 0 && r < at[p.sku] {
+					// On calm multi-turn conversations, let a high-confidence Kai
+					// decision also shift down to a cheaper tier.
+					p.sku, p.by, kaiChose = kaiSKU, "kai", true
+				}
+			}
+		}
 	}
+	p.applyAdaptiveRouting(org, sig, kaiChose)
 	p.check()
 	routingEventSink(object.RoutingEvent{
 		Owner: org, User: user, RequestId: rid, Task: p.task,
@@ -368,6 +389,8 @@ func (p depthPick) routing(why string) *Routing {
 	}
 	if p.by == "kai" {
 		r.Reason += " Kai judged the request needs it."
+	} else if p.adaptiveNote != "" {
+		r.Reason += " " + strings.ToUpper(p.adaptiveNote[:1]) + p.adaptiveNote[1:] + "."
 	}
 	r.Reason = strings.ToUpper(r.Reason[:1]) + r.Reason[1:]
 	return r
