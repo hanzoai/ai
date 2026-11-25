@@ -411,6 +411,13 @@ func audioPriced(model string, seconds float64, chars int) bool {
 	return seconds > 0 && sttNanoPerSecond[m] > 0 || chars > 0 && ttsNanoPerChar[m] > 0
 }
 
+// isAudioModel reports whether model has an entry in the published STT or TTS rate
+// tables, even on a 0-second/failed call where AudioSeconds and AudioChars are 0.
+func isAudioModel(model string) bool {
+	m := strings.ToLower(model)
+	return sttNanoPerSecond[m] > 0 || ttsNanoPerChar[m] > 0
+}
+
 // recordIsAudio reports whether the record measured an audio quantity, in either
 // direction. The ONE predicate the cost switches and the Unpriced detector share,
 // so they can never disagree about what an audio row is.
@@ -619,6 +626,9 @@ func recordUnpriced(record *usageRecord) bool {
 	// without touching a single emit site.
 	if recordIsAudio(record) {
 		return !audioPriced(record.Model, record.AudioSeconds, record.AudioChars)
+	}
+	if isAudioModel(record.Model) {
+		return false
 	}
 	_, ok := getModelPriceForOrgOK(record.Model, "")
 	return !ok
