@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,9 +31,12 @@ import (
 // asks.
 func policy(t *testing.T, grant *object.LimitGrant, hit *object.LimitHit) *[]object.LimitAsk {
 	t.Helper()
+	var mu sync.Mutex
 	var asked []object.LimitAsk
 	object.SetLimits(func(_ stdcontext.Context, q object.LimitAsk) (*object.LimitGrant, *object.LimitHit, error) {
+		mu.Lock()
 		asked = append(asked, q)
+		mu.Unlock()
 		return grant, hit, nil
 	})
 	return &asked

@@ -139,6 +139,7 @@ func doBootstrap() (err error) {
 	// no-op when unset, so boot never blocks on Valkey and the per-pod TTL still
 	// backstops. Mirrors InitDatastore/InitTelemetry. See object.InitCacheBus.
 	object.InitCacheBus()
+	object.InitIdempotencyKV()
 
 	// Model routing/pricing config from YAML. Non-fatal: static fallback.
 	configPath := conf.GetConfigString("modelConfigPath")
