@@ -797,9 +797,11 @@ type usageRecord struct {
 	ClientIP  string `json:"clientIp"`
 	RequestID string `json:"requestId"`
 	// ref names this record's debit for the ledger (object.UsageEvent.Ref): minted
-	// the first time the record is filed and kept, so filing it again — a retry after
+	// the first time the record is filed (or bound from the active idempotency
+	// execution's immutable BillingRef) and kept, so filing it again — a retry after
 	// a lost answer — is the same debit.
-	ref string
+	ref      string
+	idemExec *object.IdempotencyExecution
 	// ClientRequestID is the X-Request-Id the caller was answered under, where the
 	// surface answers with one. It is what the row's request_id column shows, so a
 	// caller's id finds their bill; RequestID stays the row's own, minted here, and is
@@ -1130,7 +1132,16 @@ func (r *usageRecord) payer() account.Account {
 // whatever name the row carries, and a person's payer comes from their own
 // credential. Attribution and settlement stay separate answers to separate questions.
 func (r *usageRecord) bind(ctx context.Context, u *iam.User) {
-	if r == nil || u == nil {
+	if r == nil {
+		return
+	}
+	if exec := object.IdempotencyExecutionFromContext(ctx); exec != nil {
+		r.idemExec = exec
+		if r.ref == "" && exec.BillingRef != "" {
+			r.ref = exec.BillingRef
+		}
+	}
+	if u == nil {
 		return
 	}
 	r.Payer = u.Payer(r.Owner)
@@ -1453,6 +1464,10 @@ func recordUsage(record *usageRecord) error {
 		publicCount.serve(record.Visitor, utcDay(time.Now()), publicChatDaily())
 	}
 
+	if record.ref == "" {
+		record.ref = uuid.NewString()
+	}
+
 	// Native in-proc finance debit — the ONE money path when co-resident with the
 	// finance ledger (hanzoai/cloud unified binary). The debit lands DIRECTLY on the
 	// org's SQLite wallet, the SAME account the prepaid gate reads, so a funded
@@ -1462,9 +1477,6 @@ func recordUsage(record *usageRecord) error {
 	if rec := object.UsageRecorder(); rec != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), usageTimeout)
 		defer cancel()
-		if record.ref == "" {
-			record.ref = uuid.NewString()
-		}
 		if err := rec(ctx, object.UsageEvent{
 			Subject:   subject,
 			Namespace: org,
@@ -1488,6 +1500,9 @@ func recordUsage(record *usageRecord) error {
 		}); err != nil {
 			log.Error("billing: native usage record failed request_id=%s: %v", record.RequestID, err)
 			return err
+		}
+		if record.idemExec != nil {
+			_ = record.idemExec.MarkSideEffectsCommitted(context.Background())
 		}
 		return nil
 	}
@@ -1518,6 +1533,7 @@ func recordUsage(record *usageRecord) error {
 		"audioSeconds":     record.AudioSeconds,
 		"audioChars":       record.AudioChars,
 		"requestId":        record.RequestID,
+		"ref":              record.ref,
 		"clientRequestId":  record.ClientRequestID,
 		"premium":          record.Premium,
 		"stream":           record.Stream,
@@ -1536,11 +1552,15 @@ func recordUsage(record *usageRecord) error {
 	}
 
 	billingQueue.Enqueue(&util.BillingRecord{
-		Body:      body,
-		RequestID: record.RequestID,
-		Org:       org,
-		Model:     record.Model,
+		Body:           body,
+		RequestID:      record.RequestID,
+		IdempotencyKey: record.ref,
+		Org:            org,
+		Model:          record.Model,
 	})
+	if record.idemExec != nil {
+		_ = record.idemExec.MarkSideEffectsCommitted(context.Background())
+	}
 	return nil
 }
 
