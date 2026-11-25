@@ -46,6 +46,7 @@ func modelsOf(t *testing.T) []any {
 		&Memory{}, &OrgSettings{}, &RoutingEvent{}, &RouterArtifactMeta{},
 		&RouterTrainingLog{}, &FinetuneJob{}, &ModelAccess{}, &RoutingVersion{},
 		&Listing{}, &ListingEvent{}, &Lease{}, &Served{}, &MediaJob{},
+		&IdempotencyRecord{},
 	}
 }
 

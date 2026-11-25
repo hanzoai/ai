@@ -21,8 +21,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/hanzoai/ai/util"
 )
 
 // GpuHourlyCents maps a GPU SKU to its metered price in cents per GPU-hour. This
@@ -60,37 +58,57 @@ func gpuSecondsCostCents(gpuSeconds int64, gpuType string) int64 {
 	return cents
 }
 
+// FinetuneBillingRef returns the canonical immutable billing reference for a
+// fine-tune run's execution ID. Returns "" if executionID is empty.
+func FinetuneBillingRef(executionID string) string {
+	executionID = strings.TrimSpace(executionID)
+	if executionID == "" {
+		return ""
+	}
+	return "finetune:exec:" + executionID
+}
+
 // MeterFinetuneGpuHours posts a GPU-hours charge for a finetune run to commerce,
 // mirroring object/transaction.go AddTransactionForMessage (the ONE metering
 // path → `POST {commerceEndpoint}/v1/billing/usage`, amount in cents). Returns
-// the charged amount in cents. A no-op (0, nil) when commerce is unconfigured or
-// the amount rounds to zero, so an un-metered cluster still runs jobs.
+// the charged amount in cents. A no-op (0, nil) when the amount rounds to zero,
+// so an un-metered cluster still runs zero-duration jobs.
 //
 // subject is the canonical billing subject ("owner/name"); gpuSeconds is the
-// total GPU-seconds consumed (wall-clock × gpuCount × numNodes).
-func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string) (int64, error) {
+// total GPU-seconds consumed (wall-clock × gpuCount × numNodes); executionID is
+// the immutable per-run UUID (FinetuneJob.ExecutionId). NEVER falls back to
+// mutable owner/name or subject — an empty executionID is rejected so recreated
+// jobs with the same name never collide on billing identity.
+func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string, executionID string) (int64, error) {
 	amountCents := gpuSecondsCostCents(gpuSeconds, gpuType)
 	if amountCents <= 0 {
 		return 0, nil
+	}
+	billingRef := FinetuneBillingRef(executionID)
+	if billingRef == "" {
+		return 0, fmt.Errorf("finetune billing requires a non-empty immutable execution_id")
 	}
 	endpoint, token, client := commerceClient()
 	if endpoint == "" {
 		return 0, fmt.Errorf("commerceEndpoint is not configured")
 	}
 	payload := map[string]any{
-		"user":      subject,
-		"currency":  "usd",
-		"amount":    amountCents,
-		"model":     "finetune:" + gpuType,
-		"provider":  "finetune",
-		"requestId": util.GetRandomName(),
-		"premium":   true,
-		"stream":    false,
-		"status":    "success",
+		"user":        subject,
+		"currency":    "usd",
+		"amount":      amountCents,
+		"model":       "finetune:" + gpuType,
+		"provider":    "finetune",
+		"requestId":   billingRef,
+		"ref":         billingRef,
+		"executionId": strings.TrimSpace(executionID),
+		"premium":     true,
+		"stream":      false,
+		"status":      "success",
 		"metadata": map[string]any{
-			"kind":       "gpu-hours",
-			"gpuSeconds": gpuSeconds,
-			"gpuType":    gpuType,
+			"kind":        "gpu-hours",
+			"gpuSeconds":  gpuSeconds,
+			"gpuType":     gpuType,
+			"executionId": strings.TrimSpace(executionID),
 		},
 	}
 	body, err := json.Marshal(payload)
@@ -103,8 +121,12 @@ func MeterFinetuneGpuHours(subject string, gpuSeconds int64, gpuType string) (in
 		return 0, fmt.Errorf("failed to build gpu-hours usage request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", billingRef)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if org, _, ok := strings.Cut(subject, "/"); ok && org != "" {
+		req.Header.Set("X-Org-Id", org)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

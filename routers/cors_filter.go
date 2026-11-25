@@ -106,9 +106,9 @@ func setCorsHeaders(c *zip.Ctx, origin string) {
 	c.SetHeader(headerAllowMethods, "GET, POST, DELETE, PUT, PATCH, OPTIONS")
 	c.SetHeader(
 		headerAllowHeaders,
-		"Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Org-Id, X-Project-Id, X-Environment, X-User-Id, X-User-Email, X-API-Version, X-SDK-Name, X-SDK-Version",
+		"Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Org-Id, X-Project-Id, X-Environment, X-User-Id, X-User-Email, X-API-Version, X-SDK-Name, X-SDK-Version, Idempotency-Key",
 	)
-	c.SetHeader(headerExposeHeaders, "Content-Length")
+	c.SetHeader(headerExposeHeaders, "Content-Length, X-Execution-Id, X-Idempotency-Replayed, X-Idempotency-Replay-Unavailable")
 	c.SetHeader(headerAllowCredentials, "true")
 
 	if c.Method() == "OPTIONS" {

@@ -59,10 +59,11 @@ func billingBackoff(attempt int) time.Duration {
 // BillingRecord holds a pre-serialized usage record ready for HTTP delivery.
 // Controllers serialize once; the queue retries with the same payload bytes.
 type BillingRecord struct {
-	Body      []byte // JSON payload, serialized by the caller
-	RequestID string // for structured logging on failure
-	Org       string // IAM org slug — billing key + X-Org-Id namespace scope
-	Model     string // model name for structured logging
+	Body           []byte // JSON payload, serialized by the caller
+	RequestID      string // for structured logging on failure
+	IdempotencyKey string // immutable billing ref sent as Idempotency-Key to Commerce
+	Org            string // IAM org slug — billing key + X-Org-Id namespace scope
+	Model          string // model name for structured logging
 }
 
 // BillingQueue is a buffered, retrying usage record delivery queue.
@@ -171,7 +172,7 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 			}
 		}
 
-		err := q.post(url, record.Org, record.Body)
+		err := q.post(url, record.Org, record.IdempotencyKey, record.Body)
 		if err == nil {
 			return
 		}
@@ -190,7 +191,7 @@ func (q *BillingQueue) deliver(record *BillingRecord) {
 // Returns nil on 2xx, a retryable error on 5xx/network errors, and a
 // non-retryable error on 4xx (which will still be retried — Commerce
 // should not return 4xx for valid records, so retrying is safer than dropping).
-func (q *BillingQueue) post(url, org string, body []byte) error {
+func (q *BillingQueue) post(url, org, idempotencyKey string, body []byte) error {
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
@@ -201,6 +202,9 @@ func (q *BillingQueue) post(url, org string, body []byte) error {
 	}
 	if org != "" {
 		req.Header.Set("X-Org-Id", org)
+	}
+	if idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
 	}
 
 	resp, err := q.client.Do(req)

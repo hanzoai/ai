@@ -238,6 +238,7 @@ func SyncSchema(db *dbx.DB) error {
 		&Lease{},              // jobs the fleet runs once an interval
 		&Served{},             // what each vendor account did with each model, by hour
 		&MediaJob{},           // generations a vendor runs for a caller, until billed (media_job.go)
+		&IdempotencyRecord{},  // durable idempotency & execution ledger (idempotency.go)
 	}
 	var errs []error
 	for _, m := range models {
@@ -270,6 +271,9 @@ func SyncSchema(db *dbx.DB) error {
 	// field before any handler sees the row.
 	backfillNullField(db, "message", &Message{}, "ClaimedTime")
 	backfillNullField(db, "message", &Message{}, "AnsweredTime")
+	// ExecutionId was added to FinetuneJob so every fine-tune run carries an
+	// immutable billing identity distinct from its mutable (owner, name).
+	backfillNullField(db, "finetune_job", &FinetuneJob{}, "ExecutionId")
 	return errors.Join(errs...)
 }
 

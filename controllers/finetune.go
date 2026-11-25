@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/cluster"
 	"github.com/hanzoai/ai/object"
 	"github.com/hanzoai/ai/util"
@@ -287,9 +288,15 @@ func (c *ApiController) CreateFinetuneJob() {
 	ns := cluster.FinetuneNamespace(org)
 	outputUri := fmt.Sprintf("%s/%s/%s/", finetuneOutputBase(), slugify(org), name)
 
+	execID := uuid.NewString()
+	if exec := object.IdempotencyExecutionFromContext(c.Context()); exec != nil && exec.ExecutionID != "" {
+		execID = exec.ExecutionID
+	}
+
 	job := &object.FinetuneJob{
 		Owner:       org,
 		Name:        name,
+		ExecutionId: execID,
 		CreatedBy:   user.Name,
 		DisplayName: firstNonEmptyStr(req.DisplayName, req.BaseModel),
 		BaseModel:   req.BaseModel,
@@ -311,6 +318,9 @@ func (c *ApiController) CreateFinetuneJob() {
 	if _, err := object.AddFinetuneJob(job); err != nil {
 		c.ResponseError(err.Error())
 		return
+	}
+	if exec := object.IdempotencyExecutionFromContext(c.Context()); exec != nil {
+		_ = exec.MarkSideEffectsCommitted(c.Context())
 	}
 
 	// Submit the real CR. Resolve an HF token (KMS, never the browser) so private
@@ -454,8 +464,14 @@ func (c *ApiController) meterFinetuneTerminal(job *object.FinetuneJob) bool {
 		job.Metered = true
 		return true
 	}
+	if job.ExecutionId == "" {
+		// Legacy row predating ExecutionId: mint and persist an immutable UUID
+		// BEFORE contacting Commerce so retries always reuse the same billing ID.
+		job.ExecutionId = uuid.NewString()
+		_, _ = object.UpdateFinetuneJob(job.Owner, job.Name, job)
+	}
 	subject := job.Owner + "/" + firstNonEmptyStr(job.CreatedBy, "admin")
-	cents, err := object.MeterFinetuneGpuHours(subject, gpuSeconds, job.GpuType)
+	cents, err := object.MeterFinetuneGpuHours(subject, gpuSeconds, job.GpuType, job.ExecutionId)
 	if err != nil {
 		// Leave Metered=false to retry on a later refresh.
 		return false

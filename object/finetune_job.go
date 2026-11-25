@@ -16,6 +16,7 @@ package object
 import (
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/hanzoai/ai/util"
 
 	"github.com/hanzoai/dbx"
@@ -33,6 +34,7 @@ import (
 type FinetuneJob struct {
 	Owner       string `db:"pk" json:"owner"` // org id (X-Org-Id / user.Owner)
 	Name        string `db:"pk" json:"name"`  // job slug, unique within the org
+	ExecutionId string `json:"executionId"`   // immutable per-run UUID used for billing dedup (never owner/name)
 	CreatedTime string `json:"createdTime"`
 	UpdatedTime string `json:"updatedTime"`
 	CreatedBy   string `json:"createdBy"` // user who created the job (billing subject = owner/createdBy)
@@ -107,6 +109,9 @@ func GetFinetuneJob(owner string, name string) (*FinetuneJob, error) {
 }
 
 func AddFinetuneJob(job *FinetuneJob) (bool, error) {
+	if job.ExecutionId == "" {
+		job.ExecutionId = uuid.NewString()
+	}
 	job.CreatedTime = util.GetCurrentTime()
 	job.UpdatedTime = job.CreatedTime
 	err := insertRow(adapter.db, job)
@@ -114,6 +119,10 @@ func AddFinetuneJob(job *FinetuneJob) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func DeleteFinetuneJob(owner string, name string) (bool, error) {
+	return deleteRow("finetune_job", owner, name)
 }
 
 func UpdateFinetuneJob(owner string, name string, job *FinetuneJob) (bool, error) {

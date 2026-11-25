@@ -166,13 +166,22 @@ func AddTransactionForMessage(message *Message) error {
 	if endpoint == "" {
 		return fmt.Errorf("commerceEndpoint is not configured")
 	}
+	stableRef := message.TransactionId
+	if stableRef == "" {
+		if id := message.GetId(); id != "" && id != "/" {
+			stableRef = "msg:" + id
+		} else {
+			stableRef = "msg:" + util.GetRandomName()
+		}
+	}
 	payload := map[string]any{
 		"user":      userId,
 		"currency":  cur,
 		"amount":    amountCents,
 		"model":     message.ModelProvider,
 		"provider":  message.ModelProvider,
-		"requestId": util.GetRandomName(),
+		"requestId": stableRef,
+		"ref":       stableRef,
 		"premium":   true,
 		"stream":    false,
 		"status":    "success",
@@ -187,6 +196,7 @@ func AddTransactionForMessage(message *Message) error {
 		return fmt.Errorf("failed to build usage request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", stableRef)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
