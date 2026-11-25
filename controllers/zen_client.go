@@ -1697,11 +1697,17 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 	}
 	nameOrg(req.Header, prov.ProviderUrl, org)
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
+	// First-party Hanzo families (Enso, Zen) deliver X-Hanzo-Cogs, X-Hanzo-Cache-Read,
+	// and X-Hanzo-Cache-Write as HTTP/1.1 trailers on streamed answers, which RFC 9110
+	// §10.1.4 emits only when the request carries TE: trailers. Always request trailers
+	// for Hanzo families — even when X-Hanzo-Spend is absent (Enso, prepaid, payg).
+	if hanzoFamily(fam) {
+		req.Header.Set("TE", planTE)
+	}
 	// What the caller's plan holds for paid upstream travels to a Hanzo family only:
 	// the family may answer from a paid rung whose cost fits, and tells us its rate.
 	if spend := spendFor(c.Ctx, fam, model); spend != "" {
 		req.Header.Set(spendHeader, spend)
-		req.Header.Set("TE", planTE)
 	}
 
 	// fill answers a covered request from the free pool once its committed answer
@@ -1797,12 +1803,15 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			r.Header.Del(classesHeader)
 			r.Header.Del(fastHeader)
 		}
-		if spend := spendOf(grant, place, pm, f, s); spend != "" {
-			r.Header.Set(spendHeader, spend)
+		if hanzoFamily(f) {
 			r.Header.Set("TE", planTE)
 		} else {
-			r.Header.Del(spendHeader)
 			r.Header.Del("TE")
+		}
+		if spend := spendOf(grant, place, pm, f, s); spend != "" {
+			r.Header.Set(spendHeader, spend)
+		} else {
+			r.Header.Del(spendHeader)
 		}
 		// Per-org / per-user OpenRouter, NVIDIA, thread/KV-checkpoint, and linked-compute
 		// overrides travel ONLY to first-party Hanzo families (Enso / Zen), never to
@@ -2326,6 +2335,12 @@ func (c *ApiController) pipeToFamily(fam *modelFamily, apiPath, dialect, model s
 			_ = answer.Body.Close()
 		}
 		sv.merge(answer.Trailer)
+		if t.cached == 0 && sv.cacheRead > 0 {
+			t.cached = sv.cacheRead
+		}
+		if t.written == 0 && sv.cacheWrite > 0 {
+			t.written = sv.cacheWrite
+		}
 		if owed := pm.owed.Load(); sv.cost == nil && pm.tried.Load() {
 			sv.cost = &owed
 		}
@@ -2430,6 +2445,10 @@ const (
 	// whole answer, a trailer on a stream (its cost is known at its end). It is the
 	// usage row's COGS; the family's answer body never carries ours.
 	cogsHeader = "X-Hanzo-Cogs"
+	// cacheReadHeader / cacheWriteHeader carry the served answer's prompt tokens read
+	// from or written to the upstream's prompt cache (header on whole, trailer on stream).
+	cacheReadHeader  = "X-Hanzo-Cache-Read"
+	cacheWriteHeader = "X-Hanzo-Cache-Write"
 	// keyHeader names the vendor account the arm that answered ran on, by its name
 	// (OPENROUTER_API_KEY_3), never its key: the free view's which-account
 	// (listing.go). A header, or a trailer on a stream.
@@ -2453,6 +2472,9 @@ type serving struct {
 	// cogs is what the request cost upstream, nano-dollars (cogsHeader); nil when
 	// the family stated none.
 	cogs *int64
+	// cacheRead / cacheWrite are the upstream prompt cache token counts stated via
+	// X-Hanzo-Cache-Read / X-Hanzo-Cache-Write headers or trailers.
+	cacheRead, cacheWrite int
 	// maker is the vendor's own API that gave this answer (native.go), nil for
 	// every answer a family's address gave. The pipe sets it from the response it
 	// was handed, so no header an address sends can claim it.
@@ -2497,6 +2519,12 @@ func (sv *serving) merge(tr http.Header) {
 	if n, ok := usdNanos(tr.Get(cogsHeader)); ok {
 		sv.cogs = &n
 	}
+	if n, err := strconv.Atoi(strings.TrimSpace(tr.Get(cacheReadHeader))); err == nil && n > 0 {
+		sv.cacheRead = n
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(tr.Get(cacheWriteHeader))); err == nil && n > 0 {
+		sv.cacheWrite = n
+	}
 }
 
 // servingOf reads a family response's headers into a serving.
@@ -2510,6 +2538,12 @@ func servingOf(h http.Header) serving {
 		runtime: h.Get(provenance.RuntimeDigestHeader), connector: h.Get(provenance.CacheConnectorHeader)}
 	if n, ok := usdNanos(h.Get(cogsHeader)); ok {
 		sv.cogs = &n
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(h.Get(cacheReadHeader))); err == nil && n > 0 {
+		sv.cacheRead = n
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(h.Get(cacheWriteHeader))); err == nil && n > 0 {
+		sv.cacheWrite = n
 	}
 	return sv
 }

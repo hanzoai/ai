@@ -667,6 +667,7 @@ func routingTest(ctx context.Context, family, model string) (*routingProbe, erro
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Org-Id", "admin")
 	req.Header.Set("X-Hanzo-Fronted-By", "ai")
+	req.Header.Set("TE", planTE)
 	start := time.Now()
 	resp, err := zenPipeClient.Do(req)
 	if err != nil {

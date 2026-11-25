@@ -202,7 +202,7 @@ func providerCostNano(record *usageRecord) *int64 {
 		return nil
 	case record.DecisionCount > 0:
 		return nil // a decision that states its cost carries it as CostNanoExact
-	case recordIsAudio(record):
+	case recordIsAudio(record) || isAudioModel(record.Model):
 		// Speech runs on hardware we already own, so there is no upstream invoice
 		// to pass through: COGS is 0 and the margin on an audio call is the whole
 		// price. Stated explicitly rather than reached by falling through to token

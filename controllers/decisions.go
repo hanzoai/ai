@@ -1214,6 +1214,13 @@ func decisionRecord(ctx context.Context, ledger string, authUser *iam.User, mode
 	if u.Cost != nil {
 		cost := usdToNano(*u.Cost)
 		rec.CostNanoExact = &cost
+	} else if r := resolveModelRoute(DecisionAs(model)); r != nil && r.providerName == object.KaiName && kaiUpstream(r.upstreamModel) {
+		// Kai runs on Hanzo's own operated inference pods (no upstream vendor
+		// invoice), matching operated speech in providerCostNano: COGS is
+		// honestly 0, never unknown. Third-party decision routes (Jev on
+		// OpenRouter, Zen) keep nil unless u.Cost is stated.
+		zero := int64(0)
+		rec.CostNanoExact = &zero
 	}
 	rec.bind(ctx, authUser)
 	return rec
